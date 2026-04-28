@@ -25,7 +25,7 @@ use std::str::FromStr;
 
 use crate::jobs::status::JobStatusConfig;
 use diesel::deserialize::{self, FromSql};
-use diesel::pg::{Pg, PgValue};
+use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::sql_types;
@@ -264,10 +264,10 @@ table! {
     }
 }
 
-#[sql_type = "sql_types::Text"]
 #[derive(
     AsExpression,
     Clone,
+    Copy,
     Debug,
     Deserialize,
     Display,
@@ -277,6 +277,7 @@ table! {
     PartialEq,
     Serialize,
 )]
+#[sql_type = "sql_types::Text"]
 #[strum(serialize_all = "snake_case")]
 pub enum JobState {
     Init,
@@ -296,9 +297,9 @@ impl ToSql<sql_types::Text, Pg> for JobState {
 }
 
 impl FromSql<sql_types::Text, Pg> for JobState {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }
@@ -317,7 +318,6 @@ impl JobAction {
     }
 }
 
-#[sql_type = "sql_types::Text"]
 #[derive(
     AsExpression,
     Debug,
@@ -329,6 +329,7 @@ impl JobAction {
     PartialEq,
     Serialize,
 )]
+#[sql_type = "sql_types::Text"]
 #[strum(serialize_all = "snake_case")]
 pub enum JobActionDbEntry {
     Evacuate,
@@ -344,9 +345,9 @@ impl ToSql<sql_types::Text, Pg> for JobActionDbEntry {
 }
 
 impl FromSql<sql_types::Text, Pg> for JobActionDbEntry {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }
@@ -418,6 +419,7 @@ pub struct AssignmentCacheEntry {
     dest_shark: StorageNode,
     total_size: u64,
     state: AssignmentState,
+    created_at: std::time::Instant,
 }
 
 impl From<Assignment> for AssignmentCacheEntry {
@@ -427,6 +429,7 @@ impl From<Assignment> for AssignmentCacheEntry {
             dest_shark: assignment.dest_shark,
             total_size: assignment.total_size,
             state: assignment.state,
+            created_at: std::time::Instant::now(),
         }
     }
 }
@@ -617,14 +620,53 @@ pub fn create_job_database() -> Result<(), Error> {
     conn.execute(&create_query).map(|_| {}).map_err(Error::from)
 }
 
+/// Mark any jobs left in Running, Setup, or Init state as Failed.
+///
+/// On startup the rebalancer cannot resume in-flight jobs — the
+/// in-memory assignment cache, worker threads, and channel state are
+/// all lost.  Rather than leaving stale "Running" entries that
+/// confuse operators, mark them as Failed so it's clear a new job
+/// is needed.
+pub fn mark_stale_jobs_failed() -> Result<usize, Error> {
+    use self::jobs::dsl::{jobs as jobs_db, state};
+
+    let conn = connect_or_create_db(REBALANCER_DB)?;
+    let stale_states = vec![
+        JobState::Running.to_string(),
+        JobState::Setup.to_string(),
+        JobState::Init.to_string(),
+    ];
+
+    let count = diesel::update(jobs_db)
+        .filter(state.eq_any(&stale_states))
+        .set(state.eq(JobState::Failed.to_string()))
+        .execute(&conn)
+        .map_err(Error::from)?;
+
+    if count > 0 {
+        warn!(
+            "Marked {} stale job(s) as failed (were Running/Setup/Init \
+             from before restart)",
+            count
+        );
+    }
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use rebalancer::util;
 
     #[test]
+    #[ignore] // Requires PostgreSQL and config.json file
     fn basic() {
         let _guard = util::init_global_logger(None);
+
+        // Ensure the jobs table exists in the rebalancer database
+        create_job_database().expect("create job database");
+
         let config = Config::parse_config(&Some("src/config.json".to_string()))
             .expect("parse config");
 

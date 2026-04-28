@@ -48,6 +48,8 @@
 
 pub mod config;
 pub mod directdb;
+pub mod directdb_buckets;
+pub mod mdapi_discovery;
 pub mod util;
 
 use lazy_static::lazy_static;
@@ -58,10 +60,8 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use slog::{debug, error, warn, Logger};
 use std::io::{Error, ErrorKind};
-use std::net::IpAddr;
 use std::sync::Mutex;
 use threadpool::ThreadPool;
-use trust_dns_resolver::Resolver;
 
 lazy_static! {
     static ref ERROR_LIST: Mutex<Vec<std::io::Error>> = Mutex::new(vec![]);
@@ -406,13 +406,14 @@ where
 
     let mut start_id = conf.begin;
     let mut end_id = conf.begin + conf.chunk_size - 1;
-    let mut largest_id = match find_largest_id_value(&log, &mut mclient, id_name) {
-        Ok(id) => id,
-        Err(e) => {
-            error!(&log, "Error finding largest ID: {}, using 0", e);
-            0
-        }
-    };
+    let mut largest_id =
+        match find_largest_id_value(&log, &mut mclient, id_name) {
+            Ok(id) => id,
+            Err(e) => {
+                error!(&log, "Error finding largest ID: {}, using 0", e);
+                0
+            }
+        };
 
     // clamp largest_id to conf.end if it is set and less than the largest found
     if conf.end > 0 && conf.end < largest_id {
@@ -475,11 +476,28 @@ where
 }
 
 fn lookup_ip_str(host: &str) -> Result<String, Error> {
-    let resolver = Resolver::from_system_conf()?;
-    let response = resolver.lookup_ip(host)?;
-    let ip: Vec<IpAddr> = response.iter().collect();
+    use std::net::ToSocketAddrs;
 
-    Ok(ip[0].to_string())
+    // Use the system resolver (getaddrinfo) instead of trust-dns.
+    // trust-dns sends DNS query types that Triton's binder-balancer
+    // does not support, resulting in "Not Implemented" errors.
+    let addr = format!("{}:0", host);
+    let mut addrs = addr.to_socket_addrs().map_err(|e| {
+        Error::new(
+            ErrorKind::Other,
+            format!("failed to resolve {}: {}", host, e),
+        )
+    })?;
+
+    addrs
+        .next()
+        .map(|a| a.ip().to_string())
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Other,
+                format!("no addresses found for {}", host),
+            )
+        })
 }
 
 fn shark_fix_common(conf: &mut config::Config, log: &Logger) {
@@ -706,6 +724,280 @@ fn run_direct_db_shard_thread(
     });
 }
 
+fn run_direct_db_buckets_shard_thread(
+    pool: &ThreadPool,
+    shard: u32,
+    obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
+    conf: &config::Config,
+    log: &Logger,
+) {
+    let th_obj_tx = obj_tx.clone();
+    let th_conf = conf.clone();
+    let th_log = log.clone();
+
+    pool.execute(move || {
+        let mut rt = match tokio::runtime::Builder::new()
+            .enable_all()
+            .basic_scheduler()
+            .build()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!(th_log, "could not create runtime: {}", e);
+                ERROR_LIST.lock().expect("ERROR_LIST lock").push(e);
+                return;
+            }
+        };
+
+        if let Err(e) = rt.block_on(
+            directdb_buckets::get_buckets_objects_from_shard(
+                shard,
+                th_conf,
+                th_log.clone(),
+                th_obj_tx,
+            ),
+        ) {
+            if e.kind() != ErrorKind::BrokenPipe {
+                error!(th_log, "buckets shard thread error: {}", e);
+            }
+            ERROR_LIST.lock().expect("ERROR_LIST lock").push(e);
+        }
+    });
+}
+
+fn run_mdapi_shard_thread(
+    pool: &ThreadPool,
+    endpoint: &str,
+    conf: &config::Config,
+    obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
+    log: &Logger,
+) {
+    use libmanta::mdapi::MdapiClient;
+    use slog::{info, warn};
+
+    info!(log, "Connecting to mdapi shard: {}", endpoint);
+
+    let mdapi_client = match MdapiClient::new(endpoint) {
+        Ok(c) => c,
+        Err(e) => {
+            slog::error!(
+                log,
+                "Failed to create mdapi client for {}: {}",
+                endpoint,
+                e
+            );
+            let mut error_list = ERROR_LIST.lock().unwrap();
+            error_list.push(Error::new(
+                ErrorKind::Other,
+                format!(
+                    "Failed to create mdapi client for {}: {}",
+                    endpoint, e
+                ),
+            ));
+            return;
+        }
+    };
+
+    // Auto-discover vnodes from this mdapi shard.
+    let vnodes = match auto_discover_vnodes(&mdapi_client, &log) {
+        Ok(v) if !v.is_empty() => {
+            info!(
+                log,
+                "Auto-discovered {} vnodes from {} via listvnodes RPC",
+                v.len(),
+                endpoint
+            );
+            v
+        }
+        Ok(_) => {
+            warn!(
+                log,
+                "listvnodes returned empty from {}, skipping this shard",
+                endpoint
+            );
+            return;
+        }
+        Err(e) => {
+            warn!(
+                log,
+                "listvnodes RPC failed on {} ({}), skipping this shard",
+                endpoint,
+                e
+            );
+            return;
+        }
+    };
+
+    // Auto-discover owners across all vnodes on this shard.
+    let owners = match auto_discover_owners(&mdapi_client, &vnodes, &log) {
+        Ok(o) if !o.is_empty() => {
+            info!(
+                log,
+                "Auto-discovered {} owners from {} via listowners RPC",
+                o.len(),
+                endpoint
+            );
+            o
+        }
+        Ok(_) => {
+            warn!(
+                log,
+                "listowners returned no owners from {}, skipping this shard",
+                endpoint
+            );
+            return;
+        }
+        Err(e) => {
+            warn!(
+                log,
+                "listowners RPC failed on {} ({}), skipping this shard",
+                endpoint,
+                e
+            );
+            return;
+        }
+    };
+
+    // Spawn mdapi discovery threads for each vnode on this shard.
+    for vnode in vnodes {
+        let mdapi_client_clone = mdapi_client.clone();
+        let obj_tx_clone = obj_tx.clone();
+        let sharks_clone = conf.sharks.clone();
+        let owners_clone = owners.clone();
+        let log_clone = log.clone();
+
+        pool.execute(move || {
+            match mdapi_discovery::discover_mdapi_objects_for_shard(
+                &mdapi_client_clone,
+                &owners_clone,
+                vnode,
+                &sharks_clone,
+                &obj_tx_clone,
+                &log_clone,
+            ) {
+                Ok(count) => {
+                    info!(
+                        log_clone,
+                        "Mdapi discovery for vnode {} complete: \
+                         {} objects",
+                        vnode,
+                        count
+                    );
+                }
+                Err(e) => {
+                    slog::error!(
+                        log_clone,
+                        "Mdapi discovery failed for vnode {}: {}",
+                        vnode,
+                        e
+                    );
+                    let mut error_list =
+                        ERROR_LIST.lock().unwrap();
+                    error_list.push(e);
+                }
+            }
+        });
+    }
+}
+
+/// Auto-discover vnodes from mdapi via the listvnodes RPC.
+///
+/// Returns a `Vec<u32>` of vnode numbers. If the server does not
+/// support the RPC, returns an error so callers can fall back.
+///
+/// # Algorithmic cost
+///
+/// O(1) single RPC round-trip.
+fn auto_discover_vnodes(
+    client: &libmanta::mdapi::MdapiClient,
+    log: &slog::Logger,
+) -> Result<Vec<u32>, Error> {
+    use slog::debug;
+
+    debug!(log, "Auto-discovering vnodes via listvnodes RPC");
+
+    let resp = client.list_vnodes().map_err(|e| {
+        Error::new(
+            ErrorKind::Other,
+            format!("listvnodes RPC failed: {}", e),
+        )
+    })?;
+
+    // Convert u64 vnodes to u32 (vnode numbers fit in u32)
+    use std::convert::TryFrom;
+    let vnodes: Vec<u32> = resp
+        .vnodes
+        .iter()
+        .filter_map(|&v| {
+            u32::try_from(v).ok().or_else(|| {
+                slog::warn!(
+                    log,
+                    "Vnode {} exceeds u32::MAX, skipping", v
+                );
+                None
+            })
+        })
+        .collect();
+
+    debug!(log, "Discovered {} vnodes", vnodes.len());
+    Ok(vnodes)
+}
+
+/// Auto-discover owners across all vnodes via the listowners RPC.
+///
+/// For each vnode, calls `listowners` and collects the union of all
+/// distinct owner UUIDs.
+///
+/// # Algorithmic cost
+///
+/// O(V) RPC calls where V is the number of vnodes, plus O(N log N)
+/// for deduplication where N is total owners across all vnodes.
+fn auto_discover_owners(
+    client: &libmanta::mdapi::MdapiClient,
+    vnodes: &[u32],
+    log: &slog::Logger,
+) -> Result<Vec<uuid::Uuid>, Error> {
+    use slog::debug;
+    use std::collections::HashSet;
+
+    debug!(
+        log,
+        "Auto-discovering owners across {} vnodes via listowners RPC",
+        vnodes.len()
+    );
+
+    let mut owner_set: HashSet<uuid::Uuid> = HashSet::new();
+
+    for &vnode in vnodes {
+        match client.list_owners(vnode as u64) {
+            Ok(resp) => {
+                for owner in &resp.owners {
+                    owner_set.insert(*owner);
+                }
+                debug!(
+                    log,
+                    "Vnode {}: {} owners (running total: {})",
+                    vnode,
+                    resp.owners.len(),
+                    owner_set.len()
+                );
+            }
+            Err(e) => {
+                // If any single vnode fails, log and continue.
+                // This is best-effort discovery.
+                slog::warn!(
+                    log,
+                    "listowners failed for vnode {}: {}", vnode, e
+                );
+            }
+        }
+    }
+
+    let owners: Vec<uuid::Uuid> = owner_set.into_iter().collect();
+    debug!(log, "Discovered {} distinct owners", owners.len());
+    Ok(owners)
+}
+
 /// Same as the regular `run` method, but instead we spawn a new thread per
 /// shard and send the information back to the caller via a crossbeam
 /// mpmc channel.
@@ -722,11 +1014,36 @@ pub fn run_multithreaded(
     shark_fix_common(&mut conf, &log);
     validate_sharks(&conf, &log)?;
 
+    // Moray/DirectDB discovery
     for shard in conf.min_shard..=conf.max_shard {
         if conf.direct_db {
             run_direct_db_shard_thread(&pool, shard, &obj_tx, &conf, &log);
         } else {
             run_moray_shard_thread(&pool, shard, &obj_tx, &conf, &log)?;
+        }
+    }
+    // Mdapi/DirecDB discovery 
+    for endpoint in &conf.mdapi_endpoints {
+        let shard: u32 = endpoint
+            .split('.')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not parse shard number from endpoint '{}': \
+                     expected format '<shard>.buckets-mdapi.<domain>'",
+                    endpoint
+                );
+            });
+
+        if conf.direct_db {
+            run_direct_db_buckets_shard_thread(
+                &pool, shard, &obj_tx, &conf, &log,
+            );
+        } else {
+            run_mdapi_shard_thread(
+                &pool, endpoint, &conf, &obj_tx, &log,
+            );
         }
     }
 
@@ -792,5 +1109,139 @@ mod tests {
             "max": 12341234,
         }]);
         assert!(_parse_max_id_value(num_value_num, &log).is_ok());
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_valid() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({
+            "sharks": [
+                {"datacenter": "dc1", "manta_storage_id": "1.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "2.stor.domain"}
+            ]
+        });
+        let sharks = get_sharks_from_manta_obj(&value, &log).unwrap();
+        assert_eq!(sharks.len(), 2);
+        assert_eq!(sharks[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(sharks[1].datacenter, "dc2");
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_missing_field() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({"objectId": "abc"});
+        assert!(get_sharks_from_manta_obj(&value, &log).is_err());
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_not_array() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({"sharks": "not-an-array"});
+        assert!(get_sharks_from_manta_obj(&value, &log).is_err());
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_empty_array() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({"sharks": []});
+        let sharks = get_sharks_from_manta_obj(&value, &log).unwrap();
+        assert!(sharks.is_empty());
+    }
+
+    #[test]
+    fn manta_obj_from_moray_obj_valid() {
+        let inner = json!({"objectId": "abc", "sharks": []});
+        let moray_obj = json!({"_value": serde_json::to_string(&inner).unwrap()});
+        let result = manta_obj_from_moray_obj(&moray_obj).unwrap();
+        assert_eq!(result["objectId"], "abc");
+    }
+
+    #[test]
+    fn manta_obj_from_moray_obj_missing_value() {
+        let moray_obj = json!({"_etag": "123"});
+        assert!(manta_obj_from_moray_obj(&moray_obj).is_err());
+    }
+
+    #[test]
+    fn manta_obj_from_moray_obj_not_string() {
+        let moray_obj = json!({"_value": 12345});
+        assert!(manta_obj_from_moray_obj(&moray_obj).is_err());
+    }
+
+    #[test]
+    fn object_id_from_manta_obj_valid() {
+        let obj = json!({"objectId": "test-uuid-123"});
+        let id = object_id_from_manta_obj(&obj).unwrap();
+        assert_eq!(id, "test-uuid-123");
+    }
+
+    #[test]
+    fn object_id_from_manta_obj_missing() {
+        let obj = json!({"key": "/test/file"});
+        assert!(object_id_from_manta_obj(&obj).is_err());
+    }
+
+    #[test]
+    fn etag_from_moray_value_valid() {
+        let val = json!({"_etag": "7712D647"});
+        let etag = etag_from_moray_value(&val).unwrap();
+        assert_eq!(etag, "7712D647");
+    }
+
+    #[test]
+    fn etag_from_moray_value_missing() {
+        let val = json!({"_id": 12345});
+        assert!(etag_from_moray_value(&val).is_err());
+    }
+
+    #[test]
+    fn chunk_query_formats_correctly() {
+        let q = chunk_query("_id", 0, 999, 1000);
+        assert_eq!(
+            q,
+            "SELECT * FROM manta WHERE _id >= 0 AND _id <= 999 AND type = 'object' limit 1000;"
+        );
+    }
+
+    #[test]
+    fn chunk_query_with_idx() {
+        let q = chunk_query("_idx", 500, 1500, 200);
+        assert_eq!(
+            q,
+            "SELECT * FROM manta WHERE _idx >= 500 AND _idx <= 1500 AND type = 'object' limit 200;"
+        );
+    }
+
+    #[test]
+    fn _parse_max_id_value_empty_array() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let val = json!([]);
+        // Empty array has len 0, not 1
+        assert!(_parse_max_id_value(val, &log).is_err());
+    }
+
+    #[test]
+    fn _parse_max_id_value_multiple_elements() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let val = json!([{"max": 1}, {"max": 2}]);
+        assert!(_parse_max_id_value(val, &log).is_err());
+    }
+
+    #[test]
+    fn _parse_max_id_value_missing_max() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let val = json!([{"min": 42}]);
+        assert!(_parse_max_id_value(val, &log).is_err());
+    }
+
+    #[test]
+    fn _parse_max_id_value_returns_correct_number() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+
+        let val = json!([{"max": 99999}]);
+        assert_eq!(_parse_max_id_value(val, &log).unwrap(), 99999);
+
+        let val = json!([{"max": "54321"}]);
+        assert_eq!(_parse_max_id_value(val, &log).unwrap(), 54321);
     }
 }

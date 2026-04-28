@@ -12,7 +12,7 @@ use crossbeam_channel as crossbeam;
 use futures::{pin_mut, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use slog::{debug, error, trace, warn, Logger};
+use slog::{debug, error, info, trace, warn, Logger};
 use std::io::{Error, ErrorKind};
 use tokio_postgres::{NoTls, Row};
 
@@ -71,7 +71,10 @@ pub async fn get_objects_from_shard(
         .await
         .map_err(|e| {
             error!(log, "failed to connect to {}: {}", &shard_host_name, e);
-            Error::new(ErrorKind::Other, e)
+            Error::new(
+                ErrorKind::Other,
+                format!("connect to {}: {}", shard_host_name, e),
+            )
         })?;
 
     let task_host_name = shard_host_name.clone();
@@ -83,7 +86,13 @@ pub async fn get_objects_from_shard(
                 task_log,
                 "could not communicate with {}: {}", task_host_name, e
             );
-            Error::new(ErrorKind::Other, e)
+            Error::new(
+                ErrorKind::Other,
+                format!(
+                    "communication with {}: {}",
+                    task_host_name, e
+                ),
+            )
         })?;
         Ok::<(), Error>(())
     });
@@ -93,17 +102,27 @@ pub async fn get_objects_from_shard(
         .await
         .map_err(|e| {
             error!(log, "query error for {}: {}", &shard_host_name, e);
-            Error::new(ErrorKind::Other, e)
+            Error::new(
+                ErrorKind::Other,
+                format!("query on {}: {}", shard_host_name, e),
+            )
         })?;
 
     pin_mut!(rows);
     // Iterate over the rows in the stream.  For each one determine if it
     // matches the shark we are looking for.
+    let mut total_rows: u64 = 0;
     while let Some(row) = rows
         .try_next()
         .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?
+        .map_err(|e| {
+            Error::new(
+                ErrorKind::Other,
+                format!("row fetch from {}: {}", shard_host_name, e),
+            )
+        })?
     {
+        total_rows += 1;
         let val_str: &str = row.get("_value");
         let value: Value = serde_json::from_str(val_str)
             .map_err(|e| Error::new(ErrorKind::Other, e))?;
@@ -111,6 +130,7 @@ pub async fn get_objects_from_shard(
             &value,
             &row,
             &conf.sharks,
+            &conf.exclude_key_prefixes,
             shard,
             &obj_tx,
             &log,
@@ -119,6 +139,12 @@ pub async fn get_objects_from_shard(
         }
     }
 
+    info!(
+        log,
+        "Moray directdb shard {} complete: {} rows scanned",
+        shard, total_rows
+    );
+
     Ok(())
 }
 
@@ -126,10 +152,22 @@ fn check_value_for_match(
     value: &Value,
     row: &Row,
     filter_sharks: &[String],
+    exclude_key_prefixes: &[String],
     shard: u32,
     obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
     log: &Logger,
 ) -> Result<(), Error> {
+    if !exclude_key_prefixes.is_empty()
+        && !(exclude_key_prefixes.len() == 1 && exclude_key_prefixes[0] == "none")
+    {
+        if let Some(key) = value.get("key").and_then(|k| k.as_str()) {
+            if exclude_key_prefixes.iter().any(|p| key.contains(p)) {
+                trace!(log, "skipping excluded key: {}", key);
+                return Ok(());
+            }
+        }
+    }
+
     let obj_id = object_id_from_manta_obj(value)
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
     let sharks = get_sharks_from_manta_obj(value, log)?;

@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2025 Edgecast Cloud LLC.
  */
 
 /// Manta Object Rebalancer
@@ -24,8 +25,10 @@ extern crate rebalancer;
 
 pub mod config;
 pub mod jobs;
+pub mod mdapi_client;
 pub mod metrics;
 pub mod moray_client;
+pub mod mpu_utils;
 pub mod pg_db;
 pub mod storinfo;
 

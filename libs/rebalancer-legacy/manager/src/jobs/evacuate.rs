@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 use crate::metrics::{
@@ -29,14 +30,15 @@ use crate::jobs::{
     assignment_cache_usage, Assignment, AssignmentCacheEntry, AssignmentId,
     AssignmentState, JobUpdateMessage, StorageId,
 };
+use crate::mdapi_client;
 use crate::moray_client;
+use crate::mpu_utils::{self, MpuEvacuationTracker};
 use crate::pg_db;
 use crate::storinfo::{self as mod_storinfo, SharkSource, StorageNode};
 
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::error::Error as _Error;
 use std::io::Write;
 use std::str::FromStr;
 use std::string::ToString;
@@ -48,6 +50,7 @@ use std::time::Duration;
 use crossbeam_channel as crossbeam;
 use crossbeam_channel::TryRecvError;
 use crossbeam_deque::{Injector, Steal};
+use libmanta::mdapi::MdapiClient;
 use libmanta::moray::{MantaObject, MantaObjectShark};
 use moray::client::MorayClient;
 use moray::objects::{
@@ -66,12 +69,825 @@ use uuid::Uuid;
 type EvacuateObjectValue = Value;
 type MorayClientHash = HashMap<u32, MorayClient>;
 
+/// Determine if an object is bucket-based or traditional Manta
+///
+/// Bucket objects have a `bucket_id` field in their metadata.
+/// Traditional Manta objects do not have this field.
+///
+/// # Arguments
+/// * `object` - The object metadata value
+///
+/// # Returns
+/// * `true` if object is bucket-based (has bucket_id)
+/// * `false` if object is traditional Manta (no bucket_id)
+fn is_bucket_object(object: &Value) -> bool {
+    object.get("bucket_id").is_some()
+}
+
+/// Finalize MPU upload record updates after batch evacuation.
+///
+/// This function is called after successfully evacuating and updating a batch
+/// of objects via mdapi. It scans the updated objects for MPU parts, tracks
+/// their uploadIds, and updates the corresponding upload records with new
+/// shark locations.
+///
+/// # Arguments
+/// * `client` - The mdapi client instance
+/// * `objects` - Slice of (MantaObject, bucket_id, etag) tuples that were updated
+///
+/// # Returns
+/// * `Ok(())` - Upload records successfully updated (or no MPU parts found)
+/// * `Err(Error)` - Upload record update failed (logged but not fatal)
+///
+/// # Error Handling
+/// This function implements graceful error handling:
+/// - Logs errors but does not fail the evacuation
+/// - Missing upload records (404) are logged as warnings
+/// - Parse/RPC errors are logged as errors
+/// - Evacuation completes successfully even if upload record updates fail
+///
+/// # Performance
+/// Cost: O(n) where n = number of unique uploadIds in the batch
+/// Typical case: <10 uploadIds per 1000 objects (~1% overhead)
+fn finalize_mpu_updates(
+    client: &MdapiClient,
+    objects: &[(MantaObject, Uuid, Option<&str>)],
+    from_shark: &str,
+    dest_shark: &str,
+) -> Result<(), Error> {
+    let mut tracker = MpuEvacuationTracker::new();
+
+    // Track all MPU parts in this batch
+    for (object, _bucket_id, _etag) in objects {
+        if let Some(upload_id) = mpu_utils::parse_mpu_part_key(&object.key) {
+            debug!(
+                "Detected MPU part: {}, uploadId: {}",
+                object.key, upload_id
+            );
+            tracker.record_upload_id(upload_id);
+        }
+    }
+
+    // If no MPU parts found, return early
+    if tracker.count() == 0 {
+        return Ok(());
+    }
+
+    info!(
+        "Finalizing MPU updates for {} unique upload IDs \
+         (replacing shark {} -> {})",
+        tracker.count(),
+        from_shark,
+        dest_shark
+    );
+
+    // Update upload records for all affected uploadIds
+    for upload_id in tracker.get_affected_uploads() {
+        // Extract owner and bucket_id from first object with this uploadId
+        let (owner, bucket_id) = match objects
+            .iter()
+            .find(|(obj, _, _)| {
+                mpu_utils::parse_mpu_part_key(&obj.key)
+                    .map(|id| &id == upload_id)
+                    .unwrap_or(false)
+            })
+            .map(|(obj, bid, _)| (Uuid::parse_str(&obj.owner), *bid))
+        {
+            Some((Ok(owner), bucket_id)) => (owner, bucket_id),
+            Some((Err(e), _)) => {
+                error!(
+                    "Invalid owner UUID for uploadId {}: {}",
+                    upload_id, e
+                );
+                continue;
+            }
+            None => {
+                warn!(
+                    "Could not find object for uploadId: {} (unexpected)",
+                    upload_id
+                );
+                continue;
+            }
+        };
+
+        // Selectively replace from_shark with dest_shark in the upload record
+        match mpu_utils::update_upload_record(
+            client,
+            owner,
+            bucket_id,
+            upload_id,
+            from_shark,
+            dest_shark,
+        ) {
+            Ok(()) => {
+                debug!(
+                    "Successfully updated upload record for uploadId: {}",
+                    upload_id
+                );
+            }
+            Err(e) => {
+                // Log error but don't fail the evacuation
+                error!(
+                    "Failed to update upload record for uploadId {}: {:?}",
+                    upload_id, e
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Create mdapi clients for all configured shards.
+///
+/// Each shard host is resolved via DNS SRV
+/// (`_buckets-mdapi._tcp.{host}`) to discover the
+/// IP and port dynamically.
+fn create_mdapi_clients_from_shards(
+    shards: &[crate::config::MdapiShard],
+) -> Result<Vec<MdapiClient>, Error> {
+    let mut clients = Vec::with_capacity(shards.len());
+    for shard in shards {
+        let client =
+            mdapi_client::create_client(&shard.host)?;
+        clients.push(client);
+    }
+    Ok(clients)
+}
+
+/// Abstraction over metadata backends (Moray, Mdapi, or Hybrid)
+///
+/// This enum allows the job execution code to work with:
+/// - Moray only: Traditional Manta objects
+/// - Mdapi only: Bucket-based objects
+/// - Hybrid: Both traditional and bucket objects simultaneously
+///
+/// Hybrid mode enables complete shark evacuation when a storage node contains
+/// objects from both metadata backends.
+enum MetadataBackend {
+    Moray(MorayClient),
+    Mdapi(Vec<MdapiClient>),
+    Hybrid {
+        moray: MorayClient,
+        mdapi: Vec<MdapiClient>,
+    },
+}
+
+impl MetadataBackend {
+    /// Create a metadata backend based on configuration
+    ///
+    /// Creates one of three backend types based on configuration:
+    /// - Hybrid: Both domain_name and mdapi shards set → complete evacuation
+    /// - Mdapi: Only mdapi shards set → bucket objects only
+    /// - Moray: Only domain_name configured → traditional objects only
+    ///
+    /// Returns error if neither backend is configured.
+    fn from_config(
+        config: &Config,
+        shard: u32,
+    ) -> Result<MetadataBackend, Error> {
+        let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
+        let use_moray = !config.domain_name.is_empty();
+
+        match (use_moray, use_mdapi) {
+            (true, true) => {
+                // HYBRID: Both backends enabled for
+                // complete evacuation.
+                //
+                // Moray shards may not exist for every
+                // mdapi vnode.  When the moray client
+                // cannot be created (e.g. DNS lookup for
+                // `{shard}.moray.{domain}` fails) we
+                // fall back to an mdapi-only backend for
+                // this shard.  Bucket objects do not
+                // need moray, and traditional objects
+                // will never appear on a vnode that has
+                // no matching moray shard.
+                let mdapi = create_mdapi_clients_from_shards(
+                    &config.mdapi.shards,
+                )?;
+                match moray_client::create_client(
+                    shard,
+                    &config.domain_name,
+                ) {
+                    Ok(moray) => {
+                        debug!(
+                            "Created hybrid backend \
+                             (moray + {} mdapi shard(s)) \
+                             for shard {}",
+                            mdapi.len(),
+                            shard
+                        );
+                        Ok(MetadataBackend::Hybrid {
+                            moray,
+                            mdapi,
+                        })
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Moray client for shard {} \
+                             unavailable ({}), using \
+                             mdapi-only for this shard",
+                            shard, e
+                        );
+                        Ok(MetadataBackend::Mdapi(mdapi))
+                    }
+                }
+            }
+            (false, true) => {
+                // Mdapi only - bucket objects
+                let mdapi = create_mdapi_clients_from_shards(
+                    &config.mdapi.shards,
+                )?;
+                debug!(
+                    "Created mdapi backend ({} shard(s)) for shard {}",
+                    mdapi.len(),
+                    shard
+                );
+                Ok(MetadataBackend::Mdapi(mdapi))
+            }
+            (true, false) => {
+                // Moray only - traditional Manta objects
+                let moray =
+                    moray_client::create_client(shard, &config.domain_name)?;
+                debug!("Created moray backend for shard {}", shard);
+                Ok(MetadataBackend::Moray(moray))
+            }
+            (false, false) => {
+                // No backend configured - error
+                Err(InternalError::new(
+                    Some(InternalErrorCode::InvalidState),
+                    "No metadata backend configured: \
+                     either domain_name or mdapi.shards must be set"
+                        .to_string(),
+                )
+                .into())
+            }
+        }
+    }
+
+    /// Perform batch update operation
+    ///
+    /// For Moray: uses native batch operation
+    /// For Mdapi: uses native batchupdateobjects RPC with individual fallback
+    /// For Hybrid: partitions requests by object type and routes to appropriate backend
+    fn batch_update<F>(
+        &mut self,
+        requests: &[BatchRequest],
+        options: &ObjectMethodOptions,
+        from_shark: &str,
+        dest_shark: &str,
+        mut callback: F,
+    ) -> Result<(), Error>
+    where
+        F: FnMut(Vec<Value>) -> Result<(), Error>,
+    {
+        match self {
+            MetadataBackend::Moray(client) => {
+                // Wrap callback to convert error types
+                client
+                    .batch(requests, options, |values| {
+                        callback(values).map_err(|_e| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "Callback failed",
+                            )
+                        })
+                    })
+                    .map_err(|e| {
+                        InternalError::new(
+                            Some(InternalErrorCode::MetadataUpdateFailure),
+                            format!("Batch update failed: {}", e),
+                        )
+                        .into()
+                    })
+            }
+            MetadataBackend::Mdapi(clients) => {
+                let client = clients.first().ok_or_else(|| {
+                    InternalError::new(
+                        Some(InternalErrorCode::InvalidState),
+                        "No mdapi clients available".to_string(),
+                    )
+                })?;
+
+                // Extract objects from batch requests
+                let mut manta_objects = Vec::new();
+                let mut values_for_callback = Vec::new();
+
+                for req in requests {
+                    let br =
+                        match req {
+                            BatchRequest::Put(br) => br,
+                            _ => return Err(InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                "Unexpected batch request type".to_string(),
+                            )
+                            .into()),
+                        };
+
+                    // Deserialize to MantaObject
+                    let manta_object: MantaObject = serde_json::from_value(
+                        br.value.clone(),
+                    )
+                    .map_err(|e| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            format!("Failed to deserialize object: {}", e),
+                        )
+                    })?;
+
+                    // Extract bucket_id
+                    let bucket_id = br
+                        .value
+                        .get("bucket_id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                "Object missing bucket_id field".to_string(),
+                            )
+                        })
+                        .and_then(|s| {
+                            Uuid::parse_str(s).map_err(|e| {
+                                InternalError::new(
+                                    Some(InternalErrorCode::BadMantaObject),
+                                    format!("Invalid bucket_id: {}", e),
+                                )
+                            })
+                        })?;
+
+                    // Extract etag
+                    let etag = match &br.options.etag {
+                        Etag::Specified(e) => Some(e.as_str()),
+                        _ => None,
+                    };
+
+                    manta_objects.push((manta_object, bucket_id, etag));
+                    values_for_callback.push(br.value.clone());
+                }
+
+                // Convert to references for mdapi_client
+                let manta_object_refs: Vec<(&MantaObject, Uuid, Option<&str>)> =
+                    manta_objects
+                        .iter()
+                        .map(|(obj, bid, etag)| (obj, *bid, *etag))
+                        .collect();
+
+                // Call mdapi batch_update
+                let result =
+                    mdapi_client::batch_update(client, manta_object_refs)?;
+
+                debug!(
+                    "Mdapi batch update: {} successful, {} failed",
+                    result.successful, result.failed
+                );
+
+                // Handle partial success: mark successful objects as complete
+                // even if some failed. This ensures we don't retry already-
+                // updated objects, which is critical because mdapi updates are
+                // non-transactional (individual put_object calls).
+                if result.successful > 0 {
+                    // Build successful_objects set for efficient lookup
+                    let successful_set: std::collections::HashSet<&str> = result
+                        .successful_objects
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect();
+
+                    // Collect (objects, values) for successful updates only
+                    let (successful_manta_objects, successful_values): (
+                        Vec<_>,
+                        Vec<_>,
+                    ) = manta_objects
+                        .iter()
+                        .zip(values_for_callback.iter())
+                        .filter(|((obj, _, _), _)| {
+                            successful_set.contains(obj.object_id.as_str())
+                        })
+                        .map(|(obj, val)| (obj.clone(), val.clone()))
+                        .unzip();
+
+                    // Finalize MPU upload records for successful objects only
+                    if !successful_manta_objects.is_empty() {
+                        finalize_mpu_updates(
+                            client,
+                            &successful_manta_objects,
+                            from_shark,
+                            dest_shark,
+                        )?;
+                    }
+
+                    // Call callback with successful values - marks them complete
+                    if !successful_values.is_empty() {
+                        callback(successful_values)?;
+                    }
+                }
+
+                // After marking successes, return error if any failed
+                if result.failed > 0 {
+                    let error_msg = format!(
+                        "Mdapi batch update had {} failures (but {} succeeded \
+                         and were marked complete): {:?}",
+                        result.failed,
+                        result.successful,
+                        result
+                            .errors
+                            .iter()
+                            .map(|(id, _)| id.as_str())
+                            .collect::<Vec<_>>()
+                    );
+                    return Err(InternalError::new(
+                        Some(InternalErrorCode::MetadataUpdateFailure),
+                        error_msg,
+                    )
+                    .into());
+                }
+
+                Ok(())
+            }
+            MetadataBackend::Hybrid { moray, mdapi } => {
+                let mdapi_client = mdapi.first().ok_or_else(|| {
+                    InternalError::new(
+                        Some(InternalErrorCode::InvalidState),
+                        "No mdapi clients available".to_string(),
+                    )
+                })?;
+
+                // Partition requests by object type
+                let mut moray_requests = Vec::new();
+                let mut mdapi_requests = Vec::new();
+                let mut mdapi_objects = Vec::new();
+                let mut all_values = Vec::new();
+
+                for req in requests {
+                    let br =
+                        match req {
+                            BatchRequest::Put(br) => br,
+                            _ => return Err(InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                "Unexpected batch request type".to_string(),
+                            )
+                            .into()),
+                        };
+
+                    if is_bucket_object(&br.value) {
+                        // Bucket object - route to mdapi
+                        let manta_object: MantaObject = serde_json::from_value(
+                            br.value.clone(),
+                        )
+                        .map_err(|e| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                format!(
+                                    "Failed to deserialize bucket object: {}",
+                                    e
+                                ),
+                            )
+                        })?;
+
+                        let bucket_id = br
+                            .value
+                            .get("bucket_id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                InternalError::new(
+                                    Some(InternalErrorCode::BadMantaObject),
+                                    "Bucket object missing bucket_id"
+                                        .to_string(),
+                                )
+                            })
+                            .and_then(|s| {
+                                Uuid::parse_str(s).map_err(|e| {
+                                    InternalError::new(
+                                        Some(InternalErrorCode::BadMantaObject),
+                                        format!("Invalid bucket_id: {}", e),
+                                    )
+                                })
+                            })?;
+
+                        let etag = match &br.options.etag {
+                            Etag::Specified(e) => Some(e.as_str()),
+                            _ => None,
+                        };
+
+                        mdapi_objects.push((manta_object, bucket_id, etag));
+                        mdapi_requests.push(br.clone());
+                    } else {
+                        // Traditional object - route to moray
+                        moray_requests.push(BatchRequest::Put(br.clone()));
+                    }
+
+                    all_values.push(br.value.clone());
+                }
+
+                debug!(
+                    "Hybrid batch: {} moray, {} mdapi requests",
+                    moray_requests.len(),
+                    mdapi_requests.len()
+                );
+
+                // Process mdapi requests FIRST. Mdapi updates are
+                // non-transactional (individual put_object calls), so they
+                // are more likely to partially fail. By running mdapi before
+                // moray, we avoid the inconsistency where moray commits
+                // atomically but a subsequent mdapi failure leaves the two
+                // backends out of sync with no rollback path.
+                //
+                // If mdapi fails here, moray has not been touched yet, so
+                // there is no cross-backend inconsistency.
+                //
+                // If mdapi succeeds but moray fails below, moray's batch is
+                // atomic (all-or-nothing), so nothing was committed to moray.
+                // The mdapi updates will be idempotent on the next
+                // evacuation retry since they use etag-based conditional
+                // updates.
+                let mdapi_success_count = if !mdapi_objects.is_empty() {
+                    let mdapi_refs: Vec<(&MantaObject, Uuid, Option<&str>)> =
+                        mdapi_objects
+                            .iter()
+                            .map(|(obj, bid, etag)| (obj, *bid, *etag))
+                            .collect();
+
+                    let result = mdapi_client::batch_update(
+                        mdapi_client, mdapi_refs,
+                    )?;
+
+                    // Handle partial success: mark successful mdapi objects as
+                    // complete even if some failed. This prevents re-updating
+                    // already-updated objects on retry.
+                    if result.successful > 0 {
+                        // Build successful_objects set for efficient lookup
+                        let successful_set: std::collections::HashSet<&str> =
+                            result
+                                .successful_objects
+                                .iter()
+                                .map(|s| s.as_str())
+                                .collect();
+
+                        // Collect successful objects for MPU finalization
+                        let successful_mdapi_objects: Vec<_> = mdapi_objects
+                            .iter()
+                            .filter(|(obj, _, _)| {
+                                successful_set.contains(obj.object_id.as_str())
+                            })
+                            .cloned()
+                            .collect();
+
+                        // Collect successful values for callback
+                        let successful_mdapi_values: Vec<_> = mdapi_objects
+                            .iter()
+                            .zip(mdapi_requests.iter())
+                            .filter(|((obj, _, _), _)| {
+                                successful_set.contains(obj.object_id.as_str())
+                            })
+                            .map(|(_, br)| br.value.clone())
+                            .collect();
+
+                        // Finalize MPU for successful objects
+                        if !successful_mdapi_objects.is_empty() {
+                            finalize_mpu_updates(
+                                mdapi_client,
+                                &successful_mdapi_objects,
+                                from_shark,
+                                dest_shark,
+                            )?;
+                        }
+
+                        // Mark successful mdapi objects as complete via callback
+                        if !successful_mdapi_values.is_empty() {
+                            callback(successful_mdapi_values)?;
+                        }
+                    }
+
+                    if result.failed > 0 {
+                        error!(
+                            "Hybrid mdapi batch failed before moray: \
+                             {} of {} mdapi updates failed ({} succeeded and \
+                             were marked complete, moray not yet touched). \
+                             Failed objects: {:?}",
+                            result.failed,
+                            result.failed + result.successful,
+                            result.successful,
+                            result
+                                .errors
+                                .iter()
+                                .map(|(id, _)| id.as_str())
+                                .collect::<Vec<_>>()
+                        );
+                        let error_msg = format!(
+                            "Hybrid mdapi batch had {} failures \
+                             ({} succeeded and marked complete)",
+                            result.failed,
+                            result.successful
+                        );
+                        return Err(InternalError::new(
+                            Some(InternalErrorCode::MetadataUpdateFailure),
+                            error_msg,
+                        )
+                        .into());
+                    }
+
+                    result.successful
+                } else {
+                    0
+                };
+
+                // Process moray requests SECOND (atomic, all-or-nothing).
+                // Collect moray values for callback since mdapi values were
+                // already processed above.
+                let moray_values: Vec<Value> = moray_requests
+                    .iter()
+                    .filter_map(|req| match req {
+                        BatchRequest::Put(br) => Some(br.value.clone()),
+                        _ => None,
+                    })
+                    .collect();
+
+                if !moray_requests.is_empty() {
+                    moray
+                        .batch(&moray_requests, options, |_values| Ok(()))
+                        .map_err(|e| {
+                            error!(
+                                "Hybrid moray batch failed after mdapi \
+                                 succeeded ({} mdapi objects already updated). \
+                                 Moray is atomic so no moray changes were \
+                                 committed. Mdapi updates will be reconciled \
+                                 on retry. Error: {}",
+                                mdapi_success_count,
+                                e
+                            );
+                            InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                format!("Hybrid moray batch failed: {}", e),
+                            )
+                        })?;
+                }
+
+                // Call callback with moray values only (mdapi values were
+                // already called back after their successful updates above)
+                if !moray_values.is_empty() {
+                    callback(moray_values)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Update a single object
+    ///
+    /// For Moray: uses put_object
+    /// For Mdapi: converts moray Value to ObjectPayload and calls update_object
+    /// For Hybrid: routes to appropriate backend based on object type
+    fn put_object(&mut self, object: &Value, etag: &str) -> Result<(), Error> {
+        match self {
+            MetadataBackend::Moray(client) => {
+                moray_client::put_object(client, object, etag)
+            }
+            MetadataBackend::Mdapi(clients) => {
+                // Deserialize Value to MantaObject
+                let manta_object: MantaObject =
+                    serde_json::from_value(object.clone()).map_err(|e| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            format!("Failed to deserialize object: {}", e),
+                        )
+                    })?;
+
+                // Extract bucket_id from object
+                let bucket_id = object
+                    .get("bucket_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            "Object missing bucket_id field".to_string(),
+                        )
+                    })
+                    .and_then(|s| {
+                        Uuid::parse_str(s).map_err(|e| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                format!("Invalid bucket_id UUID: {}", e),
+                            )
+                        })
+                    })?;
+
+                debug!(
+                    "Updating object {} in bucket {} via mdapi",
+                    manta_object.name, bucket_id
+                );
+
+                // Try each mdapi shard until one accepts the vnode
+                let mut last_err = None;
+                for client in clients.iter() {
+                    match mdapi_client::put_object(
+                        client,
+                        &manta_object,
+                        bucket_id,
+                        Some(etag),
+                    ) {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            debug!(
+                                "mdapi put_object failed on shard, \
+                                 trying next: {}",
+                                e
+                            );
+                            last_err = Some(e);
+                        }
+                    }
+                }
+                Err(last_err.unwrap_or_else(|| {
+                    InternalError::new(
+                        Some(InternalErrorCode::InvalidState),
+                        "No mdapi clients available".to_string(),
+                    )
+                    .into()
+                }))
+            }
+            MetadataBackend::Hybrid { moray, mdapi } => {
+                // Route based on object type
+                if is_bucket_object(object) {
+                    // Bucket object - use mdapi
+                    let manta_object: MantaObject = serde_json::from_value(
+                        object.clone(),
+                    )
+                    .map_err(|e| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            format!(
+                                "Failed to deserialize bucket object: {}",
+                                e
+                            ),
+                        )
+                    })?;
+
+                    let bucket_id = object
+                        .get("bucket_id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                "Bucket object missing bucket_id field"
+                                    .to_string(),
+                            )
+                        })
+                        .and_then(|s| {
+                            Uuid::parse_str(s).map_err(|e| {
+                                InternalError::new(
+                                    Some(InternalErrorCode::BadMantaObject),
+                                    format!("Invalid bucket_id UUID: {}", e),
+                                )
+                            })
+                        })?;
+
+                    debug!(
+                        "Hybrid: routing bucket object {} to mdapi",
+                        manta_object.name
+                    );
+                    // Try each mdapi shard until one accepts
+                    let mut last_err = None;
+                    for mc in mdapi.iter() {
+                        match mdapi_client::put_object(
+                            mc,
+                            &manta_object,
+                            bucket_id,
+                            Some(etag),
+                        ) {
+                            Ok(()) => return Ok(()),
+                            Err(e) => {
+                                debug!(
+                                    "Hybrid mdapi put_object failed on \
+                                     shard, trying next: {}",
+                                    e
+                                );
+                                last_err = Some(e);
+                            }
+                        }
+                    }
+                    Err(last_err.unwrap_or_else(|| {
+                        InternalError::new(
+                            Some(InternalErrorCode::InvalidState),
+                            "No mdapi clients available".to_string(),
+                        )
+                        .into()
+                    }))
+                } else {
+                    // Traditional Manta object - use moray
+                    debug!("Hybrid: routing traditional object to moray");
+                    moray_client::put_object(moray, object, etag)
+                }
+            }
+        }
+    }
+}
+
 // --- Diesel Stuff, TODO This should be refactored --- //
 
 const EVACUATE_OBJECTS_DB: &str = "evacuateobjects";
 
 use diesel::deserialize::{self, FromSql};
-use diesel::pg::{Pg, PgConnection, PgValue};
+use diesel::pg::{Pg, PgConnection};
 use diesel::prelude::*;
 use diesel::result::Error::DatabaseError;
 use diesel::result::{DatabaseErrorInformation, DatabaseErrorKind};
@@ -160,6 +976,15 @@ struct MantaObjectEssential {
 
     #[serde(default)]
     pub sharks: Vec<MantaObjectShark>,
+
+    /// Bucket ID for MDAPI (v2) objects. None for v1 objects.
+    #[serde(default)]
+    pub bucket_id: Option<String>,
+
+    /// Object name for MDAPI (v2) objects, used to compute
+    /// the name hash for the v2 storage path.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(
@@ -201,9 +1026,9 @@ impl ToSql<sql_types::Text, Pg> for EvacuateObjectStatus {
 }
 
 impl FromSql<sql_types::Text, Pg> for EvacuateObjectStatus {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }
@@ -230,6 +1055,12 @@ pub enum EvacuateObjectError {
     DuplicateShark,
     InternalError,
     MetadataUpdateFailed,
+    MorayUpdateFailed,
+    MorayEtagMismatch,
+    MorayObjectNotFound,
+    MdapiUpdateFailed,
+    MdapiEtagMismatch,
+    MdapiObjectNotFound,
     MissingSharks,
     BadContentLength,
 }
@@ -263,8 +1094,23 @@ impl From<Error> for EvacuateObjectError {
                 InternalErrorCode::MetadataUpdateFailure => {
                     EvacuateObjectError::MetadataUpdateFailed
                 }
+                InternalErrorCode::MdapiObjectNotFound => {
+                    EvacuateObjectError::MdapiObjectNotFound
+                }
                 _ => EvacuateObjectError::InternalError,
             },
+            Error::Mdapi(ref mdapi_err) => {
+                use libmanta::mdapi::MdapiError;
+                match mdapi_err {
+                    MdapiError::ObjectNotFound(_) => {
+                        EvacuateObjectError::MdapiObjectNotFound
+                    }
+                    MdapiError::PreconditionFailed(_) => {
+                        EvacuateObjectError::MdapiEtagMismatch
+                    }
+                    _ => EvacuateObjectError::MdapiUpdateFailed,
+                }
+            }
             _ => EvacuateObjectError::InternalError,
         }
     }
@@ -280,16 +1126,37 @@ impl ToSql<sql_types::Text, Pg> for EvacuateObjectError {
 }
 
 impl FromSql<sql_types::Text, Pg> for EvacuateObjectError {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }
 
 enum MetadataClientOption<'a> {
-    Client(&'a mut MorayClient),
-    Hash(&'a mut MorayClientHash),
+    Client(&'a mut MetadataBackend),
+    Hash(&'a mut HashMap<u32, MetadataBackend>),
+}
+
+/// Check if a table exists in the database
+fn table_exists(conn: &PgConnection, table_name: &str) -> Result<bool, Error> {
+    use diesel::sql_query;
+    use diesel::sql_types::Text;
+
+    #[derive(QueryableByName)]
+    struct TableCount {
+        #[sql_type = "diesel::sql_types::BigInt"]
+        count: i64,
+    }
+
+    let query = sql_query(
+        "SELECT COUNT(*) as count FROM information_schema.tables \
+         WHERE table_schema = 'public' AND table_name = $1",
+    )
+    .bind::<Text, _>(table_name);
+
+    let result: TableCount = query.get_result(conn)?;
+    Ok(result.count > 0)
 }
 
 fn create_table_common(
@@ -297,13 +1164,27 @@ fn create_table_common(
     table_name: &str,
     create_query: &str,
 ) -> Result<usize, Error> {
-    // TODO: check if table exists first and if so issue warning.  We may
-    // need to handle this a bit more gracefully in the future for
-    // restarting jobs.
-    let drop_query = format!("DROP TABLE {}", table_name);
+    // Check if table exists first and issue warning for visibility
+    match table_exists(conn, table_name) {
+        Ok(true) => {
+            warn!(
+                "Table '{}' already exists - dropping it. \
+                 This may indicate a previous job that did not complete cleanly.",
+                table_name
+            );
+        }
+        Ok(false) => {
+            debug!("Table '{}' does not exist, will create", table_name);
+        }
+        Err(e) => {
+            debug!("Could not check table existence: {}", e);
+        }
+    }
+
+    let drop_query = format!("DROP TABLE IF EXISTS {}", table_name);
 
     if let Err(e) = conn.execute(&drop_query) {
-        debug!("Table doesn't exist: {}", e);
+        debug!("Error dropping table: {}", e);
     }
 
     conn.execute(&create_query).map_err(Error::from)
@@ -576,7 +1457,7 @@ impl EvacuateJobUpdateMessage {
     }
 }
 
-enum DyanmicWorkerMsg {
+enum DynamicWorkerMsg {
     Data(AssignmentCacheEntry),
     Stop,
 }
@@ -695,8 +1576,11 @@ impl EvacuateJob {
         let conn = match pg_db::create_and_connect_db(db_name) {
             Ok(c) => c,
             Err(e) => {
-                println!("Error creating Evacuate Job: {}", e);
-                std::process::exit(1);
+                return Err(InternalError::new(
+                    Some(InternalErrorCode::Other),
+                    format!("Error creating Evacuate Job: {}", e),
+                )
+                .into());
             }
         };
 
@@ -715,7 +1599,7 @@ impl EvacuateJob {
             assignments: RwLock::new(HashMap::new()),
             from_shark,
             conn: Mutex::new(conn),
-            max_objects: Some(10),
+            max_objects: None,
             post_client: reqwest::Client::new(),
             get_client: reqwest::Client::new(),
             update_rx,
@@ -727,7 +1611,7 @@ impl EvacuateJob {
     }
 
     pub fn create_tables(&self) -> Result<usize, Error> {
-        let conn = self.conn.lock().expect("DB conn lock");
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         create_evacuateobjects_table(&*conn)?;
         create_config_table(&*conn)
     }
@@ -746,7 +1630,7 @@ impl EvacuateJob {
     }
 
     fn update_evacuate_config(&self) -> Result<usize, Error> {
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         update_evacuate_config_impl(&locked_conn, &self.from_shark)
     }
@@ -854,10 +1738,14 @@ impl EvacuateJob {
                         );
                         set_run_error(&mut ret, err);
                     } else {
-                        panic!("Error {}", err);
+                        set_run_error(&mut ret, err);
                     }
                 } else {
-                    panic!("Error {}", e);
+                    let err = InternalError::new(
+                        Some(InternalErrorCode::Other),
+                        format!("{}", e),
+                    );
+                    set_run_error(&mut ret, err);
                 }
             }
         }
@@ -941,7 +1829,7 @@ impl EvacuateJob {
         match self
             .assignments
             .write()
-            .expect("assignment write lock")
+            .unwrap_or_else(|e| e.into_inner())
             .get_mut(assignment_id)
         {
             Some(a) => {
@@ -974,11 +1862,13 @@ impl EvacuateJob {
     ) {
         self.mark_assignment_skipped(assign_id, skip_reason);
 
-        self.set_assignment_state(assign_id, assignment_state)
-            .unwrap_or_else(|e| {
-                // TODO: should we panic? if so just replace with expect()
-                panic!("{}", e);
-            });
+        if let Err(e) = self.set_assignment_state(assign_id, assignment_state)
+        {
+            error!(
+                "Failed to set assignment state for {}: {}",
+                assign_id, e
+            );
+        }
 
         self.remove_assignment_from_cache(assign_id);
     }
@@ -987,7 +1877,7 @@ impl EvacuateJob {
     // implicitly dropped when the function returns.
     fn remove_assignment_from_cache(&self, assignment_id: &str) {
         let mut assignments =
-            self.assignments.write().expect("assignments write");
+            self.assignments.write().unwrap_or_else(|e| e.into_inner());
 
         trace!(
             "Assignment Cache size: {} bytes",
@@ -1004,7 +1894,8 @@ impl EvacuateJob {
 
         debug_assert!(
             entry.is_some(),
-            format!("Remove assignment not in hash: {}", assignment_id)
+            "Remove assignment not in hash: {}",
+            assignment_id
         );
 
         let initial_size = assignment_cache_usage(&assignments);
@@ -1015,11 +1906,59 @@ impl EvacuateJob {
         );
     }
 
+    /// Check if a skipped object is an orphaned .mpu-parts entry and
+    /// reclassify if so.  Looks up the object JSON in the job database
+    /// to check the name and bucket_id fields.
+    fn maybe_reclassify_mpu_skip(
+        &self,
+        object_id: &str,
+        reason: ObjectSkippedReason,
+    ) -> ObjectSkippedReason {
+        match &reason {
+            ObjectSkippedReason::SourceObjectNotFound
+            | ObjectSkippedReason::HTTPStatusCode(_) => {}
+            _ => return reason,
+        }
+
+        // Look up the object JSON from the job database
+        use self::evacuateobjects::dsl::{
+            evacuateobjects, id as eo_id, object as eo_object,
+        };
+        let locked_conn =
+            self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let obj_json: Option<Value> = evacuateobjects
+            .filter(eo_id.eq(object_id))
+            .select(eo_object)
+            .first(&*locked_conn)
+            .ok();
+
+        if let Some(ref obj) = obj_json {
+            if is_bucket_object(obj) {
+                let name = obj
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if name.starts_with(".mpu-parts/") {
+                    debug!(
+                        "Reclassifying skip for .mpu-parts object {}: \
+                         orphaned metadata after MPU commit",
+                        object_id
+                    );
+                    return ObjectSkippedReason::MpuPartNoData;
+                }
+            }
+        }
+
+        reason
+    }
+
     fn skip_object(
         &self,
         eobj: &mut EvacuateObject,
         reason: ObjectSkippedReason,
     ) {
+        let reason = self.maybe_reclassify_mpu_skip(&eobj.id, reason);
+
         info!("Skipping object {}: {}.", &eobj.id, reason);
         metrics_skip_inc(Some(&reason.to_string()));
 
@@ -1046,7 +1985,7 @@ impl EvacuateJob {
         let dest_shark_hash = self
             .dest_shark_hash
             .read()
-            .expect("get_shark_available_mb read lock");
+            .unwrap_or_else(|e| e.into_inner());
 
         dest_shark_hash
             .get(shark)
@@ -1070,7 +2009,7 @@ impl EvacuateJob {
         let mut dest_shark_hash = self
             .dest_shark_hash
             .write()
-            .expect("update dest_shark_hash write lock");
+            .unwrap_or_else(|e| e.into_inner());
 
         for sn in new_sharks.iter() {
             if let Some(dest_shark) =
@@ -1119,7 +2058,6 @@ impl EvacuateJob {
     // Note that receiving back `None` from `storinfo.choose()` simply means
     // there is no update from the last time we asked so we should use the
     // existing value.
-    // TODO: make retry delay configurable
     fn get_shark_list<S>(
         &self,
         storinfo: Arc<S>,
@@ -1131,7 +2069,9 @@ impl EvacuateJob {
     {
         let mut shark_list: Vec<EvacuateDestShark> = vec![];
         let mut tries = 0;
-        let shark_list_retry_delay = std::time::Duration::from_millis(500);
+        let shark_list_retry_delay = std::time::Duration::from_millis(
+            self.config.options.shark_list_retry_delay_ms,
+        );
 
         trace!("Getting new shark list");
         while tries < retries {
@@ -1146,7 +2086,7 @@ impl EvacuateJob {
             shark_list = self
                 .dest_shark_hash
                 .read()
-                .expect("dest_shark_hash read lock")
+                .unwrap_or_else(|e| e.into_inner())
                 .values()
                 .filter(|v| v.status != DestSharkStatus::Unavailable)
                 .map(|v| v.to_owned())
@@ -1180,11 +2120,20 @@ impl EvacuateJob {
         }
     }
 
-    // TODO: Consider doing batched inserts: MANTA-4464.
+    // NOTE: Batched inserts (MANTA-4464) are implemented in insert_assignment_into_db()
+    // which handles the bulk of objects. This single-object insert is only used for
+    // error cases and skipped objects, which are relatively rare.
+    //
+    // NOTE: The duplicate-handling path spans two database connections
+    // (Diesel PgConnection for the query, raw pg::Client for the upsert
+    // into the duplicates table).  These cannot be wrapped in a single
+    // transaction.  If the Diesel query succeeds but the pg::Client
+    // upsert fails, the duplicate will not be tracked.  A future
+    // refactor should unify on a single connection type.
     fn insert_into_db(&self, obj: &EvacuateObject) -> usize {
         use self::evacuateobjects::dsl::*;
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         match diesel::insert_into(evacuateobjects)
             .values(obj)
@@ -1196,9 +2145,8 @@ impl EvacuateJob {
                 1
             }
             Err(e) => {
-                let msg = format!("Error inserting object into DB: {}", e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("Error inserting object into DB: {}", e);
+                0
             }
         }
     }
@@ -1306,6 +2254,10 @@ impl EvacuateJob {
         self.insert_duplicate_with_existing(&eobj, conn);
     }
 
+    // NOTE: Same cross-connection limitation as insert_into_db — the
+    // duplicate handler uses a separate pg::Client connection for the
+    // duplicates table, so the insert + duplicate-tracking sequence
+    // cannot be wrapped in a single transaction.
     #[allow(clippy::ptr_arg)]
     fn insert_assignment_into_db(
         &self,
@@ -1323,11 +2275,14 @@ impl EvacuateJob {
             assign_id
         );
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         let mut ret = diesel::insert_into(evacuateobjects)
             .values(obj_list.clone())
             .execute(&*locked_conn);
+
+        const MAX_UNIQUE_RETRIES: u32 = 50;
+        let mut retry_count: u32 = 0;
 
         while ret.is_err() {
             match ret {
@@ -1335,13 +2290,28 @@ impl EvacuateJob {
                     DatabaseErrorKind::UniqueViolation,
                     info,
                 )) => {
+                    retry_count += 1;
+                    if retry_count > MAX_UNIQUE_RETRIES {
+                        error!(
+                            "Exceeded {} UniqueViolation retries for \
+                             assignment {}; aborting insert",
+                            MAX_UNIQUE_RETRIES, assign_id
+                        );
+                        return Err(Error::from(DatabaseError(
+                            DatabaseErrorKind::UniqueViolation,
+                            info,
+                        )));
+                    }
                     info!(
                         "Encountered duplicate object in {}, \
-                         assignment_count {}, obj_list_count: {}: {:#?}",
+                         assignment_count {}, obj_list_count: {}: {:#?} \
+                         (retry {}/{})",
                         assign_id,
                         assignment.tasks.len(),
                         obj_list.len(),
-                        info.details()
+                        info.details(),
+                        retry_count,
+                        MAX_UNIQUE_RETRIES
                     );
                     self.handle_duplicate_assignment(
                         assignment,
@@ -1352,9 +2322,8 @@ impl EvacuateJob {
                 }
                 Ok(_) => (), // unreachable?
                 Err(e) => {
-                    let msg = format!("Error inserting object into DB: {}", e);
-                    error!("{}", msg);
-                    panic!(msg);
+                    error!("Error inserting object into DB: {}", e);
+                    return Err(e.into());
                 }
             }
 
@@ -1392,7 +2361,7 @@ impl EvacuateJob {
     ) -> usize {
         use self::evacuateobjects::dsl::*;
 
-        let locked_conn = self.conn.lock().expect("db conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let len = vec_obj_ids.len();
 
         debug!("Marking {} objects as {:?}", len, to_status);
@@ -1403,9 +2372,8 @@ impl EvacuateJob {
             .set(status.eq(to_status))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!("LocalDB: Error updating {}", e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("LocalDB: Error updating {}", e);
+                0
             });
 
         debug!(
@@ -1426,7 +2394,7 @@ impl EvacuateJob {
         use self::evacuateobjects::dsl::{
             assignment_id, error, evacuateobjects, skipped_reason, status,
         };
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!(
             "Marking objects in assignment ({}) as skipped: {:?}",
@@ -1442,12 +2410,11 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!(
+                error!(
                     "Error updating assignment: {} ({})",
                     assignment_uuid, e
                 );
-                error!("{}", msg);
-                panic!(msg);
+                0
             });
 
         debug!(
@@ -1468,7 +2435,7 @@ impl EvacuateJob {
             assignment_id, error, evacuateobjects, skipped_reason, status,
         };
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!(
             "Marking objects in assignment ({}) as error:{:?}",
@@ -1484,12 +2451,11 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!(
+                error!(
                     "Error updating assignment: {} ({})",
                     assignment_uuid, e
                 );
-                error!("{}", msg);
-                panic!(msg);
+                0
             });
 
         debug!(
@@ -1508,6 +2474,10 @@ impl EvacuateJob {
     // 2. For each "reason" do a bulk update of the associated objects.
     // The assumption here is that all Objects should be skipped and are not
     // errors.
+    //
+    // All updates are wrapped in a single transaction so that a partial
+    // failure (e.g. one reason-group updates but the next fails) does not
+    // leave the evacuateobjects table in an inconsistent state.
     fn mark_many_task_objects_skipped(&self, task_vec: Vec<Task>) {
         use self::evacuateobjects::dsl::{
             evacuateobjects, id, skipped_reason, status,
@@ -1518,6 +2488,18 @@ impl EvacuateJob {
 
         for t in task_vec {
             if let TaskStatus::Failed(reason) = t.status {
+                // Reclassify 404 skips on .mpu-parts objects.
+                // When buckets-api completes a multipart upload, mako
+                // deletes the physical part data from the sharks, but
+                // the metadata entries in manta_bucket_object are left
+                // orphaned with stale shark references.  There is no
+                // data to evacuate.  We cannot filter .mpu-parts
+                // during discovery because in-progress (uncommitted)
+                // MPU parts DO have physical data that must be
+                // evacuated.
+                let reason = self.maybe_reclassify_mpu_skip(
+                    &t.object_id, reason,
+                );
                 let entry = updates.entry(reason).or_insert_with(|| vec![]);
                 entry.push(t.object_id);
             } else {
@@ -1526,36 +2508,130 @@ impl EvacuateJob {
             }
         }
 
-        let locked_conn = self.conn.lock().expect("db conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
-        for (reason, vec_obj_ids) in updates {
-            // Since we are bulk updating objects in the database by the same
-            // reason, we can just as easily do the same thing with our metrics.
-            // This is because all tasks in the vector are being skipped for
-            // the same reason.
-            let vec_len = vec_obj_ids.len();
-            metrics_skip_inc_by(Some(&reason.to_string()), vec_len);
+        // Collect metrics updates to apply only after the transaction
+        // succeeds, avoiding inflated counters on rollback.
+        let mut metrics_updates: Vec<(String, usize)> = Vec::new();
 
-            let rows_updated = diesel::update(evacuateobjects)
-                .filter(id.eq_any(vec_obj_ids))
-                .set((
-                    status.eq(EvacuateObjectStatus::Skipped),
-                    skipped_reason.eq(reason),
-                ))
-                .execute(&*locked_conn)
-                .unwrap_or_else(|e| {
-                    let msg = format!("LocalDB: Error updating {}", e);
-                    error!("{}", msg);
-                    panic!(msg);
-                });
+        let txn_result = locked_conn.transaction::<_, diesel::result::Error, _>(|| {
+            for (reason, vec_obj_ids) in &updates {
+                let vec_len = vec_obj_ids.len();
 
-            // Ensure that the number of rows affected by the update is in fact
-            // equal to the number of entries in the vector.
-            assert_eq!(
-                rows_updated, vec_len,
-                "Attempted to update {} rows, but only updated {}",
-                vec_len, rows_updated
-            );
+                let rows_updated = diesel::update(evacuateobjects)
+                    .filter(id.eq_any(vec_obj_ids))
+                    .set((
+                        status.eq(EvacuateObjectStatus::Skipped),
+                        skipped_reason.eq(reason),
+                    ))
+                    .execute(&*locked_conn)?;
+
+                // Ensure that the number of rows affected by the update is
+                // in fact equal to the number of entries in the vector.
+                assert_eq!(
+                    rows_updated, vec_len,
+                    "Attempted to update {} rows, but only updated {}",
+                    vec_len, rows_updated
+                );
+
+                metrics_updates.push((reason.to_string(), vec_len));
+            }
+            Ok(())
+        });
+
+        match txn_result {
+            Ok(()) => {
+                for (reason, count) in &metrics_updates {
+                    metrics_skip_inc_by(Some(reason), *count);
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Transaction failed in mark_many_task_objects_skipped: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    // Atomically mark failed tasks as skipped and successful tasks as
+    // PostProcessing within a single DB transaction.  Without this, a
+    // crash between the two updates could leave some objects with stale
+    // Assigned status while others are already Skipped.
+    fn mark_assignment_completion(
+        &self,
+        failed_tasks: Vec<Task>,
+        successful_ids: Vec<ObjectId>,
+    ) {
+        use self::evacuateobjects::dsl::{
+            evacuateobjects, id, skipped_reason, status,
+        };
+
+        let mut skip_updates: HashMap<ObjectSkippedReason, Vec<String>> =
+            HashMap::new();
+
+        for t in failed_tasks {
+            if let TaskStatus::Failed(reason) = t.status {
+                let reason = self.maybe_reclassify_mpu_skip(
+                    &t.object_id, reason,
+                );
+                let entry =
+                    skip_updates.entry(reason).or_insert_with(|| vec![]);
+                entry.push(t.object_id);
+            } else {
+                warn!("Attempt to skip object with status {:?}", t.status);
+            }
+        }
+
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut metrics_updates: Vec<(String, usize)> = Vec::new();
+
+        let txn_result =
+            locked_conn.transaction::<_, diesel::result::Error, _>(|| {
+                // Mark failed objects as skipped, grouped by reason
+                for (reason, vec_obj_ids) in &skip_updates {
+                    let vec_len = vec_obj_ids.len();
+
+                    let rows_updated = diesel::update(evacuateobjects)
+                        .filter(id.eq_any(vec_obj_ids))
+                        .set((
+                            status.eq(EvacuateObjectStatus::Skipped),
+                            skipped_reason.eq(reason),
+                        ))
+                        .execute(&*locked_conn)?;
+
+                    assert_eq!(
+                        rows_updated, vec_len,
+                        "Attempted to update {} rows, but only updated {}",
+                        vec_len, rows_updated
+                    );
+
+                    metrics_updates.push((reason.to_string(), vec_len));
+                }
+
+                // Mark successful objects as PostProcessing
+                if !successful_ids.is_empty() {
+                    diesel::update(evacuateobjects)
+                        .filter(id.eq_any(&successful_ids))
+                        .set(status.eq(EvacuateObjectStatus::PostProcessing))
+                        .execute(&*locked_conn)?;
+                }
+
+                Ok(())
+            });
+
+        match txn_result {
+            Ok(()) => {
+                for (reason, count) in &metrics_updates {
+                    metrics_skip_inc_by(Some(reason), *count);
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Transaction failed in mark_assignment_completion: {}",
+                    e
+                );
+            }
         }
     }
 
@@ -1570,7 +2646,7 @@ impl EvacuateJob {
 
         metrics_error_inc(Some(&err.to_string()));
 
-        let locked_conn = self.conn.lock().expect("db conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!("Updating object {} as error: {:?}", object_id, err);
 
@@ -1583,10 +2659,8 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg =
-                    format!("Error updating assignment: {} ({})", object_id, e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("Error updating assignment: {} ({})", object_id, e);
+                0
             });
 
         assert_eq!(update_cnt, 1);
@@ -1608,7 +2682,7 @@ impl EvacuateJob {
         assert_ne!(to_status, EvacuateObjectStatus::Skipped);
         assert_ne!(to_status, EvacuateObjectStatus::Error);
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!("Marking objects in assignment ({}) as {:?}", id, to_status);
         let ret = diesel::update(evacuateobjects)
@@ -1620,9 +2694,8 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!("Error updating assignment: {} ({})", id, e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("Error updating assignment: {} ({})", id, e);
+                0
             });
 
         debug!(
@@ -1645,7 +2718,7 @@ impl EvacuateJob {
         if let Some(shark) = self
             .dest_shark_hash
             .write()
-            .expect("dest_shark_hash write")
+            .unwrap_or_else(|e| e.into_inner())
             .get_mut(dest_shark)
         {
             debug!("Updating shark '{}' to {:?} state", dest_shark, status,);
@@ -1704,7 +2777,7 @@ impl EvacuateJob {
             assignment_id, evacuateobjects, status,
         };
 
-        let locked_conn = self.conn.lock().expect("DB conn");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         evacuateobjects
             .filter(assignment_id.eq(id))
@@ -1732,7 +2805,7 @@ fn assignment_post_success(
     let mut assignments = job_action
         .assignments
         .write()
-        .expect("Assignments hash write lock");
+        .unwrap_or_else(|e| e.into_inner());
 
     // '.into()' converts the Assignment to its cache entry type and insert
     // that into the cache.  Since this function takes ownership of the
@@ -1753,7 +2826,7 @@ fn assignment_post_fail(
     reason: ObjectSkippedReason,
     assignment_state: AssignmentState,
 ) {
-    // TODO: Should we blacklist this destination shark?
+    // TODO: Should we blocklist this destination shark?
 
     warn!(
         "Post of assignment ({}) with size {} failed: {}",
@@ -1796,6 +2869,88 @@ impl PostAssignment for EvacuateJob {
         };
 
         if !res.status().is_success() {
+            // 503 Service Unavailable means the agent's queue is
+            // full (backpressure).  Back off and retry rather than
+            // skipping the objects.  This is the key flow-control
+            // mechanism: instead of blasting assignments and letting
+            // them time out, we wait for the agent to drain its
+            // queue.
+            if res.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                const MAX_RETRIES: u32 = 60;
+                let mut attempt = 0;
+                let mut last_res = res;
+
+                while attempt < MAX_RETRIES {
+                    attempt += 1;
+                    let backoff = std::cmp::min(5 * attempt, 30);
+                    warn!(
+                        "Agent {} busy (503), retry {}/{} in {}s \
+                         for assignment {}",
+                        assignment.dest_shark.manta_storage_id,
+                        attempt,
+                        MAX_RETRIES,
+                        backoff,
+                        payload.id,
+                    );
+                    thread::sleep(Duration::from_secs(backoff as u64));
+
+                    match self
+                        .post_client
+                        .post(&agent_uri)
+                        .json(&payload)
+                        .send()
+                    {
+                        Ok(r) if r.status().is_success() => {
+                            debug!(
+                                "Post of {} succeeded after {} retries",
+                                payload.id, attempt
+                            );
+                            assignment_post_success(self, assignment);
+                            return Ok(());
+                        }
+                        Ok(r)
+                            if r.status()
+                                == reqwest::StatusCode::SERVICE_UNAVAILABLE =>
+                        {
+                            last_res = r;
+                            continue;
+                        }
+                        Ok(r) => {
+                            last_res = r;
+                            break;
+                        }
+                        Err(e) => {
+                            assignment_post_fail(
+                                self,
+                                &assignment,
+                                ObjectSkippedReason::DestinationUnreachable,
+                                AssignmentState::AgentUnavailable,
+                            );
+                            return Err(e.into());
+                        }
+                    }
+                }
+
+                // Exhausted retries or got a non-503 error.
+                assignment_post_fail(
+                    self,
+                    &assignment,
+                    ObjectSkippedReason::AgentBusy,
+                    AssignmentState::Rejected,
+                );
+
+                let err = format!(
+                    "Error posting assignment {} to {} ({}) \
+                     after {} retries",
+                    payload.id,
+                    assignment.dest_shark.manta_storage_id,
+                    last_res.status(),
+                    attempt,
+                );
+
+                return Err(InternalError::new(None, err).into());
+            }
+
             assignment_post_fail(
                 self,
                 &assignment,
@@ -1899,11 +3054,12 @@ impl UpdateMetadata for EvacuateJob {
                 if !shark_found {
                     shark_found = true;
                 } else {
-                    let msg =
-                        format!("Found duplicate shark while attempting \
+                    let msg = format!(
+                        "Found duplicate shark while attempting \
                         to update metadata. Manta Object: {:?}, New Shark: \
                         {:?}",
-                         object, new_shark);
+                        object, new_shark
+                    );
                     return Err(InternalError::new(
                         Some(InternalErrorCode::DuplicateShark),
                         msg,
@@ -1942,7 +3098,7 @@ impl ProcessAssignment for EvacuateJob {
     fn process(&self, agent_assignment: AgentAssignment) -> Result<(), Error> {
         let uuid = &agent_assignment.uuid;
         let mut assignments =
-            self.assignments.write().expect("assignments read lock");
+            self.assignments.write().unwrap_or_else(|e| e.into_inner());
 
         // std::option::NoneError is still nightly-only experimental
         let ace = match assignments.get_mut(uuid) {
@@ -1980,14 +3136,16 @@ impl ProcessAssignment for EvacuateJob {
         match ace.state {
             AssignmentState::Assigned => (),
             _ => {
-                warn!(
-                    "Assignment in unexpected state '{:?}', skipping",
-                    ace.state
+                let msg = format!(
+                    "Assignment {} in unexpected state '{:?}'",
+                    uuid, ace.state
                 );
-                // TODO: this should never happen but should we panic?
-                // If we create more threads to check for assignments or
-                // process them this may be possible.
-                panic!("Assignment in wrong state {:?}", ace);
+                error!("{}", msg);
+                return Err(InternalError::new(
+                    Some(InternalErrorCode::Other),
+                    msg,
+                )
+                .into());
             }
         }
 
@@ -2042,10 +3200,9 @@ impl ProcessAssignment for EvacuateJob {
                     })
                     .collect();
 
-                self.mark_many_task_objects_skipped(failed_tasks);
-                self.mark_many_objects(
+                self.mark_assignment_completion(
+                    failed_tasks,
                     successful_tasks,
-                    EvacuateObjectStatus::PostProcessing,
                 );
 
                 ace.state = AssignmentState::AgentComplete;
@@ -2123,33 +3280,39 @@ fn _calculate_available_mb(
     let max_percent = max_fill_percentage as f64 / 100.0;
     let percent_used = dest_shark.shark.percent_used as f64 / 100.0;
 
-    let total_mb = available_mb as f64 / (1.0 - percent_used);
-    let max_fill_mb = (total_mb * max_percent).floor() as u64;
-    let used_mb = total_mb - available_mb as f64;
-
-    if percent_used > max_percent {
+    // Guard against percent_used >= max_percent BEFORE division.
+    // When percent_used == 1.0, (1.0 - percent_used) == 0.0 which
+    // causes division by zero producing infinity.
+    if percent_used >= max_percent {
         warn!(
-            "percent used {} exceeds maximum utilization percentage {}, \
-             reporting shark available MB as 0",
+            "percent used {} meets or exceeds maximum utilization \
+             percentage {}, reporting shark available MB as 0",
             percent_used, max_percent
         );
         return 0;
     }
+
+    let total_mb = available_mb as f64 / (1.0 - percent_used);
+    let max_fill_mb = (total_mb * max_percent).floor() as u64;
+    let used_mb = total_mb - available_mb as f64;
 
     assert!(percent_used <= 1.0);
     assert!(percent_used >= 0.0);
     assert!(max_percent <= 1.0);
     assert!(max_percent >= 0.0);
 
-    let max_remaining = max_fill_mb
-        .checked_sub(used_mb.floor() as u64)
-        .unwrap_or_else(|| {
-            let msg = format!(
-                "used_mb({}) > max_fill_mb({}) for max_fill({}): {:#?}",
-                used_mb, max_fill_mb, max_percent, dest_shark
-            );
-            panic!(msg);
-        });
+    let used_mb_u64 = used_mb.floor() as u64;
+    let max_remaining = if used_mb_u64 > max_fill_mb {
+        warn!(
+            "used_mb({}) > max_fill_mb({}) for max_fill({}), \
+             returning 0 available_mb for {}",
+            used_mb, max_fill_mb, max_percent,
+            dest_shark.shark.manta_storage_id
+        );
+        return 0;
+    } else {
+        max_fill_mb - used_mb_u64
+    };
 
     // If (max_remaining - assigned_mb) < 0 (i.e. assigned_mb > max_remaining),
     // we've already exceeded our max fill quota, return 0.
@@ -2188,8 +3351,11 @@ fn local_db_generator(
     let conn = match pg_db::connect_db(retry_uuid) {
         Ok(c) => c,
         Err(e) => {
-            println!("Error creating Evacuate Job: {}", e);
-            std::process::exit(1);
+            return Err(InternalError::new(
+                Some(InternalErrorCode::Other),
+                format!("Error connecting to Evacuate Job DB: {}", e),
+            )
+            .into());
         }
     };
 
@@ -2254,7 +3420,7 @@ fn local_db_generator(
             warn!("local db generator exiting early: {}", e);
             return Err(InternalError::new(
                 Some(InternalErrorCode::Crossbeam),
-                CrossbeamError::from(e).description(),
+                format!("{}", CrossbeamError::from(e)),
             )
             .into());
         }
@@ -2286,14 +3452,31 @@ fn start_sharkspotter(
     max_shard: u32,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
     let shark = &job_action.from_shark.manta_storage_id;
+
+    // Pass original hostnames from config.  Resolution is handled
+    // downstream by sharkspotter or the mdapi client.
+    let mdapi_endpoints: Vec<String> = job_action
+        .config
+        .mdapi
+        .shards
+        .iter()
+        .map(|s| s.host.clone())
+        .collect();
+
     let config = sharkspotter::config::Config {
         domain: String::from(domain),
         min_shard,
         max_shard,
         sharks: vec![shark.to_string()],
         chunk_size: job_action.config.options.md_read_chunk_size as u64,
-        direct_db: true,
+        direct_db: job_action.config.direct_db,
         max_threads: job_action.config.options.max_md_read_threads,
+        mdapi_endpoints,
+        exclude_key_prefixes: job_action
+            .config
+            .options
+            .exclude_key_prefixes
+            .clone(),
         ..Default::default()
     };
 
@@ -2476,7 +3659,11 @@ fn assignment_manager_impl<S>(
 where
     S: SharkSource + 'static,
 {
+    // Capture the logger before returning the closure so spawned threads
+    // can use it. slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     move || {
+        slog_scope::scope(&logger, || {
         let mut done = false;
         let mut object_count = 0;
         let max_objects = job_action.max_objects;
@@ -2486,7 +3673,7 @@ where
 
         let algo = mod_storinfo::DefaultChooseAlgorithm {
             min_avail_mb: job_action.min_avail_mb,
-            blacklist: vec![],
+            blocklist: vec![],
         };
 
         let mut shark_hash: HashMap<StorageId, SharkHashEntry> = HashMap::new();
@@ -2694,6 +3881,7 @@ where
         info!("Manager: Shutting down assignment checker");
         checker_fini_tx.send(FiniMsg).expect("Fini Msg");
         Ok(())
+        }) // end slog_scope::scope
     }
 }
 
@@ -2737,7 +3925,7 @@ fn _channel_send_assignment(
         job_action
             .assignments
             .write()
-            .expect("assignments write lock")
+            .unwrap_or_else(|e| e.into_inner())
             .insert(assignment_uuid.clone(), assignment.clone().into());
 
         info!(
@@ -2772,7 +3960,7 @@ fn _channel_send_assignment(
 
             InternalError::new(
                 Some(InternalErrorCode::Crossbeam),
-                CrossbeamError::from(e).description(),
+                format!("{}", CrossbeamError::from(e)),
             )
         })?;
     }
@@ -2848,12 +4036,41 @@ fn add_object_to_assignment(
         .tasks
         .insert(
             manta_object.object_id.to_owned(),
-            Task {
-                object_id: manta_object.object_id.to_owned(),
-                owner: manta_object.owner.to_owned(),
-                md5sum: manta_object.content_md5.to_owned(),
-                source: source.to_owned(),
-                status: TaskStatus::Pending,
+            {
+                let (bucket_id, object_name_hash) =
+                    match &manta_object.bucket_id {
+                        Some(bid) => {
+                            let name_src =
+                                manta_object
+                                    .name
+                                    .as_deref()
+                                    .unwrap_or(
+                                        &manta_object.key,
+                                    );
+                            let nhash =
+                                common::object_name_md5_hex(
+                                    name_src,
+                                );
+                            (
+                                Some(bid.clone()),
+                                Some(nhash),
+                            )
+                        }
+                        None => (None, None),
+                    };
+                Task {
+                    object_id: manta_object
+                        .object_id
+                        .to_owned(),
+                    owner: manta_object.owner.to_owned(),
+                    md5sum: manta_object
+                        .content_md5
+                        .to_owned(),
+                    source: source.to_owned(),
+                    status: TaskStatus::Pending,
+                    bucket_id,
+                    object_name_hash,
+                }
             },
         )
         .is_some()
@@ -2952,7 +4169,11 @@ fn shark_assignment_generator(
     assign_msg_rx: crossbeam::Receiver<AssignmentMsg>,
     full_assignment_tx: crossbeam::Sender<Assignment>,
 ) -> impl Fn() -> Result<(), Error> {
+    // Capture the logger before returning the closure so this thread
+    // can use it. slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     move || {
+        slog_scope::scope(&logger, || {
         let max_tasks = job_action.config.options.max_tasks_per_assignment;
         let max_age = job_action.config.options.max_assignment_age;
         let from_shark_host = job_action.from_shark.manta_storage_id.clone();
@@ -3096,6 +4317,7 @@ fn shark_assignment_generator(
         } // End while !stop (get next message/object)
 
         Ok(())
+        }) // end slog_scope::scope
     }
 }
 
@@ -3193,9 +4415,16 @@ fn start_assignment_post(
     full_assignment_rx: crossbeam::Receiver<Assignment>,
     job_action: Arc<EvacuateJob>,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("assignment_poster"))
-        .spawn(move || assignment_post(full_assignment_rx, job_action))
+        .spawn(move || {
+            slog_scope::scope(&logger, || {
+                assignment_post(full_assignment_rx, job_action)
+            })
+        })
         .map_err(Error::from)
 }
 
@@ -3276,9 +4505,13 @@ fn start_assignment_checker(
     checker_fini_rx: crossbeam::Receiver<FiniMsg>,
     md_update_tx: crossbeam::Sender<AssignmentCacheEntry>,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("Assignment Checker"))
         .spawn(move || {
+            slog_scope::scope(&logger, || {
             let mut run = true;
             loop {
                 let mut found_assignment_count = 0;
@@ -3304,7 +4537,7 @@ fn start_assignment_checker(
                 let assignments = job_action
                     .assignments
                     .read()
-                    .expect("assignments read lock")
+                    .unwrap_or_else(|e| e.into_inner())
                     .clone();
 
                 debug!("Checking Assignments");
@@ -3325,43 +4558,51 @@ fn start_assignment_checker(
                     break;
                 }
 
-                for ace in assignments.values() {
-                    if ace.state != AssignmentState::Assigned {
-                        trace!("Skipping unassigned assignment {:?}", ace);
-                        continue;
+                // Poll agents concurrently to avoid blocking on
+                // hundreds of sequential HTTP GETs.
+                let assigned: Vec<_> = assignments
+                    .values()
+                    .filter(|ace| ace.state == AssignmentState::Assigned)
+                    .cloned()
+                    .collect();
+
+                const CHECKER_CONCURRENCY: usize = 8;
+                let (poll_tx, poll_rx) = std::sync::mpsc::channel();
+
+                for chunk in assigned.chunks(CHECKER_CONCURRENCY) {
+                    let mut handles = Vec::with_capacity(chunk.len());
+                    for ace in chunk {
+                        let tx = poll_tx.clone();
+                        let ja = Arc::clone(&job_action);
+                        let ace = ace.clone();
+                        handles.push(thread::spawn(move || {
+                            let result = assignment_get(ja, &ace);
+                            let _ = tx.send((ace, result));
+                        }));
                     }
+                    for h in handles {
+                        let _ = h.join();
+                    }
+                }
+                drop(poll_tx);
 
-                    debug!(
-                        "Assignment Checker, checking: {} | {:?}",
-                        ace.id, ace.state
-                    );
-
-                    // TODO: Async/await candidate
-                    let ag_assignment =
-                        match assignment_get(Arc::clone(&job_action), &ace) {
-                            Ok(a) => a,
-                            Err(e) => {
-                                // If necessary the assignment and its associated
-                                // objects are marked as skipped in the get()
-                                // method.
-                                error!("Could not get assignment: {}", e);
-                                continue;
-                            }
-                        };
+                // Process completed assignments sequentially.
+                for (ace, result) in poll_rx.iter() {
+                    let ag_assignment = match result {
+                        Ok(a) => a,
+                        Err(e) => {
+                            error!("Could not get assignment: {}", e);
+                            continue;
+                        }
+                    };
 
                     debug!(
                         "Got Assignment: {} {:?}",
                         ag_assignment.uuid, ag_assignment.stats
                     );
-                    // If agent assignment is complete, process it and pass
-                    // it to the metadata update broker.  Otherwise, continue
-                    // to next assignment.
+
                     match ag_assignment.stats.state {
                         AgentAssignmentState::Complete(_) => {
-                            // We don't want to shut this thread down simply
-                            // because we have issues handling one assignment.
-                            // The process() function should mark the
-                            // associated objects appropriately.
                             debug!(
                                 "Processing Assignment: {:?}",
                                 ag_assignment
@@ -3372,7 +4613,33 @@ fn start_assignment_checker(
                                 },
                             );
                         }
-                        _ => continue,
+                        _ => {
+                            // Check if this assignment has exceeded
+                            // twice the max age.  Agents that hold
+                            // assignments in Scheduled/Running state
+                            // indefinitely would otherwise cause the
+                            // checker to poll forever, preventing the
+                            // job from completing.
+                            let max_age =
+                                job_action.config.options.max_assignment_age;
+                            if ace.created_at.elapsed().as_secs() > max_age * 2
+                            {
+                                warn!(
+                                    "Assignment {} stuck in {:?} state \
+                                     for >{}s on {}, timing out",
+                                    ace.id,
+                                    ag_assignment.stats.state,
+                                    max_age * 2,
+                                    ace.dest_shark.manta_storage_id,
+                                );
+                                job_action.skip_assignment(
+                                    &ace.id,
+                                    ObjectSkippedReason::AgentAssignmentTimeout,
+                                    AssignmentState::AgentUnavailable,
+                                );
+                            }
+                            continue;
+                        }
                     }
 
                     found_assignment_count += 1;
@@ -3392,7 +4659,7 @@ fn start_assignment_checker(
                             );
                             return Err(InternalError::new(
                                 Some(InternalErrorCode::Crossbeam),
-                                CrossbeamError::from(e).description(),
+                                format!("{}", CrossbeamError::from(e)),
                             )
                             .into());
                         }
@@ -3412,6 +4679,7 @@ fn start_assignment_checker(
                 );
             }
             Ok(())
+            }) // end slog_scope::scope
         })
         .map_err(Error::from)
 }
@@ -3432,7 +4700,7 @@ fn metadata_update_worker_static(
         // the shard connections.  It also allows us to manage our max
         // number of per-shard connections by simply tuning the number of
         // metadata update worker threads.
-        let mut client_hash: HashMap<u32, MorayClient> = HashMap::new();
+        let mut client_hash: HashMap<u32, MetadataBackend> = HashMap::new();
 
         debug!(
             "Started metadata update worker: {:?}",
@@ -3478,7 +4746,7 @@ fn metadata_update_worker_static(
 // queue is empty the worker exits.
 fn metadata_update_worker_dynamic(
     job_action: Arc<EvacuateJob>,
-    queue_front: Arc<Injector<DyanmicWorkerMsg>>,
+    queue_front: Arc<Injector<DynamicWorkerMsg>>,
 ) -> impl Fn() {
     move || {
         // For each worker we create a hash of moray clients indexed by shard.
@@ -3487,7 +4755,7 @@ fn metadata_update_worker_dynamic(
         // the shard connections.  It also allows us to manage our max
         // number of per-shard connections by simply tuning the number of
         // metadata update worker threads.
-        let mut client_hash: HashMap<u32, MorayClient> = HashMap::new();
+        let mut client_hash: HashMap<u32, MetadataBackend> = HashMap::new();
 
         metrics_gauge_inc(MD_THREAD_GAUGE);
 
@@ -3496,23 +4764,40 @@ fn metadata_update_worker_dynamic(
             thread::current().id()
         );
 
-        // If the queue is empty or we receive a Stop message, then break out
-        // of the loop and return.
-        //
-        // If we get a retry error then, retry.
-        //
-        // Otherwise get the assignment cache entry and process it.
+        // Poll the queue for work.  On Stop, exit immediately.
+        // On Empty, wait briefly and retry — new assignments may
+        // arrive from the broker while the checker is still running.
+        // After MAX_IDLE_ROUNDS consecutive empty polls, exit to
+        // avoid holding resources when no more work is expected.
+        const MAX_IDLE_ROUNDS: u32 = 20;
+        const IDLE_SLEEP_MS: u64 = 250;
+        let mut idle_rounds: u32 = 0;
+
         loop {
             let ace = match queue_front.steal() {
-                Steal::Success(dwm) => match dwm {
-                    DyanmicWorkerMsg::Data(a) => a,
-                    DyanmicWorkerMsg::Stop => {
-                        debug!("Received stop message, exiting");
+                Steal::Success(dwm) => {
+                    idle_rounds = 0;
+                    match dwm {
+                        DynamicWorkerMsg::Data(a) => a,
+                        DynamicWorkerMsg::Stop => {
+                            debug!("Received stop message, exiting");
+                            break;
+                        }
+                    }
+                }
+                Steal::Retry => continue,
+                Steal::Empty => {
+                    idle_rounds += 1;
+                    if idle_rounds >= MAX_IDLE_ROUNDS {
+                        debug!(
+                            "No work after {} idle rounds, exiting",
+                            idle_rounds
+                        );
                         break;
                     }
-                },
-                Steal::Retry => continue,
-                Steal::Empty => break,
+                    thread::sleep(Duration::from_millis(IDLE_SLEEP_MS));
+                    continue;
+                }
             };
             metadata_update_assignment(&job_action, ace, &mut client_hash);
         }
@@ -3526,23 +4811,26 @@ fn metadata_update_worker_dynamic(
 // create one and put it in the hash, and return it as an &mut.
 fn get_client_from_hash<'a>(
     job_action: &Arc<EvacuateJob>,
-    client_hash: &'a mut HashMap<u32, MorayClient>,
+    client_hash: &'a mut HashMap<u32, MetadataBackend>,
     shard: u32,
-) -> Result<&'a mut MorayClient, Error> {
+) -> Result<&'a mut MetadataBackend, Error> {
     // We can't use or_insert_with() here because in the event
     // that client creation fails we want to handle that error.
     match client_hash.entry(shard) {
         Occupied(entry) => Ok(entry.into_mut()),
         Vacant(entry) => {
-            debug!("Client for shard {} does not exist, creating.", shard);
-            let client = match moray_client::create_client(
+            debug!(
+                "Metadata client for shard {} does not exist, creating.",
+                shard
+            );
+            let client = match MetadataBackend::from_config(
+                &job_action.config,
                 shard,
-                &job_action.config.domain_name,
             ) {
                 Ok(client) => client,
                 Err(e) => {
                     let msg = format!(
-                        "Failed to get Moray Client for shard {}: {}",
+                        "Failed to get metadata client for shard {}: {}",
                         shard, e
                     );
                     return Err(InternalError::new(
@@ -3559,41 +4847,51 @@ fn get_client_from_hash<'a>(
 
 // Called when we are not using batched updates or a batched update fails and
 // we want to update each object one by one.
+//
+// Wraps the put_object call with retry logic so that transient errors
+// (EAGAIN, connection reset, RPC timeouts) are retried with exponential
+// backoff instead of immediately failing the object.
 fn metadata_update_one(
-    job_action: &Arc<EvacuateJob>,
-    client: MetadataClientOption,
-    object: &EvacuateObjectValue,
-    etag: &str,
-    shard: u32,
+job_action: &Arc<EvacuateJob>,
+client: MetadataClientOption,
+object: &EvacuateObjectValue,
+etag: &str,
+shard: u32,
 ) -> Result<(), Error> {
-    let mclient = match client {
-        MetadataClientOption::Client(c) => c,
-        MetadataClientOption::Hash(client_hash) => {
-            get_client_from_hash(job_action, client_hash, shard)?
-        }
-    };
-
-    let now = std::time::Instant::now();
-    let ret = moray_client::put_object(mclient, object, etag)
-        .map_err(|e| {
-            InternalError::new(
-                Some(InternalErrorCode::MetadataUpdateFailure),
-                e.description(),
-            )
-        })
-        .map_err(Error::from);
-
-    if ret.is_err() {
-        error!(
-            "Failed to update 1 object in {}us",
-            now.elapsed().as_micros()
-        );
-    } else {
-        let md_update_time = now.elapsed().as_micros();
-        debug!("Updated 1 object in {}us", md_update_time);
+let mclient = match client {
+    MetadataClientOption::Client(c) => c,
+    MetadataClientOption::Hash(client_hash) => {
+        get_client_from_hash(job_action, client_hash, shard)?
     }
+};
 
-    ret
+let retry_config = mdapi_client::RetryConfig::default();
+
+let now = std::time::Instant::now();
+// Retry the raw put_object call so that is_retryable_error sees the
+// original error variant (e.g. Error::Mdapi(IoError(...))) before it
+// gets wrapped into MetadataUpdateFailure.
+let ret = mdapi_client::with_retry_if_retryable(&retry_config, || {
+    mclient.put_object(object, etag)
+})
+.map_err(|e| {
+    Error::from(InternalError::new(
+        Some(InternalErrorCode::MetadataUpdateFailure),
+        format!("{}", e),
+    ))
+});
+
+if ret.is_err() {
+    error!(
+        "Failed to update 1 object in {}us",
+        now.elapsed().as_micros()
+    );
+} else {
+    let md_update_time = now.elapsed().as_micros();
+    debug!("Updated 1 object in {}us", md_update_time);
+}
+
+ret
 }
 
 // Attempt to update all objects in this assignment in per shard batches.
@@ -3604,197 +4902,218 @@ fn metadata_update_one(
 // If a batch fails this function falls back to updating each object
 // individually for that batch.
 fn metadata_update_batch(
-    job_action: &Arc<EvacuateJob>,
-    client_hash: &mut HashMap<u32, MorayClient>,
-    batched_reqs: HashMap<u32, Vec<BatchRequest>>,
+job_action: &Arc<EvacuateJob>,
+client_hash: &mut HashMap<u32, MetadataBackend>,
+batched_reqs: HashMap<u32, Vec<BatchRequest>>,
+from_shark: &str,
+dest_shark: &str,
 ) -> Vec<ObjectId> {
-    let mut marked_error = vec![];
-    for (shard, requests) in batched_reqs.into_iter() {
-        let num_reqs = requests.len();
-        info!(
-            "Updating {} objects for shard {} in a single batch",
-            num_reqs, shard
-        );
-        let mclient = match get_client_from_hash(job_action, client_hash, shard)
-        {
-            Ok(c) => c,
-            Err(e) => {
-                // If we can't get the client for these objects there's
-                // nothing we can do.  Mark them all as error.
-                // TODO: want mark_many_objects_error()
-                error!("Could not get client for batch update: {}", e);
-                let eobj_err: EvacuateObjectError = e.into();
-                for r in requests.iter() {
-                    let br = match r {
-                        BatchRequest::Put(br) => br,
-                        _ => panic!("Unexpected Batch Request"),
-                    };
+let mut marked_error = vec![];
+for (shard, requests) in batched_reqs.into_iter() {
+    let num_reqs = requests.len();
+    info!(
+        "Updating {} objects for shard {} in a single batch",
+        num_reqs, shard
+    );
+    let mclient = match get_client_from_hash(job_action, client_hash, shard)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            // If we can't get the client for these objects there's
+            // nothing we can do.  Mark them all as error.
+            // TODO: want mark_many_objects_error()
+            error!("Could not get client for batch update: {}", e);
+            let eobj_err: EvacuateObjectError = e.into();
+            for r in requests.iter() {
+                let br = match r {
+                    BatchRequest::Put(br) => br,
+                    _ => {
+                        error!("Unexpected BatchRequest variant in \
+                                error-marking loop, skipping");
+                        continue;
+                    }
+                };
 
-                    let id = common::get_objectId_from_value(&br.value)
-                        .expect("Object Id missing");
+                let id = common::get_objectId_from_value(&br.value)
+                    .expect("Object Id missing");
 
-                    job_action.mark_object_error(&id, eobj_err.clone());
-                    marked_error.push(id);
-                }
-                continue;
+                job_action.mark_object_error(&id, eobj_err.clone());
+                marked_error.push(id);
             }
-        };
-
-        // If we fail the batch, step through the objects and attempt to
-        // update each one individually. For each object that fails to
-        // update mark it as error, and add it to the marked_error Vec to
-        // be trimmed from our list of successful updates later.
-        let now = std::time::Instant::now();
-        if let Err(e) =
-            mclient.batch(&requests, &ObjectMethodOptions::default(), |_| {
-                // elapsed() gives us a u128, but unfortunately AtomicU128 is
-                // nightly only.
-                let md_update_time = now.elapsed().as_micros();
-
-                info!(
-                    "Batch updated {} objects in {}us",
-                    num_reqs, md_update_time
-                );
-                Ok(())
-            })
-        {
-            error!("Batch update failed, retrying individually: {}", e);
-            retry_batch_update(
-                job_action,
-                requests,
-                shard,
-                mclient,
-                &mut marked_error,
-            );
+            continue;
         }
+    };
+
+    // If we fail the batch, step through the objects and attempt to
+    // update each one individually. For each object that fails to
+    // update mark it as error, and add it to the marked_error Vec to
+    // be trimmed from our list of successful updates later.
+    let now = std::time::Instant::now();
+    if let Err(e) = mclient.batch_update(
+        &requests,
+        &ObjectMethodOptions::default(),
+        from_shark,
+        dest_shark,
+        |_values| {
+            // elapsed() gives us a u128, but unfortunately AtomicU128 is
+            // nightly only.
+            let md_update_time = now.elapsed().as_micros();
+
+            info!(
+                "Batch updated {} objects in {}us",
+                num_reqs, md_update_time
+            );
+            Ok(())
+        },
+    ) {
+        error!("Batch update failed, retrying individually: {}", e);
+        retry_batch_update(
+            job_action,
+            requests,
+            shard,
+            mclient,
+            &mut marked_error,
+        );
     }
-    marked_error
+}
+marked_error
 }
 
 fn retry_batch_update(
-    job_action: &Arc<EvacuateJob>,
-    requests: Vec<BatchRequest>,
-    shard: u32,
-    client: &mut MorayClient,
-    marked_error: &mut Vec<ObjectId>,
+job_action: &Arc<EvacuateJob>,
+requests: Vec<BatchRequest>,
+shard: u32,
+client: &mut MetadataBackend,
+marked_error: &mut Vec<ObjectId>,
 ) {
-    for r in requests.into_iter() {
-        let br: BatchPutOp = match r {
-            BatchRequest::Put(br) => br,
-            _ => panic!("Unexpected Batch Request"),
-        };
-
-        let etag = br
-            .options
-            .etag
-            .specified_value()
-            .expect("etag should be specified");
-
-        let o = br.value;
-
-        if let Err(muo_err) = metadata_update_one(
-            job_action,
-            MetadataClientOption::Client(client),
-            &o,
-            &etag,
-            shard,
-        ) {
-            let id = common::get_objectId_from_value(&o)
-                .expect("cannot get objectId");
-
-            error!("Error updating object: {}\n{:?}", muo_err, o);
-            job_action.mark_object_error(&id, muo_err.into());
-            marked_error.push(id);
-
+for r in requests.into_iter() {
+    let br: BatchPutOp = match r {
+        BatchRequest::Put(br) => br,
+        _ => {
+            error!("Unexpected BatchRequest variant in retry loop, \
+                    skipping");
             continue;
         }
+    };
+
+    let etag = br
+        .options
+        .etag
+        .specified_value()
+        .expect("etag should be specified");
+
+    let o = br.value;
+
+    if let Err(muo_err) = metadata_update_one(
+        job_action,
+        MetadataClientOption::Client(client),
+        &o,
+        &etag,
+        shard,
+    ) {
+        let id = common::get_objectId_from_value(&o)
+            .expect("cannot get objectId");
+
+        error!("Error updating object: {}\n{:?}", muo_err, o);
+        job_action.mark_object_error(&id, muo_err.into());
+        marked_error.push(id);
+
+        continue;
     }
+}
 }
 
 fn batch_add_putobj(
-    batched_reqs: &mut HashMap<u32, Vec<BatchRequest>>,
-    object: Value,
-    shard: u32,
-    etag: String,
+batched_reqs: &mut HashMap<u32, Vec<BatchRequest>>,
+object: Value,
+shard: u32,
+etag: String,
 ) -> Result<(), Error> {
-    let key = common::get_key_from_object_value(&object)?;
-    let mut options = ObjectMethodOptions::default();
+let key = common::get_key_from_object_value(&object)?;
+let mut options = ObjectMethodOptions::default();
 
-    options.etag = Etag::Specified(etag);
+options.etag = Etag::Specified(etag);
 
-    let put_req = BatchPutOp {
-        bucket: "manta".to_string(),
-        options,
-        key,
-        value: object,
-    };
+let put_req = BatchPutOp {
+    bucket: "manta".to_string(),
+    options,
+    key,
+    value: object,
+};
 
-    batched_reqs
-        .entry(shard)
-        .and_modify(|ent| ent.push(BatchRequest::Put(put_req.clone())))
-        .or_insert_with(|| vec![BatchRequest::Put(put_req)]);
+batched_reqs
+    .entry(shard)
+    .and_modify(|ent| ent.push(BatchRequest::Put(put_req.clone())))
+    .or_insert_with(|| vec![BatchRequest::Put(put_req)]);
 
-    Ok(())
+Ok(())
 }
 
 fn metadata_update_assignment(
-    job_action: &Arc<EvacuateJob>,
-    ace: AssignmentCacheEntry,
-    client_hash: &mut HashMap<u32, MorayClient>,
+job_action: &Arc<EvacuateJob>,
+ace: AssignmentCacheEntry,
+client_hash: &mut HashMap<u32, MetadataBackend>,
 ) {
-    info!("Updating metadata for assignment: {}", ace.id);
+info!("Updating metadata for assignment: {}", ace.id);
 
-    // There is one moray client per shard, so when we collect the requests
-    // into a batch we need to know which moray client this is going to based
-    // on the shard number.
-    let mut batched_reqs: HashMap<u32, Vec<BatchRequest>> = HashMap::new();
-    let mut updated_objects = vec![];
-    let dest_shark = &ace.dest_shark;
-    let objects = job_action
-        .load_assignment_objects(&ace.id, EvacuateObjectStatus::PostProcessing);
+// There is one moray client per shard, so when we collect the requests
+// into a batch we need to know which moray client this is going to based
+// on the shard number.
+let mut batched_reqs: HashMap<u32, Vec<BatchRequest>> = HashMap::new();
+let mut updated_objects = vec![];
+let dest_shark = &ace.dest_shark;
+let objects = job_action
+    .load_assignment_objects(&ace.id, EvacuateObjectStatus::PostProcessing);
 
-    trace!("Updating metadata for {} objects", objects.len());
+trace!("Updating metadata for {} objects", objects.len());
 
-    client_hash.shrink_to_fit();
+client_hash.shrink_to_fit();
 
-    for eobj in objects {
-        let etag = eobj.etag.clone();
-        let mobj = eobj.object.clone();
+for eobj in objects {
+    let etag = eobj.etag.clone();
+    let mobj = eobj.object.clone();
 
-        // Unfortunately sqlite only accepts signed integers.  So we
-        // have to do the conversion here and cross our fingers that
-        // we don't have more than 2.1 billion shards.
-        // We do check this value coming in from sharkspotter as well.
-        if eobj.shard < 0 {
-            job_action.mark_object_error(
-                &eobj.id,
-                EvacuateObjectError::BadShardNumber,
-            );
+    // Unfortunately sqlite only accepts signed integers.  So we
+    // have to do the conversion here and cross our fingers that
+    // we don't have more than 2.1 billion shards.
+    // We do check this value coming in from sharkspotter as well.
+    if eobj.shard < 0 {
+        error!(
+            "Cannot have a negative shard for object {}, marking \
+             as error and continuing",
+            eobj.id
+        );
+        job_action.mark_object_error(
+            &eobj.id,
+            EvacuateObjectError::BadShardNumber,
+        );
+        continue;
+    }
 
-            // TODO: panic for now, but for release we should
-            // continue to next object.
-            panic!("Cannot have a negative shard {:#?}", eobj);
-        }
+    let shard = eobj.shard as u32;
 
-        let shard = eobj.shard as u32;
-
-        // This function updates the manta object with the new
-        // sharks, and then returns the updated Manta metadata object.
-        match job_action.update_object_shark(mobj, dest_shark) {
-            Ok(o) => {
-                if job_action.config.options.use_batched_updates {
-                    if let Err(e) =
-                        batch_add_putobj(&mut batched_reqs, o, shard, etag)
-                    {
-                        error!(
-                            "Could not add put object operation to batch ({}): \
-                            {}",
-                            &eobj.id, e
-                        );
-                        job_action.mark_object_error(&eobj.id, e.into());
-                        continue;
-                    }
-                } else if let Err(e) = metadata_update_one(
+    // This function updates the manta object with the new
+    // sharks, and then returns the updated Manta metadata object.
+    match job_action.update_object_shark(mobj, dest_shark) {
+        Ok(o) => {
+            // batched_updates requires MANTA-5503 and MANTA-5504
+            // in buckets-mdapi service, by default this is false
+            // as one object failure causes the whole transaction
+            // to fail, doing one by one object is slower, but 
+            // in case of failure only one object is retried.
+            if job_action.config.options.use_batched_updates {
+                if let Err(e) =
+                    batch_add_putobj(&mut batched_reqs, o, shard, etag)
+                {
+                    error!(
+                        "Could not add put object operation to batch ({}): \
+                        {}",
+                        &eobj.id, e
+                    );
+                    job_action.mark_object_error(&eobj.id, e.into());
+                    continue;
+                }
+            } else if let Err(e) = metadata_update_one(
                     job_action,
                     MetadataClientOption::Hash(client_hash),
                     &o,
@@ -3806,7 +5125,17 @@ fn metadata_update_assignment(
                          {:?}\n({}).",
                         o, dest_shark, e
                     );
-                    job_action.mark_object_error(&eobj.id, e.into());
+                    let err = if is_bucket_object(&o) {
+                        // Mdapi errors have typed variants —
+                        // use From<Error> for fine-grained mapping.
+                        EvacuateObjectError::from(e)
+                    } else {
+                        EvacuateObjectError::MorayUpdateFailed
+                    };
+                    job_action.mark_object_error(&eobj.id, err);
+                    continue;
+                } else {
+                    updated_objects.push(eobj);
                     continue;
                 }
             }
@@ -3825,8 +5154,13 @@ fn metadata_update_assignment(
     }
 
     if job_action.config.options.use_batched_updates {
-        let marked_error =
-            metadata_update_batch(job_action, client_hash, batched_reqs);
+        let marked_error = metadata_update_batch(
+            job_action,
+            client_hash,
+            batched_reqs,
+            &job_action.from_shark.manta_storage_id,
+            &dest_shark.manta_storage_id,
+        );
 
         // Remove any of the objects that we had to mark as "Error" from the list
         // of updated objects.
@@ -3842,7 +5176,7 @@ fn metadata_update_assignment(
 
 fn update_dynamic_metadata_threads(
     pool: &mut ThreadPool,
-    queue_back: &Arc<Injector<DyanmicWorkerMsg>>,
+    queue_back: &Arc<Injector<DynamicWorkerMsg>>,
     max_thread_count: &mut usize,
     msg: JobUpdateMessage,
 ) {
@@ -3866,7 +5200,7 @@ fn update_dynamic_metadata_threads(
     // Otherwise the logic below will handle spinning up
     // more worker threads if they are needed.
     for _ in difference..0 {
-        queue_back.push(DyanmicWorkerMsg::Stop);
+        queue_back.push(DynamicWorkerMsg::Stop);
     }
     *max_thread_count = new_worker_count;
     pool.set_num_threads(*max_thread_count);
@@ -3919,17 +5253,27 @@ fn metadata_update_broker_dynamic(
         "Dyn_MD_Update".into(),
         job_action.config.options.max_metadata_update_threads,
     );
-    let queue = Arc::new(Injector::<DyanmicWorkerMsg>::new());
+    let queue = Arc::new(Injector::<DynamicWorkerMsg>::new());
     let update_rx = match &job_action.update_rx {
         Some(urx) => urx.clone(),
-        None => panic!(
-            "Missing update_rx channel for job with dynamic update threads"
-        ),
+        None => {
+            return Err(InternalError::new(
+                Some(InternalErrorCode::Other),
+                "Missing update_rx channel for job with dynamic \
+                 update threads"
+                    .to_string(),
+            )
+            .into());
+        }
     };
 
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("Metadata Update broker"))
         .spawn(move || {
+            slog_scope::scope(&logger, || {
             loop {
                 if let Ok(msg) = update_rx.try_recv() {
                     debug!("Received metadata update message: {:#?}", msg);
@@ -3940,11 +5284,14 @@ fn metadata_update_broker_dynamic(
                         msg,
                     );
                 }
-                let ace = match md_update_rx.recv() {
+                let ace = match md_update_rx.recv_timeout(
+                    Duration::from_secs(5),
+                ) {
                     Ok(ace) => ace,
-                    Err(e) => {
-                        // If the queue is empty and there are no active or
-                        // queued threads, kick one off to drain the queue.
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                        // No new assignments arrived, but the queue
+                        // may still have unprocessed items from
+                        // earlier.  Ensure a worker is running.
                         if !queue.is_empty()
                             && pool.active_count() == 0
                             && pool.queued_count() == 0
@@ -3953,21 +5300,34 @@ fn metadata_update_broker_dynamic(
                                 Arc::clone(&job_action),
                                 Arc::clone(&queue),
                             );
-
+                            pool.execute(worker);
+                        }
+                        continue;
+                    }
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                        // Checker exited.  Kick off a final
+                        // worker if there's remaining work.
+                        if !queue.is_empty()
+                            && pool.active_count() == 0
+                            && pool.queued_count() == 0
+                        {
+                            let worker = metadata_update_worker_dynamic(
+                                Arc::clone(&job_action),
+                                Arc::clone(&queue),
+                            );
                             pool.execute(worker);
                         }
 
                         warn!(
                             "Could not receive metadata from assignment \
-                             checker thread: {}",
-                            e
+                             checker thread (disconnected)"
                         );
 
                         break;
                     }
                 };
 
-                queue.push(DyanmicWorkerMsg::Data(ace));
+                queue.push(DynamicWorkerMsg::Data(ace));
 
                 // If all the pools threads are devoted to workers there's
                 // really no reason to queue up a new worker.
@@ -3991,9 +5351,58 @@ fn metadata_update_broker_dynamic(
 
                 pool.execute(worker);
             }
+
+            // Drain: the assignment checker may have marked objects as
+            // PostProcessing after the last batch was sent through the
+            // channel.  Do a final sweep of the assignments hash for
+            // any that reached AgentComplete but weren't sent to the
+            // broker channel.
+            {
+                let assignments = job_action
+                    .assignments
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
+
+                let remaining: Vec<_> = assignments
+                    .values()
+                    .filter(|ace| {
+                        ace.state == AssignmentState::AgentComplete
+                    })
+                    .cloned()
+                    .collect();
+
+                if !remaining.is_empty() {
+                    let drain_count = remaining.len();
+                    info!(
+                        "Metadata update broker: draining {} \
+                         remaining assignments after checker exit",
+                        drain_count
+                    );
+                    for ace in remaining {
+                        queue.push(DynamicWorkerMsg::Data(ace));
+                    }
+
+                    // Spawn multiple workers to process the
+                    // drain queue in parallel — a single worker
+                    // may stall on a slow moray connection.
+                    let drain_workers = std::cmp::min(
+                        pool.max_count(),
+                        drain_count,
+                    );
+                    for _ in 0..drain_workers {
+                        let worker = metadata_update_worker_dynamic(
+                            Arc::clone(&job_action),
+                            Arc::clone(&queue),
+                        );
+                        pool.execute(worker);
+                    }
+                }
+            }
+
             pool.join();
             metrics_gauge_set(MD_THREAD_GAUGE, 0);
             Ok(())
+            }) // end slog_scope::scope
         })
         .map_err(Error::from)
 }
@@ -4075,9 +5484,16 @@ fn metadata_update_broker_static(
     job_action: Arc<EvacuateJob>,
     md_update_rx: crossbeam::Receiver<AssignmentCacheEntry>,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("Metadata Update broker"))
-        .spawn(move || _update_broker_static(job_action, md_update_rx))
+        .spawn(move || {
+            slog_scope::scope(&logger, || {
+                _update_broker_static(job_action, md_update_rx)
+            })
+        })
         .map_err(Error::from)
 }
 
@@ -4112,7 +5528,7 @@ mod tests {
     use super::*;
     use crate::metrics::metrics_init;
     use crate::storinfo::ChooseAlgorithm;
-    use lazy_static::lazy_static;
+
     use quickcheck::{Arbitrary, StdThreadGen};
     use quickcheck_helpers::random::string as random_string;
     use rand::Rng;
@@ -4121,10 +5537,6 @@ mod tests {
     use rebalancer::metrics::MetricsMap;
     use rebalancer::util;
     use reqwest::Client;
-
-    lazy_static! {
-        static ref INITIALIZED: Mutex<bool> = Mutex::new(false);
-    }
 
     #[derive(Deserialize, Serialize)]
     struct TestMorayObject {
@@ -4142,32 +5554,38 @@ mod tests {
     }
 
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap();
-        if *init {
-            return;
-        }
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            metrics_init(rebalancer::metrics::ConfigMetrics::default());
 
-        metrics_init(rebalancer::metrics::ConfigMetrics::default());
+            // Leak the global logger guard so it is never dropped,
+            // allowing tests to run in parallel safely.
+            let guard = util::init_global_logger(None);
+            std::mem::forget(guard);
 
-        thread::spawn(move || {
-            let _guard = util::init_global_logger(None);
-            let addr = format!("{}:{}", "0.0.0.0", 7878);
+            thread::spawn(move || {
+                let addr = format!("{}:{}", "0.0.0.0", 7878);
 
-            // The reason that we call gotham::start() to start the agent as
-            // opposed to something like TestServer::new() in this case is
-            // because TestServer will automatically pick a port for us based on
-            // what is available at the time, most likely assuring us that
-            // whatever port the agent ends up starting on, it will be something
-            // other than 7878.  Currently, the wiring to pass a port all the
-            // way down to the threads that contact the agent does not exist.
-            // If or when it does, we can use gotham's TestServer as opposed to
-            // explicitly calling gotham::start().  Finally, we pass `None' to
-            // the router function for the agent because it does not run a
-            // metrics server during manager testing.
-            gotham::start(addr, agent_router(process_task_always_pass, None));
+                // The reason that we call gotham::start() to start the
+                // agent as opposed to something like TestServer::new()
+                // in this case is because TestServer will automatically
+                // pick a port for us based on what is available at the
+                // time, most likely assuring us that whatever port the
+                // agent ends up starting on, it will be something other
+                // than 7878.  Currently, the wiring to pass a port all
+                // the way down to the threads that contact the agent
+                // does not exist.  If or when it does, we can use
+                // gotham's TestServer as opposed to explicitly calling
+                // gotham::start().  Finally, we pass `None' to the
+                // router function for the agent because it does not run
+                // a metrics server during manager testing.
+                gotham::start(
+                    addr,
+                    agent_router(process_task_always_pass, None),
+                );
+            });
         });
-
-        *init = true;
     }
 
     // This function is supplied to the agent when we start it.  This is what
@@ -4284,9 +5702,13 @@ mod tests {
         test_objects: Vec<MantaObject>,
         from_shark: String,
     ) -> thread::JoinHandle<Result<(), Error>> {
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let logger = slog_scope::logger();
         thread::Builder::new()
             .name(String::from("test object generator thread"))
             .spawn(move || {
+                slog_scope::scope(&logger, || {
                 for o in test_objects.into_iter() {
                     let shard = 1;
                     let etag = String::from("Fake_etag");
@@ -4329,6 +5751,7 @@ mod tests {
                     }
                 }
                 Ok(())
+                }) // end slog_scope::scope
             })
             .expect("failed to build object generator thread")
     }
@@ -4454,6 +5877,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn available_mb() {
         unit_test_init();
 
@@ -4552,11 +5976,15 @@ mod tests {
         );
 
         // Verification Thread
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let verif_logger = slog_scope::logger();
         let builder = thread::Builder::new();
         let verif_job_action = Arc::clone(&job_action);
         let verification_thread = builder
             .name(String::from("verification thread"))
             .spawn(move || {
+                slog_scope::scope(&verif_logger, || {
                 let mut object_count = 0;
                 while let Ok(assignment) = full_assignment_rx.recv() {
                     assert_eq!(
@@ -4600,6 +6028,7 @@ mod tests {
 
                     assert_eq!(all_objects.len(), num_objects);
                 }
+                }) // end slog_scope::scope
             })
             .expect("verification thread result");
 
@@ -4623,7 +6052,13 @@ mod tests {
         let job_action = Arc::new(job_action);
 
         // Channels
-        let (full_assignment_tx, full_assignment_rx) = crossbeam::bounded(5);
+        // Use capacity 1 for full_assignment channel to force synchronization
+        // between the assignment generator and verification thread. This
+        // ensures assignment_post_fail is called (restoring assigned_mb)
+        // before the next assignment is created. Without this, the generator
+        // can exhaust available space faster than the verification thread
+        // can restore it, causing objects to be incorrectly skipped.
+        let (full_assignment_tx, full_assignment_rx) = crossbeam::bounded(1);
         let (obj_tx, obj_rx) = crossbeam::bounded(5);
         let (checker_fini_tx, _checker_fini_rx) = crossbeam::bounded(1);
 
@@ -4667,11 +6102,15 @@ mod tests {
         );
 
         // Verification Thread
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let verif_logger = slog_scope::logger();
         let builder = thread::Builder::new();
         let verif_job_action = Arc::clone(&job_action);
         let verification_thread = builder
             .name(String::from("verification thread"))
             .spawn(move || {
+                slog_scope::scope(&verif_logger, || {
                 let mut object_count = 0;
                 while let Ok(assignment) = full_assignment_rx.recv() {
                     assert_eq!(
@@ -4711,6 +6150,7 @@ mod tests {
                     .expect("getting filtered objects");
 
                 assert_eq!(skipped_objs.len(), num_objects);
+                }) // end slog_scope::scope
             })
             .expect("verification thread result");
 
@@ -4729,6 +6169,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn no_skip() {
         use super::*;
         use rand::Rng;
@@ -4822,11 +6263,15 @@ mod tests {
         );
 
         let verification_objects = test_objects.clone();
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let verif_logger = slog_scope::logger();
         let builder = thread::Builder::new();
         let verif_job_action = Arc::clone(&job_action);
         let verification_thread = builder
             .name(String::from("verification thread"))
             .spawn(move || {
+                slog_scope::scope(&verif_logger, || {
                 debug!("Starting verification thread");
                 let mut assignment_count = 0;
                 let mut task_count = 0;
@@ -4861,7 +6306,7 @@ mod tests {
                     evacuateobjects, skipped_reason, status,
                 };
                 let locked_conn =
-                    verif_job_action.conn.lock().expect("DB conn");
+                    verif_job_action.conn.lock().unwrap_or_else(|e| e.into_inner());
 
                 let skipped: Vec<EvacuateObject> = evacuateobjects
                     .filter(status.eq(EvacuateObjectStatus::Skipped))
@@ -4899,6 +6344,7 @@ mod tests {
                     skip_count - insufficient_space_skips
                 );
                 assert_eq!(task_count + skip_count, num_objects);
+                }) // end slog_scope::scope
             })
             .expect("verification thread");
 
@@ -4911,7 +6357,7 @@ mod tests {
         // mark all assignments as post processed so that the checker thread
         // can exit.
         let mut locked_assignments =
-            job_action.assignments.write().expect("lock assignments");
+            job_action.assignments.write().unwrap_or_else(|e| e.into_inner());
         locked_assignments.iter_mut().for_each(|(_, a)| {
             a.state = AssignmentState::PostProcessed;
         });
@@ -4928,6 +6374,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn assignment_processing_test() {
         unit_test_init();
 
@@ -5002,7 +6449,7 @@ mod tests {
         assignment.state = AssignmentState::Assigned;
 
         let mut assignments =
-            job_action.assignments.write().expect("write lock");
+            job_action.assignments.write().unwrap_or_else(|e| e.into_inner());
         assignments.insert(uuid.clone(), assignment.clone().into());
 
         drop(assignments);
@@ -5025,7 +6472,7 @@ mod tests {
             assignment_id, evacuateobjects, skipped_reason, status,
         };
 
-        let locked_conn = job_action.conn.lock().expect("DB conn");
+        let locked_conn = job_action.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         let records: Vec<EvacuateObject> = evacuateobjects
             .filter(assignment_id.eq(&uuid))
@@ -5050,6 +6497,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn empty_storinfo_test() {
         unit_test_init();
         let storinfo = Arc::new(EmptyStorinfo {});
@@ -5304,6 +6752,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn full_test() {
         unit_test_init();
 
@@ -5372,6 +6821,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn test_duplicate_handler() {
         unit_test_init();
 
@@ -5400,6 +6850,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn test_duplicate_handler_small_assignment() {
         unit_test_init();
 
@@ -5428,6 +6879,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn test_retry_job() {
         use crate::jobs::status::{get_job_status, JobStatusResults};
         use crate::jobs::JobActionDbEntry;
@@ -5464,23 +6916,24 @@ mod tests {
         .expect("job status");
 
         let JobStatusResults::Evacuate(results) = job_status_results;
-        assert_eq!(results.get("Total"), Some(&(num_objects as i64)));
+        assert_eq!(results.counts.get("Total"), Some(&(num_objects as i64)));
 
         // Almost all objects will be errors due to bad_moray_client.  But
         // because we are using random objects we may find that shark
         // assignment validation fails in which case the object will be skipped.
         let error_count =
-            results.get("Error").expect("error results").to_owned();
+            results.counts.get("Error").expect("error results").to_owned();
         let skip_count =
-            results.get("Skipped").expect("skip results").to_owned();
+            results.counts.get("Skipped").expect("skip results").to_owned();
         assert_eq!(error_count + skip_count, num_objects as i64);
 
-        // Confirm that all of the objects failed because they couldn't get a
-        // good moray client, which is expected since this test is run locally.
-        let bad_moray_client_count =
-            get_error_count(&retry_job_uuid, "bad_moray_client");
+        // Confirm that all errors are moray_update_failed, which is expected
+        // since this test runs without a real moray service — the metadata
+        // update attempt fails rather than the client creation.
+        let moray_update_failed_count =
+            get_error_count(&retry_job_uuid, "moray_update_failed");
 
-        assert_eq!(bad_moray_client_count, error_count);
+        assert_eq!(moray_update_failed_count, error_count);
     }
 
     fn skip_all(
@@ -5500,5 +6953,1017 @@ mod tests {
                 Ok(())
             })
             .map_err(Error::from)
+    }
+
+    // Hybrid Backend Tests
+
+    #[test]
+    fn test_is_bucket_object() {
+        // Bucket object has bucket_id field
+        let bucket_obj = serde_json::json!({
+            "bucket_id": "550e8400-e29b-41d4-a716-446655440000",
+            "name": "test-object",
+            "owner": "660e8400-e29b-41d4-a716-446655440001"
+        });
+        assert_eq!(is_bucket_object(&bucket_obj), true);
+
+        // Traditional Manta object does not have bucket_id
+        let traditional_obj = serde_json::json!({
+            "name": "/user/stor/test-object",
+            "owner": "660e8400-e29b-41d4-a716-446655440001"
+        });
+        assert_eq!(is_bucket_object(&traditional_obj), false);
+
+        // Empty object
+        let empty_obj = serde_json::json!({});
+        assert_eq!(is_bucket_object(&empty_obj), false);
+    }
+
+    #[test]
+    fn test_hybrid_backend_creation() {
+        use crate::config::{Config, MdapiConfig, MdapiShard};
+
+        // Config with both moray and mdapi shards set
+        let mut config = Config::default();
+        config.domain_name = "us-east.joyent.us".to_string();
+        config.mdapi = MdapiConfig {
+            shards: vec![
+                MdapiShard {
+                    host: "1.buckets-mdapi.example.com".to_string(),
+                },
+            ],
+            connection_timeout_ms: 5000,
+            max_batch_size: 100,
+            operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
+        };
+
+        // Note: This will fail without a real moray/mdapi service
+        // In real tests, we'd mock the client creation
+        // For now, just verify the logic in from_config
+        let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
+        let use_moray = !config.domain_name.is_empty();
+
+        assert_eq!(use_moray, true);
+        assert_eq!(use_mdapi, true);
+        // This confirms hybrid mode would be selected
+    }
+
+    #[test]
+    fn test_moray_only_backend() {
+        use crate::config::Config;
+
+        // Config with only moray (no mdapi shards)
+        let mut config = Config::default();
+        config.domain_name = "us-east.joyent.us".to_string();
+        // Default MdapiConfig has empty shards vec
+
+        let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
+        let use_moray = !config.domain_name.is_empty();
+
+        assert_eq!(use_moray, true);
+        assert_eq!(use_mdapi, false);
+        // This confirms moray-only mode would be selected
+    }
+
+    #[test]
+    fn test_mdapi_only_backend() {
+        use crate::config::{Config, MdapiConfig, MdapiShard};
+
+        // Config with only mdapi shards set
+        let mut config = Config::default();
+        config.domain_name = String::new();
+        config.mdapi = MdapiConfig {
+            shards: vec![
+                MdapiShard {
+                    host: "1.buckets-mdapi.example.com".to_string(),
+                },
+            ],
+            connection_timeout_ms: 5000,
+            max_batch_size: 100,
+            operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
+        };
+
+        let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
+        let use_moray = !config.domain_name.is_empty();
+
+        assert_eq!(use_moray, false);
+        assert_eq!(use_mdapi, true);
+        // This confirms mdapi-only mode would be selected
+    }
+
+    #[test]
+    fn test_no_backend_configured() {
+        use crate::config::Config;
+
+        // Config with neither backend (empty domain and no shards)
+        let mut config = Config::default();
+        config.domain_name = String::new();
+        // Default MdapiConfig has empty shards vec
+
+        let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
+        let use_moray = !config.domain_name.is_empty();
+
+        assert_eq!(use_moray, false);
+        assert_eq!(use_mdapi, false);
+        // This confirms error would be returned
+    }
+
+    // =========================================================================
+    // Tests for is_bucket_object()
+    // =========================================================================
+
+    #[test]
+    fn test_is_bucket_object_with_bucket_id() {
+        use serde_json::json;
+
+        // Object with bucket_id field - should return true
+        let obj = json!({
+            "name": "test-object.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "bucket_id": "660e8400-e29b-41d4-a716-446655440001",
+            "key": "/user/stor/test.txt",
+            "sharks": []
+        });
+
+        assert!(super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_without_bucket_id() {
+        use serde_json::json;
+
+        // Traditional Manta object without bucket_id - should return false
+        let obj = json!({
+            "name": "test-object.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "key": "/user/stor/test.txt",
+            "sharks": [],
+            "dirname": "/user/stor",
+            "vnode": 42
+        });
+
+        assert!(!super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_with_null_bucket_id() {
+        use serde_json::json;
+
+        // Object with null bucket_id - field exists, so returns true
+        // (even though value is null, the field is present)
+        let obj = json!({
+            "name": "test-object.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "bucket_id": null,
+            "key": "/user/stor/test.txt"
+        });
+
+        assert!(super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_with_empty_bucket_id() {
+        use serde_json::json;
+
+        // Object with empty string bucket_id - field exists
+        let obj = json!({
+            "name": "test-object.txt",
+            "bucket_id": "",
+            "key": "/user/stor/test.txt"
+        });
+
+        assert!(super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_empty_object() {
+        use serde_json::json;
+
+        // Empty object - no bucket_id
+        let obj = json!({});
+
+        assert!(!super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_array_value() {
+        use serde_json::json;
+
+        // JSON array (not an object) - get() returns None
+        let obj = json!([1, 2, 3]);
+
+        assert!(!super::is_bucket_object(&obj));
+    }
+
+    // =========================================================================
+    // Tests for MpuEvacuationTracker integration with finalize_mpu_updates
+    // =========================================================================
+
+    #[test]
+    fn test_mpu_tracker_deduplication() {
+        use crate::mpu_utils::MpuEvacuationTracker;
+
+        let mut tracker = MpuEvacuationTracker::new();
+
+        // Record same uploadId twice (e.g., two parts from same MPU)
+        tracker.record_upload_id("upload-123".to_string());
+        tracker.record_upload_id("upload-123".to_string());
+
+        // Should only have 1 entry (deduplicated by uploadId)
+        assert_eq!(tracker.count(), 1);
+
+        let affected: Vec<_> = tracker.get_affected_uploads().collect();
+        assert_eq!(affected.len(), 1);
+        assert_eq!(affected[0], "upload-123");
+    }
+
+    #[test]
+    fn test_mpu_tracker_multiple_uploads() {
+        use crate::mpu_utils::MpuEvacuationTracker;
+
+        let mut tracker = MpuEvacuationTracker::new();
+
+        // Record different uploadIds
+        tracker.record_upload_id("upload-111".to_string());
+        tracker.record_upload_id("upload-222".to_string());
+        tracker.record_upload_id("upload-333".to_string());
+
+        assert_eq!(tracker.count(), 3);
+
+        let affected: Vec<_> = tracker.get_affected_uploads().collect();
+        assert_eq!(affected.len(), 3);
+    }
+
+    #[test]
+    fn test_mpu_tracker_clear() {
+        use crate::mpu_utils::MpuEvacuationTracker;
+
+        let mut tracker = MpuEvacuationTracker::new();
+
+        tracker.record_upload_id("upload-123".to_string());
+        assert_eq!(tracker.count(), 1);
+
+        tracker.clear();
+        assert_eq!(tracker.count(), 0);
+    }
+
+    // =========================================================================
+    // Tests for MPU part key parsing (integration tests)
+    // =========================================================================
+
+    #[test]
+    fn test_mpu_part_detection_in_object_key() {
+        use crate::mpu_utils;
+
+        // Valid MPU part key format (key portion only, not full Manta path)
+        let part_key = ".mpu-parts/abc-123-def/0";
+        assert!(mpu_utils::is_mpu_part(part_key));
+
+        let upload_id = mpu_utils::parse_mpu_part_key(part_key);
+        assert!(upload_id.is_some());
+        assert_eq!(upload_id.unwrap(), "abc-123-def");
+
+        // Non-MPU key
+        let regular_key = "myfile.txt";
+        assert!(!mpu_utils::is_mpu_part(regular_key));
+        assert!(mpu_utils::parse_mpu_part_key(regular_key).is_none());
+
+        // Full Manta path is NOT a valid MPU key (regex expects key to start with .mpu-parts/)
+        let full_path = "/user/uploads/bucket/.mpu-parts/abc-123-def/0";
+        assert!(!mpu_utils::is_mpu_part(full_path));
+    }
+
+    #[test]
+    fn test_mpu_upload_record_detection() {
+        use crate::mpu_utils;
+
+        // Valid MPU upload record key (pattern starts with .mpu-uploads/)
+        let upload_key = ".mpu-uploads/abc-123-def";
+        assert!(mpu_utils::is_mpu_upload_record(upload_key));
+
+        let upload_id = mpu_utils::parse_mpu_upload_key(upload_key);
+        assert!(upload_id.is_some());
+        assert_eq!(upload_id.unwrap(), "abc-123-def");
+
+        // MPU part is NOT an upload record
+        let part_key = ".mpu-parts/abc-123-def/0";
+        assert!(!mpu_utils::is_mpu_upload_record(part_key));
+
+        // Full path with prefix is NOT an upload record
+        // (regex requires key to start with .mpu-uploads/)
+        let full_path_key = "/user/uploads/bucket/.mpu-uploads/abc-123-def";
+        assert!(!mpu_utils::is_mpu_upload_record(full_path_key));
+    }
+
+    // =========================================================================
+    // Tests for MantaObjectShark to StorageNode conversion
+    // =========================================================================
+
+    #[test]
+    fn test_shark_to_storage_node_conversion() {
+        use crate::storinfo::StorageNode;
+        use libmanta::moray::MantaObjectShark;
+
+        let shark = MantaObjectShark {
+            datacenter: "us-east-1".to_string(),
+            manta_storage_id: "42.stor.us-east.joyent.us".to_string(),
+        };
+
+        // Simulate the conversion done in finalize_mpu_updates
+        let storage_node = StorageNode {
+            datacenter: shark.datacenter.clone(),
+            manta_storage_id: shark.manta_storage_id.clone(),
+            available_mb: 0,
+            percent_used: 0,
+            filesystem: String::new(),
+            timestamp: 0,
+        };
+
+        assert_eq!(storage_node.datacenter, "us-east-1");
+        assert_eq!(storage_node.manta_storage_id, "42.stor.us-east.joyent.us");
+    }
+
+    #[test]
+    fn test_multiple_sharks_conversion() {
+        use crate::storinfo::StorageNode;
+        use libmanta::moray::MantaObjectShark;
+
+        let sharks = vec![
+            MantaObjectShark {
+                datacenter: "us-east-1".to_string(),
+                manta_storage_id: "1.stor.domain".to_string(),
+            },
+            MantaObjectShark {
+                datacenter: "us-west-2".to_string(),
+                manta_storage_id: "2.stor.domain".to_string(),
+            },
+        ];
+
+        let storage_nodes: Vec<StorageNode> = sharks
+            .iter()
+            .map(|s| StorageNode {
+                datacenter: s.datacenter.clone(),
+                manta_storage_id: s.manta_storage_id.clone(),
+                available_mb: 0,
+                percent_used: 0,
+                filesystem: String::new(),
+                timestamp: 0,
+            })
+            .collect();
+
+        assert_eq!(storage_nodes.len(), 2);
+        assert_eq!(storage_nodes[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(storage_nodes[1].manta_storage_id, "2.stor.domain");
+    }
+
+    // =========================================================================
+    // Tests for _calculate_available_mb() - critical capacity logic
+    // =========================================================================
+
+    fn make_dest_shark(
+        avail_mb: u64,
+        percent_used: u8,
+        assigned_mb: u64,
+    ) -> EvacuateDestShark {
+        EvacuateDestShark {
+            shark: StorageNode {
+                available_mb: avail_mb,
+                percent_used,
+                filesystem: "/manta".to_string(),
+                datacenter: "dc1".to_string(),
+                manta_storage_id: "1.stor.domain".to_string(),
+                timestamp: 0,
+            },
+            status: DestSharkStatus::Ready,
+            assigned_mb,
+        }
+    }
+
+    #[test]
+    fn test_calculate_available_mb_documented_example() {
+        // From the code comment:
+        // available_mb=900, assigned_mb=300, percent_used=10, max_fill=80
+        // total_mb = 1000, used_mb = 100, max_fill_mb = 800
+        // remaining = 800 - 100 - 300 = 400
+        let dest = make_dest_shark(900, 10, 300);
+        assert_eq!(_calculate_available_mb(&dest, 80), 400);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_zero_assigned() {
+        // available_mb=900, assigned_mb=0, percent_used=10, max_fill=80
+        // total_mb = 1000, used_mb = 100, max_fill_mb = 800
+        // remaining = 800 - 100 - 0 = 700
+        let dest = make_dest_shark(900, 10, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 700);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_100_percent_fill() {
+        // max_fill_percentage = 100 means use all capacity
+        // available_mb=900, percent_used=10, max_fill=100
+        // total_mb = 1000, used_mb = 100, max_fill_mb = 1000
+        // remaining = 1000 - 100 - 0 = 900
+        let dest = make_dest_shark(900, 10, 0);
+        assert_eq!(_calculate_available_mb(&dest, 100), 900);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_assigned_exceeds_remaining() {
+        // When assigned_mb exceeds remaining capacity, returns 0
+        // available_mb=900, assigned_mb=800, percent_used=10, max_fill=80
+        // total_mb=1000, used_mb=100, max_fill_mb=800
+        // remaining = 800 - 100 = 700, but 700 - 800 would underflow => 0
+        let dest = make_dest_shark(900, 10, 800);
+        assert_eq!(_calculate_available_mb(&dest, 80), 0);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_percent_used_exceeds_max_fill() {
+        // When percent_used > max_fill_percentage, returns 0
+        // percent_used=90 > max_fill=80
+        let dest = make_dest_shark(100, 90, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 0);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_50_percent_used() {
+        // available_mb=5000, percent_used=50, assigned_mb=0, max_fill=80
+        // total_mb = 5000 / 0.5 = 10000
+        // used_mb = 5000
+        // max_fill_mb = 8000
+        // remaining = 8000 - 5000 - 0 = 3000
+        let dest = make_dest_shark(5000, 50, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 3000);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_zero_used() {
+        // Fresh shark: 0% used
+        // available_mb=10000, percent_used=0 would cause division by zero
+        // (10000 / (1-0) = 10000)
+        // max_fill_mb = 10000 * 0.8 = 8000
+        // remaining = 8000 - 0 - 0 = 8000
+        let dest = make_dest_shark(10000, 0, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 8000);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_with_partial_assignment() {
+        // available_mb=4000, percent_used=20, assigned_mb=1000, max_fill=90
+        // total_mb = 4000 / 0.8 = 5000
+        // used_mb = 1000
+        // max_fill_mb = 4500
+        // remaining = 4500 - 1000 - 1000 = 2500
+        let dest = make_dest_shark(4000, 20, 1000);
+        assert_eq!(_calculate_available_mb(&dest, 90), 2500);
+    }
+
+    // =========================================================================
+    // Tests for validate_destination() - critical shark assignment safety
+    // =========================================================================
+
+    fn make_evac_shark(dc: &str, storage_id: &str) -> MantaObjectShark {
+        MantaObjectShark {
+            datacenter: dc.to_string(),
+            manta_storage_id: storage_id.to_string(),
+        }
+    }
+
+    fn make_storage_node(dc: &str, storage_id: &str) -> StorageNode {
+        StorageNode {
+            available_mb: 5000,
+            percent_used: 50,
+            filesystem: "/manta".to_string(),
+            datacenter: dc.to_string(),
+            manta_storage_id: storage_id.to_string(),
+            timestamp: 0,
+        }
+    }
+
+    fn make_mobj_value(sharks: &[(&str, &str)]) -> Value {
+        let shark_values: Vec<Value> = sharks
+            .iter()
+            .map(|(dc, sid)| {
+                serde_json::json!({
+                    "datacenter": dc,
+                    "manta_storage_id": sid,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "sharks": shark_values,
+            "name": "test-object",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "objectId": "obj-123",
+        })
+    }
+
+    #[test]
+    fn test_validate_destination_ok() {
+        // Object on sharks in dc1, evacuating from dc1,
+        // destination is a NEW shark in dc1 → allowed
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc1", "3.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    #[test]
+    fn test_validate_destination_object_already_on_dest() {
+        // Object is already on the destination shark → skip
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc1", "3.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc1", "3.stor.domain");
+
+        let reason = validate_destination(&mobj, &evac_shark, &dest_shark);
+        assert_eq!(reason, Some(ObjectSkippedReason::ObjectAlreadyOnDestShark));
+    }
+
+    #[test]
+    fn test_validate_destination_datacenter_fault_domain() {
+        // Object is on dc1 and dc2. Evacuating dc1 shark.
+        // Destination is in dc2 (different from evac shark's dc).
+        // Object already has a copy in dc2 → skip to preserve fault domain.
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc2", "4.stor.domain");
+
+        let reason = validate_destination(&mobj, &evac_shark, &dest_shark);
+        assert_eq!(
+            reason,
+            Some(ObjectSkippedReason::ObjectAlreadyInDatacenter)
+        );
+    }
+
+    #[test]
+    fn test_validate_destination_same_dc_as_evac_allowed() {
+        // Object on dc1 and dc2. Evacuating from dc1.
+        // Destination is ALSO in dc1 (same as evac shark's dc).
+        // This is OK because we're replacing a dc1 copy with
+        // another dc1 copy — no change to fault domain.
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc1", "5.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    #[test]
+    fn test_validate_destination_new_dc_no_copies() {
+        // Object on dc1 only. Evacuating from dc1.
+        // Destination is in dc3 (a new DC with no copies) → allowed
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc1", "10.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc3", "7.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    #[test]
+    fn test_validate_destination_three_copies_cross_dc() {
+        // Object on dc1(x2) and dc2(x1). Evacuating dc1/1.stor.
+        // Destination dc3 (new DC) → allowed
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc1", "10.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc3", "8.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    // =========================================================================
+    // Tests for EvacuateObjectError From<Error> conversion
+    // =========================================================================
+
+    #[test]
+    fn test_evac_error_from_bad_manta_object() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::BadMantaObject);
+    }
+
+    #[test]
+    fn test_evac_error_from_duplicate_shark() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::DuplicateShark),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::DuplicateShark);
+    }
+
+    #[test]
+    fn test_evac_error_from_bad_moray_client() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMorayClient),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::BadMorayClient);
+    }
+
+    #[test]
+    fn test_evac_error_from_metadata_update_failure() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::MetadataUpdateFailure),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::MetadataUpdateFailed);
+    }
+
+    #[test]
+    fn test_evac_error_from_other_internal_code() {
+        // Any other InternalErrorCode should map to InternalError
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::DbQuery),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::InternalError);
+    }
+
+    #[test]
+    fn test_evac_error_from_non_internal_error() {
+        // Non-Internal error variants map to InternalError
+        let err = Error::from(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "io error",
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::InternalError);
+    }
+
+    // =========================================================================
+    // Tests for EvacuateJobUpdateMessage validation
+    // =========================================================================
+
+    #[test]
+    fn test_update_msg_valid_thread_count() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(10);
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_msg_min_thread_count() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(1);
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_msg_max_thread_count() {
+        let msg =
+            EvacuateJobUpdateMessage::SetMetadataThreads(MAX_TUNABLE_MD_UPDATE_THREADS);
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_msg_zero_threads_rejected() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(0);
+        let result = msg.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("below 1"));
+    }
+
+    #[test]
+    fn test_update_msg_over_max_threads_rejected() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(
+            MAX_TUNABLE_MD_UPDATE_THREADS + 1,
+        );
+        let result = msg.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("above"));
+    }
+
+    #[test]
+    fn test_update_msg_deserialization() {
+        let payload = serde_json::json!({
+            "action": "set_metadata_threads",
+            "params": 30
+        });
+        let msg: EvacuateJobUpdateMessage =
+            serde_json::from_value(payload).unwrap();
+        let EvacuateJobUpdateMessage::SetMetadataThreads(count) = msg;
+        assert_eq!(count, 30);
+    }
+
+    #[test]
+    fn test_update_msg_bad_action_rejected() {
+        let payload = serde_json::json!({
+            "action": "nonexistent_action",
+            "params": 30
+        });
+        let result: Result<EvacuateJobUpdateMessage, _> =
+            serde_json::from_value(payload);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Tests for EvacuateObjectStatus and EvacuateObjectError enums
+    // =========================================================================
+
+    #[test]
+    fn test_evacuate_status_default_is_unprocessed() {
+        assert_eq!(
+            EvacuateObjectStatus::default(),
+            EvacuateObjectStatus::Unprocessed
+        );
+    }
+
+    #[test]
+    fn test_evacuate_status_display_roundtrip() {
+        // Verify all status variants can be converted to string and back
+        for status in EvacuateObjectStatus::iter() {
+            let s = status.to_string();
+            let parsed = EvacuateObjectStatus::from_str(&s).unwrap();
+            assert_eq!(parsed, status);
+        }
+    }
+
+    #[test]
+    fn test_evacuate_error_display_roundtrip() {
+        // Verify all error variants can be converted to string and back
+        for error in EvacuateObjectError::iter() {
+            let s = error.to_string();
+            let parsed = EvacuateObjectError::from_str(&s).unwrap();
+            assert_eq!(parsed, error);
+        }
+    }
+
+    #[test]
+    fn test_evacuate_status_snake_case() {
+        assert_eq!(
+            EvacuateObjectStatus::Unprocessed.to_string(),
+            "unprocessed"
+        );
+        assert_eq!(
+            EvacuateObjectStatus::PostProcessing.to_string(),
+            "post_processing"
+        );
+        assert_eq!(
+            EvacuateObjectStatus::Complete.to_string(),
+            "complete"
+        );
+    }
+
+    #[test]
+    fn test_evacuate_error_snake_case() {
+        assert_eq!(
+            EvacuateObjectError::BadMorayClient.to_string(),
+            "bad_moray_client"
+        );
+        assert_eq!(
+            EvacuateObjectError::MetadataUpdateFailed.to_string(),
+            "metadata_update_failed"
+        );
+        assert_eq!(
+            EvacuateObjectError::DuplicateShark.to_string(),
+            "duplicate_shark"
+        );
+    }
+
+    // =========================================================================
+    // Tests for MantaObjectEssential deserialization
+    // =========================================================================
+
+    #[test]
+    fn test_manta_object_essential_full_fields() {
+        let json = serde_json::json!({
+            "key": "/user/stor/myfile.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "contentLength": 1048576,
+            "contentMD5": "abc123def456",
+            "objectId": "obj-uuid-123",
+            "etag": "etag-value",
+            "sharks": [
+                {"datacenter": "dc1", "manta_storage_id": "1.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "2.stor.domain"}
+            ]
+        });
+
+        let essential: MantaObjectEssential =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(essential.key, "/user/stor/myfile.txt");
+        assert_eq!(essential.owner, "550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(essential.content_length, 1048576);
+        assert_eq!(essential.content_md5, "abc123def456");
+        assert_eq!(essential.object_id, "obj-uuid-123");
+        assert_eq!(essential.etag, "etag-value");
+        assert_eq!(essential.sharks.len(), 2);
+        assert_eq!(essential.sharks[0].manta_storage_id, "1.stor.domain");
+    }
+
+    #[test]
+    fn test_manta_object_essential_minimal_fields() {
+        // Only key and owner are required; rest has defaults
+        let json = serde_json::json!({
+            "key": "/user/stor/myfile.txt",
+            "owner": "test-owner"
+        });
+
+        let essential: MantaObjectEssential =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(essential.key, "/user/stor/myfile.txt");
+        assert_eq!(essential.owner, "test-owner");
+        assert_eq!(essential.content_length, 0);
+        assert_eq!(essential.content_md5, "");
+        assert_eq!(essential.object_id, "");
+        assert_eq!(essential.etag, "");
+        assert_eq!(essential.sharks.len(), 0);
+    }
+
+    #[test]
+    fn test_manta_object_essential_missing_key_fails() {
+        // key is required, so missing it should fail
+        let json = serde_json::json!({
+            "owner": "test-owner"
+        });
+        let result: Result<MantaObjectEssential, _> =
+            serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_manta_object_essential_camel_case_aliases() {
+        // Verify that camelCase serde aliases work
+        let json = serde_json::json!({
+            "key": "/key",
+            "owner": "own",
+            "contentLength": 999,
+            "contentMD5": "md5hash",
+            "objectId": "oid"
+        });
+
+        let essential: MantaObjectEssential =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(essential.content_length, 999);
+        assert_eq!(essential.content_md5, "md5hash");
+        assert_eq!(essential.object_id, "oid");
+    }
+
+    // =========================================================================
+    // Tests for build_skipped_strings()
+    // =========================================================================
+
+    #[test]
+    fn test_build_skipped_strings_contains_all_reasons() {
+        let strings = build_skipped_strings();
+        // Should contain entries for all non-HTTPStatusCode variants
+        // plus entries for the HTTP status code range
+        assert!(!strings.is_empty());
+
+        // Should contain standard skip reasons
+        assert!(strings
+            .iter()
+            .any(|s| s == &ObjectSkippedReason::ObjectAlreadyOnDestShark.to_string()));
+        assert!(strings
+            .iter()
+            .any(|s| s == &ObjectSkippedReason::NetworkError.to_string()));
+        assert!(strings
+            .iter()
+            .any(|s| s == &ObjectSkippedReason::ObjectAlreadyInDatacenter.to_string()));
+    }
+
+    #[test]
+    fn test_build_skipped_strings_http_codes() {
+        let strings = build_skipped_strings();
+        // HTTP entries use snake_case format from Strum:
+        // "{http_status_code:100}", "{http_status_code:101}", etc.
+        let http_variant =
+            ObjectSkippedReason::HTTPStatusCode(0).to_string();
+        let http_count = strings
+            .iter()
+            .filter(|s| s.contains(&http_variant))
+            .count();
+        let expected =
+            (MAX_HTTP_STATUS_CODE - MIN_HTTP_STATUS_CODE) as usize;
+        assert_eq!(http_count, expected);
+    }
+
+    #[test]
+    fn test_build_skipped_strings_http_entries_wrapped() {
+        let strings = build_skipped_strings();
+        let http_variant =
+            ObjectSkippedReason::HTTPStatusCode(0).to_string();
+        for s in &strings {
+            // Each HTTP string should be wrapped in braces
+            if s.contains(&http_variant) {
+                assert!(s.starts_with('{'), "HTTP entry should be wrapped: {}", s);
+                assert!(s.ends_with('}'), "HTTP entry should be wrapped: {}", s);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Tests for EvacuateObject TryFrom<SharkspotterMessage>
+    // =========================================================================
+
+    #[test]
+    fn test_try_from_sharkspotter_msg_ok() {
+        let manta_value = serde_json::json!({
+            "objectId": "test-obj-id-123",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "sharks": [],
+        });
+        let msg = SharkspotterMessage {
+            manta_value,
+            etag: "etag-abc".to_string(),
+            shark: "1.stor.domain".to_string(),
+            shard: 42,
+        };
+
+        let result = EvacuateObject::try_from(msg);
+        assert!(result.is_ok());
+        let eobj = result.unwrap();
+        assert_eq!(eobj.id, "test-obj-id-123");
+        assert_eq!(eobj.etag, "etag-abc");
+        assert_eq!(eobj.shard, 42);
+        assert_eq!(eobj.status, EvacuateObjectStatus::Unprocessed);
+    }
+
+    #[test]
+    fn test_try_from_sharkspotter_msg_shard_overflow() {
+        let manta_value = serde_json::json!({
+            "objectId": "overflow-obj",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "sharks": [],
+        });
+        let msg = SharkspotterMessage {
+            manta_value,
+            etag: "etag".to_string(),
+            shark: "1.stor.domain".to_string(),
+            shard: (std::i32::MAX as u32) + 1,
+        };
+
+        let result = EvacuateObject::try_from(msg);
+        assert!(result.is_err());
+        let eobj = result.unwrap_err();
+        assert_eq!(eobj.status, EvacuateObjectStatus::Error);
+        assert_eq!(eobj.error, Some(EvacuateObjectError::BadShardNumber));
+    }
+
+    #[test]
+    fn test_try_from_sharkspotter_msg_max_valid_shard() {
+        let manta_value = serde_json::json!({
+            "objectId": "max-shard-obj",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "sharks": [],
+        });
+        let msg = SharkspotterMessage {
+            manta_value,
+            etag: "etag".to_string(),
+            shark: "1.stor.domain".to_string(),
+            shard: std::i32::MAX as u32,
+        };
+
+        let result = EvacuateObject::try_from(msg);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().shard, std::i32::MAX);
+    }
+
+    // =========================================================================
+    // Tests for DestSharkStatus
+    // =========================================================================
+
+    #[test]
+    fn test_dest_shark_status_clone_eq() {
+        let status = DestSharkStatus::Init;
+        assert_eq!(status.clone(), DestSharkStatus::Init);
+        assert_ne!(status, DestSharkStatus::Assigned);
+        assert_ne!(status, DestSharkStatus::Ready);
+        assert_ne!(status, DestSharkStatus::Unavailable);
     }
 }

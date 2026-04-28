@@ -45,7 +45,7 @@ type Assignments = HashMap<String, Arc<RwLock<Assignment>>>;
 
 static REBALANCER_SCHEDULED_DIR: &str = "/var/tmp/rebalancer/scheduled";
 static REBALANCER_FINISHED_DIR: &str = "/var/tmp/rebalancer/completed";
-static REBALANCER_TEMP_DIR: &str = "/manta/rebalancer";
+static REBALANCER_TEMP_DIR: &str = "/var/tmp/rebalancer/temp";
 
 #[derive(Clone, Default, Deserialize)]
 pub struct AgentConfig {
@@ -63,6 +63,13 @@ pub struct ConfigServer {
     pub workers: usize,
     // Maximum number of worker threads per assignment.
     pub workers_per_assignment: usize,
+    // HTTP timeout in seconds for downloading objects from source sharks.
+    #[serde(default = "default_download_timeout_secs")]
+    pub download_timeout_secs: u64,
+}
+
+fn default_download_timeout_secs() -> u64 {
+    120
 }
 
 impl Default for ConfigServer {
@@ -70,8 +77,9 @@ impl Default for ConfigServer {
         Self {
             host: "0.0.0.0".into(),
             port: 7878,
-            workers: 1,
-            workers_per_assignment: 1,
+            workers: 4,
+            workers_per_assignment: 4,
+            download_timeout_secs: default_download_timeout_secs(),
         }
     }
 }
@@ -119,12 +127,16 @@ pub struct Agent {
     quiescing: Arc<Mutex<HashSet<String>>>,
     tx: Arc<Mutex<mpsc::Sender<String>>>,
     metrics: Arc<Mutex<Option<MetricsMap>>>,
+    /// Maximum number of assignments to accept into the queue.
+    /// Assignments beyond this limit are rejected with 503.
+    max_queued: usize,
 }
 
 impl Agent {
     pub fn new(
         tx: Arc<Mutex<mpsc::Sender<String>>>,
         metrics: Arc<Mutex<Option<MetricsMap>>>,
+        max_queued: usize,
     ) -> Agent {
         let assignments = Arc::new(Mutex::new(Assignments::new()));
         let quiescing = Arc::new(Mutex::new(HashSet::new()));
@@ -133,27 +145,31 @@ impl Agent {
             quiescing,
             tx,
             metrics,
+            max_queued,
         }
     }
 
-    fn read_config<F: AsRef<OsStr> + ?Sized>(f: &F) -> AgentConfig {
-        let s = match fs::read(Path::new(&f)) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("Failed to read config file: {}", e);
-                std::process::exit(1);
-            }
-        };
+    fn read_config<F: AsRef<OsStr> + ?Sized>(
+        f: &F,
+    ) -> Result<AgentConfig, String> {
+        let s = fs::read(Path::new(&f)).map_err(|e| {
+            format!("Failed to read config file: {}", e)
+        })?;
 
-        toml::from_slice(&s).unwrap_or_else(|e| {
-            eprintln!("Failed to parse config file: {}", e);
-            std::process::exit(1);
+        toml::from_slice(&s).map_err(|e| {
+            format!("Failed to parse config file: {}", e)
         })
     }
 
     pub fn run(cfg_path: Option<&str>) {
         let config = match cfg_path {
-            Some(c) => Agent::read_config(c),
+            Some(c) => match Agent::read_config(c) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    return;
+                }
+            },
             None => AgentConfig::default(),
         };
         let addr = format!("{}:{}", config.server.host, config.server.port);
@@ -173,7 +189,7 @@ impl Agent {
             return true;
         }
 
-        let q = &mut self.quiescing.lock().unwrap();
+        let q = &mut self.quiescing.lock().unwrap_or_else(|e| e.into_inner());
         match q.get(uuid) {
             // An assignment by this uuid is currently in the process of being
             // saved to disk.  Return.
@@ -237,7 +253,7 @@ impl AssignmentOpErr {
 // from the receiving end of the channel and will then attempt to load it from
 // disk in to memory for processing.
 fn assignment_signal(agent: &Agent, uuid: &str) {
-    let tx = agent.tx.lock().unwrap();
+    let tx = agent.tx.lock().unwrap_or_else(|e| e.into_inner());
     tx.send(uuid.to_string()).unwrap();
 }
 
@@ -251,7 +267,7 @@ fn load_saved_assignment(
 ) -> Result<(), String> {
     match assignment_recall(format!("{}/{}", REBALANCER_SCHEDULED_DIR, &uuid)) {
         Ok(a) => {
-            let mut work = assignments.lock().unwrap();
+            let mut work = assignments.lock().unwrap_or_else(|e| e.into_inner());
             work.insert(uuid.to_string(), a);
             Ok(())
         }
@@ -290,85 +306,101 @@ fn assignment_save(
     uuid: &str,
     path: &str,
     assignment: Arc<RwLock<Assignment>>,
-) {
+) -> Result<(), String> {
     let mut conn =
         match rusqlite::Connection::open(format!("{}/{}", path, uuid)) {
             Ok(conn) => conn,
-            Err(e) => panic!("DB error opening {}/{}: {}", path, uuid, e),
+            Err(e) => {
+                return Err(format!(
+                    "DB error opening {}/{}: {}",
+                    path, uuid, e
+                ));
+            }
         };
 
-    let assn = assignment.read().unwrap();
+    let assn = assignment.read().unwrap_or_else(|e| e.into_inner());
     let tasklist = &assn.tasks;
     let stats = &assn.stats;
 
     // Create a transaction.  All database operations within this function
     // will be part of this transaction.  This includes the creation of both
     // the `tasks' and the `stats' table and the insertion of data in to each.
-    let transaction = conn.transaction().unwrap();
+    let transaction = conn.transaction().map_err(|e| {
+        format!("Transaction start error on uuid {}: {}", uuid, e)
+    })?;
 
     // Create the table for our tasks.
-    match transaction.execute(
-        "create table if not exists tasks (
+    transaction
+        .execute(
+            "create table if not exists tasks (
         object_id text primary key not null unique,
         owner text not null,
         md5sum text not null,
         datacenter text not null,
         manta_storage_id text not null,
-        status text not null
+        status text not null,
+        bucket_id text,
+        object_name_hash text
 	)",
-        rusqlite::params![],
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Database creation error: {}", e),
-    }
+            rusqlite::params![],
+        )
+        .map_err(|e| format!("Database creation error: {}", e))?;
 
     // Create the table for our stats.
-    match transaction.execute(
-        "create table if not exists stats (stats text not null)",
-        rusqlite::params![],
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Database creation error: {}", e),
-    }
+    transaction
+        .execute(
+            "create table if not exists stats (stats text not null)",
+            rusqlite::params![],
+        )
+        .map_err(|e| format!("Database creation error: {}", e))?;
 
     // Populate the task table with the tasks in this assignment.
     for task in tasklist.iter() {
-        match transaction.execute(
-            "INSERT INTO tasks
-            (object_id, owner, md5sum, datacenter, manta_storage_id, status)
-            values (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                task.object_id,
-                task.owner,
-                task.md5sum,
-                task.source.datacenter,
-                task.source.manta_storage_id,
-                serde_json::to_vec(&task.status).unwrap()
-            ],
-        ) {
-            Ok(_) => (),
-            Err(e) => {
-                panic!("Task insertion error on assignment {}: {}", &uuid, e)
-            }
-        };
+        transaction
+            .execute(
+                "INSERT INTO tasks
+            (object_id, owner, md5sum, datacenter,
+             manta_storage_id, status,
+             bucket_id, object_name_hash)
+            values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    task.object_id,
+                    task.owner,
+                    task.md5sum,
+                    task.source.datacenter,
+                    task.source.manta_storage_id,
+                    serde_json::to_vec(&task.status).unwrap(),
+                    task.bucket_id,
+                    task.object_name_hash,
+                ],
+            )
+            .map_err(|e| {
+                format!(
+                    "Task insertion error on assignment {}: {}",
+                    &uuid, e
+                )
+            })?;
     }
 
     // Populate the stats table with our stats
-    match transaction.execute(
-        "INSERT INTO stats values (?1)",
-        rusqlite::params![serde_json::to_vec(&stats).unwrap()],
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Task insertion error on assignment {}: {}", &uuid, e),
-    };
+    transaction
+        .execute(
+            "INSERT INTO stats values (?1)",
+            rusqlite::params![serde_json::to_vec(&stats).unwrap()],
+        )
+        .map_err(|e| {
+            format!("Task insertion error on assignment {}: {}", &uuid, e)
+        })?;
 
     // Finally, kick off the transaction as a whole.  Up until this point,
     // nothing has been committed to the database.  If this does not complete
     // successfully, we likely have a systemic problem that retrying or
     // "handling" will not mitigate.
-    if let Err(e) = transaction.commit() {
-        panic!("Transaction error on uuid: {}: {}", uuid, e);
-    }
+    transaction.commit().map_err(|e| {
+        format!("Transaction error on uuid: {}: {}", uuid, e)
+    })?;
+
+    Ok(())
 }
 
 // Given the path of a particular assignment, extract its contents from
@@ -401,7 +433,8 @@ fn assignment_recall<S: Into<String>>(
 
     let mut stmt = match conn.prepare(
         "SELECT object_id, owner, md5sum,
-	   datacenter, manta_storage_id, status FROM tasks",
+	   datacenter, manta_storage_id, status,
+	   bucket_id, object_name_hash FROM tasks",
     ) {
         Ok(s) => s,
         Err(e) => return Err(format!("Query creation error: {}", e)),
@@ -426,6 +459,8 @@ fn assignment_recall<S: Into<String>>(
             md5sum: row.get(2)?,
             source,
             status,
+            bucket_id: row.get(6)?,
+            object_name_hash: row.get(7)?,
         };
         Ok(t)
     }) {
@@ -476,16 +511,20 @@ fn assignment_recall<S: Into<String>>(
 fn assignment_complete(assignments: Arc<Mutex<Assignments>>, uuid: String) {
     let assn = assignment_get(&assignments, &uuid).unwrap();
 
-    assignment_save(&uuid, REBALANCER_FINISHED_DIR, assn);
+    if let Err(e) = assignment_save(&uuid, REBALANCER_FINISHED_DIR, assn) {
+        error!(
+            "Failed to save completed assignment {}: {}",
+            uuid, e
+        );
+    }
     let src = format!("{}/{}", REBALANCER_SCHEDULED_DIR, uuid);
 
-    match fs::remove_file(&src) {
-        Ok(_) => (),
-        Err(e) => panic!(format!("Error removing file: {}", e)),
-    };
+    if let Err(e) = fs::remove_file(&src) {
+        error!("Error removing file {}: {}", src, e);
+    }
 
     // Remove it from our HashMap of assignments.
-    let mut hm = assignments.lock().unwrap();
+    let mut hm = assignments.lock().unwrap_or_else(|e| e.into_inner());
     hm.remove(&uuid);
 }
 
@@ -599,7 +638,7 @@ fn post_assignment_handler(
                             StatusCode::BAD_REQUEST,
                         );
 
-                        if let Some(m) = agent.metrics.lock().unwrap().clone() {
+                        if let Some(m) = agent.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                             counter_vec_inc(&m, ERROR_COUNT, Some(&e));
                         }
                         return future::ok((state, res));
@@ -613,10 +652,38 @@ fn post_assignment_handler(
                     let res =
                         create_empty_response(&state, StatusCode::CONFLICT);
 
-                    if let Some(m) = agent.metrics.lock().unwrap().clone() {
+                    if let Some(m) = agent.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                         counter_vec_inc(&m, ERROR_COUNT, Some("conflict"));
                     }
 
+                    return future::ok((state, res));
+                }
+
+                // Backpressure: reject new assignments when the
+                // scheduled queue exceeds what the worker pool can
+                // process in a reasonable time.  Without this, the
+                // manager queues hundreds of assignments that rot in
+                // Scheduled state and eventually time out.
+                let scheduled_count = WalkDir::new(REBALANCER_SCHEDULED_DIR)
+                    .min_depth(1)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .count();
+
+                if scheduled_count >= agent.max_queued {
+                    info!(
+                        "Rejecting assignment {}: {} scheduled \
+                         exceeds max {}",
+                        &uuid, scheduled_count, agent.max_queued
+                    );
+                    // Remove from quiescing set since we won't save it.
+                    agent.quiescing.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&uuid);
+                    let res = create_empty_response(
+                        &state,
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    );
                     return future::ok((state, res));
                 }
 
@@ -628,10 +695,21 @@ fn post_assignment_handler(
 
                 // Before we even process the assignment, save it to persistent
                 // storage.
-                assignment_save(&uuid, REBALANCER_SCHEDULED_DIR, assignment);
+                if let Err(e) = assignment_save(
+                    &uuid,
+                    REBALANCER_SCHEDULED_DIR,
+                    assignment,
+                ) {
+                    error!("Failed to save assignment {}: {}", uuid, e);
+                    let res = create_empty_response(
+                        &state,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    );
+                    return future::ok((state, res));
+                }
 
                 // Assignment has been saved.  Remove its id from the the table.
-                agent.quiescing.lock().unwrap().remove(&uuid);
+                agent.quiescing.lock().unwrap_or_else(|e| e.into_inner()).remove(&uuid);
 
                 // Create a response containing our newly initialized stats.
                 // This serves as confirmation to the client that we recieved
@@ -651,7 +729,7 @@ fn post_assignment_handler(
             }
 
             Err(e) => {
-                if let Some(m) = agent.metrics.lock().unwrap().clone() {
+                if let Some(m) = agent.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                     counter_vec_inc(&m, ERROR_COUNT, Some(&e.to_string()));
                 }
 
@@ -721,7 +799,7 @@ fn get_assignment_handler(
 
     let res = match get_assignment_impl(&agent, &uuid) {
         Some(a) => {
-            let assignment = a.read().unwrap();
+            let assignment = a.read().unwrap_or_else(|e| e.into_inner());
             create_response(
                 &state,
                 StatusCode::OK,
@@ -760,7 +838,7 @@ impl Handler for Agent {
     fn handle(self, state: State) -> Box<HandlerFuture> {
         let method = Method::borrow_from(&state);
 
-        if let Some(m) = self.metrics.lock().unwrap().clone() {
+        if let Some(m) = self.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
             counter_vec_inc(&m, REQUEST_COUNT, Some(method.as_str()));
         }
 
@@ -797,20 +875,95 @@ fn manta_file_path(owner: &str, object: &str) -> String {
     path
 }
 
-fn file_move(src: &str, dst: &str) {
+/// Storage path prefix length -- first N chars of object_id
+/// used as a subdirectory to limit files per directory.
+const STORAGE_LAYOUT_PREFIX_LEN: usize = 2;
+
+/// Construct the on-disk path for an MDAPI (v2) object.
+///
+/// Layout: /manta/v2/{owner}/{bucket_id}/{prefix}/{id},{hash}
+fn mdapi_file_path(
+    owner: &str,
+    object_id: &str,
+    bucket_id: &str,
+    name_hash: &str,
+) -> String {
+    assert!(
+        object_id.len() >= STORAGE_LAYOUT_PREFIX_LEN,
+        "object_id too short for prefix extraction"
+    );
+    let prefix = &object_id[..STORAGE_LAYOUT_PREFIX_LEN];
+    format!(
+        "/manta/v2/{}/{}/{}/{},{}",
+        owner, bucket_id, prefix, object_id, name_hash
+    )
+}
+
+/// Construct the download URL for an MDAPI (v2) object.
+///
+/// Layout: http://{host}/v2/{owner}/{bucket_id}/{prefix}/{id},{hash}
+fn mdapi_download_url(
+    host: &str,
+    owner: &str,
+    object_id: &str,
+    bucket_id: &str,
+    name_hash: &str,
+) -> String {
+    let prefix = &object_id[..STORAGE_LAYOUT_PREFIX_LEN];
+    format!(
+        "http://{}/v2/{}/{}/{}/{},{}",
+        host, owner, bucket_id, prefix, object_id, name_hash
+    )
+}
+
+fn file_move(src: &str, dst: &str) -> Result<(), String> {
     let parent = match Path::new(dst).parent() {
         Some(p) => p,
-        None => panic!("Invalid destination path supplied."),
+        None => {
+            return Err("Invalid destination path supplied.".to_string());
+        }
     };
 
     // Check to see if the destination directory exists.  If it does not, then
     // create it now.
     if !parent.exists() {
-        create_dir(parent.to_str().unwrap());
+        fs::create_dir_all(parent).map_err(|e| {
+            format!("Error creating directory {:?}: {}", parent, e)
+        })?;
     }
 
-    if let Err(e) = fs::rename(src, dst) {
-        panic!("Error renaming file {}: {}", src, e);
+    match fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // EXDEV (errno 18): src and dst are on different filesystems.
+            // This is expected on SmartOS storage zones where /var/tmp and
+            // /manta are separate ZFS datasets.  Fall back to copy + delete.
+            if e.raw_os_error() == Some(18) {
+                info!(
+                    "rename across filesystems, falling back to \
+                     copy+delete: {} -> {}",
+                    src, dst
+                );
+                fs::copy(src, dst).map_err(|ce| {
+                    format!(
+                        "Error copying file {} -> {}: {}",
+                        src, dst, ce
+                    )
+                })?;
+                fs::remove_file(src).map_err(|re| {
+                    format!(
+                        "Error removing temp file {} after copy: {}",
+                        src, re
+                    )
+                })?;
+                Ok(())
+            } else {
+                Err(format!(
+                    "Error renaming file {} -> {}: {}",
+                    src, dst, e
+                ))
+            }
+        }
     }
 }
 
@@ -820,18 +973,15 @@ fn file_remove(file_path: &str) {
     }
 
     if let Err(e) = fs::remove_file(&file_path) {
-        panic!("Error removing file {}: {}", &file_path, e);
+        error!("Error removing file {}: {}", &file_path, e);
     }
 }
 
-fn file_create(file_path: &str) -> File {
-    match File::create(&file_path) {
-        Err(e) => panic!("Error creating file {}", e),
-        Ok(file) => file,
-    }
+fn file_create(file_path: &str) -> Result<File, String> {
+    File::create(&file_path)
+        .map_err(|e| format!("Error creating file {}: {}", file_path, e))
 }
 
-// TODO: Make this return an actual result.
 fn download(
     uri: &str,
     owner: &str,
@@ -839,10 +989,48 @@ fn download(
     csum: &str,
     client: &Client,
 ) -> Result<u64, ObjectSkippedReason> {
-    let mut response = match client.get(uri).send() {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("Request failed: {}", &e);
+    // Retry transient connection errors (refused, timeout, DNS)
+    // before permanently skipping the object.
+    const MAX_RETRIES: u32 = 3;
+    let mut last_err = String::new();
+    let mut response = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        match client.get(uri).send() {
+            Ok(resp) => {
+                response = Some(resp);
+                break;
+            }
+            Err(e) => {
+                last_err = format!("{}", e);
+                if attempt < MAX_RETRIES {
+                    let backoff = 2u64.pow(attempt); // 1s, 2s, 4s
+                    warn!(
+                        "Request failed (attempt {}/{}), retrying \
+                         in {}s: {} ({})",
+                        attempt + 1,
+                        MAX_RETRIES + 1,
+                        backoff,
+                        uri,
+                        e,
+                    );
+                    std::thread::sleep(
+                        std::time::Duration::from_secs(backoff),
+                    );
+                }
+            }
+        }
+    }
+
+    let mut response = match response {
+        Some(r) => r,
+        None => {
+            error!(
+                "Request failed after {} attempts: {} ({})",
+                MAX_RETRIES + 1,
+                uri,
+                last_err,
+            );
             return Err(ObjectSkippedReason::SourceOtherError);
         }
     };
@@ -851,18 +1039,33 @@ fn download(
     let msg = format!("Download response for {} is {}", uri, status);
     if status != reqwest::StatusCode::OK {
         error!("{}", msg);
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(ObjectSkippedReason::SourceObjectNotFound);
+        }
         return Err(ObjectSkippedReason::HTTPStatusCode(status.into()));
     }
 
     trace!("{}", msg);
 
     let tmp_path = manta_tmp_path(owner, object);
-    let mut file = file_create(&tmp_path);
+    let mut file = match file_create(&tmp_path) {
+        Ok(f) => f,
+        Err(e) => {
+            error!(
+                "AgentFSError: file_create {}: {}",
+                &tmp_path, e
+            );
+            return Err(ObjectSkippedReason::AgentFSError);
+        }
+    };
 
     let bytes = match std::io::copy(&mut response, &mut file) {
         Ok(b) => b,
         Err(e) => {
-            error!("Failed to complete object download: {}:{}", uri, e);
+            error!(
+                "AgentFSError: write to {}: {} (from {})",
+                &tmp_path, e, uri
+            );
             return Err(ObjectSkippedReason::AgentFSError);
         }
     };
@@ -880,7 +1083,41 @@ pub fn process_task(
     client: &Client,
     metrics: &Option<MetricsMap>,
 ) {
-    let file_path = manta_file_path(&task.owner, &task.object_id);
+    // Determine paths based on object type (v1 dir API vs v2 MDAPI)
+    let (file_path, url, obj_type) = match (
+        &task.bucket_id,
+        &task.object_name_hash,
+    ) {
+        (Some(bid), Some(nhash)) => (
+            mdapi_file_path(
+                &task.owner, &task.object_id, bid, nhash,
+            ),
+            mdapi_download_url(
+                &task.source.manta_storage_id,
+                &task.owner,
+                &task.object_id,
+                bid,
+                nhash,
+            ),
+            "v2",
+        ),
+        _ => (
+            manta_file_path(&task.owner, &task.object_id),
+            format!(
+                "http://{}/{}/{}",
+                &task.source.manta_storage_id,
+                &task.owner,
+                &task.object_id,
+            ),
+            "v1",
+        ),
+    };
+
+    info!(
+        "process_task: {} object {} -> {}",
+        obj_type, &task.object_id, &file_path
+    );
+
     let path = Path::new(&file_path);
 
     // If the file exists and the checksum matches, then
@@ -895,13 +1132,6 @@ pub fn process_task(
         );
         return;
     }
-
-    // Put it all together.  The format of the url is:
-    // http://<storage id>/<owner id>/<object id>
-    let url = format!(
-        "http://{}/{}/{}",
-        &task.source.manta_storage_id, &task.owner, &task.object_id
-    );
 
     let tmp_path = manta_tmp_path(&task.owner, &task.object_id);
 
@@ -924,17 +1154,25 @@ pub fn process_task(
                 &task.owner, &task.object_id, bytes
             );
 
-            // Upon successful download, move the temprorary object to its
-            // rightful location (i.e. /manta/account/object).
-            let manta_path = manta_file_path(&task.owner, &task.object_id);
-            file_move(&tmp_path, &manta_path);
-            TaskStatus::Complete
+            // Upon successful download, move the temporary
+            // object to its rightful location.
+            match file_move(&tmp_path, &file_path) {
+                Ok(()) => TaskStatus::Complete,
+                Err(e) => {
+                    error!(
+                        "AgentFSError: file_move {} -> {}: {}",
+                        &tmp_path, &file_path, e
+                    );
+                    TaskStatus::Failed(
+                        ObjectSkippedReason::AgentFSError,
+                    )
+                }
+            }
         }
         Err(e) => {
-            // If we failed to complete the download, remove the temporary
-            // file so that these kinds of things do not pile up.  It is
-            // worth mentioning that in all failure cases except one there
-            // will a partially downloaded object that requires clean-up.
+            // If we failed to complete the download, remove
+            // the temporary file so that these kinds of things
+            // do not pile up.
             file_remove(&tmp_path);
             TaskStatus::Failed(e)
         }
@@ -951,7 +1189,7 @@ fn assignment_get(
     assignments: &Arc<Mutex<Assignments>>,
     uuid: &str,
 ) -> Option<Arc<RwLock<Assignment>>> {
-    let work = assignments.lock().unwrap();
+    let work = assignments.lock().unwrap_or_else(|e| e.into_inner());
     match work.get(uuid) {
         Some(assignment) => Some(Arc::clone(&assignment)),
         None => None,
@@ -967,7 +1205,7 @@ fn process_assignment_impl(
     client: &Client,
     next: Arc<Mutex<usize>>,
 ) {
-    let len = assignment.read().unwrap().tasks.len();
+    let len = assignment.read().unwrap_or_else(|e| e.into_inner()).tasks.len();
 
     loop {
         // Obtain the index of the next unprocessed task in the vector.  This
@@ -976,7 +1214,7 @@ fn process_assignment_impl(
         // but tedious operation(s) of checking the status of a few before
         // finally arriving at one that has not yet been processed.
         let index: usize = {
-            let mut guard = next.lock().unwrap();
+            let mut guard = next.lock().unwrap_or_else(|e| e.into_inner());
             if *guard == len {
                 break;
             }
@@ -986,7 +1224,7 @@ fn process_assignment_impl(
             i
         };
 
-        let mut t = assignment.read().unwrap().tasks[index].clone();
+        let mut t = assignment.read().unwrap_or_else(|e| e.into_inner()).tasks[index].clone();
 
         trace!(
             "Processing task: assignment: {}, owner: {}, object: {}",
@@ -1008,7 +1246,7 @@ fn process_assignment_impl(
             counter_vec_inc(&m, OBJECT_COUNT, None);
         }
 
-        let tmp = &mut assignment.write().unwrap();
+        let tmp = &mut assignment.write().unwrap_or_else(|e| e.into_inner());
 
         // Update our stats.
         tmp.stats.complete += 1;
@@ -1018,7 +1256,7 @@ fn process_assignment_impl(
                 counter_vec_inc(&m, ERROR_COUNT, Some(&e.to_string()));
             }
             tmp.stats.failed += 1;
-            failures.lock().unwrap().push(t.clone());
+            failures.lock().unwrap_or_else(|e| e.into_inner()).push(t.clone());
         }
 
         // Update the task in the assignment.
@@ -1060,11 +1298,11 @@ fn process_assignment(
     }
 
     let assignment = assignment_get(&assignments, &uuid).unwrap();
-    let len = assignment.read().unwrap().tasks.len();
+    let len = assignment.read().unwrap_or_else(|e| e.into_inner()).tasks.len();
     let failures = Arc::new(Mutex::new(Vec::new()));
     let next = Arc::new(Mutex::new(0));
 
-    assignment.write().unwrap().stats.state = AgentAssignmentState::Running;
+    assignment.write().unwrap_or_else(|e| e.into_inner()).stats.state = AgentAssignmentState::Running;
 
     info!("Begin processing assignment {}.", &uuid);
 
@@ -1091,13 +1329,13 @@ fn process_assignment(
         histogram_observe(&m, ASSIGNMENT_TIME, done);
     }
 
-    let failed = if failures.lock().unwrap().is_empty() {
+    let failed = if failures.lock().unwrap_or_else(|e| e.into_inner()).is_empty() {
         None
     } else {
-        Some(failures.lock().unwrap().clone())
+        Some(failures.lock().unwrap_or_else(|e| e.into_inner()).clone())
     };
 
-    assignment.write().unwrap().stats.state =
+    assignment.write().unwrap_or_else(|e| e.into_inner()).stats.state =
         AgentAssignmentState::Complete(failed);
 
     info!(
@@ -1137,11 +1375,13 @@ pub fn router(
         let mut agent_metrics: Option<MetricsMap> = None;
         let mut workers = 1;
         let mut workers_per_assignment = 1;
+        let mut download_timeout_secs = default_download_timeout_secs();
 
         if let Some(c) = config {
             agent_metrics = Some(agent_start_metrics_server(&c));
             workers = c.server.workers;
             workers_per_assignment = c.server.workers_per_assignment;
+            download_timeout_secs = c.server.download_timeout_secs;
         }
 
         assert!(workers > 0 && workers_per_assignment > 0);
@@ -1150,7 +1390,17 @@ pub fn router(
             mpsc::channel();
         let tx = Arc::new(Mutex::new(w));
         let rx = Arc::new(Mutex::new(r));
-        let agent = Agent::new(tx, Arc::new(Mutex::new(agent_metrics.clone())));
+        // Allow a generous buffer so the manager rarely blocks on
+        // 503 retries, but bounded so the queue doesn't grow beyond
+        // what agents can drain within the checker timeout
+        // (2 * max_assignment_age).  Each queued assignment is a
+        // small sqlite file on disk.
+        let max_queued = workers * 50;
+        let agent = Agent::new(
+            tx,
+            Arc::new(Mutex::new(agent_metrics.clone())),
+            max_queued,
+        );
         let pool = ThreadPool::new(workers);
 
         create_dir(REBALANCER_SCHEDULED_DIR);
@@ -1165,15 +1415,23 @@ pub fn router(
 
         create_dir(REBALANCER_TEMP_DIR);
 
+        info!(
+            "download_timeout_secs={}, workers={}, workers_per_assignment={}",
+            download_timeout_secs, workers, workers_per_assignment,
+        );
+
         for _ in 0..workers {
             let rx = Arc::clone(&rx);
             let assignments = Arc::clone(&agent.assignments);
             let m = agent_metrics.clone();
-            let client = reqwest::Client::new();
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(download_timeout_secs))
+                .build()
+                .expect("failed to build reqwest client");
             let worker_pool = ThreadPool::new(workers_per_assignment);
 
             pool.execute(move || loop {
-                let uuid = match rx.lock().unwrap().recv() {
+                let uuid = match rx.lock().unwrap_or_else(|e| e.into_inner()).recv() {
                     Ok(r) => r,
                     Err(e) => {
                         debug!("Channel read error: {}", e);

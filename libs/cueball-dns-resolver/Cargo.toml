@@ -28,7 +28,7 @@ trust-dns-client = "^0.19.4"
 trust-dns-proto = "0.19.4"
 tokio = "0.1.5"
 tokio-core = "0.1.17"
-unicode-normalization = "=0.1.5"
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 slog-term = "2.4.0"

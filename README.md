@@ -27,6 +27,44 @@ open http://127.0.0.1:8080/bugview/index.html
 curl http://127.0.0.1:8080/bugview/index.json | jq
 ```
 
+## Workspace Configurations
+
+This repository has two workspace configurations for different Rust
+toolchains:
+
+| Config | Rust Version | Crates |
+|--------|--------------|--------|
+| `Cargo.toml` (default) | 1.90+ (project-local) | bugview, jira-api, openapi-manager |
+| `Cargo.toml.legacy` | 1.81+ (system) | rebalancer-legacy, cueball, moray |
+
+### Building Modern Crates (bugview, etc.)
+
+```bash
+CARGO_HOME="$PWD/rust/cargo" RUSTUP_HOME="$PWD/rust/rustup" \
+  rust/cargo/bin/cargo check --workspace
+```
+
+### Building Legacy Crates (rebalancer, etc.)
+
+```bash
+# Switch to legacy workspace
+mv Cargo.toml Cargo.toml.modern
+mv Cargo.toml.legacy Cargo.toml
+cp Cargo.lock.legacy Cargo.lock
+
+# Build with system Rust
+cargo check --workspace
+
+# Switch back to modern
+mv Cargo.toml Cargo.toml.legacy
+mv Cargo.toml.modern Cargo.toml
+rm Cargo.lock
+```
+
+The legacy crates use old dependencies (trust-dns 0.11, ring 0.14) that
+require pinned versions of `cc` and `backtrace` to build with modern
+Rust. The `Cargo.lock.legacy` file contains these pins.
+
 ## Project Structure
 
 ```

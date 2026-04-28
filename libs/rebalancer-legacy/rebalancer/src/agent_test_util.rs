@@ -66,7 +66,7 @@ pub fn send_assignment_impl(
     let data = String::from_utf8(body.to_vec()).unwrap();
     let resp_uuid: String = match serde_json::from_str(&data) {
         Ok(s) => s,
-        Err(e) => panic!(format!("Error: {}", e)),
+        Err(e) => panic!("Error: {}", e),
     };
 
     info!("Response: {:?}", resp_uuid);
@@ -91,7 +91,7 @@ pub fn get_progress(uuid: &str, test_server: &TestServer) -> Assignment {
     let data = String::from_utf8(body.to_vec()).unwrap();
     let assignment: Assignment = match serde_json::from_str(&data) {
         Ok(a) => a,
-        Err(e) => panic!(format!("Failed to deserialize: {}", e)),
+        Err(e) => panic!("Failed to deserialize: {}", e),
     };
 
     assignment

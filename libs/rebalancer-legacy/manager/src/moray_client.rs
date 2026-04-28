@@ -40,7 +40,10 @@ fn get_srv_record(svc: &str, proto: &str, host: &str) -> Result<Srv, Error> {
         .ok_or_else(|| {
             InternalError::new(
                 Some(InternalErrorCode::IpLookupError),
-                "SRV Lookup returned success with 0 IPs",
+                format!(
+                    "moray SRV lookup returned 0 results for {}",
+                    query
+                ),
             )
             .into()
         })
@@ -51,7 +54,10 @@ fn lookup_ip(host: &str) -> Result<IpAddr, Error> {
         Some(a) => Ok(*a),
         None => Err(InternalError::new(
             Some(InternalErrorCode::IpLookupError),
-            "IP Lookup returned success with 0 IPs",
+            format!(
+                "moray IP lookup returned 0 results for {}",
+                host
+            ),
         )
         .into()),
     }

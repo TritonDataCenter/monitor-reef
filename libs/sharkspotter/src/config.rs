@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 use clap::{value_t, App, AppSettings, Arg, ArgMatches};
@@ -29,9 +30,24 @@ pub struct Config {
     pub obj_id_only: bool,
     pub multithreaded: bool,
     pub max_threads: usize,
+    /// Use direct PostgreSQL access to rebalancer-buckets-postgres
+    /// clones for bucket object discovery.  Requires provisioning
+    /// via `pgclone.sh clone-buckets`.
     pub direct_db: bool,
     pub log_level: Level,
+    /// Mdapi endpoints for bucket object discovery (one per shard).
+    /// Each entry is a "host:port" string (e.g., "1.buckets-mdapi.domain:2030").
+    pub mdapi_endpoints: Vec<String>,
+    /// Key prefixes to exclude from object discovery.
+    /// Objects whose key contains any of these strings are silently skipped.
+    /// Default: empty (no filtering).  The rebalancer manager populates this
+    /// from its config to skip system-managed paths like `/stor/logs/`.
+    pub exclude_key_prefixes: Vec<String>,
 }
+
+// Note: owners and mdapi_vnodes were removed from Config.
+// Vnodes and owners are now always auto-discovered via listvnodes
+// and listowners RPCs from each mdapi shard.
 
 impl Default for Config {
     fn default() -> Self {
@@ -50,6 +66,8 @@ impl Default for Config {
             max_threads: 50,
             direct_db: false,
             log_level: Level::Debug,
+            mdapi_endpoints: vec![],
+            exclude_key_prefixes: vec![],
         }
     }
 }
@@ -156,12 +174,19 @@ impl<'a, 'b> Config {
             .arg(Arg::with_name("direct_db")
                 .short("-D")
                 .long("direct_db")
-                .help("use direct DB access instead of moray")
+                .help("use direct DB access instead of moray/mdapi")
                 .takes_value(false))
             .arg(Arg::with_name("log_level")
                 .short("l")
                 .long("log_level")
                 .help("Set log level")
+                .takes_value(true))
+            .arg(Arg::with_name("mdapi_endpoint")
+                .long("mdapi-endpoint")
+                .value_name("ENDPOINT")
+                .help("Mdapi endpoint(s) for bucket object discovery (e.g., 1.buckets-mdapi.domain:2030)")
+                .number_of_values(1)
+                .multiple(true)
                 .takes_value(true))
     }
 
@@ -225,6 +250,12 @@ impl<'a, 'b> Config {
             .unwrap()
             .map(String::from)
             .collect();
+
+        // Parse mdapi endpoints (may be specified multiple times)
+        if let Some(endpoints) = matches.values_of("mdapi_endpoint") {
+            config.mdapi_endpoints =
+                endpoints.map(String::from).collect();
+        }
 
         normalize_config(&mut config);
 
@@ -300,4 +331,93 @@ mod test {
             vec![String::from("1.stor"), String::from("2.stor")]
         );
     }
+
+    #[test]
+    fn parse_mdapi_args() {
+        let args = vec![
+            "target/debug/sharkspotter",
+            "--domain",
+            "east.joyent.us",
+            "--shark",
+            "1.stor",
+            "--mdapi-endpoint",
+            "1.buckets-mdapi.east.joyent.us:2030",
+            "--mdapi-endpoint",
+            "2.buckets-mdapi.east.joyent.us:2030"
+        ];
+
+        let matches = Config::get_app().get_matches_from(args);
+        let config = Config::config_from_matches(matches).expect("config");
+
+        assert_eq!(config.mdapi_endpoints.len(), 2);
+        assert_eq!(
+            config.mdapi_endpoints[0],
+            "1.buckets-mdapi.east.joyent.us:2030"
+        );
+        assert_eq!(
+            config.mdapi_endpoints[1],
+            "2.buckets-mdapi.east.joyent.us:2030"
+        );
+    }
+
+    #[test]
+    fn normalize_config_clamps_max_threads() {
+        let mut config = Config::default();
+        config.max_threads = 200;
+        normalize_config(&mut config);
+        assert_eq!(config.max_threads, MAX_THREADS);
+    }
+
+    #[test]
+    fn normalize_config_keeps_valid_threads() {
+        let mut config = Config::default();
+        config.max_threads = 50;
+        normalize_config(&mut config);
+        assert_eq!(config.max_threads, 50);
+    }
+
+    #[test]
+    fn normalize_config_resets_end_less_than_begin() {
+        let mut config = Config::default();
+        config.begin = 100;
+        config.end = 50;
+        normalize_config(&mut config);
+        assert_eq!(config.end, 0);
+    }
+
+    #[test]
+    fn normalize_config_preserves_valid_end() {
+        let mut config = Config::default();
+        config.begin = 50;
+        config.end = 100;
+        normalize_config(&mut config);
+        assert_eq!(config.end, 100);
+    }
+
+    #[test]
+    fn normalize_config_zero_begin_end_unchanged() {
+        let mut config = Config::default();
+        config.begin = 0;
+        config.end = 0;
+        normalize_config(&mut config);
+        assert_eq!(config.begin, 0);
+        assert_eq!(config.end, 0);
+    }
+
+    #[test]
+    fn config_default_values() {
+        let config = Config::default();
+        assert_eq!(config.min_shard, 1);
+        assert_eq!(config.max_shard, 1);
+        assert_eq!(config.chunk_size, 1000);
+        assert_eq!(config.begin, 0);
+        assert_eq!(config.end, 0);
+        assert!(!config.skip_validate_sharks);
+        assert!(!config.multithreaded);
+        assert_eq!(config.max_threads, 50);
+        assert!(!config.direct_db);
+        assert!(config.mdapi_endpoints.is_empty());
+        assert!(config.exclude_key_prefixes.is_empty());
+    }
+
 }

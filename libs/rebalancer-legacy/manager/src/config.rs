@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 extern crate clap;
@@ -50,7 +51,7 @@ static DEFAULT_STATIC_QUEUE_DEPTH: usize = 10;
 // memory before it is posted to an agent.  This is not a hard and fast rule.
 // This will only be checked synchronously every time we gather another set of
 // destination sharks.
-static DEFAULT_MAX_ASSIGNMENT_AGE: u64 = 600;
+static DEFAULT_MAX_ASSIGNMENT_AGE: u64 = 3600;
 
 // The chunk size used when scanning the metadata tier or during a retry when
 // reading from the local database.
@@ -59,6 +60,9 @@ static DEFAULT_METADATA_READ_CHUNK_SIZE: usize = 10000;
 // Default maximum number of per-shard threads that we will use to scan the
 // metadata tier.
 static DEFAULT_MAX_METADATA_READ_THREADS: usize = 10;
+
+// Default delay in milliseconds between retries when getting the shark list.
+static DEFAULT_SHARK_LIST_RETRY_DELAY_MS: u64 = 500;
 
 pub const MAX_TUNABLE_MD_UPDATE_THREADS: usize = 250;
 
@@ -69,7 +73,7 @@ pub struct Shard {
 
 // Until we can determine a reasonable set of defaults and limits these
 // tunables are intentionally not exposed in the documentation.
-#[derive(Deserialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct ConfigOptions {
     pub max_tasks_per_assignment: usize,
@@ -81,6 +85,21 @@ pub struct ConfigOptions {
     pub use_batched_updates: bool,
     pub md_read_chunk_size: usize,
     pub max_md_read_threads: usize,
+    pub shark_list_retry_delay_ms: u64,
+    /// Key prefixes to exclude from object discovery during evacuation.
+    /// Objects whose moray key contains any of these strings are skipped.
+    /// Defaults to system-managed paths that are periodically overwritten
+    /// by cron jobs, causing unavoidable etag conflicts.
+    #[serde(default = "default_exclude_key_prefixes")]
+    pub exclude_key_prefixes: Vec<String>,
+}
+
+fn default_exclude_key_prefixes() -> Vec<String> {
+    vec![
+        "/stor/logs/".to_string(),
+        "/stor/usage/".to_string(),
+        "/stor/manatee_backups/".to_string(),
+    ]
 }
 
 impl Default for ConfigOptions {
@@ -92,9 +111,88 @@ impl Default for ConfigOptions {
             use_static_md_update_threads: false,
             static_queue_depth: DEFAULT_STATIC_QUEUE_DEPTH,
             max_assignment_age: DEFAULT_MAX_ASSIGNMENT_AGE,
-            use_batched_updates: true,
+            use_batched_updates: false,
             md_read_chunk_size: DEFAULT_METADATA_READ_CHUNK_SIZE,
             max_md_read_threads: DEFAULT_MAX_METADATA_READ_THREADS,
+            shark_list_retry_delay_ms: DEFAULT_SHARK_LIST_RETRY_DELAY_MS,
+            exclude_key_prefixes: default_exclude_key_prefixes(),
+        }
+    }
+}
+
+/// A single mdapi shard endpoint, mirroring the existing `Shard` struct.
+///
+/// Populated from `BUCKETS_MORAY_SHARDS` SAPI metadata, which contains
+/// entries like `{"host": "1.buckets-mdapi.coal.joyent.us"}`.
+#[derive(Deserialize, Default, Debug, Clone)]
+pub struct MdapiShard {
+    pub host: String,
+}
+
+/// Configuration for manta-buckets-mdapi client integration
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct MdapiConfig {
+    /// Mdapi shard endpoints. Each entry corresponds to one mdapi instance.
+    /// When non-empty, mdapi is used for bucket object discovery and updates.
+    pub shards: Vec<MdapiShard>,
+    /// Connection timeout in milliseconds
+    pub connection_timeout_ms: u64,
+    /// Maximum number of objects to process in a single batch update.
+    ///
+    /// Large batches can overload the mdapi server and cause timeouts.
+    /// If a batch exceeds this limit, it will be automatically chunked
+    /// into smaller batches. Default: 100.
+    pub max_batch_size: usize,
+    /// Timeout in milliseconds for individual update operations.
+    ///
+    /// This timeout applies to each individual object update within a batch.
+    /// If an update takes longer than this, it will be marked as failed.
+    /// Default: 30000 (30 seconds).
+    pub operation_timeout_ms: u64,
+    /// Maximum number of retries for failed operations.
+    ///
+    /// When an operation fails, it will be retried up to this many times
+    /// with exponential backoff between attempts. Set to 0 to disable retries.
+    /// Default: 3.
+    pub max_retries: u32,
+    /// Initial backoff delay in milliseconds between retry attempts.
+    ///
+    /// The delay doubles after each retry (exponential backoff) up to
+    /// max_backoff_ms. Default: 100ms.
+    pub initial_backoff_ms: u64,
+    /// Maximum backoff delay in milliseconds.
+    ///
+    /// The exponential backoff will not exceed this value.
+    /// Default: 5000ms (5 seconds).
+    pub max_backoff_ms: u64,
+}
+
+/// Default maximum batch size for mdapi updates
+pub const DEFAULT_MDAPI_MAX_BATCH_SIZE: usize = 100;
+
+/// Default operation timeout in milliseconds (30 seconds)
+pub const DEFAULT_MDAPI_OPERATION_TIMEOUT_MS: u64 = 30000;
+
+/// Default maximum number of retries
+pub const DEFAULT_MDAPI_MAX_RETRIES: u32 = 3;
+
+/// Default initial backoff delay in milliseconds
+pub const DEFAULT_MDAPI_INITIAL_BACKOFF_MS: u64 = 100;
+
+/// Default maximum backoff delay in milliseconds (5 seconds)
+pub const DEFAULT_MDAPI_MAX_BACKOFF_MS: u64 = 5000;
+
+impl Default for MdapiConfig {
+    fn default() -> Self {
+        MdapiConfig {
+            shards: vec![],
+            connection_timeout_ms: 5000,
+            max_batch_size: DEFAULT_MDAPI_MAX_BATCH_SIZE,
+            operation_timeout_ms: DEFAULT_MDAPI_OPERATION_TIMEOUT_MS,
+            max_retries: DEFAULT_MDAPI_MAX_RETRIES,
+            initial_backoff_ms: DEFAULT_MDAPI_INITIAL_BACKOFF_MS,
+            max_backoff_ms: DEFAULT_MDAPI_MAX_BACKOFF_MS,
         }
     }
 }
@@ -114,6 +212,15 @@ pub struct Config {
 
     #[serde(default)]
     pub options: ConfigOptions,
+
+    #[serde(default)]
+    pub mdapi: MdapiConfig,
+
+    /// Use direct PostgreSQL access (rebalancer-postgres) for
+    /// sharkspotter instead of moray and mdapi RPC.  Requires provisioning
+    /// rebalancer-postgres instances via pgclone.sh.
+    #[serde(default)]
+    pub direct_db: bool,
 
     #[serde(default = "Config::default_port")]
     pub listen_port: u16,
@@ -135,6 +242,8 @@ impl Default for Config {
             shards: vec![],
             snaplink_cleanup_required: false,
             options: ConfigOptions::default(),
+            mdapi: MdapiConfig::default(),
+            direct_db: true,
             listen_port: 80,
             max_fill_percentage: 100,
             log_level: Level::Debug,
@@ -192,6 +301,14 @@ impl Config {
         let reader = BufReader::new(file);
         let mut config: Config = serde_json::from_reader(reader)?;
 
+        if config.shards.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Configuration must contain at least one shard",
+            )
+            .into());
+        }
+
         // Both min_shard_num() and max_shard_num() depend on this vector
         // being sorted.  Do not change or remove this line without making a
         // complementary change to those two functions.
@@ -207,41 +324,48 @@ impl Config {
         update_config: Arc<Mutex<Config>>,
         config_file: Option<String>,
     ) -> JoinHandle<()> {
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage, so spawned threads don't
+        // inherit the logger automatically.
+        let logger = slog_scope::logger();
         thread::Builder::new()
             .name(String::from("config updater"))
-            .spawn(move || loop {
-                match config_update_rx.recv() {
-                    Ok(()) => {
-                        let new_config =
-                            match Config::parse_config(&config_file) {
-                                Ok(c) => c,
-                                Err(e) => {
-                                    error!(
-                                        "Error parsing config after signal \
-                                         received. Not updating: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                            };
-                        let mut config_lock =
-                            update_config.lock().expect("Lock update_config");
+            .spawn(move || {
+                slog_scope::scope(&logger, || loop {
+                    match config_update_rx.recv() {
+                        Ok(()) => {
+                            let new_config =
+                                match Config::parse_config(&config_file) {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        error!(
+                                            "Error parsing config after signal \
+                                             received. Not updating: {}",
+                                            e
+                                        );
+                                        continue;
+                                    }
+                                };
+                            let mut config_lock = update_config
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
 
-                        *config_lock = new_config;
-                        debug!(
-                            "Configuration has been updated: {:#?}",
-                            *config_lock
-                        );
+                            *config_lock = new_config;
+                            debug!(
+                                "Configuration has been updated: {:#?}",
+                                *config_lock
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Channel has been disconnected, exiting \
+                                 thread: {}",
+                                e
+                            );
+                            return;
+                        }
                     }
-                    Err(e) => {
-                        warn!(
-                            "Channel has been disconnected, exiting \
-                             thread: {}",
-                            e
-                        );
-                        return;
-                    }
-                }
+                })
             })
             .expect("Start config updater")
     }
@@ -324,7 +448,7 @@ fn _config_update_signal_handler(
                     }
                 }
             }
-            _ => unreachable!(), // Ignore other signals
+            _ => continue, // Only SIGUSR1 registered; defensive guard
         }
     }
 }
@@ -332,48 +456,26 @@ fn _config_update_signal_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{
-        self, config_fini, update_test_config_with_vars, write_config_file,
-        TEST_CONFIG_FILE,
-    };
-    use lazy_static::lazy_static;
-    use libc;
+    use crate::test_util::TestConfig;
+
     use mustache::MapBuilder;
     use std::fs::File;
     use std::io::Read;
 
-    lazy_static! {
-        static ref INITIALIZED: Mutex<bool> = Mutex::new(false);
-    }
-
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap();
-        if *init {
-            return;
-        }
-
-        *init = true;
-
-        thread::spawn(move || {
-            let _guard = util::init_global_logger(None);
-            loop {
-                // Loop around ::park() in the event of spurious wake ups.
-                std::thread::park();
-            }
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let guard = util::init_global_logger(None);
+            // Leak the guard so the global logger is never dropped,
+            // allowing tests to run in parallel safely.
+            std::mem::forget(guard);
         });
-    }
-
-    // Initialize a test configuration file by parsing and rendering the
-    // same configuration template used in production.
-    fn config_init() -> Config {
-        assert!(*INITIALIZED.lock().unwrap());
-        test_util::config_init()
     }
 
     #[test]
     fn min_max_shards() {
         unit_test_init();
-        std::fs::remove_file(TEST_CONFIG_FILE).unwrap_or(());
 
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
@@ -385,10 +487,10 @@ mod tests {
                 })
             })
             .build();
-        let config = update_test_config_with_vars(&vars);
+        let mut test_config = TestConfig::with_vars(&vars);
 
-        assert_eq!(config.min_shard_num(), 3);
-        assert_eq!(config.max_shard_num(), 3);
+        assert_eq!(test_config.config.min_shard_num(), 3);
+        assert_eq!(test_config.config.max_shard_num(), 3);
 
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
@@ -410,24 +512,23 @@ mod tests {
             })
             .build();
 
-        let config = update_test_config_with_vars(&vars);
+        test_config.update_with_vars(&vars);
 
-        assert_eq!(config.min_shard_num(), 2);
-        assert_eq!(config.max_shard_num(), 1000);
-
-        config_fini();
+        assert_eq!(test_config.config.min_shard_num(), 2);
+        assert_eq!(test_config.config.max_shard_num(), 1000);
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
     fn config_basic_test() {
         unit_test_init();
-        let config = config_init();
+        let test_config = TestConfig::new();
 
         // The template does not have a listen_port entry, so it should
         // default to 80.
-        assert_eq!(config.listen_port, 80);
+        assert_eq!(test_config.config.listen_port, 80);
 
-        File::open(TEST_CONFIG_FILE)
+        File::open(&test_config.config_path)
             .and_then(|mut f| {
                 let mut config_file = String::new();
 
@@ -444,8 +545,7 @@ mod tests {
                 Ok(())
             })
             .expect("config_basic_test");
-
-        config_fini();
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
@@ -467,29 +567,26 @@ mod tests {
             }
         "#;
 
-        std::fs::remove_file(TEST_CONFIG_FILE).unwrap_or(());
-        let config = write_config_file(file_contents.as_bytes());
+        let test_config = TestConfig::from_contents(file_contents.as_bytes());
 
-        assert_eq!(config.options.max_tasks_per_assignment, 1111);
-        assert_eq!(config.options.max_metadata_update_threads, 2222);
-        assert_eq!(config.options.max_sharks, 3333);
-        assert_eq!(config.options.use_static_md_update_threads, false);
+        assert_eq!(test_config.config.options.max_tasks_per_assignment, 1111);
+        assert_eq!(test_config.config.options.max_metadata_update_threads, 2222);
+        assert_eq!(test_config.config.options.max_sharks, 3333);
+        assert_eq!(test_config.config.options.use_static_md_update_threads, false);
         assert_eq!(
-            config.options.static_queue_depth,
+            test_config.config.options.static_queue_depth,
             DEFAULT_STATIC_QUEUE_DEPTH
         );
         assert_eq!(
-            config.options.max_assignment_age,
+            test_config.config.options.max_assignment_age,
             DEFAULT_MAX_ASSIGNMENT_AGE
         );
-
-        config_fini();
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
     fn missing_snaplink_cleanup_required() {
         unit_test_init();
-        std::fs::remove_file(TEST_CONFIG_FILE).unwrap_or(());
 
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
@@ -501,42 +598,49 @@ mod tests {
             })
             .build();
 
-        let config = update_test_config_with_vars(&vars);
+        let test_config = TestConfig::with_vars(&vars);
 
-        assert_eq!(config.snaplink_cleanup_required, false);
-        config_fini();
+        assert_eq!(test_config.config.snaplink_cleanup_required, false);
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
-    #[test]
+    // Verify that config_updater re-parses the config file and updates
+    // the in-memory Config when notified via channel.  This exercises
+    // the same code path as the production SIGUSR1 handler without
+    // sending a process-wide signal.
+    //
     // 1. Create a config (both file and in memory).
-    // 2. Start the config watcher.
-    // 3. Update the config file we created in step 1.
-    // 4. Send a signal to the config watcher (what config-agent would do in
-    //    production).
-    // 5. Confirm that our in memory config reflects that changes from step 3.
-    fn signal_handler_config_update() {
+    // 2. Start config_updater directly with a test-controlled channel.
+    // 3. Update the config file created in step 1.
+    // 4. Send a notification on the channel (what the signal handler
+    //    would do in production).
+    // 5. Confirm that our in-memory config reflects the changes from
+    //    step 3.
+    #[test]
+    fn channel_config_update() {
         unit_test_init();
-        println!("{}", env!("CARGO_MANIFEST_DIR"));
 
         // Generate a config with snaplink_cleanup_required=true.
-        let config = Arc::new(Mutex::new(config_init()));
+        let mut test_config = TestConfig::new();
+        let config = Arc::new(Mutex::new(test_config.config.clone()));
 
         assert!(
             config
                 .lock()
-                .expect("config lock")
+                .unwrap_or_else(|e| e.into_inner())
                 .snaplink_cleanup_required
         );
 
-        let update_config = Arc::clone(&config);
-
-        // Start the config watcher.
-        let _watcher_handle = Config::start_config_watcher(
-            update_config,
-            Some(TEST_CONFIG_FILE.to_string()),
+        // Create a channel to drive config_updater directly,
+        // bypassing the SIGUSR1 signal handler.
+        let (update_tx, update_rx) = crossbeam_channel::bounded(1);
+        let updater_handle = Config::config_updater(
+            update_rx,
+            Arc::clone(&config),
+            Some(test_config.path_string()),
         );
 
-        // Change SNAPLINK_CLEANUP_REQUIRED to false
+        // Change SNAPLINK_CLEANUP_REQUIRED to false in the file.
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
             .insert_bool("SNAPLINK_CLEANUP_REQUIRED", false)
@@ -547,18 +651,264 @@ mod tests {
                 })
             })
             .build();
-        let _ = update_test_config_with_vars(&vars);
+        test_config.update_with_vars(&vars);
 
-        // Send a signal letting the watcher know that we've updated the
-        // config file and it needs to re-parse and update our in memory state.
-        unsafe { libc::raise(signal_hook::SIGUSR1) };
-        thread::sleep(std::time::Duration::from_secs(2));
+        // Notify config_updater that the file changed.
+        update_tx.send(()).expect("send config update notification");
 
-        // Assert that our in memory config's snaplink_cleanup_required field
-        // has changed to false.
-        let check_config = config.lock().expect("config lock");
+        // Give the updater thread time to re-parse and apply.
+        thread::sleep(std::time::Duration::from_millis(500));
+
+        // Assert that our in-memory config's snaplink_cleanup_required
+        // field has changed to false.
+        let check_config = config.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(check_config.snaplink_cleanup_required, false);
 
-        config_fini();
+        // Drop the sender so the updater thread exits cleanly.
+        drop(update_tx);
+        drop(check_config);
+        updater_handle.join().expect("join config updater");
+        // TestConfig automatically cleans up the temp file when dropped
+    }
+
+    // =========================================================================
+    // Tests for MdapiConfig defaults and deserialization
+    // =========================================================================
+
+    #[test]
+    fn mdapi_config_defaults() {
+        let config = MdapiConfig::default();
+        assert!(config.shards.is_empty());
+        assert_eq!(config.connection_timeout_ms, 5000);
+        assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
+        assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
+        assert_eq!(config.max_retries, DEFAULT_MDAPI_MAX_RETRIES);
+        assert_eq!(config.initial_backoff_ms, DEFAULT_MDAPI_INITIAL_BACKOFF_MS);
+        assert_eq!(config.max_backoff_ms, DEFAULT_MDAPI_MAX_BACKOFF_MS);
+    }
+
+    #[test]
+    fn mdapi_config_deserialization() {
+        let json = r#"{
+            "shards": [
+                {"host": "1.buckets-mdapi.us-east.joyent.us"},
+                {"host": "2.buckets-mdapi.us-east.joyent.us"}
+            ],
+            "connection_timeout_ms": 10000
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.shards.len(), 2);
+        assert_eq!(
+            config.shards[0].host,
+            "1.buckets-mdapi.us-east.joyent.us"
+        );
+        assert_eq!(config.connection_timeout_ms, 10000);
+    }
+
+    #[test]
+    fn mdapi_config_empty_json_uses_defaults() {
+        let json = "{}";
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert!(config.shards.is_empty());
+        assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
+        assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
+        assert_eq!(config.max_retries, DEFAULT_MDAPI_MAX_RETRIES);
+        assert_eq!(config.initial_backoff_ms, DEFAULT_MDAPI_INITIAL_BACKOFF_MS);
+        assert_eq!(config.max_backoff_ms, DEFAULT_MDAPI_MAX_BACKOFF_MS);
+    }
+
+    #[test]
+    fn mdapi_config_batch_and_timeout_override() {
+        let json = r#"{
+            "shards": [{"host": "1.buckets-mdapi.host"}],
+            "max_batch_size": 50,
+            "operation_timeout_ms": 60000
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.max_batch_size, 50);
+        assert_eq!(config.operation_timeout_ms, 60000);
+    }
+
+    #[test]
+    fn mdapi_config_retry_override() {
+        let json = r#"{
+            "shards": [{"host": "1.buckets-mdapi.host"}],
+            "max_retries": 5,
+            "initial_backoff_ms": 200,
+            "max_backoff_ms": 10000
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.max_retries, 5);
+        assert_eq!(config.initial_backoff_ms, 200);
+        assert_eq!(config.max_backoff_ms, 10000);
+    }
+
+    #[test]
+    fn mdapi_config_disable_retries() {
+        let json = r#"{
+            "shards": [{"host": "1.buckets-mdapi.host"}],
+            "max_retries": 0
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.max_retries, 0);
+    }
+
+    // =========================================================================
+    // Tests for ConfigOptions defaults
+    // =========================================================================
+
+    #[test]
+    fn config_options_defaults() {
+        let opts = ConfigOptions::default();
+        assert_eq!(opts.max_tasks_per_assignment, DEFAULT_MAX_TASKS_PER_ASSIGNMENT);
+        assert_eq!(opts.max_metadata_update_threads, DEFAULT_MAX_METADATA_UPDATE_THREADS);
+        assert_eq!(opts.max_sharks, DEFAULT_MAX_SHARKS);
+        assert_eq!(opts.use_static_md_update_threads, false);
+        assert_eq!(opts.static_queue_depth, DEFAULT_STATIC_QUEUE_DEPTH);
+        assert_eq!(opts.max_assignment_age, DEFAULT_MAX_ASSIGNMENT_AGE);
+        assert_eq!(opts.use_batched_updates, false);
+        assert_eq!(opts.md_read_chunk_size, DEFAULT_METADATA_READ_CHUNK_SIZE);
+        assert_eq!(opts.max_md_read_threads, DEFAULT_MAX_METADATA_READ_THREADS);
+    }
+
+    #[test]
+    fn config_options_partial_override() {
+        let json = r#"{"max_sharks": 99, "max_assignment_age": 300}"#;
+        let opts: ConfigOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(opts.max_sharks, 99);
+        assert_eq!(opts.max_assignment_age, 300);
+        // Non-overridden fields should keep defaults
+        assert_eq!(opts.max_tasks_per_assignment, DEFAULT_MAX_TASKS_PER_ASSIGNMENT);
+        assert_eq!(opts.use_batched_updates, false);
+    }
+
+    // =========================================================================
+    // Tests for log_level_deserialize
+    // =========================================================================
+
+    #[test]
+    fn log_level_deserialize_all_variants() {
+        let cases = vec![
+            (r#""critical""#, Level::Critical),
+            (r#""crit""#, Level::Critical),
+            (r#""error""#, Level::Error),
+            (r#""warning""#, Level::Warning),
+            (r#""warn""#, Level::Warning),
+            (r#""info""#, Level::Info),
+            (r#""debug""#, Level::Debug),
+            (r#""trace""#, Level::Trace),
+        ];
+
+        for (input, expected) in cases {
+            // Wrap in a struct since log_level_deserialize is a custom fn
+            let json = format!(r#"{{"log_level": {}}}"#, input);
+            #[derive(Deserialize)]
+            struct TestLogLevel {
+                #[serde(deserialize_with = "log_level_deserialize")]
+                log_level: Level,
+            }
+            let parsed: TestLogLevel =
+                serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed.log_level, expected, "input: {}", input);
+        }
+    }
+
+    #[test]
+    fn log_level_deserialize_case_insensitive() {
+        let json = r#"{"log_level": "INFO"}"#;
+        #[derive(Deserialize)]
+        struct TestLogLevel {
+            #[serde(deserialize_with = "log_level_deserialize")]
+            log_level: Level,
+        }
+        let parsed: TestLogLevel = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.log_level, Level::Info);
+    }
+
+    #[test]
+    fn log_level_deserialize_invalid_rejects() {
+        let json = r#"{"log_level": "nonsense"}"#;
+        #[derive(Deserialize)]
+        struct TestLogLevel {
+            #[serde(deserialize_with = "log_level_deserialize")]
+            log_level: Level,
+        }
+        let result: Result<TestLogLevel, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Tests for Config defaults
+    // =========================================================================
+
+    #[test]
+    fn config_defaults() {
+        let config = Config::default();
+        assert_eq!(config.domain_name, "");
+        assert_eq!(config.listen_port, 80);
+        assert_eq!(config.max_fill_percentage, 100);
+        assert_eq!(config.log_level, Level::Debug);
+        assert_eq!(config.snaplink_cleanup_required, false);
+        assert!(config.mdapi.shards.is_empty());
+    }
+
+    #[test]
+    fn config_full_json_deserialization() {
+        unit_test_init();
+
+        let json = r#"{
+            "domain_name": "us-east.joyent.us",
+            "shards": [
+                {"host": "1.moray.us-east.joyent.us"},
+                {"host": "2.moray.us-east.joyent.us"}
+            ],
+            "snaplink_cleanup_required": true,
+            "listen_port": 8080,
+            "max_fill_percentage": 90,
+            "log_level": "info",
+            "mdapi": {
+                "shards": [
+                    {"host": "1.buckets-mdapi.us-east.joyent.us"}
+                ]
+            },
+            "options": {
+                "max_sharks": 10,
+                "max_tasks_per_assignment": 100
+            }
+        }"#;
+
+        let test_config = TestConfig::from_contents(json.as_bytes());
+        assert_eq!(test_config.config.domain_name, "us-east.joyent.us");
+        assert_eq!(test_config.config.listen_port, 8080);
+        assert_eq!(test_config.config.max_fill_percentage, 90);
+        assert_eq!(test_config.config.log_level, Level::Info);
+        assert_eq!(test_config.config.snaplink_cleanup_required, true);
+        assert_eq!(test_config.config.mdapi.shards.len(), 1);
+        assert_eq!(
+            test_config.config.mdapi.shards[0].host,
+            "1.buckets-mdapi.us-east.joyent.us"
+        );
+        assert_eq!(test_config.config.options.max_sharks, 10);
+        assert_eq!(test_config.config.options.max_tasks_per_assignment, 100);
+    }
+
+    #[test]
+    fn config_shard_sorting() {
+        unit_test_init();
+
+        let json = r#"{
+            "domain_name": "test.domain",
+            "shards": [
+                {"host": "10.moray.test.domain"},
+                {"host": "2.moray.test.domain"},
+                {"host": "100.moray.test.domain"},
+                {"host": "1.moray.test.domain"}
+            ]
+        }"#;
+
+        let test_config = TestConfig::from_contents(json.as_bytes());
+        // parse_config sorts shards by shard number
+        assert_eq!(test_config.config.min_shard_num(), 1);
+        assert_eq!(test_config.config.max_shard_num(), 100);
     }
 }

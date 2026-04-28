@@ -89,7 +89,7 @@ pub mod agenttests {
     };
     use rebalancer::common::{ObjectSkippedReason, Task, TaskStatus};
     use rebalancer::libagent::{
-        process_task, router, AgentAssignmentState, AgentConfig, Assignment,
+        process_task, router, AgentAssignmentState, Assignment,
     };
     use rebalancer::util;
     use reqwest::StatusCode;
@@ -104,7 +104,7 @@ pub mod agenttests {
     lazy_static! {
         static ref INITIALIZED: Mutex<bool> = Mutex::new(false);
         static ref TEST_SERVER: Mutex<TestServer> = Mutex::new(
-            TestServer::new(router(process_task, Some(AgentConfig::default())))
+            TestServer::new(router(process_task, None))
                 .unwrap()
         );
     }
@@ -246,6 +246,8 @@ pub mod agenttests {
                 manta_storage_id: "localhost:8080".to_owned(),
             },
             status: TaskStatus::Pending,
+            bucket_id: None,
+            object_name_hash: None,
         }
     }
 
@@ -293,7 +295,7 @@ pub mod agenttests {
     // Description: Attempt to download an object from a storage node where
     //              the object does not reside will cause a client error.
     // Expected:    TaskStatus for all tasks in the assignment should appear
-    //              as "Failed(HTTPStatusCode(NotFound))".
+    //              as "Failed(SourceObjectNotFound)".
     #[test]
     fn object_not_found() {
         unit_test_init();
@@ -305,9 +307,7 @@ pub mod agenttests {
         let uuid = send_assignment(&assignment);
         monitor_assignment(
             &uuid,
-            TaskStatus::Failed(ObjectSkippedReason::HTTPStatusCode(
-                reqwest::StatusCode::NOT_FOUND.into(),
-            )),
+            TaskStatus::Failed(ObjectSkippedReason::SourceObjectNotFound),
         );
     }
 

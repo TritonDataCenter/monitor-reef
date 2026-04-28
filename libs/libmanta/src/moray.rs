@@ -105,7 +105,7 @@ impl FromSql<sql_types::Text, Sqlite> for MantaObject {
 }
 
 #[cfg(feature = "postgres")]
-use diesel::pg::{Pg, PgValue};
+use diesel::pg::Pg;
 
 #[cfg(feature = "postgres")]
 impl ToSql<sql_types::Text, Pg> for MantaObject {
@@ -119,9 +119,9 @@ impl ToSql<sql_types::Text, Pg> for MantaObject {
 
 #[cfg(feature = "postgres")]
 impl FromSql<sql_types::Text, Pg> for MantaObject {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let bytes = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(bytes);
         let manta_obj: MantaObject = serde_json::from_str(&t_str)?;
         Ok(manta_obj)
     }

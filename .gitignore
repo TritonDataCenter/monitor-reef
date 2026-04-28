@@ -1,5 +1,16 @@
 /target
+/libs/rebalancer-legacy/target-agent
 /cache
 /rust
 .env
 .idea/
+libs/rebalancer-legacy/manager/src/config.json
+
+# Image build artifacts (eng buildimage/release targets)
+images/*/bits/
+images/*/cache/
+images/*/proto/
+images/*/make_stamps/
+/make_stamps/
+images/*/*.tar.gz
+images/*/*.manifest

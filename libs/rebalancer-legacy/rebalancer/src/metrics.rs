@@ -205,7 +205,7 @@ pub fn register_metrics(labels: &ConfigMetrics) -> MetricsMap {
     const_labels.insert("datacenter".to_string(), labels.datacenter.clone());
     const_labels.insert("zonename".to_string(), hostname);
 
-    let mut labels = METRICS_LABELS.lock().unwrap();
+    let mut labels = METRICS_LABELS.lock().unwrap_or_else(|e| e.into_inner());
     *labels = Some(const_labels.clone());
 
     // The request counter maintains a list of requests received, broken down

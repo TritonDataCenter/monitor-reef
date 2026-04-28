@@ -19,13 +19,15 @@ include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
 .PHONY: help build test clean lint format
+.PHONY: build-legacy test-legacy clean-legacy
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
 .PHONY: package-build package-test
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
-.PHONY: list coverage arch-lint
+.PHONY: list coverage coverage-legacy arch-lint
+.PHONY: image image-clean image-rebuild image-buildimage images-list
 
 # Default target
 help: ## Show this help message
@@ -48,9 +50,91 @@ build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 
 test: | $(CARGO_EXEC) ## Run all tests
 	$(CARGO) test
-
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
+
+# Legacy workspace commands (rebalancer, cueball, moray, etc.)
+# These use the project-local Rust toolchain and require swapping Cargo.toml files
+
+build-legacy: | $(CARGO_EXEC) ## Build legacy crates (rebalancer, cueball, etc.)
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
+	@cp Cargo.lock.legacy Cargo.lock
+	@echo "Building legacy crates (excluding agent)..."
+	$(CARGO) build --workspace --exclude agent || { \
+		echo "Build failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
+		exit 1; \
+	}
+	@echo "Building agent outside workspace (no postgres feature unification)..."
+	@cp libs/rebalancer-legacy/agent/Cargo.toml \
+	    libs/rebalancer-legacy/agent/Cargo.toml.ws
+	@sed '/^workspace/d' libs/rebalancer-legacy/agent/Cargo.toml.ws \
+	    > libs/rebalancer-legacy/agent/Cargo.toml
+	@printf '\n[workspace]\n' >> libs/rebalancer-legacy/agent/Cargo.toml
+	@cp Cargo.lock libs/rebalancer-legacy/agent/Cargo.lock
+	$(CARGO) build --manifest-path=libs/rebalancer-legacy/agent/Cargo.toml \
+	    --target-dir=libs/rebalancer-legacy/target-agent || { \
+		echo "Agent build failed, restoring..."; \
+		mv libs/rebalancer-legacy/agent/Cargo.toml.ws \
+		    libs/rebalancer-legacy/agent/Cargo.toml; \
+		rm -f libs/rebalancer-legacy/agent/Cargo.lock; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
+		exit 1; \
+	}
+	@mv libs/rebalancer-legacy/agent/Cargo.toml.ws \
+	    libs/rebalancer-legacy/agent/Cargo.toml
+	@rm -f libs/rebalancer-legacy/agent/Cargo.lock
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
+	@echo "Legacy build complete."
+
+test-legacy: | $(CARGO_EXEC) ## Test legacy crates (rebalancer, cueball, etc.)
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
+	@cp Cargo.lock.legacy Cargo.lock
+	@echo "Testing legacy crates..."
+	$(CARGO) test --workspace || { \
+		echo "Tests failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
+		exit 1; \
+	}
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
+	@echo "Legacy tests complete."
+
+clean-legacy: | $(CARGO_EXEC) ## Clean legacy build artifacts
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
+	@cp Cargo.lock.legacy Cargo.lock
+	$(CARGO) clean
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
+	@echo "Legacy clean complete."
 
 lint: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
@@ -60,7 +144,6 @@ format: | $(CARGO_EXEC) ## Format all code
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
 	$(CARGO) test --workspace
-
 # API development commands
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
 	@if [ -z "$(API)" ]; then echo "Usage: make api-new API=my-service-api"; exit 1; fi
@@ -100,7 +183,6 @@ service-build: | $(CARGO_EXEC) ## Build specific service (usage: make service-bu
 service-test: | $(CARGO_EXEC) ## Test specific service (usage: make service-test SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-test SERVICE=my-service"; exit 1; fi
 	$(CARGO) test -p $(SERVICE)
-
 service-run: | $(CARGO_EXEC) ## Run specific service (usage: make service-run SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-run SERVICE=my-service"; exit 1; fi
 	$(CARGO) run -p $(SERVICE)
@@ -130,7 +212,6 @@ client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build
 client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
 	$(CARGO) test -p $(CLIENT)
-
 # Generic package commands (for any crate in the workspace)
 package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-build PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-build PACKAGE=my-package"; exit 1; fi
@@ -139,7 +220,6 @@ package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-bu
 package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
 	$(CARGO) test -p $(PACKAGE)
-
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."
@@ -161,7 +241,6 @@ openapi-debug: | $(CARGO_EXEC) ## Debug OpenAPI manager configuration
 
 integration-test: | $(CARGO_EXEC) ## Run integration tests across all services
 	$(CARGO) test --workspace integration
-
 # Development setup
 dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Setting up development environment..."
@@ -172,8 +251,7 @@ dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Generating OpenAPI specs..."
 	$(MAKE) openapi-generate
 	@echo "Running tests to ensure everything works..."
-	$(CARGO) test
-	@echo ""
+	$(CARGO) test	@echo ""
 	@echo "Development environment ready!"
 	@echo ""
 	@echo "Quick start:"
@@ -245,6 +323,32 @@ coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
 	@echo "Running code coverage analysis..."
 	$(CARGO) tarpaulin
 
+coverage-legacy: | $(CARGO_EXEC) ## Run code coverage for legacy crates
+	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
+		echo "cargo-tarpaulin not found, installing..."; \
+		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
+	fi
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
+	@cp Cargo.lock.legacy Cargo.lock
+	@echo "Running legacy code coverage..."
+	$(CARGO) tarpaulin || { \
+		echo "Coverage failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
+		exit 1; \
+	}
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
+	@echo "Legacy coverage complete."
+
 # Hopefully, something similar to the no-sync-io check will be added to clippy
 # in the future and we won't need this utility:
 #  - https://github.com/rust-lang/rust-clippy/issues/4377
@@ -255,3 +359,25 @@ arch-lint: | $(CARGO_EXEC) ## Run architecture lints
 		$(CARGO) install arch-lint-cli; \
 	fi
 	$(CARGO_HOME)/bin/arch-lint check
+
+# Zone image build targets
+# Usage: make image IMAGE=rebalancer
+#        make image-rebuild IMAGE=rebalancer
+#        make image-buildimage IMAGE=rebalancer
+
+image: ## Build a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-clean: ## Clean a zone image build (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+
+image-rebuild: ## Clean rebuild a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-buildimage: ## Build a zone image file from tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) buildimage
+
+images-list: ## List available zone images
+	@echo "Zone images:"
+	@ls -1 images/ 2>/dev/null | grep -v '\.mk$$' || echo "  (none)"

@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2025 Edgecast Cloud LLC.
  */
 
 use std::fmt;
@@ -21,23 +22,10 @@ pub enum Error {
     ParseInt(std::num::ParseIntError),
     ParseUuid(uuid::parser::ParseError),
     DieselConnection(diesel::ConnectionError),
+    Mdapi(libmanta::mdapi::MdapiError),
 }
 
-impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        match self {
-            Error::Internal(e) => e.msg.as_str(),
-            Error::IoError(e) => e.description(),
-            Error::Hyper(e) => e.description(),
-            Error::Diesel(e) => e.description(),
-            Error::SerdeJson(e) => e.description(),
-            Error::Reqwest(e) => e.description(),
-            Error::ParseInt(e) => e.description(),
-            Error::ParseUuid(e) => e.description(),
-            Error::DieselConnection(e) => e.description(),
-        }
-    }
-}
+impl std::error::Error for Error {}
 
 impl From<hyper::Error> for Error {
     fn from(error: hyper::Error) -> Self {
@@ -93,6 +81,12 @@ impl From<diesel::ConnectionError> for Error {
     }
 }
 
+impl From<libmanta::mdapi::MdapiError> for Error {
+    fn from(error: libmanta::mdapi::MdapiError) -> Self {
+        Error::Mdapi(error)
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -105,6 +99,7 @@ impl fmt::Display for Error {
             Error::ParseInt(e) => write!(f, "{}", e),
             Error::ParseUuid(e) => write!(f, "{}", e),
             Error::DieselConnection(e) => write!(f, "{}", e),
+            Error::Mdapi(e) => write!(f, "Mdapi error: {:?}", e),
         }
     }
 }
@@ -127,10 +122,14 @@ pub enum InternalErrorCode {
     DuplicateShark,        // Found the same shark twice in object metadata
     BadMantaObject,        // Manta object is malformed is missing data
     BadMorayClient,        // Moray client errors
-    MetadataUpdateFailure, // Errors updating metadata in moray
+    BadMdapiClient,        // Mdapi client errors
+    MetadataUpdateFailure, // Errors updating metadata in moray or mdapi
+    MdapiBucketNotFound,   // Bucket not found in mdapi
+    MdapiObjectNotFound,   // Object not found in mdapi
     JobBuilderError,       // Errors building a Job
     MaxObjectsLimit,       // The max_objects limit has been reached
     DbQuery,               // Unexpected result from a database query
+    InvalidState,          // Invalid configuration or state
 }
 
 impl fmt::Display for InternalError {
@@ -174,17 +173,7 @@ impl<T> From<crossbeam_channel::RecvError> for CrossbeamError<T> {
     }
 }
 
-impl<T> std::error::Error for CrossbeamError<T>
-where
-    T: std::fmt::Debug + Send,
-{
-    fn description(&self) -> &str {
-        match self {
-            CrossbeamError::Send(e) => e.description(),
-            CrossbeamError::Recv(e) => e.description(),
-        }
-    }
-}
+impl<T> std::error::Error for CrossbeamError<T> where T: std::fmt::Debug + Send {}
 
 impl<T> fmt::Display for CrossbeamError<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

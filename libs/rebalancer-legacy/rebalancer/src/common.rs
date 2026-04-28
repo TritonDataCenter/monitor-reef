@@ -27,7 +27,7 @@ use uuid::Uuid;
 use diesel::deserialize::{self, FromSql};
 
 #[cfg(feature = "postgres")]
-use diesel::pg::{Pg, PgValue};
+use diesel::pg::Pg;
 
 #[cfg(feature = "postgres")]
 use diesel::serialize::{self, IsNull, Output, ToSql};
@@ -60,6 +60,15 @@ pub struct Task {
 
     #[serde(default = "TaskStatus::default")]
     pub status: TaskStatus,
+
+    /// Bucket ID for MDAPI (v2) objects. None for v1 objects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket_id: Option<String>,
+
+    /// MD5 hex digest of object name for MDAPI (v2) objects.
+    /// None for v1 objects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_name_hash: Option<String>,
 }
 
 impl Task {
@@ -82,6 +91,8 @@ impl Arbitrary for Task {
             md5sum,
             source: MantaObjectShark::arbitrary(g),
             status: TaskStatus::arbitrary(g),
+            bucket_id: None,
+            object_name_hash: None,
         }
     }
 }
@@ -174,8 +185,26 @@ pub enum ObjectSkippedReason {
     // contact the source of the object.
     SourceOtherError,
 
+    // The object was not found (404) on the source shark's filesystem.
+    // On re-runs this typically means the object was already evacuated
+    // by a previous job — the metadata was updated but the pgclone
+    // snapshot still references the old shark.  Can also indicate a
+    // genuinely missing file (corruption, garbage collection).
+    SourceObjectNotFound,
+
     // The only source available is the shark that is being evacuated.
     SourceIsEvacShark,
+
+    // The object is an .mpu-parts entry whose physical data was deleted
+    // by mako after multipart upload completion (v2 commit).  The metadata
+    // in manta_bucket_object is orphaned — the sharks column references
+    // storage nodes but the files no longer exist.  This is expected and
+    // not a real error; there is no data to evacuate.
+    MpuPartNoData,
+
+    // The assignment was stuck in a non-complete state on the agent for
+    // longer than 2 * max_assignment_age.
+    AgentAssignmentTimeout,
 
     HTTPStatusCode(HttpStatusCode),
 }
@@ -202,7 +231,7 @@ fn _osr_from_sql(ts: String) -> deserialize::Result<ObjectSkippedReason> {
                 Ok(ObjectSkippedReason::HTTPStatusCode(sr_sc[1].parse()?))
             }
             _ => {
-                panic!("variant with value not found");
+                Err("variant with value not found".into())
             }
         }
     } else {
@@ -250,12 +279,22 @@ impl ToSql<sql_types::Text, Pg> for ObjectSkippedReason {
 
 #[cfg(feature = "postgres")]
 impl FromSql<sql_types::Text, Pg> for ObjectSkippedReason {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         let ts: String = t_str.to_string();
         _osr_from_sql(ts)
     }
+}
+
+/// Compute MD5 hex digest of an object name.
+///
+/// Matches the Node.js algorithm:
+///   crypto.createHash('md5').update(name).digest('hex')
+pub fn object_name_md5_hex(name: &str) -> String {
+    let mut hasher = Md5::new();
+    hasher.input(name.as_bytes());
+    format!("{:x}", hasher.result())
 }
 
 pub fn get_sharks_from_value(
@@ -335,4 +374,246 @@ pub fn get_key_from_object_value(object: &Value) -> Result<String, Error> {
     };
 
     Ok(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{InternalError, InternalErrorCode};
+    use serde_json::json;
+
+    #[test]
+    fn get_sharks_from_value_valid() {
+        let obj = json!({
+            "sharks": [
+                {"datacenter": "dc1", "manta_storage_id": "1.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "2.stor.domain"}
+            ]
+        });
+        let sharks = get_sharks_from_value(&obj).unwrap();
+        assert_eq!(sharks.len(), 2);
+        assert_eq!(sharks[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(sharks[1].datacenter, "dc2");
+    }
+
+    #[test]
+    fn get_sharks_from_value_missing() {
+        let obj = json!({"objectId": "abc"});
+        assert!(get_sharks_from_value(&obj).is_err());
+    }
+
+    #[test]
+    fn get_sharks_from_value_empty() {
+        let obj = json!({"sharks": []});
+        let sharks = get_sharks_from_value(&obj).unwrap();
+        assert!(sharks.is_empty());
+    }
+
+    #[test]
+    fn get_object_id_from_value_valid() {
+        let obj = json!({"objectId": "test-uuid-123"});
+        let id = get_objectId_from_value(&obj).unwrap();
+        assert_eq!(id, "test-uuid-123");
+    }
+
+    #[test]
+    fn get_object_id_from_value_missing() {
+        let obj = json!({"key": "/test/file"});
+        assert!(get_objectId_from_value(&obj).is_err());
+    }
+
+    #[test]
+    fn get_key_from_object_value_valid() {
+        let obj = json!({"key": "/user/stor/file.txt"});
+        let key = get_key_from_object_value(&obj).unwrap();
+        assert_eq!(key, "/user/stor/file.txt");
+    }
+
+    #[test]
+    fn get_key_from_object_value_missing() {
+        let obj = json!({"objectId": "abc"});
+        assert!(get_key_from_object_value(&obj).is_err());
+    }
+
+    #[test]
+    fn object_skipped_reason_into_string_simple() {
+        let reason = ObjectSkippedReason::AgentFSError;
+        assert_eq!(reason.into_string(), "agent_fs_error");
+    }
+
+    #[test]
+    fn object_skipped_reason_into_string_http_status() {
+        let reason = ObjectSkippedReason::HTTPStatusCode(404);
+        let s = reason.into_string();
+        assert!(s.contains("404"));
+        assert!(s.starts_with('{'));
+        assert!(s.ends_with('}'));
+    }
+
+    #[test]
+    fn object_skipped_reason_into_string_variants() {
+        assert_eq!(
+            ObjectSkippedReason::NetworkError.into_string(),
+            "network_error"
+        );
+        assert_eq!(
+            ObjectSkippedReason::MD5Mismatch.into_string(),
+            "md5_mismatch"
+        );
+        assert_eq!(
+            ObjectSkippedReason::SourceIsEvacShark.into_string(),
+            "source_is_evac_shark"
+        );
+    }
+
+    #[test]
+    fn assignment_payload_from_trait() {
+        let payload = AssignmentPayload {
+            id: "test-id".to_string(),
+            tasks: vec![Task::default()],
+        };
+        let (id, tasks): (String, Vec<Task>) = payload.into();
+        assert_eq!(id, "test-id");
+        assert_eq!(tasks.len(), 1);
+    }
+
+    #[test]
+    fn task_status_default_is_pending() {
+        let status = TaskStatus::default();
+        assert_eq!(status, TaskStatus::Pending);
+    }
+
+    #[test]
+    fn task_set_status() {
+        let mut task = Task::default();
+        assert_eq!(task.status, TaskStatus::Pending);
+        task.set_status(TaskStatus::Complete);
+        assert_eq!(task.status, TaskStatus::Complete);
+    }
+
+    #[test]
+    fn internal_error_new_with_code() {
+        let err = InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            "test error",
+        );
+        assert_eq!(err.code, InternalErrorCode::BadMantaObject);
+    }
+
+    #[test]
+    fn internal_error_new_without_code() {
+        let err = InternalError::new(None, "test error");
+        assert_eq!(err.code, InternalErrorCode::Other);
+    }
+
+    #[test]
+    fn internal_error_display() {
+        let err = InternalError::new(
+            Some(InternalErrorCode::SharkNotFound),
+            "shark missing",
+        );
+        let display = format!("{}", err);
+        assert!(display.contains("shark missing"));
+    }
+
+    #[test]
+    fn object_name_md5_hex_known_vector() {
+        // echo -n "hello" | md5
+        // 5d41402abc4b2a76b9719d911017c592
+        assert_eq!(
+            object_name_md5_hex("hello"),
+            "5d41402abc4b2a76b9719d911017c592"
+        );
+    }
+
+    #[test]
+    fn object_name_md5_hex_empty_string() {
+        // echo -n "" | md5
+        // d41d8cd98f00b204e9800998ecf8427e
+        assert_eq!(
+            object_name_md5_hex(""),
+            "d41d8cd98f00b204e9800998ecf8427e"
+        );
+    }
+
+    #[test]
+    fn object_name_md5_hex_object_path() {
+        // Typical Manta object name
+        let hash = object_name_md5_hex(
+            "/user/stor/myobject.txt",
+        );
+        assert_eq!(hash.len(), 32);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn task_serde_roundtrip_v2_fields() {
+        let task = Task {
+            object_id: "obj-123".to_string(),
+            owner: "owner-456".to_string(),
+            md5sum: "abc".to_string(),
+            source: MantaObjectShark {
+                datacenter: "dc1".to_string(),
+                manta_storage_id: "1.stor".to_string(),
+            },
+            status: TaskStatus::Pending,
+            bucket_id: Some("bucket-789".to_string()),
+            object_name_hash: Some("aabbccdd".to_string()),
+        };
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(json.contains("bucket_id"));
+        assert!(json.contains("object_name_hash"));
+        let round: Task = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            round.bucket_id.as_deref(),
+            Some("bucket-789"),
+        );
+        assert_eq!(
+            round.object_name_hash.as_deref(),
+            Some("aabbccdd"),
+        );
+    }
+
+    #[test]
+    fn task_serde_backward_compat_v1() {
+        // Old v1 JSON without bucket_id or object_name_hash
+        let json = r#"{
+            "object_id": "obj-1",
+            "owner": "owner-1",
+            "md5sum": "abc",
+            "source": {
+                "datacenter": "dc1",
+                "manta_storage_id": "1.stor"
+            },
+            "status": "Pending"
+        }"#;
+        let task: Task = serde_json::from_str(json).unwrap();
+        assert!(task.bucket_id.is_none());
+        assert!(task.object_name_hash.is_none());
+    }
+
+    #[test]
+    fn task_serde_v1_skips_none_fields() {
+        let task = Task {
+            object_id: "obj-1".to_string(),
+            owner: "owner-1".to_string(),
+            md5sum: "abc".to_string(),
+            source: MantaObjectShark {
+                datacenter: "dc1".to_string(),
+                manta_storage_id: "1.stor".to_string(),
+            },
+            status: TaskStatus::Pending,
+            bucket_id: None,
+            object_name_hash: None,
+        };
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(
+            !json.contains("bucket_id"),
+            "v1 task should not serialize bucket_id"
+        );
+        assert!(
+            !json.contains("object_name_hash"),
+            "v1 task should not serialize object_name_hash"
+        );
+    }
 }
