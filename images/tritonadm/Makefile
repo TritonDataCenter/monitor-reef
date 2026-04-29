@@ -179,7 +179,7 @@ bits-upload: publish
 	    -p \
 	    -b $(BRANCH) \
 	    -t $(TIMESTAMP) \
-	    -d $(ENGBLD_DEST_OUT_PATH) \
+	    -d $(ENGBLD_DEST_OUT_PATH)/$(NAME) \
 	    -n $(NAME) \
 	    $(NAME)
 
