@@ -13,6 +13,7 @@ use serde_json::json;
 use crate::config::TritonConfig;
 use crate::not_yet_implemented;
 
+use super::errors::is_404;
 use super::imgapi_util;
 
 /// Embedded user-script for zone boot (same as sdcadm's etc/setup/user-script).
@@ -886,11 +887,24 @@ async fn cmd_add_service(
     };
     let existing_inst = existing_instances.first();
 
-    // Get VM state if instance exists (to check current image)
+    // Get VM state if instance exists (to check current image). 404 means
+    // the SAPI instance points at a VM VMAPI doesn't know about (legitimate
+    // stale state — fall through to "no existing VM"), but other errors
+    // mean VMAPI is broken and we MUST NOT silently report "up-to-date" and
+    // skip the reprovision.
     let existing_vm = if let Some(inst) = existing_inst {
         match vmapi.inner().get_vm().uuid(inst.uuid).send().await {
             Ok(resp) => Some(resp.into_inner()),
-            Err(_) => None,
+            Err(e) if is_404(&e) => None,
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!(
+                        "VMAPI lookup for existing instance {} failed; \
+                         refusing to proceed without confirmed VM state",
+                        inst.uuid
+                    )
+                });
+            }
         }
     } else {
         None
@@ -1144,12 +1158,21 @@ async fn cmd_add_service(
                     .into_inner();
                 eprintln!("Created instance {}", inst.uuid);
 
-                // Ensure manta NIC on the newly created instance (if configured).
-                // Non-fatal: warn and continue if the NIC can't be added.
+                // Attach the manta NIC. This is a documented part of the
+                // service's wiring; if it fails the operator must know
+                // (otherwise post-setup reports "Done." and the service
+                // can't reach Manta).
                 if config.ensure_manta_nic {
                     ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name)
                         .await
-                        .unwrap_or_else(|e| eprintln!("Warning: manta NIC setup: {e}"));
+                        .with_context(|| {
+                            format!(
+                                "manta NIC setup failed for newly-created {} \
+                                 instance {}; service was created but is \
+                                 not yet fully wired",
+                                config.name, inst.uuid
+                            )
+                        })?;
                 }
             }
             AddServiceAction::ReprovisionInstance { inst_uuid, alias } => {
@@ -1168,7 +1191,9 @@ async fn cmd_add_service(
     }
 
     // If we didn't just create the instance (which already handles manta NIC),
-    // check manta NIC on existing instances
+    // check manta NIC on existing instances. Same rationale as the
+    // create-instance path above: failure here means the service is not
+    // fully wired, and "Done." would be a lie.
     if config.ensure_manta_nic
         && let Some(inst) = existing_inst
         && !actions
@@ -1177,7 +1202,12 @@ async fn cmd_add_service(
     {
         ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name)
             .await
-            .unwrap_or_else(|e| eprintln!("Warning: manta NIC setup: {e}"));
+            .with_context(|| {
+                format!(
+                    "manta NIC setup failed for existing {} instance {}",
+                    config.name, inst.uuid
+                )
+            })?;
     }
 
     eprintln!("Done.");
@@ -1279,13 +1309,23 @@ async fn find_image(
 
             let best = pick_latest(remote_images)?;
 
-            // Check if it already exists locally
-            let needs_download = local_imgapi
-                .get_image()
-                .uuid(best.uuid)
-                .send()
-                .await
-                .is_err();
+            // Check if it already exists locally. A 404 means "must
+            // download"; any other error means local IMGAPI itself is
+            // broken — bail rather than launch an import against a sick
+            // IMGAPI and produce a confusing chained error.
+            let needs_download = match local_imgapi.get_image().uuid(best.uuid).send().await {
+                Ok(_) => false,
+                Err(e) if is_404(&e) => true,
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!(
+                            "local IMGAPI lookup for {} failed; \
+                             cannot decide whether to download",
+                            best.uuid
+                        )
+                    });
+                }
+            };
 
             Ok(ImageSelection {
                 image: best,
@@ -1302,8 +1342,8 @@ async fn find_image(
                     image: resp.into_inner(),
                     needs_download: false,
                 }),
-                Err(_) => {
-                    // Try updates server
+                Err(e) if is_404(&e) => {
+                    // Not in local IMGAPI — try the updates server.
                     let image = updates_imgapi
                         .get_image()
                         .uuid(uuid)
@@ -1317,6 +1357,7 @@ async fn find_image(
                         needs_download: true,
                     })
                 }
+                Err(e) => Err(e).with_context(|| format!("local IMGAPI lookup for {uuid} failed")),
             }
         }
     }
@@ -1333,17 +1374,35 @@ fn pick_latest(images: Vec<imgapi_client::types::Image>) -> Result<imgapi_client
 /// Poll local IMGAPI until the image reaches "active" state.
 ///
 /// The import-remote action is async — the image may not exist yet when
-/// we start polling (404), then appear as "unactivated", then become "active".
+/// we start polling (404), then appear as "unactivated", then become
+/// "active". Non-404 errors (5xx, transport, auth) mean the local IMGAPI
+/// is broken; tolerate a brief blip but bail rather than print dots for
+/// 4 minutes and call it a "timeout" — that hides the real cause.
 async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid) -> Result<()> {
+    const NON_404_TOLERANCE: usize = 3;
+    let mut consecutive_non_404 = 0usize;
     for _ in 0..120 {
         match imgapi.get_image().uuid(uuid).send().await {
             Ok(resp) => {
+                consecutive_non_404 = 0;
                 if resp.into_inner().state == imgapi_client::types::ImageState::Active {
                     return Ok(());
                 }
             }
-            Err(_) => {
-                // Image may not exist yet (404) — keep polling
+            Err(e) if is_404(&e) => {
+                consecutive_non_404 = 0;
+            }
+            Err(e) => {
+                consecutive_non_404 += 1;
+                if consecutive_non_404 >= NON_404_TOLERANCE {
+                    eprintln!();
+                    return Err(e).with_context(|| {
+                        format!(
+                            "local IMGAPI returned non-404 errors {NON_404_TOLERANCE} times \
+                             in a row while waiting for {uuid} to become active"
+                        )
+                    });
+                }
             }
         }
         eprint!(".");
