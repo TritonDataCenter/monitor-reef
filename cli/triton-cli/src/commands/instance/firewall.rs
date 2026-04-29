@@ -43,7 +43,13 @@ pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()
         let machine_id = super::get::resolve_instance(instance, client).await?;
         let id_str = machine_id.to_string();
 
-        client.enable_firewall(account, &machine_id, None).await?;
+        client
+            .enable_firewall(
+                account,
+                &machine_id,
+                &triton_gateway_client::EnableFirewallRequest::default(),
+            )
+            .await?;
 
         println!("Enabled firewall for instance {}", &id_str[..8]);
     }
@@ -58,7 +64,13 @@ pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<
         let machine_id = super::get::resolve_instance(instance, client).await?;
         let id_str = machine_id.to_string();
 
-        client.disable_firewall(account, &machine_id, None).await?;
+        client
+            .disable_firewall(
+                account,
+                &machine_id,
+                &triton_gateway_client::DisableFirewallRequest::default(),
+            )
+            .await?;
 
         println!("Disabled firewall for instance {}", &id_str[..8]);
     }

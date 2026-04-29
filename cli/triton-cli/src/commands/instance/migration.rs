@@ -215,7 +215,9 @@ async fn begin_migration(
 
     let request = triton_gateway_client::types::MigrateRequest {
         action: triton_gateway_client::types::MigrationAction::Begin,
-        affinity: args.affinity,
+        affinity: args
+            .affinity
+            .map(triton_gateway_client::AffinityRules::from),
     };
 
     let response = client

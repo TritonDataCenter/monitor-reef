@@ -264,7 +264,7 @@ async fn create_policy(args: PolicyCreateArgs, client: &TypedClient, use_json: b
 
     let request = triton_gateway_client::types::CreatePolicyRequest {
         name: args.name.clone(),
-        rules: args.rule,
+        rules: args.rule.into(),
         description: args.description,
     };
 
@@ -294,7 +294,7 @@ async fn update_policy(args: PolicyUpdateArgs, client: &TypedClient, use_json: b
         rules: if args.rule.is_empty() {
             None
         } else {
-            Some(args.rule)
+            Some(args.rule.into())
         },
         description: args.description,
     };
@@ -456,7 +456,7 @@ async fn add_policy_from_file(
     let account = client.effective_account();
     let request = triton_gateway_client::types::CreatePolicyRequest {
         name: name.clone(),
-        rules,
+        rules: rules.into(),
         description,
     };
 
@@ -564,7 +564,7 @@ async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result
                 // Build update request
                 let request = triton_gateway_client::types::UpdatePolicyRequest {
                     name: Some(edited.name.clone()),
-                    rules: Some(edited.rules),
+                    rules: Some(edited.rules.into()),
                     description: edited.description,
                 };
 

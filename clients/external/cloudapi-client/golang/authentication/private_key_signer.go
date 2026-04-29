@@ -1,0 +1,171 @@
+//
+// Copyright (c) 2018, Joyent, Inc. All rights reserved.
+// Copyright 2026 Edgecast Cloud LLC.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+
+package authentication
+
+import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/asn1"
+	"encoding/base64"
+	"fmt"
+	"math/big"
+	"strings"
+
+	"errors"
+
+	"golang.org/x/crypto/ssh"
+)
+
+const (
+	RSA_SHA512     = "rsa-sha512"
+	ECDSA_SHA512   = "ecdsa-sha512"
+	ED25519_SHA512 = "ed25519-sha512"
+)
+
+type PrivateKeySigner struct {
+	formattedKeyFingerprint string
+	keyFingerprint          string
+	algorithm               string
+	accountName             string
+	userName                string
+	hashFunc                crypto.Hash
+
+	privateKey interface{}
+}
+
+type PrivateKeySignerInput struct {
+	KeyID              string
+	PrivateKeyMaterial []byte
+	AccountName        string
+	Username           string
+}
+
+func NewPrivateKeySigner(input PrivateKeySignerInput) (*PrivateKeySigner, error) {
+	keyFingerprintMD5 := strings.ReplaceAll(input.KeyID, ":", "")
+
+	key, err := ssh.ParseRawPrivateKey(input.PrivateKeyMaterial)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse private key: %w", err)
+	}
+
+	matchKeyFingerprint, err := formatPublicKeyFingerprint(key, false)
+	if err != nil {
+		return nil, fmt.Errorf("unable to format match public key: %w", err)
+	}
+	displayKeyFingerprint, err := formatPublicKeyFingerprint(key, true)
+	if err != nil {
+		return nil, fmt.Errorf("unable to format display public key: %w", err)
+	}
+	if matchKeyFingerprint != keyFingerprintMD5 {
+		return nil, errors.New("private key file does not match public key fingerprint")
+	}
+
+	signer := &PrivateKeySigner{
+		formattedKeyFingerprint: displayKeyFingerprint,
+		keyFingerprint:          input.KeyID,
+		accountName:             input.AccountName,
+
+		hashFunc:   crypto.SHA512,
+		privateKey: key,
+	}
+
+	if input.Username != "" {
+		signer.userName = input.Username
+	}
+
+	_, algorithm, err := signer.SignRaw("HelloWorld")
+	if err != nil {
+		return nil, fmt.Errorf("cannot verify signing with private key: %w", err)
+	}
+	signer.algorithm = algorithm
+
+	return signer, nil
+}
+
+func (s *PrivateKeySigner) Sign(dateHeader string) (string, error) {
+	const headerName = "date"
+
+	message := fmt.Sprintf("%s: %s", headerName, dateHeader)
+	signedBase64, algoName, err := s.SignRaw(message)
+	if err != nil {
+		return "", err
+	}
+
+	key := &KeyID{
+		UserName:    s.userName,
+		AccountName: s.accountName,
+		Fingerprint: s.formattedKeyFingerprint,
+	}
+
+	return fmt.Sprintf(authorizationHeaderFormat, key.generate(), algoName, headerName, signedBase64), nil
+}
+
+func (s *PrivateKeySigner) SignRaw(toSign string) (string, string, error) {
+	var algoName string
+	var signedBase64 string
+	message := []byte(toSign)
+	switch key := s.privateKey.(type) {
+	case *rsa.PrivateKey:
+		algoName = RSA_SHA512
+		hash := s.hashFunc.New()
+		hash.Write(message)
+		digest := hash.Sum(nil)
+		signed, err := rsa.SignPKCS1v15(rand.Reader, key, s.hashFunc, digest)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to create signature using RSA key: %w", err)
+		}
+		signedBase64 = base64.StdEncoding.EncodeToString(signed)
+	case *ecdsa.PrivateKey:
+		algoName = ECDSA_SHA512
+		hash := s.hashFunc.New()
+		hash.Write(message)
+		digest := hash.Sum(nil)
+		sigR, sigS, err := ecdsa.Sign(rand.Reader, key, digest)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to create signature using ECDSA key: %w", err)
+		}
+		signed, err := asn1.Marshal(ECDSASignature{R: sigR, S: sigS})
+		if err != nil {
+			return "", "", fmt.Errorf("unable to marshal ECDSA signature: %w", err)
+		}
+		signedBase64 = base64.StdEncoding.EncodeToString(signed)
+	case ed25519.PrivateKey:
+		// Ed25519 performs internal SHA-512 hashing per RFC 8032;
+		// do not pre-hash the message.
+		algoName = ED25519_SHA512
+		signed := ed25519.Sign(key, message)
+		signedBase64 = base64.StdEncoding.EncodeToString(signed)
+	case *ed25519.PrivateKey:
+		// ssh.ParseRawPrivateKey returns *ed25519.PrivateKey for OpenSSH-format
+		// keys; dereference and sign with the value type.
+		algoName = ED25519_SHA512
+		signed := ed25519.Sign(*key, message)
+		signedBase64 = base64.StdEncoding.EncodeToString(signed)
+	default:
+		return "", "", errors.New("unable to sign string with unsupported key type")
+	}
+
+	return signedBase64, algoName, nil
+}
+
+type ECDSASignature struct {
+	R, S *big.Int
+}
+
+func (s *PrivateKeySigner) KeyFingerprint() string {
+	return s.formattedKeyFingerprint
+}
+
+func (s *PrivateKeySigner) DefaultAlgorithm() string {
+	return s.algorithm
+}

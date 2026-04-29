@@ -29,7 +29,7 @@ pub struct GetStatusesQuery {
 // ============================================================================
 
 /// Status entry for a single VM
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct VmStatus {
     /// VM state
     pub state: VmState,
@@ -38,5 +38,36 @@ pub struct VmStatus {
     pub last_modified: Option<String>,
 }
 
-/// Response mapping VM UUIDs to their statuses
-pub type StatusesResponse = HashMap<Uuid, VmStatus>;
+/// Response mapping VM UUIDs to their statuses.
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI
+/// spec carries `StatusesResponse` as a named schema, giving
+/// downstream clients a named type for the VM-statuses endpoint's
+/// response rather than an anonymous map.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct StatusesResponse(pub HashMap<Uuid, VmStatus>);
+
+impl std::ops::Deref for StatusesResponse {
+    type Target = HashMap<Uuid, VmStatus>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for StatusesResponse {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<HashMap<Uuid, VmStatus>> for StatusesResponse {
+    fn from(m: HashMap<Uuid, VmStatus>) -> Self {
+        StatusesResponse(m)
+    }
+}
+
+impl FromIterator<(Uuid, VmStatus)> for StatusesResponse {
+    fn from_iter<I: IntoIterator<Item = (Uuid, VmStatus)>>(iter: I) -> Self {
+        StatusesResponse(iter.into_iter().collect())
+    }
+}

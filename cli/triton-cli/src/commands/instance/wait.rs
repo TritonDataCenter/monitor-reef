@@ -106,7 +106,7 @@ pub async fn wait_for_states(
 /// entry with a timestamp after `reboot_time` and `success == Yes`.
 pub async fn wait_for_reboot(
     machine_id: uuid::Uuid,
-    reboot_time: &str,
+    reboot_time: &chrono::DateTime<chrono::Utc>,
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<()> {
@@ -129,7 +129,7 @@ pub async fn wait_for_reboot(
 
         // Look for a reboot audit entry newer than our reboot request
         for audit in &audits {
-            if audit.action == "reboot" && audit.time.as_str() > reboot_time {
+            if audit.action == "reboot" && audit.time > *reboot_time {
                 if audit.success == Some(AuditSuccess::Yes) {
                     return Ok(());
                 } else {

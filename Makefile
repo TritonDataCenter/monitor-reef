@@ -22,18 +22,34 @@ include ./deps/eng/tools/mk/Makefile.targ
 include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
+# Go toolchain: use eng prebuilt on illumos, system go elsewhere.
+# The eng prebuilt downloads a versioned toolchain from Manta,
+# providing isolation equivalent to how Rust is managed via Makefile.rust.*.
+ifeq ($(shell uname -s),SunOS)
+GO_PREBUILT_VERSION =	1.23.8
+include ./deps/eng/tools/mk/Makefile.go_prebuilt.defs
+GO_ENV +=		CGO_ENABLED=0
+GO_TOOLCHAIN_DEP =	$(STAMP_GO_TOOLCHAIN)
+include ./deps/eng/tools/mk/Makefile.go_prebuilt.targ
+else
+GO =			go
+GO_TOOLCHAIN_DEP =
+endif
+
 .PHONY: help build build-release test clean lint format audit audit-update
 .PHONY: tritonadm-portable
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
 .PHONY: package-build package-test
-.PHONY: triton-test triton-test-api triton-test-all
+.PHONY: triton-test triton-test-api triton-test-all triton-test-rerun
 .PHONY: triton-compare triton-compare-payload triton-compare-api triton-compare-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint doc-lint
 .PHONY: image image-clean image-rebuild image-buildimage images-list
+.PHONY: go-test go-build go-vet go-coverage
+.PHONY: go-test-integration
 .PHONY: clients-generate clients-check
 
 # Default target
@@ -186,6 +202,10 @@ triton-test-all: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all triton-cli tes
 	fi
 	$(CARGO) nextest run -p triton-cli --no-fail-fast -- --include-ignored
 
+triton-test-rerun: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Rerun specific triton-cli test (usage: make triton-test-rerun FILTER=test_name)
+	@if [ -z "$(FILTER)" ]; then echo "Usage: make triton-test-rerun FILTER=test_instance_snapshot_workflow"; exit 1; fi
+	$(CARGO) nextest run -p triton-cli -E 'test($(FILTER))' --no-fail-fast -- --include-ignored
+
 triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
 	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
 	$(CARGO) test -p triton-cli --test $(TEST)
@@ -226,7 +246,7 @@ openapi-debug: | $(CARGO_EXEC) ## Debug OpenAPI manager configuration
 	$(CARGO) run -p openapi-manager -- debug
 
 integration-test: | $(CARGO_EXEC) ## Run integration tests across all services
-	$(CARGO) test --workspace integration
+	$(CARGO) test --workspace --test integration_test
 
 # Development setup
 dev-setup: | $(CARGO_EXEC) ## Set up development environment
@@ -293,6 +313,8 @@ check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-r
 	$(MAKE) arch-lint
 	$(MAKE) openapi-check
 	$(MAKE) clients-check
+	$(MAKE) go-vet
+	$(MAKE) go-test
 	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --workspace
 	@echo ""
 	@echo "All validation checks passed!"
@@ -320,6 +342,52 @@ clients-list: | $(CARGO_EXEC) ## List all managed clients
 # Regenerate everything (OpenAPI specs + client code)
 regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and client code
 	@echo "All specs and clients regenerated. Test with: make test"
+
+# Go client targets (external cloudapi-client)
+GO_CLIENT_DIR = clients/external/cloudapi-client/golang
+GO_MODULE = github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang
+
+OAPI_CODEGEN_VERSION = v2.6.0
+OAPI_CODEGEN = github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+
+go-generate: | $(GO_TOOLCHAIN_DEP) ## Regenerate Go cloudapi client from openapi-specs/patched/cloudapi-api.json
+	$(GO) run $(OAPI_CODEGEN) \
+		-config $(GO_CLIENT_DIR)/cloudapi.cfg.yaml \
+		openapi-specs/patched/cloudapi-api.json
+
+# CGO_ENABLED=0: The Go runtime/cgo layer uses pthread_getattr_np (a GNU/Linux
+# extension) to query thread stack bounds, which does not exist on illumos.
+# The generated client is pure HTTP/JSON with no C interop, so CGo is not needed.
+# On illumos, CGO_ENABLED=0 is already set via GO_ENV; it is repeated here for
+# clarity and to ensure it is set when using the system go on other platforms.
+go-build: go-generate | $(GO_TOOLCHAIN_DEP) ## Build Go cloudapi client (regenerates first)
+	cd $(GO_CLIENT_DIR) && CGO_ENABLED=0 $(GO) build ./...
+
+go-vet: | $(GO_TOOLCHAIN_DEP) ## Vet Go cloudapi client
+	cd $(GO_CLIENT_DIR) && CGO_ENABLED=0 $(GO) vet ./...
+
+go-test: | $(GO_TOOLCHAIN_DEP) ## Run Go cloudapi client tests
+	cd $(GO_CLIENT_DIR) && CGO_ENABLED=0 $(GO) test ./... -count=1
+
+go-coverage: | $(GO_TOOLCHAIN_DEP) ## Run Go cloudapi client tests with coverage report
+	cd $(GO_CLIENT_DIR) && $(GO) test ./... -count=1 -coverprofile=cover.out -coverpkg=./... \
+		&& echo "" \
+		&& echo "=== Coverage (excluding generated code) ===" \
+		&& $(GO) tool cover -func=cover.out | grep -v "cloudapi.gen.go" \
+		&& rm -f cover.out
+
+go-test-integration: | $(GO_TOOLCHAIN_DEP) ## Run Go integration tests (requires TRITON_TEST=1 and TRITON_* env vars)
+	@if [ -z "$(TRITON_TEST)" ]; then echo "Usage: TRITON_TEST=1 make go-test-integration"; echo "Requires TRITON_URL, TRITON_ACCOUNT, TRITON_KEY_ID, and TRITON_KEY_MATERIAL (or SSH_AUTH_SOCK)"; exit 1; fi
+	cd $(GO_CLIENT_DIR) && $(GO) test -v -count=1 -tags integration \
+		-timeout 60m \
+		-run 'TestIntegration_' \
+		-coverpkg=$(GO_MODULE)/... \
+		-coverprofile=integration-cover.out \
+		. \
+		&& echo "" \
+		&& echo "=== Integration Test Coverage ===" \
+		&& $(GO) tool cover -func=integration-cover.out \
+		&& rm -f integration-cover.out
 
 # Doc-lint: check that doc comments don't leak implementation details into OpenAPI specs
 DOC_LINT_PATTERNS = serde_json\|rename_all\|Dropshot\|Progenitor\|schemars\|helper method\|Service implementation\|Rust field\|Rust error\|Rust client

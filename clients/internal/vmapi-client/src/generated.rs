@@ -116,130 +116,6 @@ pub mod types {
         }
     }
 
-    #[doc = "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"VM/Container brand as returned by VMAPI.\\n\\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)\","]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"bhyve\","]
-    #[doc = "        \"joyent\","]
-    #[doc = "        \"joyent-minimal\","]
-    #[doc = "        \"kvm\","]
-    #[doc = "        \"lx\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Internal brand for image build zones (not provisionable via CloudAPI)\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"builder\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"unknown\""]
-    #[doc = "      ]"]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize,
-        :: serde :: Serialize,
-        Clone,
-        Copy,
-        Debug,
-        Eq,
-        Hash,
-        Ord,
-        PartialEq,
-        PartialOrd,
-        clap :: ValueEnum,
-        schemars :: JsonSchema,
-    )]
-    pub enum Brand {
-        #[serde(rename = "bhyve")]
-        Bhyve,
-        #[serde(rename = "joyent")]
-        Joyent,
-        #[serde(rename = "joyent-minimal")]
-        JoyentMinimal,
-        #[serde(rename = "kvm")]
-        Kvm,
-        #[serde(rename = "lx")]
-        Lx,
-        #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
-        #[serde(rename = "builder")]
-        Builder,
-        #[doc = "Unknown brand (forward compatibility)"]
-        #[serde(rename = "unknown")]
-        Unknown,
-    }
-
-    impl ::std::fmt::Display for Brand {
-        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            match *self {
-                Self::Bhyve => f.write_str("bhyve"),
-                Self::Joyent => f.write_str("joyent"),
-                Self::JoyentMinimal => f.write_str("joyent-minimal"),
-                Self::Kvm => f.write_str("kvm"),
-                Self::Lx => f.write_str("lx"),
-                Self::Builder => f.write_str("builder"),
-                Self::Unknown => f.write_str("unknown"),
-            }
-        }
-    }
-
-    impl ::std::str::FromStr for Brand {
-        type Err = self::error::ConversionError;
-        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-            match value {
-                "bhyve" => Ok(Self::Bhyve),
-                "joyent" => Ok(Self::Joyent),
-                "joyent-minimal" => Ok(Self::JoyentMinimal),
-                "kvm" => Ok(Self::Kvm),
-                "lx" => Ok(Self::Lx),
-                "builder" => Ok(Self::Builder),
-                "unknown" => Ok(Self::Unknown),
-                _ => Err("invalid value".into()),
-            }
-        }
-    }
-
-    impl ::std::convert::TryFrom<&str> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
-    impl ::std::convert::TryFrom<&::std::string::String> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
-    impl ::std::convert::TryFrom<::std::string::String> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: ::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
     #[doc = "Request body for creating a new VM"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -276,7 +152,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -293,11 +169,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"customer_metadata\": {"]
     #[doc = "      \"description\": \"Customer metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Delegate dataset flag\","]
@@ -331,11 +214,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"internal_metadata\": {"]
     #[doc = "      \"description\": \"Internal metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Networks to attach\","]
@@ -388,11 +278,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"vcpus\": {"]
     #[doc = "      \"description\": \"VCPUs\","]
@@ -420,14 +317,13 @@ pub mod types {
         pub billing_id: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Brand (if not inferred from image)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand>,
+        pub brand: ::std::option::Option<VmBrand>,
         #[doc = "CPU cap"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cpu_cap: ::std::option::Option<u32>,
         #[doc = "Customer metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub customer_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub customer_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Delegate dataset flag"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -442,8 +338,7 @@ pub mod types {
         pub image_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Internal metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub internal_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub internal_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Networks to attach"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub networks: ::std::option::Option<::std::vec::Vec<::serde_json::Value>>,
@@ -463,8 +358,7 @@ pub mod types {
         pub server_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<vmapi_api::Tags>,
         #[doc = "VCPUs"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub vcpus: ::std::option::Option<u32>,
@@ -663,7 +557,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"elapsed\": {"]
     #[doc = "      \"description\": \"Completion timestamp\","]
@@ -737,7 +632,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"timeout\": {"]
     #[doc = "      \"description\": \"Timeout in seconds\","]
@@ -777,7 +673,7 @@ pub mod types {
         pub chain_results: ::std::option::Option<::std::vec::Vec<TaskResult>>,
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created_at: ::std::option::Option<::std::string::String>,
+        pub created_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Completion timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub elapsed: ::std::option::Option<f64>,
@@ -802,7 +698,7 @@ pub mod types {
             ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
         #[doc = "Start timestamp (when execution began)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub started: ::std::option::Option<::std::string::String>,
+        pub started: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Timeout in seconds"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub timeout: ::std::option::Option<u64>,
@@ -1016,7 +912,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"duration_ms\": {"]
     #[doc = "      \"description\": \"Total duration in milliseconds\","]
@@ -1039,7 +936,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"phase\": {"]
     #[doc = "      \"description\": \"Current phase\","]
@@ -1079,7 +977,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Current migration state\","]
@@ -1118,7 +1017,7 @@ pub mod types {
         pub automatic: ::std::option::Option<bool>,
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created_timestamp: ::std::option::Option<::std::string::String>,
+        pub created_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Total duration in milliseconds"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub duration_ms: ::std::option::Option<u64>,
@@ -1127,7 +1026,7 @@ pub mod types {
         pub error: ::std::option::Option<::std::string::String>,
         #[doc = "Finished timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub finished_timestamp: ::std::option::Option<::std::string::String>,
+        pub finished_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Current phase"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub phase: ::std::option::Option<MigrationPhase>,
@@ -1139,7 +1038,7 @@ pub mod types {
         pub source_server_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Started timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub started_timestamp: ::std::option::Option<::std::string::String>,
+        pub started_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Current migration state"]
         pub state: MigrationState,
         #[doc = "Target server UUID"]
@@ -1470,7 +1369,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"total_bytes\": {"]
     #[doc = "      \"description\": \"Total bytes to transfer\","]
@@ -1525,7 +1425,7 @@ pub mod types {
         pub state: ::std::option::Option<MigrationState>,
         #[doc = "Timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub timestamp: ::std::option::Option<::std::string::String>,
+        pub timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Total bytes to transfer"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub total_bytes: ::std::option::Option<u64>,
@@ -1630,7 +1530,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"total_bytes\": {"]
     #[doc = "      \"description\": \"Total bytes to transfer\","]
@@ -1685,7 +1586,7 @@ pub mod types {
         pub state: ::std::option::Option<MigrationState>,
         #[doc = "Timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub timestamp: ::std::option::Option<::std::string::String>,
+        pub timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Total bytes to transfer"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub total_bytes: ::std::option::Option<u64>,
@@ -2495,7 +2396,8 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created_at\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Snapshot name\","]
@@ -2518,7 +2420,7 @@ pub mod types {
     )]
     pub struct Snapshot {
         #[doc = "Creation timestamp"]
-        pub created_at: ::std::string::String,
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Snapshot name"]
         pub name: ::std::string::String,
         #[doc = "Snapshot state"]
@@ -2772,7 +2674,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Task name\","]
@@ -2793,7 +2696,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -2808,7 +2712,7 @@ pub mod types {
         pub error: ::std::option::Option<::std::string::String>,
         #[doc = "Finish time"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub finished_at: ::std::option::Option<::std::string::String>,
+        pub finished_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Task name"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
@@ -2817,7 +2721,7 @@ pub mod types {
         pub result: ::std::option::Option<::std::string::String>,
         #[doc = "Start time"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub started_at: ::std::option::Option<::std::string::String>,
+        pub started_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl ::std::default::Default for TaskResult {
@@ -2914,7 +2818,7 @@ pub mod types {
     #[doc = "      \"description\": \"Brand (bhyve, kvm, joyent, joyent-minimal, lx)\","]
     #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "          \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
@@ -2932,15 +2836,23 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"customer_metadata\": {"]
     #[doc = "      \"description\": \"Customer metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Delegate dataset flag\","]
@@ -2954,7 +2866,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"disks\": {"]
     #[doc = "      \"description\": \"Disks (bhyve VMs)\","]
@@ -3035,11 +2948,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"internal_metadata\": {"]
     #[doc = "      \"description\": \"Internal metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"internal_metadata_namespaces\": {"]
     #[doc = "      \"description\": \"Internal metadata namespaces\","]
@@ -3056,7 +2976,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"limit_priv\": {"]
     #[doc = "      \"description\": \"Limit privilege flag\","]
@@ -3186,11 +3107,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"uuid\": {"]
     #[doc = "      \"description\": \"VM UUID\","]
@@ -3247,23 +3175,22 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub billing_id: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Brand (bhyve, kvm, joyent, joyent-minimal, lx)"]
-        pub brand: Brand,
+        pub brand: VmBrand,
         #[doc = "CPU cap (percentage, e.g., 100 = 1 full CPU)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub cpu_cap: ::std::option::Option<u32>,
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub create_timestamp: ::std::option::Option<::std::string::String>,
+        pub create_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Customer metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub customer_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub customer_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Delegate dataset flag"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
         #[doc = "Destroyed timestamp (if destroyed)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub destroyed: ::std::option::Option<::std::string::String>,
+        pub destroyed: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Disks (bhyve VMs)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub disks: ::std::option::Option<::std::vec::Vec<Disk>>,
@@ -3296,15 +3223,14 @@ pub mod types {
         pub indestructible_zoneroot: ::std::option::Option<bool>,
         #[doc = "Internal metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub internal_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub internal_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Internal metadata namespaces"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub internal_metadata_namespaces:
             ::std::option::Option<::std::vec::Vec<::std::string::String>>,
         #[doc = "Last modified timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub last_modified: ::std::option::Option<::std::string::String>,
+        pub last_modified: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Limit privilege flag"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub limit_priv: ::std::option::Option<::std::string::String>,
@@ -3350,8 +3276,7 @@ pub mod types {
         pub state: VmState,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<vmapi_api::Tags>,
         #[doc = "VM UUID"]
         pub uuid: ::uuid::Uuid,
         #[doc = "Number of VCPUs"]
@@ -3532,6 +3457,130 @@ pub mod types {
     }
 
     impl ::std::convert::TryFrom<::std::string::String> for VmAction {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"VM/Container brand as returned by VMAPI.\\n\\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"bhyve\","]
+    #[doc = "        \"joyent\","]
+    #[doc = "        \"joyent-minimal\","]
+    #[doc = "        \"kvm\","]
+    #[doc = "        \"lx\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Internal brand for image build zones (not provisionable via CloudAPI)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"builder\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        clap :: ValueEnum,
+        schemars :: JsonSchema,
+    )]
+    pub enum VmBrand {
+        #[serde(rename = "bhyve")]
+        Bhyve,
+        #[serde(rename = "joyent")]
+        Joyent,
+        #[serde(rename = "joyent-minimal")]
+        JoyentMinimal,
+        #[serde(rename = "kvm")]
+        Kvm,
+        #[serde(rename = "lx")]
+        Lx,
+        #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
+        #[serde(rename = "builder")]
+        Builder,
+        #[doc = "Unknown brand (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for VmBrand {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Bhyve => f.write_str("bhyve"),
+                Self::Joyent => f.write_str("joyent"),
+                Self::JoyentMinimal => f.write_str("joyent-minimal"),
+                Self::Kvm => f.write_str("kvm"),
+                Self::Lx => f.write_str("lx"),
+                Self::Builder => f.write_str("builder"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for VmBrand {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "bhyve" => Ok(Self::Bhyve),
+                "joyent" => Ok(Self::Joyent),
+                "joyent-minimal" => Ok(Self::JoyentMinimal),
+                "kvm" => Ok(Self::Kvm),
+                "lx" => Ok(Self::Lx),
+                "builder" => Ok(Self::Builder),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for VmBrand {
         type Error = self::error::ConversionError;
         fn try_from(
             value: ::std::string::String,
@@ -3784,12 +3833,10 @@ pub mod types {
             billing_id:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::VmBrand>, ::std::string::String>,
             cpu_cap: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
             customer_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             delegate_dataset:
@@ -3803,9 +3850,7 @@ pub mod types {
             image_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             internal_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             networks: ::std::result::Result<
@@ -3822,9 +3867,7 @@ pub mod types {
             server_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::Tags>,
                 ::std::string::String,
             >,
             vcpus: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
@@ -3878,7 +3921,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VmBrand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -3898,11 +3941,7 @@ pub mod types {
             }
             pub fn customer_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.customer_metadata = value.try_into().map_err(|e| {
@@ -3954,11 +3993,7 @@ pub mod types {
             }
             pub fn internal_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.internal_metadata = value.try_into().map_err(|e| {
@@ -4030,11 +4065,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -4318,7 +4349,7 @@ pub mod types {
                 ::std::string::String,
             >,
             created_at: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             elapsed: ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
@@ -4347,7 +4378,7 @@ pub mod types {
                 ::std::string::String,
             >,
             started: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             timeout: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -4404,7 +4435,9 @@ pub mod types {
             }
             pub fn created_at<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created_at = value
@@ -4492,7 +4525,9 @@ pub mod types {
             }
             pub fn started<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.started = value
@@ -4643,7 +4678,7 @@ pub mod types {
             >,
             automatic: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             created_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             duration_ms: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -4652,7 +4687,7 @@ pub mod types {
                 ::std::string::String,
             >,
             finished_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             phase: ::std::result::Result<
@@ -4666,7 +4701,7 @@ pub mod types {
             source_server_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             started_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<super::MigrationState, ::std::string::String>,
@@ -4718,7 +4753,9 @@ pub mod types {
             }
             pub fn created_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created_timestamp = value.try_into().map_err(|e| {
@@ -4748,7 +4785,9 @@ pub mod types {
             }
             pub fn finished_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.finished_timestamp = value.try_into().map_err(|e| {
@@ -4790,7 +4829,9 @@ pub mod types {
             }
             pub fn started_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.started_timestamp = value.try_into().map_err(|e| {
@@ -4895,7 +4936,7 @@ pub mod types {
                 ::std::string::String,
             >,
             timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             total_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -4995,7 +5036,9 @@ pub mod types {
             }
             pub fn timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.timestamp = value
@@ -5096,7 +5139,7 @@ pub mod types {
                 ::std::string::String,
             >,
             timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             total_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -5196,7 +5239,9 @@ pub mod types {
             }
             pub fn timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.timestamp = value
@@ -5950,7 +5995,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Snapshot {
-            created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::SnapshotState, ::std::string::String>,
         }
@@ -5968,7 +6016,7 @@ pub mod types {
         impl Snapshot {
             pub fn created_at<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created_at = value
@@ -6118,7 +6166,7 @@ pub mod types {
                 ::std::string::String,
             >,
             finished_at: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<
@@ -6130,7 +6178,7 @@ pub mod types {
                 ::std::string::String,
             >,
             started_at: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -6160,7 +6208,9 @@ pub mod types {
             }
             pub fn finished_at<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.finished_at = value
@@ -6190,7 +6240,9 @@ pub mod types {
             }
             pub fn started_at<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.started_at = value
@@ -6281,22 +6333,20 @@ pub mod types {
             autoboot: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             billing_id:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
-            brand: ::std::result::Result<super::Brand, ::std::string::String>,
+            brand: ::std::result::Result<super::VmBrand, ::std::string::String>,
             cpu_cap: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
             create_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             customer_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             delegate_dataset:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             destroyed: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             disks: ::std::result::Result<
@@ -6322,9 +6372,7 @@ pub mod types {
             indestructible_zoneroot:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             internal_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             internal_metadata_namespaces: ::std::result::Result<
@@ -6332,7 +6380,7 @@ pub mod types {
                 ::std::string::String,
             >,
             last_modified: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             limit_priv: ::std::result::Result<
@@ -6370,9 +6418,7 @@ pub mod types {
             >,
             state: ::std::result::Result<super::VmState, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::Tags>,
                 ::std::string::String,
             >,
             uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -6472,7 +6518,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<super::Brand>,
+                T: ::std::convert::TryInto<super::VmBrand>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -6492,7 +6538,9 @@ pub mod types {
             }
             pub fn create_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.create_timestamp = value.try_into().map_err(|e| {
@@ -6502,11 +6550,7 @@ pub mod types {
             }
             pub fn customer_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.customer_metadata = value.try_into().map_err(|e| {
@@ -6526,7 +6570,9 @@ pub mod types {
             }
             pub fn destroyed<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.destroyed = value
@@ -6636,11 +6682,7 @@ pub mod types {
             }
             pub fn internal_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.internal_metadata = value.try_into().map_err(|e| {
@@ -6662,7 +6704,9 @@ pub mod types {
             }
             pub fn last_modified<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.last_modified = value
@@ -6824,11 +6868,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -8422,10 +8462,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/statuses`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::std::collections::HashMap<::std::string::String, types::VmStatus>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::StatusesResponse>, Error<types::Error>> {
             let Self { client, uuids } = self;
             let uuids = uuids.map_err(Error::InvalidRequest)?;
             let url = format!("{}/statuses", client.baseurl,);
@@ -8471,7 +8508,7 @@ pub mod builder {
         client: &'a super::Client,
         alias: Result<Option<::std::string::String>, String>,
         billing_id: Result<Option<::uuid::Uuid>, String>,
-        brand: Result<Option<types::Brand>, String>,
+        brand: Result<Option<types::VmBrand>, String>,
         fields: Result<Option<::std::string::String>, String>,
         image_uuid: Result<Option<::uuid::Uuid>, String>,
         include_destroyed: Result<Option<bool>, String>,
@@ -8529,12 +8566,12 @@ pub mod builder {
 
         pub fn brand<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::Brand>,
+            V: std::convert::TryInto<types::VmBrand>,
         {
             self.brand = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `Brand` for brand failed".to_string());
+                .map_err(|_| "conversion to `VmBrand` for brand failed".to_string());
             self
         }
 
@@ -8918,7 +8955,7 @@ pub mod builder {
         client: &'a super::Client,
         alias: Result<Option<::std::string::String>, String>,
         billing_id: Result<Option<::uuid::Uuid>, String>,
-        brand: Result<Option<types::Brand>, String>,
+        brand: Result<Option<types::VmBrand>, String>,
         fields: Result<Option<::std::string::String>, String>,
         image_uuid: Result<Option<::uuid::Uuid>, String>,
         include_destroyed: Result<Option<bool>, String>,
@@ -8976,12 +9013,12 @@ pub mod builder {
 
         pub fn brand<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::Brand>,
+            V: std::convert::TryInto<types::VmBrand>,
         {
             self.brand = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `Brand` for brand failed".to_string());
+                .map_err(|_| "conversion to `VmBrand` for brand failed".to_string());
             self
         }
 
@@ -9620,10 +9657,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/vms/{uuid}/customer_metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::MetadataObject>, Error<types::Error>> {
             let Self { client, uuid } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -10095,10 +10129,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/vms/{uuid}/internal_metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::MetadataObject>, Error<types::Error>> {
             let Self { client, uuid } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -11146,10 +11177,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/vms/{uuid}/tags`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::MetadataObject>, Error<types::Error>> {
             let Self { client, uuid } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let url = format!(

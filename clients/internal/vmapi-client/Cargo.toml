@@ -24,6 +24,7 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+chrono = { workspace = true }
 vmapi-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = { workspace = true }

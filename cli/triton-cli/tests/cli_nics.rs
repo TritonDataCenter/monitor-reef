@@ -185,25 +185,51 @@ fn test_instance_nic_workflow() {
     eprintln!("Created instance {} ({})", inst.name, inst_id);
     let inst_short_id = short_id(&inst_id);
 
-    // Get a network for tests
+    // Get a network that the instance is NOT already on.
+    // We query the instance's existing NICs rather than relying on the
+    // create response, which may not include the networks field.
     eprintln!("Setup: finding network for tests");
+    let (stdout, _, success) =
+        run_triton_with_profile(["instance", "nic", "list", "-j", &inst_short_id]);
+    if !success {
+        delete_test_instance(&inst_id);
+        panic!("nic list failed");
+    }
+    let existing_nics: Vec<Nic> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    let inst_network_ids: Vec<String> = existing_nics
+        .iter()
+        .map(|n| n.network.to_string())
+        .collect();
+
     let (stdout, _, success) = run_triton_with_profile(["network", "list", "-j"]);
     if !success {
         delete_test_instance(&inst_id);
         panic!("network list failed");
     }
-
     let networks: Vec<Network> = stdout
         .lines()
         .filter(|l| !l.is_empty())
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect();
 
-    if networks.is_empty() {
-        delete_test_instance(&inst_id);
-        panic!("no networks available for test");
-    }
-    let network = &networks[0];
+    // Pick a network the instance doesn't already have a NIC on,
+    // to avoid CloudAPI returning a 302 redirect for duplicate NICs.
+    let network = networks
+        .iter()
+        .find(|n| !inst_network_ids.contains(&n.id.to_string()));
+
+    let network = match network {
+        Some(n) => n,
+        None => {
+            eprintln!("No network available that instance is not already on, skipping test");
+            delete_test_instance(&inst_id);
+            return;
+        }
+    };
     let network_id = network.id.to_string();
     eprintln!("Using network {} ({})", network.name, network_id);
 

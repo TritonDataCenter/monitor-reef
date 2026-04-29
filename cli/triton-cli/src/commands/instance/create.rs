@@ -65,7 +65,7 @@ pub struct CreateArgs {
 
     /// Instance brand. If not specified, inferred from the image.
     #[arg(long, short = 'b', value_enum)]
-    pub brand: Option<triton_gateway_client::types::Brand2>,
+    pub brand: Option<triton_gateway_client::types::Brand>,
 
     /// Volume to mount (NAME[@MOUNTPOINT] or NAME:MODE:MOUNTPOINT).
     /// MODE can be 'ro' or 'rw' (default: 'rw').
@@ -197,20 +197,20 @@ pub async fn run(
 
     // Handle affinity rules
     if let Some(affinity) = &args.affinity {
-        request = request.affinity(affinity.clone());
+        request = request.affinity(triton_gateway_client::AffinityRules::from(affinity.clone()));
     }
 
     // Build metadata from --metadata, --metadata-file, and --script
     let metadata = build_metadata(&args).await?;
     if !metadata.is_empty() {
         // arch-lint: allow(no-sync-io) reason="metadata() is a builder method, not filesystem I/O"
-        request = request.metadata(metadata);
+        request = request.metadata(triton_gateway_client::Metadata::from(metadata));
     }
 
     // Build tags from --tag
     let tags = build_tags(&args)?;
     if !tags.is_empty() {
-        request = request.tags(tags);
+        request = request.tags(triton_gateway_client::Tags::from(tags));
     }
 
     // Handle volumes

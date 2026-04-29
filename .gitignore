@@ -4,12 +4,17 @@
 /rust
 .env
 .idea/
+make_stamps/
 
 # Created by cargo when installing from a git repo
 .cargo-ok
 
 # Test configuration (contains credentials)
 cli/triton-cli/tests/config.json
+clients/external/cloudapi-client/golang/testconfig.json
+
+# Go coverage artifacts
+clients/external/cloudapi-client/golang/*.out
 
 # Image build artifacts (eng buildimage/release targets)
 images/*/bits/

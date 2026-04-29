@@ -130,55 +130,51 @@ pub fn format_mb(mb: u64) -> String {
 /// - 1+ hours ago -> "4h"
 /// - 1+ minutes ago -> "5m"
 /// - recent -> "30s"
-pub fn format_age(timestamp: &str) -> String {
+pub fn format_age(timestamp: &chrono::DateTime<chrono::Utc>) -> String {
     use chrono::Utc;
     format_age_since(timestamp, Utc::now())
 }
 
-fn format_age_since(timestamp: &str, now: chrono::DateTime<chrono::Utc>) -> String {
-    use chrono::DateTime;
+fn format_age_since(
+    timestamp: &chrono::DateTime<chrono::Utc>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> String {
+    let duration = now.signed_duration_since(*timestamp);
 
-    if let Ok(created_dt) = DateTime::parse_from_rfc3339(timestamp) {
-        let created_utc = created_dt.with_timezone(&chrono::Utc);
-        let duration = now.signed_duration_since(created_utc);
-
-        let seconds = duration.num_seconds();
-        if seconds < 0 {
-            return "-".to_string();
-        }
-        let years = seconds / 60 / 60 / 24 / 365;
-        if years > 0 {
-            return format!("{}y", years);
-        }
-
-        let weeks = seconds / 60 / 60 / 24 / 7;
-        if weeks > 0 {
-            return format!("{}w", weeks);
-        }
-
-        let days = seconds / 60 / 60 / 24;
-        if days > 0 {
-            return format!("{}d", days);
-        }
-
-        let hours = seconds / 60 / 60;
-        if hours > 0 {
-            return format!("{}h", hours);
-        }
-
-        let minutes = seconds / 60;
-        if minutes > 0 {
-            return format!("{}m", minutes);
-        }
-
-        if seconds > 0 {
-            return format!("{}s", seconds);
-        }
-
-        "0s".to_string()
-    } else {
-        "-".to_string()
+    let seconds = duration.num_seconds();
+    if seconds < 0 {
+        return "-".to_string();
     }
+    let years = seconds / 60 / 60 / 24 / 365;
+    if years > 0 {
+        return format!("{}y", years);
+    }
+
+    let weeks = seconds / 60 / 60 / 24 / 7;
+    if weeks > 0 {
+        return format!("{}w", weeks);
+    }
+
+    let days = seconds / 60 / 60 / 24;
+    if days > 0 {
+        return format!("{}d", days);
+    }
+
+    let hours = seconds / 60 / 60;
+    if hours > 0 {
+        return format!("{}h", hours);
+    }
+
+    let minutes = seconds / 60;
+    if minutes > 0 {
+        return format!("{}m", minutes);
+    }
+
+    if seconds > 0 {
+        return format!("{}s", seconds);
+    }
+
+    "0s".to_string()
 }
 
 #[cfg(test)]
@@ -252,69 +248,56 @@ mod tests {
         #[test]
         fn test_format_age_years() {
             // Pi Day 2024 is 2 years before Pi Day 2026
-            let result = format_age_since("2024-03-14T00:00:00Z", pi_day_2026());
-            assert_eq!(result, "2y");
+            let ts = Utc.with_ymd_and_hms(2024, 3, 14, 0, 0, 0).unwrap();
+            assert_eq!(format_age_since(&ts, pi_day_2026()), "2y");
         }
 
         #[test]
         fn test_format_age_weeks() {
             // 2 weeks before Tau Day 2026
-            let result = format_age_since("2026-06-14T00:00:00Z", tau_day_2026());
-            assert_eq!(result, "2w");
+            let ts = Utc.with_ymd_and_hms(2026, 6, 14, 0, 0, 0).unwrap();
+            assert_eq!(format_age_since(&ts, tau_day_2026()), "2w");
         }
 
         #[test]
         fn test_format_age_days() {
             // 3 days before Pi Day 2026
-            let result = format_age_since("2026-03-11T00:00:00Z", pi_day_2026());
-            assert_eq!(result, "3d");
+            let ts = Utc.with_ymd_and_hms(2026, 3, 11, 0, 0, 0).unwrap();
+            assert_eq!(format_age_since(&ts, pi_day_2026()), "3d");
         }
 
         #[test]
         fn test_format_age_hours() {
             // 5 hours before Tau Day 2026
-            let result = format_age_since("2026-06-27T19:00:00Z", tau_day_2026());
-            assert_eq!(result, "5h");
+            let ts = Utc.with_ymd_and_hms(2026, 6, 27, 19, 0, 0).unwrap();
+            assert_eq!(format_age_since(&ts, tau_day_2026()), "5h");
         }
 
         #[test]
         fn test_format_age_minutes() {
             // 10 minutes before Pi Day 2026
-            let result = format_age_since("2026-03-13T23:50:00Z", pi_day_2026());
-            assert_eq!(result, "10m");
+            let ts = Utc.with_ymd_and_hms(2026, 3, 13, 23, 50, 0).unwrap();
+            assert_eq!(format_age_since(&ts, pi_day_2026()), "10m");
         }
 
         #[test]
         fn test_format_age_seconds() {
             // 30 seconds before Tau Day 2026
-            let result = format_age_since("2026-06-27T23:59:30Z", tau_day_2026());
-            assert_eq!(result, "30s");
+            let ts = Utc.with_ymd_and_hms(2026, 6, 27, 23, 59, 30).unwrap();
+            assert_eq!(format_age_since(&ts, tau_day_2026()), "30s");
         }
 
         #[test]
         fn test_format_age_zero() {
             // Same instant as Pi Day 2026
-            let result = format_age_since("2026-03-14T00:00:00Z", pi_day_2026());
-            assert_eq!(result, "0s");
+            assert_eq!(format_age_since(&pi_day_2026(), pi_day_2026()), "0s");
         }
 
         #[test]
         fn test_format_age_future() {
             // 1 hour after Pi Day 2026
-            let result = format_age_since("2026-03-14T01:00:00Z", pi_day_2026());
-            assert_eq!(result, "-");
-        }
-
-        #[test]
-        fn test_format_age_invalid() {
-            let result = format_age_since("not-a-date", pi_day_2026());
-            assert_eq!(result, "-");
-        }
-
-        #[test]
-        fn test_format_age_empty() {
-            let result = format_age_since("", pi_day_2026());
-            assert_eq!(result, "-");
+            let ts = Utc.with_ymd_and_hms(2026, 3, 14, 1, 0, 0).unwrap();
+            assert_eq!(format_age_since(&ts, pi_day_2026()), "-");
         }
     }
 }

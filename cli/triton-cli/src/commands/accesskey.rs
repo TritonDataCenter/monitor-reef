@@ -116,10 +116,10 @@ async fn list_access_keys(
                 key.accesskeyid.clone(),
                 enum_to_display(&key.status),
                 enum_to_display(&key.credentialtype),
-                key.updated.clone(),
+                key.updated.to_rfc3339(),
                 key.description.clone().unwrap_or_default(),
-                key.created.clone(),
-                key.expiration.clone().unwrap_or_default(),
+                key.created.to_rfc3339(),
+                key.expiration.map(|e| e.to_rfc3339()).unwrap_or_default(),
             ]);
         }
         tbl.print(&args.table)?;

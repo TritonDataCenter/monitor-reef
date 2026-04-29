@@ -363,12 +363,20 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
                 let policies_str = if role.policies.is_empty() {
                     stylize("no policies", "red")
                 } else {
-                    role.policies.join(", ")
+                    role.policies
+                        .iter()
+                        .filter_map(|p| p.name.as_deref())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 };
                 let members_str = if role.members.is_empty() {
                     "-".to_string()
                 } else {
-                    role.members.join(", ")
+                    role.members
+                        .iter()
+                        .filter_map(|m| m.login.as_deref())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 };
                 tbl.add_row(vec![
                     &role.id.to_string()[..8],
@@ -496,7 +504,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         if let Some(current) = current_policy_map.get(&policy.name) {
             // Check if update needed
             let rules_differ = {
-                let mut current_rules: Vec<_> = current.rules.clone();
+                let mut current_rules: Vec<_> = current.rules.0.clone();
                 let mut want_rules: Vec<_> = policy.rules.clone();
                 current_rules.sort();
                 want_rules.sort();
@@ -622,21 +630,33 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         if let Some(current) = current_role_map.get(&role.name) {
             // Check if update needed
             let members_differ = {
-                let mut cm: Vec<_> = current.members.clone();
+                let mut cm: Vec<String> = current
+                    .members
+                    .iter()
+                    .filter_map(|m| m.login.clone())
+                    .collect();
                 let mut wm: Vec<_> = role.members.clone();
                 cm.sort();
                 wm.sort();
                 cm != wm
             };
             let default_members_differ = {
-                let mut cdm: Vec<_> = current.default_members.clone();
+                let mut cdm: Vec<String> = current
+                    .default_members
+                    .iter()
+                    .filter_map(|m| m.login.clone())
+                    .collect();
                 let mut wdm: Vec<_> = role.default_members.clone();
                 cdm.sort();
                 wdm.sort();
                 cdm != wdm
             };
             let policies_differ = {
-                let mut cp: Vec<_> = current.policies.clone();
+                let mut cp: Vec<String> = current
+                    .policies
+                    .iter()
+                    .filter_map(|p| p.name.clone())
+                    .collect();
                 let mut wp: Vec<_> = role.policies.clone();
                 cp.sort();
                 wp.sort();
@@ -1134,6 +1154,11 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                 first_name: first_name.clone(),
                 last_name: last_name.clone(),
                 phone: None,
+                address: None,
+                postal_code: None,
+                city: None,
+                state: None,
+                country: None,
             };
             client
                 .inner()
@@ -1158,6 +1183,11 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                 first_name: first_name.clone(),
                 last_name: last_name.clone(),
                 phone: None,
+                address: None,
+                postal_code: None,
+                city: None,
+                state: None,
+                country: None,
             };
             client
                 .inner()
@@ -1187,7 +1217,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
         } => {
             let request = triton_gateway_client::types::CreatePolicyRequest {
                 name: name.clone(),
-                rules: rules.clone(),
+                rules: rules.clone().into(),
                 description: description.clone(),
             };
             client
@@ -1206,7 +1236,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
         } => {
             let request = triton_gateway_client::types::UpdatePolicyRequest {
                 name: None,
-                rules: rules.clone(),
+                rules: rules.clone().map(Into::into),
                 description: description.clone(),
             };
             client

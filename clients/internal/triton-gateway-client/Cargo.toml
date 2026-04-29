@@ -18,6 +18,7 @@ name = "triton_gateway_client"
 path = "src/lib.rs"
 
 [dependencies]
+chrono = { workspace = true }
 progenitor-client = { workspace = true }
 reqwest = { workspace = true }
 schemars = { workspace = true }

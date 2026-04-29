@@ -156,7 +156,7 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
     let request = triton_gateway_client::types::ReplaceRoleTagsRequest {
-        role_tag: args.roles.clone(),
+        role_tag: args.roles.clone().into(),
     };
 
     let response = match args.resource_type {
@@ -287,7 +287,7 @@ async fn role_tags_add(args: RoleTagsAddArgs, client: &TypedClient, use_json: bo
     let set_args = RoleTagsSetArgs {
         resource_type: args.resource_type,
         resource: resource_id,
-        roles: current_tags,
+        roles: current_tags.0,
         force: true,
     };
     role_tags_set(set_args, client, use_json).await
@@ -326,7 +326,7 @@ async fn role_tags_remove(
     let set_args = RoleTagsSetArgs {
         resource_type: args.resource_type,
         resource: resource_id,
-        roles: current_tags,
+        roles: current_tags.0,
         force: true,
     };
     role_tags_set(set_args, client, use_json).await
@@ -548,7 +548,7 @@ async fn get_current_role_tags(
     resource_type: &RoleTagResource,
     resource_id: &str,
     client: &TypedClient,
-) -> Result<Vec<String>> {
+) -> Result<triton_gateway_client::RoleTags> {
     let account = client.effective_account();
 
     match resource_type {

@@ -32,7 +32,7 @@ fn test_firewall_rule_full() {
     assert!(rule.updated.is_some());
 
     let tags = rule.role_tag.expect("role_tag should be present");
-    assert_eq!(tags, vec!["admin", "operator"]);
+    assert_eq!(tags.0, vec!["admin".to_string(), "operator".to_string()]);
 }
 
 #[test]

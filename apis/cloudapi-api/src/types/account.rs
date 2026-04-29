@@ -96,15 +96,90 @@ pub struct UpdateAccountRequest {
     pub triton_cns_enabled: Option<bool>,
 }
 
-/// Provisioning limits for an account
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ProvisioningLimits {
-    /// Maximum number of machines
-    pub machines: Option<i64>,
-    /// Maximum RAM in MB
-    pub ram: Option<i64>,
-    /// Maximum disk space in MB
-    pub disk: Option<i64>,
+/// A single provisioning limit entry.
+///
+/// Each limit constrains a specific dimension (VM count, RAM, or disk quota),
+/// optionally filtered by brand, image, or OS. A `value` of `-1` blocks all
+/// matching provisions; `0` means unlimited (filtered out before the response
+/// reaches the client).
+///
+/// Units for `value` and `used` depend on `by`:
+/// - absent / `"machines"` → count of VMs
+/// - `"ram"` → MiB
+/// - `"quota"` → GiB
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProvisioningLimit {
+    /// The limit value (threshold).
+    pub value: i64,
+    /// Current usage against this limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<i64>,
+    /// What dimension the limit counts: `"ram"`, `"quota"`, or `"machines"`.
+    /// When absent, defaults to counting VMs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Type of filter applied: `"brand"`, `"image"`, or `"os"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
+    /// Brand filter value (when `check` is `"brand"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
+    /// Image filter value (when `check` is `"image"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// OS filter value (when `check` is `"os"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub os: Option<String>,
+}
+
+/// Provisioning limits for an account — an array of limit entries.
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI
+/// spec carries `ProvisioningLimits` as a named schema rather than an
+/// anonymous array-of-ProvisioningLimit on the single endpoint that
+/// returns it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ProvisioningLimits(pub Vec<ProvisioningLimit>);
+
+impl std::ops::Deref for ProvisioningLimits {
+    type Target = Vec<ProvisioningLimit>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ProvisioningLimits {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<ProvisioningLimit>> for ProvisioningLimits {
+    fn from(v: Vec<ProvisioningLimit>) -> Self {
+        ProvisioningLimits(v)
+    }
+}
+
+impl FromIterator<ProvisioningLimit> for ProvisioningLimits {
+    fn from_iter<I: IntoIterator<Item = ProvisioningLimit>>(iter: I) -> Self {
+        ProvisioningLimits(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for ProvisioningLimits {
+    type Item = ProvisioningLimit;
+    type IntoIter = std::vec::IntoIter<ProvisioningLimit>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ProvisioningLimits {
+    type Item = &'a ProvisioningLimit;
+    type IntoIter = std::slice::Iter<'a, ProvisioningLimit>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
 }
 
 /// Configuration settings

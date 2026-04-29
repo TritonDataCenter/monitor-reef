@@ -93,35 +93,44 @@ pub use triton_api::{
     RefreshResponse, SessionResponse, UserInfo,
 };
 
+// Action-dispatch request structs come from the Progenitor-generated
+// `types` module because openapi-manager injects their schemas into
+// components.schemas (see docs/design/action-dispatch-openapi.md). Mirror
+// cloudapi-client's split here so consumers see identical import paths
+// regardless of which client they reach for.
+pub use types::{
+    CloneImageRequest, DisableDeletionProtectionRequest, DisableFirewallRequest,
+    EnableDeletionProtectionRequest, EnableFirewallRequest, ExportImageRequest, ImportImageRequest,
+    RebootMachineRequest, RenameMachineRequest, ResizeDiskRequest, ResizeMachineRequest,
+    StartMachineRequest, StopMachineRequest, UpdateImageRequest, UpdateVolumeRequest,
+};
+
 // CloudAPI types (same set cloudapi-client re-exports; keep the two lists
 // aligned so shared command handlers get identical type names regardless of
 // which client they target).
 pub use cloudapi_api::{
     AccessKey, AccessKeyPath, AccessKeyStatus, Account, AccountPath, AddForeignDatacenterRequest,
-    AddMetadataRequest, AddNicRequest, AuditEntry, ChangePasswordRequest, ChangefeedChangeKind,
-    ChangefeedMessage, ChangefeedResource, ChangefeedSubResource, ChangefeedSubscription,
-    CloneImageRequest, Config, CreateAccessKeyRequest, CreateAccessKeyResponse, CreateDiskRequest,
-    CreateFabricNetworkRequest, CreateFabricVlanRequest, CreateFirewallRuleRequest,
-    CreateImageRequest, CreateMachineRequest, CreatePolicyRequest, CreateRoleRequest,
-    CreateSnapshotRequest, CreateSshKeyRequest, CreateUserRequest, CreateVolumeRequest,
-    CredentialType, Datacenter, Datacenters, DisableDeletionProtectionRequest,
-    DisableFirewallRequest, Disk, DiskAction, DiskActionQuery, DiskPath, DiskSpec, DiskState,
-    EnableDeletionProtectionRequest, EnableFirewallRequest, ExportImageRequest, FabricNetworkPath,
-    FabricVlan, FabricVlanPath, FirewallRule, FirewallRulePath, Image, ImageAction,
-    ImageActionQuery, ImageCollectionActionQuery, ImagePath, ImageState, ImageType,
-    ImportImageRequest, KeyPath, ListImagesQuery, ListMachinesQuery, Machine, MachineAction,
-    MachineActionQuery, MachineNic, MachinePath, MachineState, Metadata, MetadataKeyPath,
-    MigrateRequest, Migration, MigrationAction, MigrationEstimate, MigrationEstimateRequest,
-    MigrationPhase, MigrationState, MountMode, Network, NetworkIp, NetworkIpPath, NetworkObject,
-    NetworkPath, Nic, NicPath, NicState, Package, PackagePath, Policy, PolicyPath,
-    ProvisioningLimits, RebootMachineRequest, RenameMachineRequest, ReplaceRoleTagsRequest,
-    ResizeDiskRequest, ResizeMachineRequest, Role, RolePath, Service, Services, Snapshot,
-    SnapshotPath, SnapshotState, SshKey, StartMachineRequest, StopMachineRequest, TagPath, Tags,
-    TagsRequest, Timestamp, UpdateAccessKeyRequest, UpdateAccountRequest, UpdateConfigRequest,
-    UpdateFabricNetworkRequest, UpdateFabricVlanRequest, UpdateFirewallRuleRequest,
-    UpdateImageRequest, UpdateNetworkIpRequest, UpdatePolicyRequest, UpdateRoleRequest,
-    UpdateUserRequest, UpdateVolumeRequest, User, UserAccessKeyPath, UserPath, Uuid, VmState,
-    Volume, VolumeAction, VolumeActionQuery, VolumeMount, VolumePath, VolumeSize,
+    AddMetadataRequest, AddNicRequest, AffinityRules, AuditEntry, ChangePasswordRequest,
+    ChangefeedChangeKind, ChangefeedMessage, ChangefeedResource, ChangefeedSubResource,
+    ChangefeedSubscription, Config, CreateAccessKeyRequest, CreateAccessKeyResponse,
+    CreateDiskRequest, CreateFabricNetworkRequest, CreateFabricVlanRequest,
+    CreateFirewallRuleRequest, CreateImageRequest, CreateMachineRequest, CreatePolicyRequest,
+    CreateRoleRequest, CreateSnapshotRequest, CreateSshKeyRequest, CreateUserRequest,
+    CreateVolumeRequest, CredentialType, Datacenter, Datacenters, Disk, DiskAction,
+    DiskActionQuery, DiskPath, DiskSpec, DiskState, FabricNetworkPath, FabricVlan, FabricVlanPath,
+    FirewallRule, FirewallRulePath, Image, ImageAcl, ImageAction, ImageActionQuery,
+    ImageCollectionActionQuery, ImagePath, ImageState, ImageType, KeyPath, ListImagesQuery,
+    ListMachinesQuery, Machine, MachineAction, MachineActionQuery, MachineNic, MachinePath,
+    MachineState, Metadata, MetadataKeyPath, MigrateRequest, Migration, MigrationAction,
+    MigrationEstimate, MigrationEstimateRequest, MigrationPhase, MigrationState, MountMode,
+    Network, NetworkIds, NetworkIp, NetworkIpPath, NetworkObject, NetworkPath, Nic, NicPath,
+    NicState, Package, PackagePath, Policy, PolicyPath, PolicyRef, PolicyRules, ProvisioningLimit,
+    ProvisioningLimits, ReplaceRoleTagsRequest, Resolvers, Role, RolePath, RoleTags, Service,
+    Services, Snapshot, SnapshotPath, SnapshotState, SshKey, TagPath, Tags, TagsRequest, Timestamp,
+    UpdateAccessKeyRequest, UpdateAccountRequest, UpdateConfigRequest, UpdateFabricNetworkRequest,
+    UpdateFabricVlanRequest, UpdateFirewallRuleRequest, UpdateNetworkIpRequest,
+    UpdatePolicyRequest, UpdateRoleRequest, UpdateUserRequest, User, UserAccessKeyPath, UserPath,
+    Uuid, VmState, Volume, VolumeAction, VolumeActionQuery, VolumeMount, VolumePath, VolumeSize,
 };
 
 // =============================================================================
@@ -372,9 +381,12 @@ fn emit_and_fake_get_response(
             .and_then(|mut s| s.next_back())
             .unwrap_or("unknown");
         let last_seg_uuid = uuid::Uuid::try_parse(last_seg).unwrap_or(uuid::Uuid::nil());
-        let fake_ts = "2025-01-01T00:00:00.000Z".to_string();
+        #[allow(clippy::expect_used)]
+        let fake_ts: chrono::DateTime<chrono::Utc> = "2025-01-01T00:00:00.000Z"
+            .parse()
+            .expect("hardcoded RFC3339 timestamp must parse");
 
-        fake_response_body(info.operation_id, last_seg, last_seg_uuid, &fake_ts, url)
+        fake_response_body(info.operation_id, last_seg, last_seg_uuid, fake_ts, url)
     };
 
     #[allow(clippy::expect_used)]
@@ -446,7 +458,7 @@ fn fake_response_body(
     operation_id: &str,
     last_seg: &str,
     last_seg_uuid: uuid::Uuid,
-    fake_ts: &str,
+    fake_ts: chrono::DateTime<chrono::Utc>,
     url: &reqwest::Url,
 ) -> Vec<u8> {
     if let Some(bytes) = fixture_response_body(operation_id, last_seg, last_seg_uuid, url) {
@@ -470,8 +482,8 @@ fn fake_response_body(
                 state: None,
                 country: None,
                 phone: None,
-                created: fake_ts.to_string(),
-                updated: fake_ts.to_string(),
+                created: fake_ts,
+                updated: fake_ts,
                 triton_cns_enabled: None,
             };
             serde_json::to_vec(&fake).expect("Account serialization should not fail")
@@ -515,8 +527,8 @@ fn fake_response_body(
                 ips: vec![],
                 metadata: Default::default(),
                 tags: Default::default(),
-                created: fake_ts.to_string(),
-                updated: fake_ts.to_string(),
+                created: fake_ts,
+                updated: fake_ts,
                 networks: None,
                 primary_ip: None,
                 nics: vec![],
@@ -597,7 +609,7 @@ fn fake_response_body(
                 .type_(types::VolumeType::Tritonnfs)
                 .size(0_u64)
                 .state(types::VolumeState::Ready)
-                .created(fake_ts.to_string())
+                .created(fake_ts)
                 .try_into()
                 .expect("Volume builder should not fail");
             serde_json::to_vec(&fake).expect("Volume serialization should not fail")
@@ -628,7 +640,7 @@ fn fake_response_body(
             let fake = Snapshot {
                 name: last_seg.to_string(),
                 state: cloudapi_api::SnapshotState::Created,
-                created: Some(fake_ts.to_string()),
+                created: Some(fake_ts),
                 updated: None,
             };
             serde_json::to_vec(&fake).expect("Snapshot serialization should not fail")
@@ -830,7 +842,7 @@ pub struct ListMachinesFilter {
     pub image: Option<Uuid>,
     pub memory: Option<u64>,
     pub machine_type: Option<types::MachineType>,
-    pub brand: Option<types::Brand>,
+    pub brand: Option<types::VmBrand>,
     pub docker: Option<bool>,
     pub offset: Option<u64>,
     pub limit: Option<u64>,
@@ -996,11 +1008,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &StartMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Start,
-            body: StartMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1017,11 +1029,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &StopMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Stop,
-            body: StopMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1038,11 +1050,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &RebootMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Reboot,
-            body: RebootMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1059,12 +1071,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        package: String,
-        origin: Option<String>,
+        request: &ResizeMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Resize,
-            body: ResizeMachineRequest { package, origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1081,12 +1092,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        name: String,
-        origin: Option<String>,
+        request: &RenameMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Rename,
-            body: RenameMachineRequest { name, origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1103,11 +1113,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &EnableFirewallRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::EnableFirewall,
-            body: EnableFirewallRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1124,11 +1134,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &DisableFirewallRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::DisableFirewall,
-            body: DisableFirewallRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1145,11 +1155,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &EnableDeletionProtectionRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::EnableDeletionProtection,
-            body: EnableDeletionProtectionRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1166,11 +1176,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &DisableDeletionProtectionRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::DisableDeletionProtection,
-            body: DisableDeletionProtectionRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1209,11 +1219,11 @@ impl TypedClient {
         &self,
         account: &str,
         dataset: &Uuid,
-        manta_path: String,
+        request: &ExportImageRequest,
     ) -> Result<types::Image, Error<types::Error>> {
         let body = ActionBody {
             action: ImageAction::Export,
-            body: ExportImageRequest { manta_path },
+            body: request,
         };
         self.inner
             .update_image()
@@ -1277,7 +1287,7 @@ impl TypedClient {
             .await?
             .into_inner();
 
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        let mut acl = image.acl.unwrap_or_default();
         if !acl.contains(&target_account) {
             acl.push(target_account);
         }
@@ -1309,7 +1319,7 @@ impl TypedClient {
             .await?
             .into_inner();
 
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        let mut acl = image.acl.unwrap_or_default();
         acl.retain(|a| a != &target_account);
 
         self.inner

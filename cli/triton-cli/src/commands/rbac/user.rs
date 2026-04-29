@@ -297,7 +297,7 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role
                 .members
                 .iter()
-                .any(|m| m == &user.login || m == &user.id.to_string())
+                .any(|m| m.login.as_deref() == Some(&user.login) || m.id == Some(user.id))
             {
                 roles.push(role.name.clone());
             }
@@ -305,7 +305,7 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role
                 .default_members
                 .iter()
-                .any(|m| m == &user.login || m == &user.id.to_string())
+                .any(|m| m.login.as_deref() == Some(&user.login) || m.id == Some(user.id))
             {
                 default_roles.push(role.name.clone());
             }
@@ -414,6 +414,11 @@ async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool)
         first_name: args.first_name,
         last_name: args.last_name,
         phone: None,
+        address: None,
+        postal_code: None,
+        city: None,
+        state: None,
+        country: None,
     };
 
     let response = client
@@ -444,6 +449,11 @@ async fn update_user(args: UserUpdateArgs, client: &TypedClient, use_json: bool)
         first_name: args.first_name,
         last_name: args.last_name,
         phone: None,
+        address: None,
+        postal_code: None,
+        city: None,
+        state: None,
+        country: None,
     };
 
     let response = client
@@ -617,6 +627,11 @@ async fn add_user_from_file(
         first_name,
         last_name,
         phone,
+        address: None,
+        postal_code: None,
+        city: None,
+        state: None,
+        country: None,
     };
 
     let response = client
@@ -738,6 +753,11 @@ async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()>
                     first_name: edited.first_name,
                     last_name: edited.last_name,
                     phone: edited.phone,
+                    address: None,
+                    postal_code: None,
+                    city: None,
+                    state: None,
+                    country: None,
                 };
 
                 // Update the user

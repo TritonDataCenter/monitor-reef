@@ -66,7 +66,20 @@ fn configure_vmapi(settings: &mut GenerationSettings) {
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
         .with_derive("schemars::JsonSchema")
-        .with_patch("Brand", &value_enum_patch)
+        // Keep generated field types aligned with the canonical newtype
+        // definitions (see vmapi-api's common / statuses modules).
+        .with_replacement("Tags", "vmapi_api::Tags", std::iter::empty())
+        .with_replacement(
+            "MetadataObject",
+            "vmapi_api::MetadataObject",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "StatusesResponse",
+            "vmapi_api::StatusesResponse",
+            std::iter::empty(),
+        )
+        .with_patch("VmBrand", &value_enum_patch)
         .with_patch("VmState", &value_enum_patch)
         .with_patch("MigrationState", &value_enum_patch)
         .with_patch("MigrationAction", &value_enum_patch);
@@ -81,8 +94,37 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_inner_type(syn::parse_quote!(triton_auth::AuthConfig))
         .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
         .with_derive("schemars::JsonSchema")
+        // Tags and MetadataObject are now named schemas (see vmapi-api's
+        // newtype definitions). Replace Progenitor's generated copies
+        // with type aliases to the canonical API-crate versions so field
+        // types across generated structs agree with hand-written code.
+        .with_replacement("Tags", "cloudapi_api::Tags", std::iter::empty())
+        .with_replacement(
+            "MetadataObject",
+            "cloudapi_api::Metadata",
+            std::iter::empty(),
+        )
+        .with_replacement("RoleTags", "cloudapi_api::RoleTags", std::iter::empty())
+        .with_replacement(
+            "ProvisioningLimits",
+            "cloudapi_api::ProvisioningLimits",
+            std::iter::empty(),
+        )
+        .with_replacement("Resolvers", "cloudapi_api::Resolvers", std::iter::empty())
+        .with_replacement(
+            "PolicyRules",
+            "cloudapi_api::PolicyRules",
+            std::iter::empty(),
+        )
+        .with_replacement("ImageAcl", "cloudapi_api::ImageAcl", std::iter::empty())
+        .with_replacement(
+            "AffinityRules",
+            "cloudapi_api::AffinityRules",
+            std::iter::empty(),
+        )
+        .with_replacement("NetworkIds", "cloudapi_api::NetworkIds", std::iter::empty())
+        .with_patch("VmBrand", &value_enum_patch)
         .with_patch("Brand", &value_enum_patch)
-        .with_patch("Brand2", &value_enum_patch)
         .with_patch("MachineState", &value_enum_patch)
         .with_patch("MachineType", &value_enum_patch)
         .with_patch("ImageState", &value_enum_patch)
@@ -112,8 +154,37 @@ fn configure_triton_gateway(settings: &mut GenerationSettings) {
         .with_inner_type(syn::parse_quote!(crate::auth::GatewayAuthConfig))
         .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
         .with_derive("schemars::JsonSchema")
+        // Replace Progenitor's generated copies of newtype schemas with the
+        // canonical cloudapi-api versions so field types agree across the
+        // hand-written and generated code paths (mirrors cloudapi-client).
+        .with_replacement("Tags", "cloudapi_api::Tags", std::iter::empty())
+        .with_replacement(
+            "MetadataObject",
+            "cloudapi_api::Metadata",
+            std::iter::empty(),
+        )
+        .with_replacement("RoleTags", "cloudapi_api::RoleTags", std::iter::empty())
+        .with_replacement(
+            "ProvisioningLimits",
+            "cloudapi_api::ProvisioningLimits",
+            std::iter::empty(),
+        )
+        .with_replacement("Resolvers", "cloudapi_api::Resolvers", std::iter::empty())
+        .with_replacement(
+            "PolicyRules",
+            "cloudapi_api::PolicyRules",
+            std::iter::empty(),
+        )
+        .with_replacement("ImageAcl", "cloudapi_api::ImageAcl", std::iter::empty())
+        .with_replacement(
+            "AffinityRules",
+            "cloudapi_api::AffinityRules",
+            std::iter::empty(),
+        )
+        .with_replacement("NetworkIds", "cloudapi_api::NetworkIds", std::iter::empty())
         .with_patch("Brand", &value_enum_patch)
         .with_patch("Brand2", &value_enum_patch)
+        .with_patch("VmBrand", &value_enum_patch)
         .with_patch("MachineState", &value_enum_patch)
         .with_patch("MachineType", &value_enum_patch)
         .with_patch("ImageState", &value_enum_patch)

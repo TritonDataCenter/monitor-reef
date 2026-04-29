@@ -47,7 +47,7 @@ pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Resul
     } else {
         define_columns! {
             AuditColumn for AuditEntry, long_from: 3, {
-                Time("TIME") => |audit| audit.time.clone(),
+                Time("TIME") => |audit| audit.time.to_rfc3339(),
                 Action("ACTION") => |audit| audit.action.clone(),
                 Success("SUCCESS") => |audit| {
                     audit.success.as_ref()
