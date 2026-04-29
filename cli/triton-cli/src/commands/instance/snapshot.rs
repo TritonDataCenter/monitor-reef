@@ -420,6 +420,11 @@ mod tests {
     fn test_client(port: u16) -> TypedClient {
         use std::path::PathBuf;
 
+        // reqwest builds a rustls client; rustls 0.23 requires a process-global
+        // CryptoProvider. Production binaries install one in main(); under
+        // nextest each test runs in its own process, so we install it here.
+        triton_tls::install_default_crypto_provider();
+
         let key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../libs/triton-auth/tests/keys/id_rsa.pem");
         let auth = triton_auth::AuthConfig {
