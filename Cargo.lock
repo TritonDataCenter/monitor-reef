@@ -4714,6 +4714,7 @@ dependencies = [
  "napi-client",
  "papi-client",
  "predicates",
+ "progenitor-client",
  "sapi-client",
  "serde",
  "serde_json",

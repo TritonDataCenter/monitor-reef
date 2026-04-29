@@ -33,6 +33,7 @@ mahi-sitter-client = { workspace = true }
 sapi-client = { workspace = true }
 napi-client = { workspace = true }
 papi-client = { workspace = true }
+progenitor-client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

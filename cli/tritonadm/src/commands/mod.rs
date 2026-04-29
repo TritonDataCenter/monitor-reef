@@ -9,6 +9,7 @@
 mod channel;
 mod dc_maint;
 mod dev;
+pub(crate) mod errors;
 mod experimental;
 mod image;
 mod imgapi_util;
