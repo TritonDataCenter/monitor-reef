@@ -17,7 +17,7 @@ mod config;
 
 use commands::{
     ChannelCommand, DcMaintCommand, ExperimentalCommand, ImageCommand, MahiCommand,
-    PlatformCommand, PostSetupCommand, SapiCommand,
+    PlatformCommand, PostSetupCommand, SapiCommand, errors::is_404,
 };
 use config::TritonConfig;
 
@@ -464,6 +464,7 @@ async fn cmd_avail(sapi_url: &str, imgapi_url: &str, json: bool) -> Result<()> {
     }
 
     let mut rows: Vec<AvailRow> = Vec::new();
+    let mut skipped: Vec<(String, String)> = Vec::new();
 
     for svc in &services {
         // Get current image_uuid from service params
@@ -478,20 +479,41 @@ async fn cmd_avail(sapi_url: &str, imgapi_url: &str, json: bool) -> Result<()> {
             None => continue,
         };
 
-        // Look up current image to get its name
+        // A non-UUID image_uuid in SAPI is a data-corruption signal, not a
+        // routine miss — surface it instead of silently dropping the row.
         let parsed_uuid = match sapi_client::Uuid::parse_str(&current_uuid) {
             Ok(u) => u,
-            Err(_) => continue,
-        };
-        let current_image = match imgapi.get_image().uuid(parsed_uuid).send().await {
-            Ok(resp) => resp.into_inner(),
-            Err(_) => continue,
+            Err(e) => {
+                skipped.push((
+                    svc.name.clone(),
+                    format!("SAPI image_uuid {current_uuid:?} is not a valid UUID: {e}"),
+                ));
+                continue;
+            }
         };
 
-        // Query IMGAPI for all images with the same name
+        // Look up current image to get its name. Tolerate 404 (image was
+        // deleted from IMGAPI but SAPI still references it — common after
+        // pruning) but bail-into-warning on transport / 5xx so the operator
+        // can tell "no updates" from "IMGAPI is broken".
+        let current_image = match imgapi.get_image().uuid(parsed_uuid).send().await {
+            Ok(resp) => resp.into_inner(),
+            Err(e) if is_404(&e) => continue,
+            Err(e) => {
+                skipped.push((svc.name.clone(), format!("IMGAPI get_image failed: {e}")));
+                continue;
+            }
+        };
+
+        // Query IMGAPI for all images with the same name (same rationale
+        // as above — list returning empty is not an error, but a transport
+        // failure is).
         let candidates = match imgapi.list_images().name(&current_image.name).send().await {
             Ok(resp) => resp.into_inner(),
-            Err(_) => continue,
+            Err(e) => {
+                skipped.push((svc.name.clone(), format!("IMGAPI list_images failed: {e}")));
+                continue;
+            }
         };
 
         // Show images that aren't the currently-installed one
@@ -503,6 +525,17 @@ async fn cmd_avail(sapi_url: &str, imgapi_url: &str, json: bool) -> Result<()> {
                     version: format!("{}@{}", img.name, img.version),
                 });
             }
+        }
+    }
+
+    if !skipped.is_empty() {
+        eprintln!(
+            "warning: {} service(s) skipped due to lookup failures — \
+             results below are incomplete:",
+            skipped.len()
+        );
+        for (svc, reason) in &skipped {
+            eprintln!("  {svc}: {reason}");
         }
     }
 
@@ -591,13 +624,18 @@ async fn cmd_instances(sapi_url: &str, vmapi_url: &str, json: bool) -> Result<()
             "{:<38} {:<20} {:<28} {:<12} IMAGE",
             "INSTANCE", "SERVICE", "ALIAS", "STATE"
         );
+        // Track VMAPI failures so a wholesale outage doesn't masquerade as
+        // a fleet of instances all in unknown state.
+        let mut vmapi_errors: Vec<String> = Vec::new();
         for inst in &instances {
             let service_name = svc_name
                 .get(&inst.service_uuid)
                 .copied()
                 .unwrap_or("unknown");
 
-            // Try to get VM details from VMAPI for enrichment
+            // Try to get VM details from VMAPI for enrichment. 404 means
+            // "SAPI references a VM that no longer exists in VMAPI" (legit
+            // stale state); other errors indicate VMAPI itself is broken.
             let (alias, state, image) = match vmapi.get_vm().uuid(inst.uuid).send().await {
                 Ok(resp) => {
                     let vm = resp.into_inner();
@@ -609,12 +647,26 @@ async fn cmd_instances(sapi_url: &str, vmapi_url: &str, json: bool) -> Result<()
                             .unwrap_or_else(|| "-".to_string()),
                     )
                 }
-                Err(_) => ("-".to_string(), "-".to_string(), "-".to_string()),
+                Err(e) if is_404(&e) => ("-".to_string(), "missing".to_string(), "-".to_string()),
+                Err(e) => {
+                    vmapi_errors.push(format!("{}: {e}", inst.uuid));
+                    ("-".to_string(), "?ERR".to_string(), "-".to_string())
+                }
             };
             println!(
                 "{:<38} {:<20} {:<28} {:<12} {}",
                 inst.uuid, service_name, alias, state, image
             );
+        }
+        if !vmapi_errors.is_empty() {
+            eprintln!(
+                "warning: VMAPI lookup failed for {} instance(s) — \
+                 'STATE' column shows '?ERR' for each:",
+                vmapi_errors.len()
+            );
+            for err in &vmapi_errors {
+                eprintln!("  {err}");
+            }
         }
     }
     Ok(())
