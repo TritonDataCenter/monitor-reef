@@ -50,11 +50,11 @@ pipeline {
     }
 
     stages {
-        /*stage('check') {
+        stage('check') {
             steps{
                 sh('make check')
             }
-        }*/
+        }
         stage('pkgin') {
             // tools/mk-shar needs GNU sharutils. The 24.4.1 builder image
             // has it available via pkgsrc but not installed by default;
