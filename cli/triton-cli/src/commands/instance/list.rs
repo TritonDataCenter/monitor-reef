@@ -12,7 +12,7 @@ use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
-use cloudapi_client::types::{Brand, Machine};
+use cloudapi_client::types::{Machine, VmBrand};
 use serde::Serialize;
 
 use crate::output::table::{TableBuilder, TableFormatArgs, col};
@@ -46,7 +46,7 @@ impl AugmentedMachine {
 
         let flags = {
             let mut flags = Vec::new();
-            if m.brand == Brand::Bhyve {
+            if m.brand == VmBrand::Bhyve {
                 flags.push('B');
             }
             if m.docker.unwrap_or(false) {
@@ -55,7 +55,7 @@ impl AugmentedMachine {
             if m.firewall_enabled.unwrap_or(false) {
                 flags.push('F');
             }
-            if m.brand == Brand::Kvm {
+            if m.brand == VmBrand::Kvm {
                 flags.push('K');
             }
             if m.deletion_protection.unwrap_or(false) {
@@ -100,7 +100,7 @@ pub struct ListArgs {
 
     /// Filter by brand
     #[arg(long, value_enum)]
-    pub brand: Option<cloudapi_client::types::Brand>,
+    pub brand: Option<cloudapi_client::types::VmBrand>,
 
     /// Filter by memory size in MB
     #[arg(long)]
@@ -372,7 +372,7 @@ fn print_machines_table(
         col("STATE", |m: &&Machine| enum_to_display(&m.state)),
         col("FLAGS", |m: &&Machine| {
             let mut flags = Vec::new();
-            if m.brand == Brand::Bhyve {
+            if m.brand == VmBrand::Bhyve {
                 flags.push('B');
             }
             if m.docker.unwrap_or(false) {
@@ -381,7 +381,7 @@ fn print_machines_table(
             if m.firewall_enabled.unwrap_or(false) {
                 flags.push('F');
             }
-            if m.brand == Brand::Kvm {
+            if m.brand == VmBrand::Kvm {
                 flags.push('K');
             }
             if m.deletion_protection.unwrap_or(false) {
@@ -400,7 +400,7 @@ fn print_machines_table(
         col("PRIMARYIP", |m: &&Machine| {
             m.primary_ip.clone().unwrap_or_else(|| "-".to_string())
         }),
-        col("CREATED", |m: &&Machine| m.created.clone()),
+        col("CREATED", |m: &&Machine| m.created.to_rfc3339()),
     ];
 
     // Set default columns based on short/long mode to match node-triton.

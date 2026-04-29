@@ -10,6 +10,106 @@ use super::common::{RoleTags, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// List of network UUIDs a resource is attached to.
+///
+/// Newtype wrapper so Machine / Volume / CreateVolumeRequest all reference
+/// the same named `NetworkIds` schema rather than each carrying an
+/// anonymous `Vec<Uuid>` field. Different shape from
+/// `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which
+/// uses a richer per-entry struct -- only the UUID-list form is unified here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkIds(pub Vec<Uuid>);
+
+impl std::ops::Deref for NetworkIds {
+    type Target = Vec<Uuid>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for NetworkIds {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<Uuid>> for NetworkIds {
+    fn from(v: Vec<Uuid>) -> Self {
+        NetworkIds(v)
+    }
+}
+
+impl FromIterator<Uuid> for NetworkIds {
+    fn from_iter<I: IntoIterator<Item = Uuid>>(iter: I) -> Self {
+        NetworkIds(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for NetworkIds {
+    type Item = Uuid;
+    type IntoIter = std::vec::IntoIter<Uuid>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a NetworkIds {
+    type Item = &'a Uuid;
+    type IntoIter = std::slice::Iter<'a, Uuid>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+/// List of DNS resolver addresses for a fabric network.
+///
+/// Newtype wrapper rather than a type alias so generated clients see a
+/// single named `Resolvers` type across all fabric-network schemas
+/// (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Resolvers(pub Vec<String>);
+
+impl std::ops::Deref for Resolvers {
+    type Target = Vec<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Resolvers {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<String>> for Resolvers {
+    fn from(v: Vec<String>) -> Self {
+        Resolvers(v)
+    }
+}
+
+impl<S: Into<String>> FromIterator<S> for Resolvers {
+    fn from_iter<I: IntoIterator<Item = S>>(iter: I) -> Self {
+        Resolvers(iter.into_iter().map(Into::into).collect())
+    }
+}
+
+impl IntoIterator for Resolvers {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Resolvers {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// Path parameter for network operations
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NetworkPath {
@@ -104,7 +204,7 @@ pub struct Network {
     pub suffixes: Option<Vec<String>>,
     /// Resolvers
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolvers: Option<Vec<String>>,
+    pub resolvers: Option<Resolvers>,
     /// Routes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routes: Option<serde_json::Value>,
@@ -167,7 +267,7 @@ pub struct CreateFabricNetworkRequest {
     pub gateway: Option<String>,
     /// Resolvers
     #[serde(default)]
-    pub resolvers: Option<Vec<String>>,
+    pub resolvers: Option<Resolvers>,
     /// Routes
     #[serde(default)]
     pub routes: Option<serde_json::Value>,
@@ -196,7 +296,7 @@ pub struct UpdateFabricNetworkRequest {
     pub provision_end_ip: Option<String>,
     /// Resolvers
     #[serde(default)]
-    pub resolvers: Option<Vec<String>>,
+    pub resolvers: Option<Resolvers>,
     /// Routes
     #[serde(default)]
     pub routes: Option<serde_json::Value>,

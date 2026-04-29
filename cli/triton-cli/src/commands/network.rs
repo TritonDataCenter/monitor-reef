@@ -384,12 +384,13 @@ async fn create_network(
 
     // Build resolvers from comma-separated or multiple flags (default to empty)
     let resolvers = Some(match args.resolver {
-        Some(r) => r
-            .iter()
-            .flat_map(|s| s.split(','))
-            .map(|s| s.trim().to_string())
-            .collect(),
-        None => vec![],
+        Some(r) => cloudapi_client::Resolvers(
+            r.iter()
+                .flat_map(|s| s.split(','))
+                .map(|s| s.trim().to_string())
+                .collect(),
+        ),
+        None => cloudapi_client::Resolvers::default(),
     });
 
     // Parse routes from SUBNET=IP format into a JSON object (default to empty)

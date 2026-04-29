@@ -154,21 +154,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Account"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -247,7 +239,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateAccessKeyResponse"
+                  "$ref": "#/components/schemas/AccessKeyCredentials"
                 }
               }
             }
@@ -278,25 +270,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_AccessKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -467,21 +447,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -619,21 +591,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Config"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -663,11 +627,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/Datacenters"
                 }
               }
             }
@@ -733,6 +693,7 @@
           "datacenters"
         ],
         "summary": "Get datacenter",
+        "description": "Returns a 302 redirect to the named datacenter's CloudAPI URL.",
         "operationId": "get_datacenter",
         "parameters": [
           {
@@ -755,12 +716,14 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
+          "302": {
+            "description": "redirect (found)",
+            "headers": {
+              "location": {
+                "description": "HTTP \"Location\" header",
+                "style": "simple",
+                "required": true,
                 "schema": {
-                  "title": "String",
                   "type": "string"
                 }
               }
@@ -880,25 +843,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FabricVlan",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FabricVlan"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1077,21 +1028,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FabricVlan"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1234,25 +1177,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Network",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1471,21 +1402,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1515,11 +1438,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/Datacenters"
                 }
               }
             }
@@ -1730,25 +1649,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FirewallRule",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1979,21 +1886,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FirewallRule"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2173,25 +2072,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Machine",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2497,25 +2384,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Image",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Image"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2753,21 +2628,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2923,25 +2790,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_SshKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3112,21 +2967,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3191,7 +3038,7 @@
             "name": "brand",
             "description": "Filter by brand (accepts any brand including internal-only brands)",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -3389,7 +3236,7 @@
             "name": "brand",
             "description": "Filter by brand (accepts any brand including internal-only brands)",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -3498,25 +3345,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Machine",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3760,21 +3595,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3858,25 +3685,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_AuditEntry",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AuditEntry"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4019,25 +3834,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Disk",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Disk"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4263,21 +4066,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4363,25 +4158,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FirewallRule",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4421,9 +4204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -4480,9 +4261,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -4564,23 +4343,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4730,22 +4499,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4996,25 +4756,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Nic",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Nic"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5163,21 +4911,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Nic"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5320,25 +5060,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Snapshot",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Snapshot"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5547,21 +5275,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Snapshot"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5601,9 +5321,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             }
@@ -5660,9 +5378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             }
@@ -5719,9 +5435,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             }
@@ -5803,23 +5517,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5969,22 +5673,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6270,25 +5965,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Network",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6424,21 +6107,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6522,25 +6197,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_NetworkIp",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/NetworkIp"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6703,21 +6366,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkIp"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6827,25 +6482,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Package",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Package"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6978,21 +6621,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Package"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7148,25 +6783,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Policy",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Policy"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7392,21 +7015,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Policy"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7562,25 +7177,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Role",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Role"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7806,21 +7409,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Role"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7850,11 +7445,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/Services"
                 }
               }
             }
@@ -8065,25 +7656,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_User",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/User"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8309,21 +7888,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8422,7 +7993,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateAccessKeyResponse"
+                  "$ref": "#/components/schemas/AccessKeyCredentials"
                 }
               }
             }
@@ -8463,25 +8034,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_AccessKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8692,21 +8251,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8958,25 +8509,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_SshKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -9187,21 +8726,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -9499,7 +9030,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "credentialtype": {
             "description": "Credential type",
@@ -9517,7 +9049,8 @@
           "expiration": {
             "nullable": true,
             "description": "Expiration timestamp (null for permanent keys)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "status": {
             "description": "Status",
@@ -9529,11 +9062,71 @@
           },
           "updated": {
             "description": "Last updated timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "accesskeyid",
+          "created",
+          "credentialtype",
+          "status",
+          "updated"
+        ]
+      },
+      "AccessKeyCredentials": {
+        "description": "Response when creating access key (includes secret shown only once)",
+        "type": "object",
+        "properties": {
+          "accesskeyid": {
+            "description": "Access key ID",
+            "type": "string"
+          },
+          "accesskeysecret": {
+            "description": "Access key secret (only provided on creation)",
+            "type": "string"
+          },
+          "created": {
+            "description": "Creation timestamp",
+            "type": "string",
+            "format": "date-time"
+          },
+          "credentialtype": {
+            "description": "Credential type",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialType"
+              }
+            ]
+          },
+          "description": {
+            "nullable": true,
+            "description": "Description",
+            "type": "string"
+          },
+          "expiration": {
+            "nullable": true,
+            "description": "Expiration timestamp",
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "description": "Status",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ]
+          },
+          "updated": {
+            "description": "Last updated timestamp",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accesskeyid",
+          "accesskeysecret",
           "created",
           "credentialtype",
           "status",
@@ -9576,7 +9169,8 @@
           },
           "created": {
             "description": "Account creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "email": {
             "description": "Email address",
@@ -9624,7 +9218,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9677,6 +9272,13 @@
           "network"
         ]
       },
+      "AffinityRules": {
+        "description": "Affinity rule strings (used by CreateMachineRequest and MigrateRequest).\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
       "AuditEntry": {
         "description": "Audit entry for a machine",
         "type": "object",
@@ -9701,7 +9303,8 @@
           },
           "time": {
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9719,35 +9322,6 @@
         ]
       },
       "Brand": {
-        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "bhyve",
-              "joyent",
-              "joyent-minimal",
-              "kvm",
-              "lx"
-            ]
-          },
-          {
-            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
-            "type": "string",
-            "enum": [
-              "builder"
-            ]
-          },
-          {
-            "description": "Unknown brand (forward compatibility)",
-            "type": "string",
-            "enum": [
-              "unknown"
-            ]
-          }
-        ]
-      },
-      "Brand2": {
         "description": "VM/Container brand for CloudAPI provisioning requests.\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
         "type": "string",
         "enum": [
@@ -9808,62 +9382,6 @@
           }
         }
       },
-      "CreateAccessKeyResponse": {
-        "description": "Response when creating access key (includes secret shown only once)",
-        "type": "object",
-        "properties": {
-          "accesskeyid": {
-            "description": "Access key ID",
-            "type": "string"
-          },
-          "accesskeysecret": {
-            "description": "Access key secret (only provided on creation)",
-            "type": "string"
-          },
-          "created": {
-            "description": "Creation timestamp",
-            "type": "string"
-          },
-          "credentialtype": {
-            "description": "Credential type",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CredentialType"
-              }
-            ]
-          },
-          "description": {
-            "nullable": true,
-            "description": "Description",
-            "type": "string"
-          },
-          "expiration": {
-            "nullable": true,
-            "description": "Expiration timestamp",
-            "type": "string"
-          },
-          "status": {
-            "description": "Status",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AccessKeyStatus"
-              }
-            ]
-          },
-          "updated": {
-            "description": "Last updated timestamp",
-            "type": "string"
-          }
-        },
-        "required": [
-          "accesskeyid",
-          "accesskeysecret",
-          "created",
-          "credentialtype",
-          "status",
-          "updated"
-        ]
-      },
       "CreateDiskRequest": {
         "description": "Request to create disk",
         "type": "object",
@@ -9923,10 +9441,11 @@
             "nullable": true,
             "description": "Resolvers",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ]
           },
           "routes": {
             "nullable": true,
@@ -10010,10 +9529,11 @@
             "nullable": true,
             "description": "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ]
           },
           "allow_shared_images": {
             "nullable": true,
@@ -10027,7 +9547,7 @@
             "default": null,
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand2"
+                "$ref": "#/components/schemas/Brand"
               }
             ]
           },
@@ -10078,8 +9598,11 @@
             "nullable": true,
             "description": "Metadata (modern format - nested object)",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "name": {
             "nullable": true,
@@ -10104,8 +9627,11 @@
             "nullable": true,
             "description": "Tags (modern format - nested object)",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "volumes": {
             "nullable": true,
@@ -10138,10 +9664,11 @@
           },
           "rules": {
             "description": "Policy rules (array of rule strings)",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ]
           }
         },
         "required": [
@@ -10214,9 +9741,27 @@
         "description": "Request to create user",
         "type": "object",
         "properties": {
+          "address": {
+            "nullable": true,
+            "description": "Street address",
+            "default": null,
+            "type": "string"
+          },
+          "city": {
+            "nullable": true,
+            "description": "City",
+            "default": null,
+            "type": "string"
+          },
           "companyName": {
             "nullable": true,
             "description": "Company name",
+            "default": null,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "description": "Country",
             "default": null,
             "type": "string"
           },
@@ -10249,6 +9794,18 @@
             "description": "Phone number",
             "default": null,
             "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "description": "Postal code",
+            "default": null,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "description": "State or province",
+            "default": null,
+            "type": "string"
           }
         },
         "required": [
@@ -10271,14 +9828,15 @@
             "nullable": true,
             "description": "Networks (array of UUIDs)",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ]
           },
           "size": {
-            "description": "Size in MiB",
+            "nullable": true,
+            "description": "Size in MiB. Optional — when omitted, CloudAPI selects the smallest available volume size from the billing packages.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -10287,8 +9845,11 @@
             "nullable": true,
             "description": "Tags",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "nullable": true,
@@ -10300,10 +9861,7 @@
               }
             ]
           }
-        },
-        "required": [
-          "size"
-        ]
+        }
       },
       "CredentialType": {
         "description": "Credential type",
@@ -10331,6 +9889,13 @@
           "name",
           "url"
         ]
+      },
+      "Datacenters": {
+        "description": "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).",
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
       },
       "Disk": {
         "description": "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.",
@@ -10489,7 +10054,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "description": {
             "nullable": true,
@@ -10519,10 +10085,11 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "rule": {
             "description": "Rule text",
@@ -10531,7 +10098,8 @@
           "updated": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10547,11 +10115,11 @@
           "acl": {
             "nullable": true,
             "description": "ACL - list of account UUIDs with access (API version >= 7.1.0)",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageAcl"
+              }
+            ]
           },
           "description": {
             "nullable": true,
@@ -10625,7 +10193,8 @@
           "published_at": {
             "nullable": true,
             "description": "Published timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "requirements": {
             "description": "Requirements (always present, may be empty)",
@@ -10639,10 +10208,11 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "state": {
             "nullable": true,
@@ -10656,8 +10226,11 @@
           "tags": {
             "nullable": true,
             "description": "Tags",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "description": "Image type",
@@ -10679,6 +10252,14 @@
           "type",
           "version"
         ]
+      },
+      "ImageAcl": {
+        "description": "List of account UUIDs authorised to use a private image (shared across Image, CreateImageRequest, UpdateImageRequest).",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
       "ImageErrorInfo": {
         "description": "Image error information (for failed image creation)",
@@ -10737,7 +10318,7 @@
             "description": "Required brand",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -10825,7 +10406,7 @@
             "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -10837,7 +10418,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "delegate_dataset": {
             "nullable": true,
@@ -10923,8 +10505,11 @@
           },
           "metadata": {
             "description": "Metadata",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "name": {
             "description": "Machine alias/name",
@@ -10933,11 +10518,11 @@
           "networks": {
             "nullable": true,
             "description": "Network UUIDs (API version >= 7.1.0)",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ]
           },
           "nics": {
             "description": "Network interfaces",
@@ -10958,10 +10543,11 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "state": {
             "description": "Current state",
@@ -10973,8 +10559,11 @@
           },
           "tags": {
             "description": "Tags",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "description": "Machine type (smartmachine or virtualmachine)",
@@ -10986,7 +10575,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11176,6 +10766,11 @@
           }
         ]
       },
+      "MetadataObject": {
+        "description": "Key-value metadata (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.",
+        "type": "object",
+        "additionalProperties": true
+      },
       "MigrateRequest": {
         "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
         "type": "object",
@@ -11192,10 +10787,11 @@
             "nullable": true,
             "description": "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to.",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ]
           }
         },
         "required": [
@@ -11214,12 +10810,14 @@
           },
           "created_timestamp": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "finished_timestamp": {
             "nullable": true,
             "description": "Finished timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "machine": {
             "description": "Machine UUID being migrated",
@@ -11259,7 +10857,8 @@
           "updated_timestamp": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11378,7 +10977,8 @@
           "finished_timestamp": {
             "nullable": true,
             "description": "When this phase finished",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "message": {
             "nullable": true,
@@ -11396,7 +10996,8 @@
           "started_timestamp": {
             "nullable": true,
             "description": "When this phase started",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "state": {
             "description": "State of this phase",
@@ -11514,18 +11115,20 @@
           "resolvers": {
             "nullable": true,
             "description": "Resolvers",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ]
           },
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "routes": {
             "nullable": true,
@@ -11557,6 +11160,14 @@
           "name",
           "public"
         ]
+      },
+      "NetworkIds": {
+        "description": "List of network UUIDs a resource is attached to.\n\nNewtype wrapper so Machine / Volume / CreateVolumeRequest all reference the same named `NetworkIds` schema rather than each carrying an anonymous `Vec<Uuid>` field. Different shape from `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which uses a richer per-entry struct -- only the UUID-list form is unified here.",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
       "NetworkIp": {
         "description": "Network IP information\n\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).",
@@ -11693,7 +11304,7 @@
             "description": "Brand (joyent, bhyve, kvm, etc., including internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may exist in the system.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -11756,10 +11367,11 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "swap": {
             "description": "Swap in MB",
@@ -11831,17 +11443,19 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "rules": {
             "description": "Policy rules (array of rule strings)",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ]
           }
         },
         "required": [
@@ -11867,28 +11481,63 @@
           }
         }
       },
-      "ProvisioningLimits": {
-        "description": "Provisioning limits for an account",
+      "PolicyRules": {
+        "description": "Aperture policy rule strings (shared across Policy, CreatePolicyRequest, UpdatePolicyRequest so all three reference the same named schema).",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "ProvisioningLimit": {
+        "description": "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB",
         "type": "object",
         "properties": {
-          "disk": {
+          "brand": {
             "nullable": true,
-            "description": "Maximum disk space in MB",
+            "description": "Brand filter value (when `check` is `\"brand\"`).",
+            "type": "string"
+          },
+          "by": {
+            "nullable": true,
+            "description": "What dimension the limit counts: `\"ram\"`, `\"quota\"`, or `\"machines\"`. When absent, defaults to counting VMs.",
+            "type": "string"
+          },
+          "check": {
+            "nullable": true,
+            "description": "Type of filter applied: `\"brand\"`, `\"image\"`, or `\"os\"`.",
+            "type": "string"
+          },
+          "image": {
+            "nullable": true,
+            "description": "Image filter value (when `check` is `\"image\"`).",
+            "type": "string"
+          },
+          "os": {
+            "nullable": true,
+            "description": "OS filter value (when `check` is `\"os\"`).",
+            "type": "string"
+          },
+          "used": {
+            "nullable": true,
+            "description": "Current usage against this limit.",
             "type": "integer",
             "format": "int64"
           },
-          "machines": {
-            "nullable": true,
-            "description": "Maximum number of machines",
-            "type": "integer",
-            "format": "int64"
-          },
-          "ram": {
-            "nullable": true,
-            "description": "Maximum RAM in MB",
+          "value": {
+            "description": "The limit value (threshold).",
             "type": "integer",
             "format": "int64"
           }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "ProvisioningLimits": {
+        "description": "Provisioning limits for an account — an array of limit entries.\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `ProvisioningLimits` as a named schema rather than an anonymous array-of-ProvisioningLimit on the single endpoint that returns it.",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ProvisioningLimit"
         }
       },
       "ReplaceRoleTagsRequest": {
@@ -11898,11 +11547,19 @@
           "role-tag": {
             "description": "Role tags (list of role names)",
             "default": [],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           }
+        }
+      },
+      "Resolvers": {
+        "description": "List of DNS resolver addresses for a fabric network.\n\nNewtype wrapper rather than a type alias so generated clients see a single named `Resolvers` type across all fabric-network schemas (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).",
+        "type": "array",
+        "items": {
+          "type": "string"
         }
       },
       "Role": {
@@ -11910,11 +11567,11 @@
         "type": "object",
         "properties": {
           "default_members": {
-            "description": "Default members (user UUIDs or logins)",
+            "description": "Default members (structured member references)",
             "default": [],
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MemberRef"
             }
           },
           "id": {
@@ -11923,11 +11580,11 @@
             "format": "uuid"
           },
           "members": {
-            "description": "Members (user UUIDs or logins)",
+            "description": "Members (structured member references)",
             "default": [],
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MemberRef"
             }
           },
           "name": {
@@ -11935,26 +11592,34 @@
             "type": "string"
           },
           "policies": {
-            "description": "Policies (policy UUIDs or names)",
+            "description": "Policies attached to this role",
             "default": [],
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PolicyRef"
             }
           },
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           }
         },
         "required": [
           "id",
           "name"
         ]
+      },
+      "RoleTags": {
+        "description": "Role tags for RBAC\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `RoleTags` as a named schema. Every RBAC-taggable resource (FirewallRule, Image, Machine, Network, Package, Policy, Role, SshKey, User, plus the bulk replace-role-tags request/ response) carries a `role-tag` field — with an alias, each was inlined as an anonymous `Vec<String>` per field. The newtype preserves the name so all clients see a single `RoleTags` type.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       },
       "RoleTagsResponse": {
         "description": "Response after replacing role tags on a resource",
@@ -11966,16 +11631,24 @@
           },
           "role-tag": {
             "description": "List of role names assigned to the resource",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           }
         },
         "required": [
           "name",
           "role-tag"
         ]
+      },
+      "Services": {
+        "description": "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).",
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
       },
       "Snapshot": {
         "description": "Snapshot information",
@@ -11984,7 +11657,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "description": "Snapshot name",
@@ -12001,7 +11675,8 @@
           "updated": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -12038,7 +11713,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "fingerprint": {
             "description": "Key fingerprint",
@@ -12055,10 +11731,11 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           }
         },
         "required": [
@@ -12066,6 +11743,11 @@
           "key",
           "name"
         ]
+      },
+      "Tags": {
+        "description": "Key-value tags (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.",
+        "type": "object",
+        "additionalProperties": true
       },
       "TagsRequest": {
         "description": "Request to add/replace machine tags",
@@ -12215,10 +11897,11 @@
             "nullable": true,
             "description": "Resolvers",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ]
           },
           "routes": {
             "nullable": true,
@@ -12308,10 +11991,11 @@
             "nullable": true,
             "description": "Policy rules (array of rule strings)",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ]
           }
         }
       },
@@ -12349,9 +12033,27 @@
         "description": "Request to update user",
         "type": "object",
         "properties": {
+          "address": {
+            "nullable": true,
+            "description": "Street address",
+            "default": null,
+            "type": "string"
+          },
+          "city": {
+            "nullable": true,
+            "description": "City",
+            "default": null,
+            "type": "string"
+          },
           "companyName": {
             "nullable": true,
             "description": "Company name",
+            "default": null,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "description": "Country",
             "default": null,
             "type": "string"
           },
@@ -12378,6 +12080,18 @@
             "description": "Phone number",
             "default": null,
             "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "description": "Postal code",
+            "default": null,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "description": "State or province",
+            "default": null,
+            "type": "string"
           }
         }
       },
@@ -12392,7 +12106,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "email": {
             "description": "Email address",
@@ -12425,14 +12140,16 @@
           "role-tag": {
             "nullable": true,
             "description": "Role tags for RBAC",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ]
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -12443,13 +12160,43 @@
           "updated"
         ]
       },
+      "VmBrand": {
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ]
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "type": "string",
+            "enum": [
+              "builder"
+            ]
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
       "Volume": {
         "description": "Volume information",
         "type": "object",
         "properties": {
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "filesystem_path": {
             "nullable": true,
@@ -12468,11 +12215,11 @@
           "networks": {
             "description": "Networks (array of UUIDs)",
             "default": [],
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ]
           },
           "owner_uuid": {
             "description": "Owner UUID",
@@ -12505,8 +12252,11 @@
           "tags": {
             "description": "Tags",
             "default": {},
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "description": "Volume type",

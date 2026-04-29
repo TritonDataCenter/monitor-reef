@@ -140,10 +140,10 @@ pub async fn list_snapshots(
             SnapshotColumn for Snapshot, long_from: 3, {
                 Name("NAME") => |snap| snap.name.clone(),
                 State("STATE") => |snap| crate::output::enum_to_display(&snap.state),
-                Created("CREATED") => |snap| snap.created.as_deref().unwrap_or("-").to_string(),
+                Created("CREATED") => |snap| snap.created.map(|c| c.to_rfc3339()).unwrap_or_else(|| "-".to_string()),
                 // --- long-only columns below ---
                 Updated("UPDATED") => |snap| {
-                    snap.updated.clone().unwrap_or_else(|| "-".to_string())
+                    snap.updated.map(|u| u.to_rfc3339()).unwrap_or_else(|| "-".to_string())
                 },
             }
         }
@@ -290,21 +290,28 @@ async fn wait_for_snapshot_deleted(
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
+    // Poll the list endpoint rather than the individual get endpoint.
+    // CloudAPI may continue returning the snapshot via GET (with state
+    // "created") long after it has been removed from the list response.
     loop {
         let response = client
             .inner()
-            .get_machine_snapshot()
+            .list_machine_snapshots()
             .account(account)
             .machine(machine_id)
-            .name(snapshot_name)
             .send()
-            .await;
+            .await?;
 
-        match response {
-            Err(_) => return Ok(()), // Snapshot not found = deleted
-            Ok(resp) => {
-                let snapshot = resp.into_inner();
-                if snapshot.state == SnapshotState::Failed {
+        let snapshots = response.into_inner();
+        let found = snapshots.iter().find(|s| s.name == snapshot_name);
+
+        match found {
+            None => return Ok(()),
+            Some(snap) => {
+                if snap.state == SnapshotState::Deleted {
+                    return Ok(());
+                }
+                if snap.state == SnapshotState::Failed {
                     return Err(anyhow::anyhow!("Snapshot deletion failed"));
                 }
             }
@@ -374,4 +381,106 @@ async fn boot_snapshot(args: SnapshotBootArgs, client: &TypedClient) -> Result<(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: start a mock HTTP server that returns `body` for every request.
+    async fn mock_server(body: &'static str) -> (u16, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let handle = tokio::spawn(async move {
+            for _ in 0..10 {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let _ = stream.read(&mut buf).await;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                });
+            }
+        });
+
+        (port, handle)
+    }
+
+    /// Helper: construct a TypedClient pointing at a local mock server.
+    fn test_client(port: u16) -> TypedClient {
+        use std::path::PathBuf;
+
+        let key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../libs/triton-auth/tests/keys/id_rsa.pem");
+        let auth = triton_auth::AuthConfig {
+            account: "testaccount".to_string(),
+            user: None,
+            key_source: triton_auth::KeySource::File {
+                path: key_path,
+                passphrase: None,
+            },
+            roles: None,
+            act_as: None,
+            accept_version: None,
+        };
+        TypedClient::new(&format!("http://127.0.0.1:{port}"), auth)
+    }
+
+    /// Snapshot absent from list → deletion complete.
+    #[tokio::test]
+    async fn test_wait_for_snapshot_deleted_empty_list() {
+        let (port, server) = mock_server("[]").await;
+        let client = test_client(port);
+
+        let result = wait_for_snapshot_deleted(uuid::Uuid::nil(), "test-snap", 5, &client).await;
+
+        server.abort();
+        assert!(
+            result.is_ok(),
+            "empty snapshot list should mean deletion complete, got: {:?}",
+            result.err()
+        );
+    }
+
+    /// Snapshot present in list with state "deleted" → deletion complete.
+    #[tokio::test]
+    async fn test_wait_for_snapshot_deleted_recognizes_deleted_state() {
+        let (port, server) = mock_server(r#"[{"name":"test-snap","state":"deleted"}]"#).await;
+        let client = test_client(port);
+
+        let result = wait_for_snapshot_deleted(uuid::Uuid::nil(), "test-snap", 5, &client).await;
+
+        server.abort();
+        assert!(
+            result.is_ok(),
+            "SnapshotState::Deleted should mean deletion complete, got: {:?}",
+            result.err()
+        );
+    }
+
+    /// Other snapshots present but target absent → deletion complete.
+    #[tokio::test]
+    async fn test_wait_for_snapshot_deleted_other_snapshots_remain() {
+        let (port, server) = mock_server(r#"[{"name":"other-snap","state":"created"}]"#).await;
+        let client = test_client(port);
+
+        let result = wait_for_snapshot_deleted(uuid::Uuid::nil(), "test-snap", 5, &client).await;
+
+        server.abort();
+        assert!(
+            result.is_ok(),
+            "target snapshot absent from list should mean deletion complete, got: {:?}",
+            result.err()
+        );
+    }
 }

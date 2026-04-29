@@ -595,11 +595,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_VmStatus",
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/VmStatus"
-                  }
+                  "$ref": "#/components/schemas/StatusesResponse"
                 }
               }
             }
@@ -646,7 +642,7 @@
             "name": "brand",
             "description": "Filter by brand",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -882,7 +878,7 @@
             "name": "brand",
             "description": "Filter by brand",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -1271,9 +1267,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -1547,9 +1541,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -2130,9 +2122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -2403,35 +2393,6 @@
           "role_tags"
         ]
       },
-      "Brand": {
-        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "bhyve",
-              "joyent",
-              "joyent-minimal",
-              "kvm",
-              "lx"
-            ]
-          },
-          {
-            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
-            "type": "string",
-            "enum": [
-              "builder"
-            ]
-          },
-          {
-            "description": "Unknown brand (forward compatibility)",
-            "type": "string",
-            "enum": [
-              "unknown"
-            ]
-          }
-        ]
-      },
       "CreateVmRequest": {
         "description": "Request body for creating a new VM",
         "type": "object",
@@ -2455,7 +2416,7 @@
             "default": null,
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -2471,8 +2432,11 @@
             "nullable": true,
             "description": "Customer metadata",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "delegate_dataset": {
             "nullable": true,
@@ -2504,8 +2468,11 @@
             "nullable": true,
             "description": "Internal metadata",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "networks": {
             "nullable": true,
@@ -2555,8 +2522,11 @@
             "nullable": true,
             "description": "Tags",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "vcpus": {
             "nullable": true,
@@ -2654,7 +2624,8 @@
           "created_at": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "elapsed": {
             "nullable": true,
@@ -2708,7 +2679,8 @@
           "started": {
             "nullable": true,
             "description": "Start timestamp (when execution began)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "timeout": {
             "nullable": true,
@@ -2775,6 +2747,11 @@
           "vm_uuid"
         ]
       },
+      "MetadataObject": {
+        "description": "Key-value metadata (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.",
+        "type": "object",
+        "additionalProperties": true
+      },
       "Migration": {
         "description": "Migration record",
         "type": "object",
@@ -2796,7 +2773,8 @@
           "created_timestamp": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "duration_ms": {
             "nullable": true,
@@ -2813,7 +2791,8 @@
           "finished_timestamp": {
             "nullable": true,
             "description": "Finished timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "phase": {
             "nullable": true,
@@ -2841,7 +2820,8 @@
           "started_timestamp": {
             "nullable": true,
             "description": "Started timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "state": {
             "description": "Current migration state",
@@ -2968,7 +2948,8 @@
           "timestamp": {
             "nullable": true,
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "total_bytes": {
             "nullable": true,
@@ -3048,7 +3029,8 @@
           "timestamp": {
             "nullable": true,
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "total_bytes": {
             "nullable": true,
@@ -3400,7 +3382,8 @@
         "properties": {
           "created_at": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "description": "Snapshot name",
@@ -3443,9 +3426,21 @@
           }
         ]
       },
+      "StatusesResponse": {
+        "description": "Response mapping VM UUIDs to their statuses.\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `StatusesResponse` as a named schema, giving downstream clients a named type for the VM-statuses endpoint's response rather than an anonymous map.",
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/VmStatus"
+        }
+      },
       "StoreMigrationRecordRequest": {
         "description": "Request body for POST /migrations/:uuid/store (internal)",
         "type": "object"
+      },
+      "Tags": {
+        "description": "Key-value tags (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.",
+        "type": "object",
+        "additionalProperties": true
       },
       "TaskChainEntry": {
         "description": "Task chain entry in a job",
@@ -3491,7 +3486,8 @@
           "finished_at": {
             "nullable": true,
             "description": "Finish time",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "nullable": true,
@@ -3506,7 +3502,8 @@
           "started_at": {
             "nullable": true,
             "description": "Start time",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -3548,7 +3545,7 @@
             "description": "Brand (bhyve, kvm, joyent, joyent-minimal, lx)",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -3562,13 +3559,17 @@
           "create_timestamp": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "customer_metadata": {
             "nullable": true,
             "description": "Customer metadata",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "delegate_dataset": {
             "nullable": true,
@@ -3578,7 +3579,8 @@
           "destroyed": {
             "nullable": true,
             "description": "Destroyed timestamp (if destroyed)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "disks": {
             "nullable": true,
@@ -3640,8 +3642,11 @@
           "internal_metadata": {
             "nullable": true,
             "description": "Internal metadata",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "internal_metadata_namespaces": {
             "nullable": true,
@@ -3654,7 +3659,8 @@
           "last_modified": {
             "nullable": true,
             "description": "Last modified timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "limit_priv": {
             "nullable": true,
@@ -3759,8 +3765,11 @@
           "tags": {
             "nullable": true,
             "description": "Tags",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "uuid": {
             "description": "VM UUID",
@@ -3797,6 +3806,35 @@
           "owner_uuid",
           "state",
           "uuid"
+        ]
+      },
+      "VmBrand": {
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ]
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "type": "string",
+            "enum": [
+              "builder"
+            ]
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "VmState": {

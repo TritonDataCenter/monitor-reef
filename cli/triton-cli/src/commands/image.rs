@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use chrono::DateTime;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Image, ImageState};
@@ -122,7 +121,7 @@ pub struct ImageCreateArgs {
     /// Image name
     pub name: String,
     /// Image version
-    pub version: Option<String>,
+    pub version: String,
     /// Image description
     #[arg(long, short = 'd')]
     pub description: Option<String>,
@@ -569,17 +568,9 @@ fn print_images_table(
 }
 
 /// Format pubdate as YYYY-MM-DD (matching node-triton)
-fn format_pubdate(published_at: &Option<String>) -> String {
+fn format_pubdate(published_at: &Option<chrono::DateTime<chrono::Utc>>) -> String {
     match published_at {
-        Some(timestamp) => {
-            // Try to parse as RFC 3339 and extract just the date part
-            if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
-                dt.format("%Y-%m-%d").to_string()
-            } else {
-                // Fall back to returning the raw string truncated to date
-                timestamp.split('T').next().unwrap_or("-").to_string()
-            }
-        }
+        Some(dt) => dt.format("%Y-%m-%d").to_string(),
         None => "-".to_string(),
     }
 }
@@ -626,12 +617,12 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
                 .map_err(|_| anyhow::anyhow!("Invalid ACL UUID: {}", acl_str))?;
             acl_uuids.push(uuid);
         }
-        Some(acl_uuids)
+        Some(cloudapi_client::ImageAcl(acl_uuids))
     } else {
         None
     };
 
-    // Parse tags into HashMap (matches the Tags type alias)
+    // Parse tags into the named Tags newtype.
     let tags = if let Some(tag_strings) = &args.tags {
         let mut tag_map = HashMap::new();
         for tag in tag_strings {
@@ -644,7 +635,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
                 ));
             }
         }
-        Some(tag_map)
+        Some(cloudapi_client::Tags(tag_map))
     } else {
         None
     };
@@ -664,9 +655,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     if args.dry_run {
         println!("Dry run - would create image:");
         println!("  Name:        {}", args.name);
-        if let Some(ver) = &args.version {
-            println!("  Version:     {}", ver);
-        }
+        println!("  Version:     {}", args.version);
         if let Some(desc) = &args.description {
             println!("  Description: {}", desc);
         }
@@ -994,7 +983,13 @@ async fn export_image(
     }
 
     let image = client
-        .export_image(account, &image_uuid, args.manta_path.clone())
+        .export_image(
+            account,
+            &image_uuid,
+            &cloudapi_client::ExportImageRequest {
+                manta_path: args.manta_path.clone(),
+            },
+        )
         .await?;
 
     eprintln!("Exporting image {} to {}", image.name, args.manta_path);
@@ -1421,8 +1416,7 @@ async fn set_image_tags(
         .await?;
 
     let image = response.into_inner();
-    // Convert Map to HashMap
-    let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
+    let mut tags: HashMap<String, Value> = image.tags.map(|t| t.0).unwrap_or_default();
 
     // Parse and add new tags
     for tag in &args.tags {
@@ -1444,7 +1438,7 @@ async fn set_image_tags(
         homepage: None,
         eula: None,
         acl: None,
-        tags: Some(tags.clone()),
+        tags: Some(tags.clone().into()),
     };
 
     client
@@ -1487,8 +1481,7 @@ async fn delete_image_tag(
         .await?;
 
     let image = response.into_inner();
-    // Convert Map to HashMap
-    let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
+    let mut tags: HashMap<String, Value> = image.tags.map(|t| t.0).unwrap_or_default();
 
     if tags.remove(&args.key).is_none() {
         return Err(crate::errors::ResourceNotFoundError(format!(
@@ -1506,7 +1499,7 @@ async fn delete_image_tag(
         homepage: None,
         eula: None,
         acl: None,
-        tags: Some(tags),
+        tags: Some(tags.into()),
     };
 
     client
@@ -1570,7 +1563,7 @@ mod tests {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
             owner: Some(acct_a),
-            acl: Some(vec![acct_b]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_b])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "+");
@@ -1582,7 +1575,7 @@ mod tests {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
             owner: Some(acct_b),
-            acl: Some(vec![acct_a]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_a])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "S");
@@ -1596,7 +1589,7 @@ mod tests {
             public: Some(true),
             state: Some(ImageState::Disabled),
             owner: Some(acct_a),
-            acl: Some(vec![acct_a]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_a])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "IPX+S");
@@ -1612,7 +1605,7 @@ mod tests {
     fn flags_no_account_uuid() {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
-            acl: Some(vec![acct_b]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_b])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, None), "-");

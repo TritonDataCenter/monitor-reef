@@ -17,13 +17,99 @@ use std::collections::HashMap;
 pub type Uuid = uuid::Uuid;
 
 /// RFC3339 timestamp
-pub type Timestamp = String;
+pub type Timestamp = chrono::DateTime<chrono::Utc>;
 
 /// Key-value metadata (values can be strings, booleans, or numbers)
-pub type MetadataObject = HashMap<String, Value>;
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI
+/// spec carries `MetadataObject` as a named schema rather than an
+/// anonymous `additionalProperties` object. See the note on `Tags`
+/// below for the full rationale.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct MetadataObject(pub HashMap<String, Value>);
+
+impl std::ops::Deref for MetadataObject {
+    type Target = HashMap<String, Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for MetadataObject {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<K: Into<String>, V: Into<Value>> FromIterator<(K, V)> for MetadataObject {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        MetadataObject(
+            iter.into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        )
+    }
+}
+
+impl From<HashMap<String, Value>> for MetadataObject {
+    fn from(map: HashMap<String, Value>) -> Self {
+        MetadataObject(map)
+    }
+}
+
+impl From<serde_json::Map<String, Value>> for MetadataObject {
+    fn from(map: serde_json::Map<String, Value>) -> Self {
+        MetadataObject(map.into_iter().collect())
+    }
+}
 
 /// Key-value tags (values can be strings, booleans, or numbers)
-pub type Tags = HashMap<String, Value>;
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI
+/// spec carries `Tags` as a named schema rather than an anonymous
+/// `additionalProperties` object. A `pub type Tags = HashMap<String, Value>`
+/// is erased by schemars at compile time, causing every field typed
+/// `Tags` to inline the map shape and downstream code generators
+/// (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` /
+/// `map[string]interface{}` types per field. The newtype preserves
+/// the name so all clients see a single `Tags` type.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct Tags(pub HashMap<String, Value>);
+
+impl std::ops::Deref for Tags {
+    type Target = HashMap<String, Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Tags {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<K: Into<String>, V: Into<Value>> FromIterator<(K, V)> for Tags {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        Tags(
+            iter.into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        )
+    }
+}
+
+impl From<HashMap<String, Value>> for Tags {
+    fn from(map: HashMap<String, Value>) -> Self {
+        Tags(map)
+    }
+}
+
+impl From<serde_json::Map<String, Value>> for Tags {
+    fn from(map: serde_json::Map<String, Value>) -> Self {
+        Tags(map.into_iter().collect())
+    }
+}
 
 /// VM/Container brand as returned by VMAPI.
 ///
@@ -43,6 +129,7 @@ pub type Tags = HashMap<String, Value>;
 // use this enum to accurately represent VM state.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[schemars(rename = "VmBrand")]
 pub enum Brand {
     Bhyve,
     /// Internal brand for image build zones (not provisionable via CloudAPI)

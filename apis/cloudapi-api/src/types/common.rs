@@ -81,13 +81,69 @@ pub struct ErrorResponse {
 pub type Timestamp = vmapi_api::Timestamp;
 
 /// Key-value tags (values can be strings, booleans, or numbers)
-pub type Tags = vmapi_api::Tags;
+pub use vmapi_api::Tags;
 
 /// Key-value metadata (values can be strings, booleans, or numbers)
-pub type Metadata = vmapi_api::MetadataObject;
+pub use vmapi_api::MetadataObject as Metadata;
 
 /// Role tags for RBAC
-pub type RoleTags = Vec<String>;
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI
+/// spec carries `RoleTags` as a named schema. Every RBAC-taggable
+/// resource (FirewallRule, Image, Machine, Network, Package, Policy,
+/// Role, SshKey, User, plus the bulk replace-role-tags request/
+/// response) carries a `role-tag` field — with an alias, each was
+/// inlined as an anonymous `Vec<String>` per field. The newtype
+/// preserves the name so all clients see a single `RoleTags` type.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RoleTags(pub Vec<String>);
+
+impl std::ops::Deref for RoleTags {
+    type Target = Vec<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for RoleTags {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<String>> for RoleTags {
+    fn from(v: Vec<String>) -> Self {
+        RoleTags(v)
+    }
+}
+
+impl<S: Into<String>> FromIterator<S> for RoleTags {
+    fn from_iter<I: IntoIterator<Item = S>>(iter: I) -> Self {
+        RoleTags(iter.into_iter().map(Into::into).collect())
+    }
+}
+
+impl IntoIterator for RoleTags {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a RoleTags {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl PartialEq<Vec<String>> for RoleTags {
+    fn eq(&self, other: &Vec<String>) -> bool {
+        &self.0 == other
+    }
+}
 
 /// VM/Container brand for CloudAPI provisioning requests.
 ///

@@ -237,9 +237,9 @@ async fn list_volumes(
                 format_volume_size(vol.size),
                 enum_to_display(&vol.type_),
                 enum_to_display(&vol.state),
-                output::format_age(&vol.created.to_string()),
+                output::format_age(&vol.created),
                 vol.id.to_string(),
-                vol.created.to_string(),
+                vol.created.to_rfc3339(),
             ]);
         }
         tbl.print(&args.table)?;
@@ -403,18 +403,22 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     // Always validate via GET (matches node-triton's getNetwork call in createVolume).
     let networks = if let Some(net) = &args.network {
         let network_id = crate::commands::network::resolve_network_with_get(net, client).await?;
-        Some(vec![network_id])
+        Some(cloudapi_client::NetworkIds(vec![network_id]))
     } else {
         None
     };
 
     // Parse tags
-    let tags = args.tags.as_ref().map(|t| parse_tags(t)).transpose()?;
+    let tags = args
+        .tags
+        .as_ref()
+        .map(|t| parse_tags(t).map(cloudapi_client::Tags::from))
+        .transpose()?;
 
     let request = cloudapi_client::types::CreateVolumeRequest {
         name: args.name.clone(),
         type_: Some(args.r#type),
-        size,
+        size: Some(size),
         networks,
         tags,
     };

@@ -122,7 +122,7 @@ rustls-pemfile = "2"
 # (`assertion failed: response_types.len() <= 1` in method.rs).
 # Revisit after both crates cut a coordinated release that closes
 # the assertion.
-schemars = { version = "0.8", features = ["derive"] }
+schemars = { version = "0.8", features = ["chrono", "derive"] }
 sec1 = { version = "0.7", features = ["pem"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }

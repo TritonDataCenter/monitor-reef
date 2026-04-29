@@ -67,16 +67,11 @@ fn opt_display<T: std::fmt::Display>(opt: &Option<T>) -> String {
 }
 
 /// Format a duration as a human-readable relative time string (e.g., "1d", "41w")
-fn long_ago(when: &str) -> String {
-    use chrono::{DateTime, Utc};
-
-    let parsed = match DateTime::parse_from_rfc3339(when) {
-        Ok(dt) => dt.with_timezone(&Utc),
-        Err(_) => return "".to_string(),
-    };
+fn long_ago(when: &chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::Utc;
 
     let now = Utc::now();
-    let duration = now.signed_duration_since(parsed);
+    let duration = now.signed_duration_since(*when);
     let seconds = duration.num_seconds();
 
     if seconds < 0 {
@@ -156,39 +151,29 @@ async fn get_limits(client: &TypedClient, use_json: bool) -> Result<()> {
     let limits = response.into_inner();
 
     if use_json {
-        // Convert the object-style response to array format for node-triton compatibility
-        let json_value = serde_json::to_value(&limits)?;
-        let limits_array: Vec<serde_json::Value> =
-            if let serde_json::Value::Object(map) = json_value {
-                map.into_iter()
-                    .filter_map(|(key, value)| {
-                        // Only include non-null values
-                        if value.is_null() {
-                            None
-                        } else {
-                            Some(serde_json::json!({
-                                "type": key,
-                                "limit": value,
-                                "used": 0  // API doesn't provide used values in this format
-                            }))
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
-        json::print_json(&limits_array)?;
+        json::print_json(&limits)?;
     } else {
-        // Match node-triton output: table with TYPE, USED, LIMIT columns
-        println!("{:<10} {:>5}  {:>5}", "TYPE", "USED", "LIMIT");
+        // Match node-triton output: table with BY, LIMIT, USED, CHECK columns
+        println!("{:<10} {:>7}  {:>5}  CHECK", "BY", "LIMIT", "USED");
 
-        let json_value = serde_json::to_value(&limits)?;
-        if let serde_json::Value::Object(map) = json_value {
-            for (key, value) in map {
-                if !value.is_null() {
-                    println!("{:<10} {:>5}  {:>5}", key, "-", value);
-                }
-            }
+        for limit in &limits {
+            let by = limit.by.as_deref().unwrap_or("machines");
+            let used = limit
+                .used
+                .map(|u| u.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let check = match (
+                limit.check.as_deref(),
+                limit.brand.as_deref(),
+                limit.image.as_deref(),
+                limit.os.as_deref(),
+            ) {
+                (Some("brand"), Some(v), _, _) => format!("brand={v}"),
+                (Some("image"), _, Some(v), _) => format!("image={v}"),
+                (Some("os"), _, _, Some(v)) => format!("os={v}"),
+                _ => String::new(),
+            };
+            println!("{:<10} {:>7}  {:>5}  {}", by, limit.value, used, check);
         }
     }
 

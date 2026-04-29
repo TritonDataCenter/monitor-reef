@@ -434,7 +434,9 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
 /// the default certificate store isn't found (e.g., SmartOS/illumos).
 async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder().danger_accept_invalid_certs(insecure);
+    let mut builder = reqwest::Client::builder()
+        .danger_accept_invalid_certs(insecure)
+        .redirect(reqwest::redirect::Policy::none());
 
     // Only apply custom root cert store when we actually need to verify
     // certificates. When insecure=true, reqwest's built-in handling of

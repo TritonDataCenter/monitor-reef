@@ -74,6 +74,20 @@ use progenitor_client::{ClientHooks, OperationInfo};
 // Re-export triton-auth types for convenience
 pub use triton_auth::{AuthConfig, AuthError, KeySource};
 
+// Re-export action-dispatch request structs from the Progenitor-generated
+// types module. These structs land in `types::*` because openapi-manager
+// injects their schemas into components.schemas; see
+// docs/design/action-dispatch-openapi.md. Keeping the user-facing import
+// path (`cloudapi_client::StartMachineRequest`, etc.) spec-derived means
+// Go/Rust/TS clients all agree on the wire shape, while the TypedClient
+// wrapper in this crate continues to use the unqualified names below.
+pub use types::{
+    CloneImageRequest, DisableDeletionProtectionRequest, DisableFirewallRequest,
+    EnableDeletionProtectionRequest, EnableFirewallRequest, ExportImageRequest, ImportImageRequest,
+    RebootMachineRequest, RenameMachineRequest, ResizeDiskRequest, ResizeMachineRequest,
+    StartMachineRequest, StopMachineRequest, UpdateImageRequest, UpdateVolumeRequest,
+};
+
 // Re-export types from the API crate for convenience
 pub use cloudapi_api::{
     // Key types
@@ -89,6 +103,7 @@ pub use cloudapi_api::{
     AddMetadataRequest,
     // Network types
     AddNicRequest,
+    AffinityRules,
     // Machine types
     AuditEntry,
     // User types
@@ -99,8 +114,6 @@ pub use cloudapi_api::{
     ChangefeedResource,
     ChangefeedSubResource,
     ChangefeedSubscription,
-    // Image types
-    CloneImageRequest,
     Config,
     CreateAccessKeyRequest,
     CreateAccessKeyResponse,
@@ -121,30 +134,25 @@ pub use cloudapi_api::{
     CredentialType,
     Datacenter,
     Datacenters,
-    DisableDeletionProtectionRequest,
-    DisableFirewallRequest,
     Disk,
     DiskAction,
     DiskActionQuery,
     DiskPath,
     DiskSpec,
     DiskState,
-    EnableDeletionProtectionRequest,
-    EnableFirewallRequest,
-    ExportImageRequest,
     FabricNetworkPath,
     FabricVlan,
     FabricVlanPath,
     FirewallRule,
     FirewallRulePath,
     Image,
+    ImageAcl,
     ImageAction,
     ImageActionQuery,
     ImageCollectionActionQuery,
     ImagePath,
     ImageState,
     ImageType,
-    ImportImageRequest,
     KeyPath,
     ListImagesQuery,
     ListMachinesQuery,
@@ -166,6 +174,7 @@ pub use cloudapi_api::{
     MigrationState,
     MountMode,
     Network,
+    NetworkIds,
     NetworkIp,
     NetworkIpPath,
     NetworkObject,
@@ -177,14 +186,15 @@ pub use cloudapi_api::{
     PackagePath,
     Policy,
     PolicyPath,
+    PolicyRef,
+    PolicyRules,
+    ProvisioningLimit,
     ProvisioningLimits,
-    RebootMachineRequest,
-    RenameMachineRequest,
     ReplaceRoleTagsRequest,
-    ResizeDiskRequest,
-    ResizeMachineRequest,
+    Resolvers,
     Role,
     RolePath,
+    RoleTags,
     Service,
     Services,
     // Share/Unshare: client-side ACL logic (no dedicated request types)
@@ -192,8 +202,6 @@ pub use cloudapi_api::{
     SnapshotPath,
     SnapshotState,
     SshKey,
-    StartMachineRequest,
-    StopMachineRequest,
     TagPath,
     Tags,
     TagsRequest,
@@ -204,12 +212,10 @@ pub use cloudapi_api::{
     UpdateFabricNetworkRequest,
     UpdateFabricVlanRequest,
     UpdateFirewallRuleRequest,
-    UpdateImageRequest,
     UpdateNetworkIpRequest,
     UpdatePolicyRequest,
     UpdateRoleRequest,
     UpdateUserRequest,
-    UpdateVolumeRequest,
     User,
     UserAccessKeyPath,
     UserPath,
@@ -311,6 +317,17 @@ fn emit_and_fake_get_response(
         serde_json::Value::Null,
     );
 
+    // HEAD responses are now ResponseValue<ByteStream> with no body parsing,
+    // so return an empty 200 response immediately.
+    if request.method() == reqwest::Method::HEAD {
+        #[allow(clippy::expect_used)]
+        let http_response = http::Response::builder()
+            .status(200)
+            .body(Vec::new())
+            .expect("fake HTTP response construction should not fail");
+        return Ok(reqwest::Response::from(http_response));
+    }
+
     let body_bytes = if info.operation_id.starts_with("list_") {
         // List endpoints: check responses for a specific list fixture first,
         // then fall back to list_default, then empty array
@@ -329,9 +346,12 @@ fn emit_and_fake_get_response(
             .and_then(|mut s| s.next_back())
             .unwrap_or("unknown");
         let last_seg_uuid = uuid::Uuid::try_parse(last_seg).unwrap_or(uuid::Uuid::nil());
-        let fake_ts = "2025-01-01T00:00:00.000Z".to_string();
+        #[allow(clippy::expect_used)]
+        let fake_ts = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00.000Z")
+            .expect("static timestamp must parse")
+            .with_timezone(&chrono::Utc);
 
-        fake_response_body(info.operation_id, last_seg, last_seg_uuid, &fake_ts, url)
+        fake_response_body(info.operation_id, last_seg, last_seg_uuid, fake_ts, url)
     };
 
     #[allow(clippy::expect_used)]
@@ -371,12 +391,7 @@ fn fixture_response_body(
     let fixture = load_fixture().as_ref()?;
     let responses = fixture.get("responses")?;
 
-    // Try exact operation_id, then strip head_ → get_ prefix
-    let template = responses.get(operation_id).or_else(|| {
-        let rest = operation_id.strip_prefix("head_")?;
-        let key = format!("get_{rest}");
-        responses.get(&key)
-    })?;
+    let template = responses.get(operation_id)?;
 
     // Interpolate placeholders on the raw JSON string
     let mut json_str = serde_json::to_string(template).ok()?;
@@ -416,7 +431,7 @@ fn fake_response_body(
     operation_id: &str,
     last_seg: &str,
     last_seg_uuid: uuid::Uuid,
-    fake_ts: &str,
+    fake_ts: chrono::DateTime<chrono::Utc>,
     url: &reqwest::Url,
 ) -> Vec<u8> {
     // Try shared fixture file first
@@ -427,7 +442,7 @@ fn fake_response_body(
     use cloudapi_api::ImageRequirements;
 
     match operation_id {
-        "get_account" | "head_account" => {
+        "get_account" => {
             let fake = Account {
                 id: last_seg_uuid,
                 login: last_seg.to_string(),
@@ -441,13 +456,13 @@ fn fake_response_body(
                 state: None,
                 country: None,
                 phone: None,
-                created: fake_ts.to_string(),
-                updated: fake_ts.to_string(),
+                created: fake_ts,
+                updated: fake_ts,
                 triton_cns_enabled: None,
             };
             serde_json::to_vec(&fake).expect("Account serialization should not fail")
         }
-        "get_image" | "head_image" => {
+        "get_image" => {
             let fake = Image {
                 id: last_seg_uuid,
                 name: last_seg.to_string(),
@@ -472,7 +487,7 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("Image serialization should not fail")
         }
-        "get_machine" | "head_machine" => {
+        "get_machine" => {
             let fake = Machine {
                 id: last_seg_uuid,
                 name: last_seg.to_string(),
@@ -486,8 +501,8 @@ fn fake_response_body(
                 ips: vec![],
                 metadata: Default::default(),
                 tags: Default::default(),
-                created: fake_ts.to_string(),
-                updated: fake_ts.to_string(),
+                created: fake_ts,
+                updated: fake_ts,
                 networks: None,
                 primary_ip: None,
                 nics: vec![],
@@ -505,7 +520,7 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("Machine serialization should not fail")
         }
-        "get_package" | "head_package" => {
+        "get_package" => {
             let fake = Package {
                 id: last_seg_uuid,
                 name: last_seg.to_string(),
@@ -525,7 +540,7 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("Package serialization should not fail")
         }
-        "get_network" | "head_network" | "get_fabric_network" | "head_fabric_network" => {
+        "get_network" | "get_fabric_network" => {
             let fake = Network {
                 id: last_seg_uuid,
                 name: last_seg.to_string(),
@@ -546,7 +561,7 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("Network serialization should not fail")
         }
-        "get_firewall_rule" | "head_firewall_rule" => {
+        "get_firewall_rule" => {
             let fake = FirewallRule {
                 id: last_seg_uuid,
                 rule: String::new(),
@@ -568,12 +583,12 @@ fn fake_response_body(
                 .type_(types::VolumeType::Tritonnfs)
                 .size(0_u64)
                 .state(types::VolumeState::Ready)
-                .created(fake_ts.to_string())
+                .created(fake_ts)
                 .try_into()
                 .expect("Volume builder should not fail");
             serde_json::to_vec(&fake).expect("Volume serialization should not fail")
         }
-        "get_key" | "head_key" | "get_user_key" | "head_user_key" => {
+        "get_key" | "get_user_key" => {
             let fake = SshKey {
                 name: last_seg.to_string(),
                 key: String::new(),
@@ -583,7 +598,7 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("SshKey serialization should not fail")
         }
-        "get_nic" | "head_nic" => {
+        "get_nic" => {
             let fake = Nic {
                 mac: "00:00:00:00:00:00".to_string(),
                 primary: false,
@@ -595,16 +610,16 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("Nic serialization should not fail")
         }
-        "get_machine_snapshot" | "head_machine_snapshot" => {
+        "get_machine_snapshot" => {
             let fake = Snapshot {
                 name: last_seg.to_string(),
                 state: cloudapi_api::SnapshotState::Created,
-                created: Some(fake_ts.to_string()),
+                created: Some(fake_ts),
                 updated: None,
             };
             serde_json::to_vec(&fake).expect("Snapshot serialization should not fail")
         }
-        "get_machine_disk" | "head_machine_disk" => {
+        "get_machine_disk" => {
             let fake = Disk {
                 id: last_seg_uuid,
                 size: 0,
@@ -615,7 +630,7 @@ fn fake_response_body(
             };
             serde_json::to_vec(&fake).expect("Disk serialization should not fail")
         }
-        "get_fabric_vlan" | "head_fabric_vlan" => {
+        "get_fabric_vlan" => {
             let fake = FabricVlan {
                 vlan_id: 0,
                 name: last_seg.to_string(),
@@ -849,7 +864,7 @@ pub struct ListMachinesFilter {
     /// Filter by machine type
     pub machine_type: Option<types::MachineType>,
     /// Filter by brand
-    pub brand: Option<types::Brand>,
+    pub brand: Option<types::VmBrand>,
     /// Filter by docker flag
     pub docker: Option<bool>,
     /// Pagination offset
@@ -1124,11 +1139,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &StartMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Start,
-            body: StartMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1150,11 +1165,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &StopMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Stop,
-            body: StopMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1176,11 +1191,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &RebootMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Reboot,
-            body: RebootMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1203,12 +1218,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        package: String,
-        origin: Option<String>,
+        request: &ResizeMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Resize,
-            body: ResizeMachineRequest { package, origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1231,12 +1245,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        name: String,
-        origin: Option<String>,
+        request: &RenameMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Rename,
-            body: RenameMachineRequest { name, origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1258,11 +1271,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &EnableFirewallRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::EnableFirewall,
-            body: EnableFirewallRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1284,11 +1297,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &DisableFirewallRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::DisableFirewall,
-            body: DisableFirewallRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1310,11 +1323,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &EnableDeletionProtectionRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::EnableDeletionProtection,
-            body: EnableDeletionProtectionRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1336,11 +1349,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &DisableDeletionProtectionRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::DisableDeletionProtection,
-            body: DisableDeletionProtectionRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1395,11 +1408,11 @@ impl TypedClient {
         &self,
         account: &str,
         dataset: &Uuid,
-        manta_path: String,
+        request: &ExportImageRequest,
     ) -> Result<types::Image, Error<types::Error>> {
         let body = ActionBody {
             action: ImageAction::Export,
-            body: ExportImageRequest { manta_path },
+            body: request,
         };
         self.inner
             .update_image()
@@ -1489,22 +1502,17 @@ impl TypedClient {
             .into_inner();
 
         // 2. Add target to ACL (if not already present)
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        let mut acl = image.acl.unwrap_or_default();
         if !acl.contains(&target_account) {
             acl.push(target_account);
         }
 
         // 3. POST update with modified ACL
-        // (in emit-payload mode the pre hook emits this and returns sentinel)
-        self.inner
-            .update_image()
-            .account(account)
-            .dataset(dataset.to_string())
-            .action(types::ImageAction::Update)
-            .body(serde_json::json!({"acl": acl}))
-            .send()
-            .await
-            .map(|r| r.into_inner())
+        let request = UpdateImageRequest {
+            acl: Some(acl),
+            ..Default::default()
+        };
+        self.update_image_metadata(account, dataset, &request).await
     }
 
     /// Unshare image from another account
@@ -1534,20 +1542,15 @@ impl TypedClient {
             .into_inner();
 
         // 2. Remove target from ACL
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        let mut acl = image.acl.unwrap_or_default();
         acl.retain(|a| a != &target_account);
 
         // 3. POST update with modified ACL
-        // (in emit-payload mode the pre hook emits this and returns sentinel)
-        self.inner
-            .update_image()
-            .account(account)
-            .dataset(dataset.to_string())
-            .action(types::ImageAction::Update)
-            .body(serde_json::json!({"acl": acl}))
-            .send()
-            .await
-            .map(|r| r.into_inner())
+        let request = UpdateImageRequest {
+            acl: Some(acl),
+            ..Default::default()
+        };
+        self.update_image_metadata(account, dataset, &request).await
     }
 
     // ========================================================================

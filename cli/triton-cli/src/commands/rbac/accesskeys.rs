@@ -142,9 +142,9 @@ pub async fn list_user_access_keys(
             tbl.add_row(vec![
                 key.accesskeyid.clone(),
                 crate::output::enum_to_display(&key.status),
-                key.updated.clone(),
+                key.updated.to_rfc3339(),
                 key.description.clone().unwrap_or_default(),
-                key.created.clone(),
+                key.created.to_rfc3339(),
             ]);
         }
         tbl.print(&args.table)?;

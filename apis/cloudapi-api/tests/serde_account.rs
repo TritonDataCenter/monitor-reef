@@ -12,6 +12,7 @@
 
 mod common;
 
+use chrono::TimeZone;
 use cloudapi_api::types::Account;
 use uuid::Uuid;
 
@@ -54,8 +55,14 @@ fn test_account_triton_cns_enabled() {
 fn test_account_timestamps() {
     let account: Account = common::deserialize_fixture("account", "full.json");
 
-    assert_eq!(account.created, "2024-01-01T00:00:00.000Z");
-    assert_eq!(account.updated, "2024-06-15T12:00:00.000Z");
+    assert_eq!(
+        account.created,
+        chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()
+    );
+    assert_eq!(
+        account.updated,
+        chrono::Utc.with_ymd_and_hms(2024, 6, 15, 12, 0, 0).unwrap()
+    );
 }
 
 /// Test minimal account with only required fields.

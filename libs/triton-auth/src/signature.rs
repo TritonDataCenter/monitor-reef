@@ -163,18 +163,18 @@ impl RequestSigner {
     ///
     /// The signing string is:
     /// ```text
-    /// date: <date>
     /// (request-target): <method lowercase> <path>
+    /// date: <date>
     /// ```
     ///
     /// This matches the behavior of node-triton and provides protection against
     /// replay attacks by binding the signature to a specific HTTP method and path.
     pub fn signing_string(&self, method: &str, path: &str, date: &str) -> String {
         format!(
-            "date: {}\n(request-target): {} {}",
-            date,
+            "(request-target): {} {}\ndate: {}",
             method.to_lowercase(),
-            path
+            path,
+            date
         )
     }
 
@@ -193,11 +193,11 @@ impl RequestSigner {
     /// # Returns
     /// The complete Authorization header value:
     /// ```text
-    /// Signature keyId="/:account/keys/:fp",algorithm="rsa-sha256",headers="date (request-target)",signature=":sig:"
+    /// Signature keyId="/:account/keys/:fp",algorithm="rsa-sha256",headers="(request-target) date",signature=":sig:"
     /// ```
     pub fn authorization_header(&self, signature_b64: &str) -> String {
         format!(
-            "Signature keyId=\"{}\",algorithm=\"{}\",headers=\"date (request-target)\",signature=\"{}\"",
+            "Signature keyId=\"{}\",algorithm=\"{}\",headers=\"(request-target) date\",signature=\"{}\"",
             self.key_id_string(),
             self.algorithm(),
             signature_b64
@@ -257,10 +257,10 @@ mod tests {
         let date = "Mon, 15 Dec 2025 10:30:00 GMT";
         let signing_string = signer.signing_string("GET", "/testaccount/machines", date);
 
-        // Signing string includes date and request-target (matching node-triton behavior)
+        // Signing string includes request-target then date (matching node-triton behavior)
         assert!(signing_string.contains("date: Mon, 15 Dec 2025 10:30:00 GMT"));
         assert!(signing_string.contains("(request-target): get /testaccount/machines"));
-        assert!(signing_string.starts_with("date:"));
+        assert!(signing_string.starts_with("(request-target):"));
         assert!(signing_string.contains('\n'));
     }
 
@@ -319,7 +319,7 @@ mod tests {
 
         assert!(auth.starts_with("Signature keyId=\"/testaccount/keys/"));
         assert!(auth.contains("algorithm=\"rsa-sha256\""));
-        assert!(auth.contains("headers=\"date (request-target)\""));
+        assert!(auth.contains("headers=\"(request-target) date\""));
         assert!(auth.contains("signature=\"dGVzdHNpZ25hdHVyZQ==\""));
     }
 

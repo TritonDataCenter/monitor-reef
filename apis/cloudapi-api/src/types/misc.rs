@@ -6,7 +6,10 @@
 
 //! Miscellaneous types (packages, datacenters, services, migrations)
 
+use std::collections::HashMap;
+
 use super::common::{RoleTags, Timestamp, Uuid};
+use super::machine::AffinityRules;
 // Package output type uses VMAPI's Brand to accurately represent the brand
 // requirement stored in the system, which may include internal-only brands.
 use schemars::JsonSchema;
@@ -106,7 +109,29 @@ pub struct Package {
 /// ```json
 /// {"us-central-1": "https://us-central-1.api.mnx.io"}
 /// ```
-pub type Datacenters = std::collections::HashMap<String, String>;
+///
+/// This is a newtype wrapper rather than a type alias because schemars
+/// (the JSON Schema generator used by Dropshot) erases type aliases at
+/// compile time. A `pub type Datacenters = HashMap<String, String>` produces
+/// an anonymous `Map_of_String` schema in OpenAPI, causing code generators
+/// (Progenitor, oapi-codegen) to emit unnamed map types. The newtype
+/// preserves the name in the schema so generated clients get a proper
+/// named type (e.g. `type Datacenters map[string]string` in Go).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Datacenters(pub HashMap<String, String>);
+
+impl std::ops::Deref for Datacenters {
+    type Target = HashMap<String, String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Datacenters {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Datacenter information (used for add_foreign_datacenter response)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -133,7 +158,29 @@ pub struct AddForeignDatacenterRequest {
 /// ```json
 /// {"cmon": "https://cmon.example.com:9163", "docker": "tcp://docker.example.com:2376"}
 /// ```
-pub type Services = std::collections::HashMap<String, String>;
+///
+/// This is a newtype wrapper rather than a type alias because schemars
+/// (the JSON Schema generator used by Dropshot) erases type aliases at
+/// compile time. A `pub type Services = HashMap<String, String>` produces
+/// an anonymous `Map_of_String` schema in OpenAPI, causing code generators
+/// (Progenitor, oapi-codegen) to emit unnamed map types. The newtype
+/// preserves the name in the schema so generated clients get a proper
+/// named type (e.g. `type Services map[string]string` in Go).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Services(pub HashMap<String, String>);
+
+impl std::ops::Deref for Services {
+    type Target = HashMap<String, String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Services {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 /// Service information (individual service entry, for documentation)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -254,7 +301,7 @@ pub struct MigrationProgressEntry {
 pub struct MigrationEstimateRequest {
     /// Affinity rules
     #[serde(default)]
-    pub affinity: Option<Vec<String>>,
+    pub affinity: Option<AffinityRules>,
 }
 
 /// Migration estimate response
@@ -301,7 +348,7 @@ pub struct MigrateRequest {
     ///
     /// These rules influence which server the instance will be migrated to.
     #[serde(default)]
-    pub affinity: Option<Vec<String>>,
+    pub affinity: Option<AffinityRules>,
 }
 
 /// Path parameter for resource role tag operations
@@ -410,7 +457,7 @@ mod tests {
         let package: Package = serde_json::from_str(json).expect("should deserialize");
         assert_eq!(package.flexible_disk, Some(true));
         assert_eq!(
-            package.role_tag.as_deref(),
+            package.role_tag.as_deref().map(Vec::as_slice),
             Some(&["admin".to_string()][..])
         );
 

@@ -122,6 +122,7 @@ pub struct CreateAccessKeyRequest {
 
 /// Response when creating access key (includes secret shown only once)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[schemars(rename = "AccessKeyCredentials")]
 pub struct CreateAccessKeyResponse {
     /// Access key ID
     pub accesskeyid: String,
