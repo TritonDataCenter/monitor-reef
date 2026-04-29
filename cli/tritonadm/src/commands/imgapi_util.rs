@@ -13,6 +13,8 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use uuid::Uuid;
 
+use super::errors::{action_is_404, is_404};
+
 /// Maximum origin chain depth. `triton-origin-*` typically has a single
 /// ancestor (the pkgsrc base image) and never chains deeper than two or
 /// three levels, so 16 is a generous guard against a pathological manifest
@@ -54,10 +56,12 @@ pub(crate) async fn ensure_origin_imported(
         }
 
         // Fetch the manifest: either from the local IMGAPI (already
-        // imported) or, if absent, import it first and then fetch.
+        // imported) or, if absent, import it first and then fetch. Only a
+        // genuine 404 means "not local"; transport / 5xx errors mean the
+        // local IMGAPI is broken and we'd just fail confusingly mid-import.
         let manifest = match client.get_image().uuid(uuid).send().await {
             Ok(resp) => resp.into_inner(),
-            Err(_) => {
+            Err(e) if is_404(&e) => {
                 eprintln!("Origin image {uuid} not found locally, importing from {updates_url}...");
                 import_remote_with_channel_fallback(typed_client, uuid, updates_url, channel)
                     .await?;
@@ -72,6 +76,11 @@ pub(crate) async fn ensure_origin_imported(
                         format!("failed to fetch manifest for freshly-imported {uuid}")
                     })?
                     .into_inner()
+            }
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!("failed to look up origin image {uuid} in local IMGAPI")
+                });
             }
         };
 
@@ -101,11 +110,24 @@ async fn import_remote_with_channel_fallback(
             .await
         {
             Ok(_) => return Ok(()),
-            Err(e) => {
+            // Only fall back to the default channel on a true "not found".
+            // 5xx / auth / TLS errors are not channel-mismatch problems —
+            // retrying without a channel just produces a confusing chained
+            // error and a misleading remediation hint.
+            // arch-lint: allow(no-error-swallowing) reason="404 falls through to default-channel retry below; non-404s are propagated by the next arm"
+            Err(e) if action_is_404(&e) => {
                 eprintln!(
-                    "Origin {uuid} not available on channel {ch} ({e}); \
+                    "Origin {uuid} not available on channel {ch}; \
                      retrying against the updates server's default channel..."
                 );
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(e)).with_context(|| {
+                    format!(
+                        "failed to import origin image {uuid} from {updates_url} \
+                         (channel={ch})"
+                    )
+                });
             }
         }
     }
@@ -126,13 +148,38 @@ async fn import_remote_with_channel_fallback(
 /// Poll local IMGAPI until the image reaches "active" state. The
 /// import-remote action is async: the image may 404 at first, then appear
 /// as "unactivated", then become "active".
+///
+/// 404 is the expected "not yet imported" signal. Other errors (5xx,
+/// transport, auth) mean the local IMGAPI itself is broken; we tolerate a
+/// brief blip but bail out rather than print dots for 4 minutes and then
+/// claim a "timeout" — that masks the real failure.
 async fn wait_for_image_active(client: &imgapi_client::Client, uuid: Uuid) -> Result<()> {
+    const NON_404_TOLERANCE: usize = 3;
+    let mut consecutive_non_404 = 0usize;
     for _ in 0..120 {
-        if let Ok(resp) = client.get_image().uuid(uuid).send().await
-            && resp.into_inner().state == imgapi_client::types::ImageState::Active
-        {
-            eprintln!();
-            return Ok(());
+        match client.get_image().uuid(uuid).send().await {
+            Ok(resp) => {
+                consecutive_non_404 = 0;
+                if resp.into_inner().state == imgapi_client::types::ImageState::Active {
+                    eprintln!();
+                    return Ok(());
+                }
+            }
+            Err(e) if is_404(&e) => {
+                consecutive_non_404 = 0;
+            }
+            Err(e) => {
+                consecutive_non_404 += 1;
+                if consecutive_non_404 >= NON_404_TOLERANCE {
+                    eprintln!();
+                    return Err(e).with_context(|| {
+                        format!(
+                            "local IMGAPI returned non-404 errors {NON_404_TOLERANCE} times \
+                             in a row while waiting for {uuid} to become active"
+                        )
+                    });
+                }
+            }
         }
         eprint!(".");
         std::io::stderr().flush().ok();
