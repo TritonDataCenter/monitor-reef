@@ -48,25 +48,32 @@ async fn cmd_dc_maint_status(sapi_url: &str, json: bool) -> Result<()> {
         .into_inner();
     let sdc_app = apps.first().context("no 'sdc' application found in SAPI")?;
 
-    // Check cloudapi service for CLOUDAPI_READONLY
-    let cloudapi_maint = match sapi.list_services().name("cloudapi").send().await {
-        Ok(resp) => resp
-            .into_inner()
-            .first()
-            .and_then(|svc| svc.metadata.as_ref()?.get("CLOUDAPI_READONLY")?.as_bool())
-            .unwrap_or(false),
-        Err(_) => false,
-    };
+    // Check cloudapi service for CLOUDAPI_READONLY. `list_services(name=...)`
+    // returns an empty list (not 404) when the service isn't deployed, so any
+    // error here is a genuine SAPI failure — we must not silently report
+    // "off" because we couldn't read the state.
+    let cloudapi_maint = sapi
+        .list_services()
+        .name("cloudapi")
+        .send()
+        .await
+        .context("failed to read cloudapi service from SAPI")?
+        .into_inner()
+        .first()
+        .and_then(|svc| svc.metadata.as_ref()?.get("CLOUDAPI_READONLY")?.as_bool())
+        .unwrap_or(false);
 
-    // Check docker service for DOCKER_READONLY
-    let docker_maint = match sapi.list_services().name("docker").send().await {
-        Ok(resp) => resp
-            .into_inner()
-            .first()
-            .and_then(|svc| svc.metadata.as_ref()?.get("DOCKER_READONLY")?.as_bool())
-            .unwrap_or(false),
-        Err(_) => false,
-    };
+    // Check docker service for DOCKER_READONLY (same rationale as above).
+    let docker_maint = sapi
+        .list_services()
+        .name("docker")
+        .send()
+        .await
+        .context("failed to read docker service from SAPI")?
+        .into_inner()
+        .first()
+        .and_then(|svc| svc.metadata.as_ref()?.get("DOCKER_READONLY")?.as_bool())
+        .unwrap_or(false);
 
     let maint = cloudapi_maint || docker_maint;
 
