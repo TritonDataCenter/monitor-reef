@@ -20,7 +20,7 @@ use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode, jwk};
 use p256::pkcs8::DecodePublicKey;
 use secrecy::{ExposeSecret, SecretString};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -29,6 +29,48 @@ use uuid::Uuid;
 /// Maximum number of refresh tokens a single user may hold at once.
 /// When exceeded, the oldest tokens (by expiry) are evicted.
 const MAX_REFRESH_TOKENS_PER_USER: usize = 5;
+
+/// Literal value of the `purpose` claim in a 2FA challenge token.
+/// Verification rejects any other value, which is what stops a token
+/// signed by the same key but issued for a different purpose (e.g.,
+/// an access token) from being accepted at the verify-2FA endpoint.
+const CHALLENGE_PURPOSE: &str = "2fa-pending";
+
+/// Challenge-token lifetime. Long enough that a user can realistically
+/// switch to their authenticator app and read off a code, short enough
+/// that a leaked challenge token has a narrow replay window.
+const CHALLENGE_TTL_SECS: u64 = 300;
+
+/// Claims carried by the short-lived token issued between password
+/// verification and TOTP verification.
+///
+/// Deliberately does not include `roles` or the `is_admin` claim that
+/// access tokens carry: those are looked up from mahi *after* TOTP
+/// succeeds, so a leaked challenge token can never elevate. The
+/// missing fields also mean an access-token decoder
+/// ([`Claims`]) will fail to deserialize a challenge token outright,
+/// providing structural separation in addition to the `purpose`
+/// check.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeClaims {
+    /// JWT subject — the authenticating user's UUID. Same field name
+    /// as [`Claims::sub`] so callers can use a uniform accessor.
+    pub sub: Uuid,
+    /// The user's login. Re-use here saves an LDAP roundtrip in the
+    /// verify handler when it goes on to call `mahi.lookup`.
+    pub username: String,
+    /// Always [`CHALLENGE_PURPOSE`].
+    pub purpose: String,
+    pub exp: i64,
+    pub iat: i64,
+    pub jti: String,
+}
+
+impl ChallengeClaims {
+    pub fn user_uuid(&self) -> Uuid {
+        self.sub
+    }
+}
 
 /// JWT service configuration.
 pub struct JwtConfig {
@@ -104,6 +146,20 @@ impl JwtVerifier {
         let mut validation = self.validation.clone();
         validation.validate_exp = false;
         let data = decode::<Claims>(token, &self.decoding_key, &validation)?;
+        Ok(data.claims)
+    }
+
+    /// Verify a 2FA challenge token. Checks signature, expiry, and
+    /// the `purpose` claim — the last gate is what makes this method
+    /// distinct from [`Self::verify_token`] even though both use the
+    /// same key. A challenge token decoded here, then routed through
+    /// `verify_token`, would fail because [`Claims`] requires
+    /// `roles` and `is_admin` fields the challenge does not carry.
+    pub fn verify_challenge_token(&self, token: &str) -> SessionResult<ChallengeClaims> {
+        let data = decode::<ChallengeClaims>(token, &self.decoding_key, &self.validation)?;
+        if data.claims.purpose != CHALLENGE_PURPOSE {
+            return Err(SessionError::InvalidToken);
+        }
         Ok(data.claims)
     }
 }
@@ -189,6 +245,28 @@ impl JwtService {
 
     pub fn decode_ignoring_expiry(&self, token: &str) -> SessionResult<Claims> {
         self.verifier.decode_ignoring_expiry(token)
+    }
+
+    /// Issue a short-lived challenge token after password verification
+    /// but before TOTP verification. The token carries enough identity
+    /// (`sub`, `username`) for the verify handler to re-read the TOTP
+    /// secret from UFDS and call mahi, but no roles / admin flag —
+    /// those come from mahi *after* TOTP succeeds.
+    pub fn create_challenge_token(&self, user_uuid: Uuid, username: &str) -> SessionResult<String> {
+        let now = Utc::now().timestamp();
+        let claims = ChallengeClaims {
+            sub: user_uuid,
+            username: username.to_string(),
+            purpose: CHALLENGE_PURPOSE.to_string(),
+            exp: now + CHALLENGE_TTL_SECS as i64,
+            iat: now,
+            jti: Uuid::new_v4().to_string(),
+        };
+        Ok(encode(&self.header, &claims, &self.encoding_key)?)
+    }
+
+    pub fn verify_challenge_token(&self, token: &str) -> SessionResult<ChallengeClaims> {
+        self.verifier.verify_challenge_token(token)
     }
 
     pub async fn create_refresh_token(
@@ -536,5 +614,91 @@ mod tests {
         let other = JwtService::new(&test_config()).unwrap();
         let token = other.create_token(Uuid::new_v4(), "eve", &[]).unwrap();
         assert!(svc.verify_token(&token).is_err());
+    }
+
+    #[test]
+    fn challenge_token_round_trips() {
+        let svc = JwtService::new(&test_config()).unwrap();
+        let user_id = Uuid::new_v4();
+        let token = svc.create_challenge_token(user_id, "alice").unwrap();
+        let claims = svc.verify_challenge_token(&token).unwrap();
+        assert_eq!(claims.user_uuid(), user_id);
+        assert_eq!(claims.username, "alice");
+        assert_eq!(claims.purpose, CHALLENGE_PURPOSE);
+        assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn challenge_token_rejected_as_access_token() {
+        // The structural separation: a challenge claim set is missing
+        // `roles` and the `is_admin` field, so attempting to decode it
+        // as `Claims` fails before any policy decision reaches our code.
+        let svc = JwtService::new(&test_config()).unwrap();
+        let token = svc.create_challenge_token(Uuid::new_v4(), "alice").unwrap();
+        assert!(svc.verify_token(&token).is_err());
+    }
+
+    #[test]
+    fn access_token_rejected_as_challenge_token() {
+        // The mirror: an access token has no `purpose` claim, which is
+        // a required field on `ChallengeClaims`, so decoding fails.
+        let svc = JwtService::new(&test_config()).unwrap();
+        let token = svc
+            .create_token(Uuid::new_v4(), "alice", &[Role::Unknown])
+            .unwrap();
+        assert!(svc.verify_challenge_token(&token).is_err());
+    }
+
+    #[test]
+    fn challenge_token_with_wrong_purpose_rejected() {
+        // Forge a `ChallengeClaims` with a different `purpose`, sign
+        // with the correct key, and confirm the verifier rejects it.
+        // This is the defense-in-depth check that catches
+        // hypothetical future token types signed by the same key.
+        let svc = JwtService::new(&test_config()).unwrap();
+        let now = Utc::now().timestamp();
+        let claims = ChallengeClaims {
+            sub: Uuid::new_v4(),
+            username: "alice".to_string(),
+            purpose: "something-else".to_string(),
+            exp: now + 60,
+            iat: now,
+            jti: Uuid::new_v4().to_string(),
+        };
+        let token = encode(&svc.header, &claims, &svc.encoding_key).unwrap();
+        assert!(svc.verify_challenge_token(&token).is_err());
+    }
+
+    #[test]
+    fn challenge_token_expiry_enforced() {
+        // Sign a `ChallengeClaims` with `exp` in the past and confirm
+        // the standard JWT validator rejects it before the purpose
+        // check ever runs.
+        let svc = JwtService::new(&test_config()).unwrap();
+        let now = Utc::now().timestamp();
+        // Use a far-past `exp` rather than `now - 60` — jsonwebtoken's
+        // default `Validation` allows up to 60 seconds of clock skew,
+        // so a marginally-past exp can still verify on a busy CI box.
+        let claims = ChallengeClaims {
+            sub: Uuid::new_v4(),
+            username: "alice".to_string(),
+            purpose: CHALLENGE_PURPOSE.to_string(),
+            exp: now - 3600,
+            iat: now - 3700,
+            jti: Uuid::new_v4().to_string(),
+        };
+        let token = encode(&svc.header, &claims, &svc.encoding_key).unwrap();
+        let err = svc
+            .verify_challenge_token(&token)
+            .expect_err("expired challenge must be rejected");
+        assert!(matches!(err, SessionError::TokenExpired), "got {err:?}");
+    }
+
+    #[test]
+    fn challenge_token_from_different_issuer_rejected() {
+        let svc = JwtService::new(&test_config()).unwrap();
+        let other = JwtService::new(&test_config()).unwrap();
+        let token = other.create_challenge_token(Uuid::new_v4(), "eve").unwrap();
+        assert!(svc.verify_challenge_token(&token).is_err());
     }
 }
