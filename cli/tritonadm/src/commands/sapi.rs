@@ -49,7 +49,8 @@ pub enum SapiCommand {
     #[command(name = "set-mode")]
     SetMode {
         /// Mode to set
-        mode: String,
+        #[arg(value_enum)]
+        mode: types::SapiMode,
         /// Output raw JSON
         #[arg(long)]
         raw: bool,
@@ -145,8 +146,8 @@ pub enum SapiCommand {
         /// Application UUID
         uuid: Uuid,
         /// Action: update (default), replace, or delete
-        #[arg(long)]
-        action: Option<String>,
+        #[arg(long, value_enum)]
+        action: Option<types::UpdateAction>,
         /// JSON params object
         #[arg(long)]
         params: Option<String>,
@@ -187,8 +188,8 @@ pub enum SapiCommand {
         #[arg(long)]
         application_uuid: Option<Uuid>,
         /// Filter by type (vm or agent)
-        #[arg(long)]
-        service_type: Option<String>,
+        #[arg(long, value_enum)]
+        service_type: Option<types::ServiceType>,
         /// Include master records from remote datacenter
         #[arg(long)]
         include_master: bool,
@@ -217,8 +218,8 @@ pub enum SapiCommand {
         #[arg(long)]
         application_uuid: Uuid,
         /// Service type (vm or agent)
-        #[arg(long)]
-        service_type: Option<String>,
+        #[arg(long, value_enum)]
+        service_type: Option<types::ServiceType>,
         /// JSON params object
         #[arg(long)]
         params: Option<String>,
@@ -239,8 +240,8 @@ pub enum SapiCommand {
         /// Service UUID
         uuid: Uuid,
         /// Action: update (default), replace, or delete
-        #[arg(long)]
-        action: Option<String>,
+        #[arg(long, value_enum)]
+        action: Option<types::UpdateAction>,
         /// JSON params object
         #[arg(long)]
         params: Option<String>,
@@ -272,8 +273,8 @@ pub enum SapiCommand {
         #[arg(long)]
         service_uuid: Option<Uuid>,
         /// Filter by type (vm or agent)
-        #[arg(long)]
-        instance_type: Option<String>,
+        #[arg(long, value_enum)]
+        instance_type: Option<types::ServiceType>,
         /// Include master records from remote datacenter
         #[arg(long)]
         include_master: bool,
@@ -324,8 +325,8 @@ pub enum SapiCommand {
         /// Instance UUID
         uuid: Uuid,
         /// Action: update (default), replace, or delete
-        #[arg(long)]
-        action: Option<String>,
+        #[arg(long, value_enum)]
+        action: Option<types::UpdateAction>,
         /// JSON params object
         #[arg(long)]
         params: Option<String>,
@@ -455,25 +456,6 @@ fn parse_string_map(s: &str) -> Result<std::collections::HashMap<String, String>
     Ok(serde_json::from_str(s)?)
 }
 
-/// Parse a service type string into a ServiceType.
-fn parse_service_type(s: &str) -> Result<types::ServiceType> {
-    match s {
-        "vm" => Ok(types::ServiceType::Vm),
-        "agent" => Ok(types::ServiceType::Agent),
-        other => anyhow::bail!("Invalid service type: {other}. Must be vm or agent"),
-    }
-}
-
-/// Parse an action string into an UpdateAction.
-fn parse_action(s: &str) -> Result<types::UpdateAction> {
-    match s {
-        "update" => Ok(types::UpdateAction::Update),
-        "replace" => Ok(types::UpdateAction::Replace),
-        "delete" => Ok(types::UpdateAction::Delete),
-        other => anyhow::bail!("Invalid action: {other}. Must be update, replace, or delete"),
-    }
-}
-
 impl SapiCommand {
     pub async fn run(self, sapi_url: &str) -> Result<()> {
         let client = sapi_client::build_client(sapi_url, false)
@@ -517,12 +499,7 @@ impl SapiCommand {
                 }
             }
             SapiCommand::SetMode { mode, raw: _ } => {
-                let sapi_mode = match mode.as_str() {
-                    "full" => types::SapiMode::Full,
-                    "proto" => types::SapiMode::Proto,
-                    other => anyhow::bail!("Invalid mode: {other}. Must be full or proto"),
-                };
-                let body = types::SetModeBody { mode: sapi_mode };
+                let body = types::SetModeBody { mode };
                 client
                     .set_mode()
                     .body(body)
@@ -667,7 +644,7 @@ impl SapiCommand {
                 raw,
             } => {
                 let body = types::UpdateApplicationBody {
-                    action: action.as_deref().map(parse_action).transpose()?,
+                    action,
                     params: params.as_deref().map(parse_json_map).transpose()?,
                     metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                     metadata_schema: metadata_schema.as_deref().map(parse_json_map).transpose()?,
@@ -715,8 +692,8 @@ impl SapiCommand {
                 if let Some(au) = application_uuid {
                     req = req.application_uuid(au);
                 }
-                if let Some(ref st) = service_type {
-                    req = req.type_(parse_service_type(st)?);
+                if let Some(st) = service_type {
+                    req = req.type_(st);
                 }
                 if include_master {
                     req = req.include_master(true);
@@ -770,10 +747,7 @@ impl SapiCommand {
                     name,
                     application_uuid,
                     uuid: None,
-                    type_: service_type
-                        .as_deref()
-                        .map(parse_service_type)
-                        .transpose()?,
+                    type_: service_type,
                     params: params.as_deref().map(parse_json_map).transpose()?,
                     metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                     manifests: manifests.as_deref().map(parse_string_map).transpose()?,
@@ -801,7 +775,7 @@ impl SapiCommand {
                 raw,
             } => {
                 let body = types::UpdateServiceBody {
-                    action: action.as_deref().map(parse_action).transpose()?,
+                    action,
                     params: params.as_deref().map(parse_json_map).transpose()?,
                     metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                     manifests: manifests.as_deref().map(parse_string_map).transpose()?,
@@ -843,8 +817,8 @@ impl SapiCommand {
                 if let Some(su) = service_uuid {
                     req = req.service_uuid(su);
                 }
-                if let Some(ref it) = instance_type {
-                    req = req.type_(parse_service_type(it)?);
+                if let Some(it) = instance_type {
+                    req = req.type_(it);
                 }
                 if include_master {
                     req = req.include_master(true);
@@ -931,7 +905,7 @@ impl SapiCommand {
                 raw,
             } => {
                 let body = types::UpdateInstanceBody {
-                    action: action.as_deref().map(parse_action).transpose()?,
+                    action,
                     params: params.as_deref().map(parse_json_map).transpose()?,
                     metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                     manifests: manifests.as_deref().map(parse_string_map).transpose()?,
