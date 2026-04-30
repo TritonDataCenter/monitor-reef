@@ -12,7 +12,7 @@
 //! separately from the Mahi auth cache (see [`crate::mahi`]).
 
 use crate::error::{SessionError, SessionResult};
-use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, Scope, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, Scope, SearchEntry, SearchResult};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU64;
@@ -223,6 +223,129 @@ impl LdapService {
             }
         }
     }
+
+    /// Read a single value from a UFDS capimetadata entry.
+    ///
+    /// Looks up `metadata=<namespace>, uuid=<user_uuid>, <search_base>`
+    /// (the canonical SmartDC capi-metadata DN layout) with a base-scoped
+    /// search and returns the JSON-decoded value of the requested
+    /// attribute `key`.
+    ///
+    /// Returns `Ok(None)` when the metadata entry does not exist
+    /// (LDAP `noSuchObject`, rc=32) or when the requested key is
+    /// absent from an entry that does exist — both are common
+    /// "no metadata of this kind" cases. Returns `Err` on connection
+    /// or protocol failures, and on stored values that fail to parse
+    /// as JSON.
+    ///
+    /// `namespace` and `key` are interpolated without LDAP-special
+    /// escaping; both are expected to be trusted constants chosen by
+    /// callers (e.g. `"portal"` / `"usemoresecurity"`). The UUID
+    /// renders as lowercase hex via `Display`, which is safe in DN
+    /// position.
+    pub async fn read_user_metadata_value(
+        &self,
+        user_uuid: Uuid,
+        namespace: &str,
+        key: &str,
+    ) -> SessionResult<Option<serde_json::Value>> {
+        let mut ldap = self.connect().await?;
+        self.bind_admin(&mut ldap).await?;
+
+        let dn = {
+            let config = self.config.read().await;
+            format!(
+                "metadata={}, uuid={}, {}",
+                namespace, user_uuid, config.search_base
+            )
+        };
+
+        let search = ldap
+            .search(&dn, Scope::Base, "(objectclass=capimetadata)", vec![key])
+            .await;
+
+        // arch-lint: allow(no-error-swallowing) reason="Unbind failure is non-fatal; connection is being dropped"
+        if let Err(e) = ldap.unbind().await {
+            warn!("LDAP unbind failed after metadata read: {e}");
+        }
+
+        let SearchResult(rs, res) = search.map_err(|e| {
+            error!(dn = %dn, "LDAP metadata search error: {e}");
+            SessionError::LdapUnavailable(format!("LDAP metadata search failed: {e}"))
+        })?;
+
+        match res.rc {
+            0 => {
+                let Some(raw_entry) = rs.into_iter().next() else {
+                    return Ok(None);
+                };
+                let entry = SearchEntry::construct(raw_entry);
+                extract_metadata_value(&entry, key)
+            }
+            // 32 = noSuchObject. The user has no capimetadata at all,
+            // or no metadata under this namespace. Treat as
+            // "not present" — that's the common case for users who
+            // are not enrolled in 2FA.
+            32 => Ok(None),
+            rc => {
+                error!(dn = %dn, rc, "LDAP metadata search non-success: {}", res.text);
+                Err(SessionError::LdapUnavailable(format!(
+                    "LDAP metadata search rc={rc}: {}",
+                    res.text
+                )))
+            }
+        }
+    }
+
+    /// Read the TOTP shared secret for `user_uuid` from the UFDS
+    /// portal namespace, returning the base32-encoded secret if the
+    /// user is enrolled in two-factor authentication.
+    ///
+    /// The DN, namespace, and metadata key are all the ones piranha
+    /// writes to today (`metadata=portal,…`, attribute
+    /// `usemoresecurity`, JSON payload `{"secretkey": "<BASE32>"}`),
+    /// so any existing piranha enrollment is honoured without
+    /// migration. See the project memory note
+    /// `project_tritonapi_2fa_namespace.md` for the namespace-sharing
+    /// decision.
+    ///
+    /// `Ok(None)` covers all of: no capimetadata entry, no
+    /// `usemoresecurity` attribute, missing `secretkey` field, and
+    /// empty `secretkey` value. The last two address the disable
+    /// path in piranha, which clears the secret rather than removing
+    /// the entry.
+    pub async fn read_totp_secret(&self, user_uuid: Uuid) -> SessionResult<Option<String>> {
+        let metadata = match self
+            .read_user_metadata_value(user_uuid, "portal", "usemoresecurity")
+            .await?
+        {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        Ok(extract_secretkey(&metadata))
+    }
+}
+
+fn extract_metadata_value(
+    entry: &SearchEntry,
+    key: &str,
+) -> SessionResult<Option<serde_json::Value>> {
+    let Some(raw) = entry.attrs.get(key).and_then(|v| v.first()) else {
+        return Ok(None);
+    };
+    serde_json::from_str(raw).map(Some).map_err(|e| {
+        SessionError::Internal(format!(
+            "UFDS metadata attribute {key:?} is not valid JSON: {e}"
+        ))
+    })
+}
+
+fn extract_secretkey(metadata: &serde_json::Value) -> Option<String> {
+    metadata
+        .get("secretkey")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -276,6 +399,69 @@ mod tests {
         assert_eq!(
             user.uuid,
             Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap()
+        );
+    }
+
+    /// Build a `SearchEntry` carrying the given attribute name + raw
+    /// value, with an arbitrary DN. Used by the metadata-extraction
+    /// tests below — they exercise pure parsing logic, the DN is just
+    /// a label.
+    fn metadata_entry(attr: &str, value: &str) -> SearchEntry {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(attr.to_string(), vec![value.to_string()]);
+        SearchEntry {
+            dn: "metadata=portal, uuid=00000000-0000-0000-0000-000000000000, ou=users, o=smartdc"
+                .to_string(),
+            attrs,
+            bin_attrs: std::collections::HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn extract_metadata_value_returns_none_when_attr_absent() {
+        let entry = metadata_entry("other_key", "irrelevant");
+        let value = extract_metadata_value(&entry, "usemoresecurity").unwrap();
+        assert!(value.is_none());
+    }
+
+    #[test]
+    fn extract_metadata_value_parses_piranha_payload() {
+        let entry = metadata_entry(
+            "usemoresecurity",
+            r#"{"secretkey":"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"}"#,
+        );
+        let value = extract_metadata_value(&entry, "usemoresecurity")
+            .unwrap()
+            .expect("value present");
+        assert_eq!(value["secretkey"], "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+    }
+
+    #[test]
+    fn extract_metadata_value_internal_error_on_non_json() {
+        let entry = metadata_entry("usemoresecurity", "not json at all");
+        let err = extract_metadata_value(&entry, "usemoresecurity")
+            .expect_err("non-JSON value must surface as Err");
+        assert!(matches!(err, SessionError::Internal(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn extract_secretkey_handles_disable_path() {
+        // Piranha clears the secret on disable rather than removing
+        // the metadata entry; an empty secretkey should read as
+        // "not enrolled" rather than a malformed-secret error.
+        let cleared = serde_json::json!({ "secretkey": "" });
+        assert!(extract_secretkey(&cleared).is_none());
+
+        let missing = serde_json::json!({ "other": "field" });
+        assert!(extract_secretkey(&missing).is_none());
+
+        let null = serde_json::json!({ "secretkey": null });
+        assert!(extract_secretkey(&null).is_none());
+
+        let valid = serde_json::json!({ "secretkey": "GEZDGNBVGY3TQOJQ" });
+        assert_eq!(
+            extract_secretkey(&valid).as_deref(),
+            Some("GEZDGNBVGY3TQOJQ")
         );
     }
 }
