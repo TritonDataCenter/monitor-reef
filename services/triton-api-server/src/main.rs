@@ -15,13 +15,14 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use tracing::{info, warn};
 use triton_api::{
-    Jwk, JwkSet, LoginRequest, LoginResponse, LogoutResponse, PingResponse, RefreshRequest,
-    RefreshResponse, SessionResponse, TritonApi, UserInfo,
+    ChallengeMethod, Jwk, JwkSet, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
+    LoginVerifyRequest, LogoutResponse, PingResponse, RefreshRequest, RefreshResponse,
+    SessionResponse, TritonApi, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
     JwtConfig as SessionJwtConfig, JwtService, LdapConfig as SessionLdapConfig, LdapService,
-    MahiService, Role, SessionError,
+    MahiService, Role, SessionError, verify_totp,
 };
 
 /// Default request body size limit: 10 MiB.
@@ -158,7 +159,7 @@ impl TritonApi for TritonApiImpl {
     async fn auth_login(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<LoginRequest>,
-    ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+    ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginOutcome>>, HttpError> {
         let ctx = rqctx.context();
         let jwt = ctx.jwt.as_ref().ok_or_else(auth_unavailable)?;
         let ldap = ctx.ldap.as_ref().ok_or_else(auth_unavailable)?;
@@ -170,12 +171,79 @@ impl TritonApi for TritonApiImpl {
             .await
             .map_err(session_error_to_http)?;
 
+        // 2FA gate: if the user has a TOTP secret stored under the
+        // `portal/usemoresecurity` UFDS metadata key, hold off on
+        // mahi + token issuance and return a challenge instead. The
+        // verify endpoint will re-read the secret and finish the
+        // session after the user proves possession of the code.
+        if ldap
+            .read_totp_secret(user.uuid)
+            .await
+            .map_err(session_error_to_http)?
+            .is_some()
+        {
+            let challenge_token = jwt
+                .create_challenge_token(user.uuid, &user.login)
+                .map_err(session_error_to_http)?;
+            // No cookie is set here — the session does not exist
+            // yet. The cookie ships with the LoginResponse returned
+            // by /v1/auth/login/verify.
+            return Ok(HttpResponseHeaders::new_unnamed(HttpResponseOk(
+                LoginOutcome::ChallengeRequired(LoginChallenge {
+                    challenge_token,
+                    methods: vec![ChallengeMethod::Totp],
+                }),
+            )));
+        }
+
         // Password is verified; mahi now provides the canonical operator /
         // group view. A 404 here would mean mahi hasn't caught up with a
         // brand-new user yet; MahiService maps that to AuthenticationFailed
         // so the client can retry.
         let auth_info = mahi
             .lookup(&user.login)
+            .await
+            .map_err(session_error_to_http)?;
+        issue_login_outcome(jwt, &auth_info, ctx.cookie_secure).await
+    }
+
+    async fn auth_login_verify(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<LoginVerifyRequest>,
+    ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+        let ctx = rqctx.context();
+        let jwt = ctx.jwt.as_ref().ok_or_else(auth_unavailable)?;
+        let ldap = ctx.ldap.as_ref().ok_or_else(auth_unavailable)?;
+        let mahi = ctx.mahi.as_ref().ok_or_else(auth_unavailable)?;
+
+        let req = body.into_inner();
+        let claims = jwt
+            .verify_challenge_token(&req.challenge_token)
+            .map_err(session_error_to_http)?;
+
+        // Re-read the TOTP secret on the server every time. The
+        // challenge token deliberately does not carry the secret —
+        // that would put it on the wire on every challenge issuance,
+        // and it would also let an offline attacker who got both the
+        // public verifier key and one challenge brute-force the
+        // secret. Re-reading also means that if the user disabled
+        // 2FA between login and verify, we fail closed rather than
+        // letting them in without proving possession of the second
+        // factor.
+        let secret = ldap
+            .read_totp_secret(claims.user_uuid())
+            .await
+            .map_err(session_error_to_http)?
+            .ok_or(SessionError::AuthenticationFailed)
+            .map_err(session_error_to_http)?;
+
+        let valid = verify_totp(&secret, &req.code).map_err(session_error_to_http)?;
+        if !valid {
+            return Err(session_error_to_http(SessionError::AuthenticationFailed));
+        }
+
+        let auth_info = mahi
+            .lookup(&claims.username)
             .await
             .map_err(session_error_to_http)?;
         issue_login_response(jwt, &auth_info, ctx.cookie_secure).await
@@ -653,16 +721,16 @@ async fn issue_subuser_login_response(
     Ok(response)
 }
 
-/// Issue `(access_token, refresh_token, user_info)` from a verified
-/// mahi account record, plus the `Set-Cookie` header for browser
-/// clients. Shared tail of `auth_login` (password-verified) and
-/// `auth_login_ssh` (signature-verified); everything past the auth
-/// primitive is identical.
-async fn issue_login_response(
+/// Build the `LoginResponse` body for a verified mahi account: mint
+/// access + refresh tokens, derive `is_admin` from group / operator
+/// status, and assemble `UserInfo`. Shared by both response wrappers
+/// below; the wrappers are the only places that decide which outer
+/// shape (`LoginResponse` vs `LoginOutcome::Complete`) and which
+/// cookie behaviour is appropriate for the caller.
+async fn build_login_response(
     jwt: &JwtService,
     auth_info: &triton_auth_session::AuthInfo,
-    cookie_secure: bool,
-) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+) -> Result<LoginResponse, HttpError> {
     let account = &auth_info.account;
     let roles: Vec<Role> = account
         .groups
@@ -690,12 +758,40 @@ async fn issue_login_response(
         is_admin,
     };
 
-    let cookie = build_auth_cookie(&token, jwt.access_ttl_secs(), cookie_secure);
-    let mut response = HttpResponseHeaders::new_unnamed(HttpResponseOk(LoginResponse {
+    Ok(LoginResponse {
         token,
         refresh_token,
         user: user_info,
-    }));
+    })
+}
+
+/// Wrap [`build_login_response`] in `HttpResponseHeaders<HttpResponseOk<LoginResponse>>`
+/// with the auth cookie set. Used by the SSH-login path and by the
+/// 2FA verify path — both yield a flat `LoginResponse`.
+async fn issue_login_response(
+    jwt: &JwtService,
+    auth_info: &triton_auth_session::AuthInfo,
+    cookie_secure: bool,
+) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+    let body = build_login_response(jwt, auth_info).await?;
+    let cookie = build_auth_cookie(&body.token, jwt.access_ttl_secs(), cookie_secure);
+    let mut response = HttpResponseHeaders::new_unnamed(HttpResponseOk(body));
+    set_cookie_header(response.headers_mut(), cookie);
+    Ok(response)
+}
+
+/// Wrap [`build_login_response`] in `LoginOutcome::Complete` for the
+/// password-login path. Same cookie behaviour as
+/// [`issue_login_response`]; only the outer wire shape differs.
+async fn issue_login_outcome(
+    jwt: &JwtService,
+    auth_info: &triton_auth_session::AuthInfo,
+    cookie_secure: bool,
+) -> Result<HttpResponseHeaders<HttpResponseOk<LoginOutcome>>, HttpError> {
+    let body = build_login_response(jwt, auth_info).await?;
+    let cookie = build_auth_cookie(&body.token, jwt.access_ttl_secs(), cookie_secure);
+    let mut response =
+        HttpResponseHeaders::new_unnamed(HttpResponseOk(LoginOutcome::Complete(body)));
     set_cookie_header(response.headers_mut(), cookie);
     Ok(response)
 }

@@ -21,7 +21,9 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-/// `POST /v1/auth/login` response body.
+/// `POST /v1/auth/login` response body when the password is correct
+/// and no second factor is required. Also the response body of
+/// `POST /v1/auth/login/verify` (which always completes a session).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LoginResponse {
     /// Short-lived ES256 JWT access token.
@@ -30,6 +32,66 @@ pub struct LoginResponse {
     /// for a new (token, refresh_token) pair.
     pub refresh_token: String,
     pub user: UserInfo,
+}
+
+/// Outcome of `POST /v1/auth/login`.
+///
+/// Tagged on the wire by the `outcome` field. The common case is
+/// `complete`: the password verified, no second factor is enrolled,
+/// and the response carries the same fields a non-2FA `LoginResponse`
+/// always has. Users enrolled in 2FA receive `challenge_required`,
+/// must read a code from their authenticator, and post it together
+/// with the `challenge_token` to `/v1/auth/login/verify` to obtain a
+/// `LoginResponse`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum LoginOutcome {
+    /// Authentication is complete; tokens are issued.
+    Complete(LoginResponse),
+    /// Authentication needs a second factor before tokens are
+    /// issued. Carry the `challenge_token` to `/v1/auth/login/verify`.
+    ChallengeRequired(LoginChallenge),
+}
+
+/// Body of a `LoginOutcome::ChallengeRequired` outcome.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoginChallenge {
+    /// Short-lived signed token. The client posts this verbatim
+    /// alongside the second-factor code to `/v1/auth/login/verify`.
+    /// Treat as opaque — the token's claims and TTL are server-side
+    /// implementation details.
+    pub challenge_token: String,
+    /// Methods the client may use to satisfy the challenge. v1 only
+    /// emits `[totp]`, but clients should tolerate additional values
+    /// via the `Unknown` variant rather than failing closed.
+    pub methods: Vec<ChallengeMethod>,
+}
+
+/// Second-factor authentication method offered for a login challenge.
+///
+/// Forward-compatible: clients deserialising an older binary can
+/// receive new method names from a newer server and round-trip them
+/// through `Unknown` rather than failing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChallengeMethod {
+    /// Time-based one-time password (RFC 6238). Currently the only
+    /// method tritonapi issues challenges for.
+    Totp,
+    /// Catch-all for forward compatibility; an unrecognised method
+    /// from a newer server.
+    #[serde(other)]
+    Unknown,
+}
+
+/// `POST /v1/auth/login/verify` request body.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoginVerifyRequest {
+    /// The exact `challenge_token` value from the
+    /// `ChallengeRequired` outcome. Treated as opaque.
+    pub challenge_token: String,
+    /// 6-digit code from the user's authenticator app.
+    pub code: String,
 }
 
 /// `POST /v1/auth/refresh` request body.

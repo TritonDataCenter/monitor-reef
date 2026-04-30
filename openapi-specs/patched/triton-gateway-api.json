@@ -325,6 +325,25 @@
         ],
         "type": "string"
       },
+      "ChallengeMethod": {
+        "description": "Second-factor authentication method offered for a login challenge.\n\nForward-compatible: clients deserialising an older binary can receive new method names from a newer server and round-trip them through `Unknown` rather than failing.",
+        "oneOf": [
+          {
+            "description": "Time-based one-time password (RFC 6238). Currently the only method tritonapi issues challenges for.",
+            "enum": [
+              "totp"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for forward compatibility; an unrecognised method from a newer server.",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
       "ChangePasswordRequest": {
         "description": "Request to change user password",
         "properties": {
@@ -1574,6 +1593,68 @@
         ],
         "type": "object"
       },
+      "LoginOutcome": {
+        "description": "Outcome of `POST /v1/auth/login`.\n\nTagged on the wire by the `outcome` field. The common case is `complete`: the password verified, no second factor is enrolled, and the response carries the same fields a non-2FA `LoginResponse` always has. Users enrolled in 2FA receive `challenge_required`, must read a code from their authenticator, and post it together with the `challenge_token` to `/v1/auth/login/verify` to obtain a `LoginResponse`.",
+        "oneOf": [
+          {
+            "description": "Authentication is complete; tokens are issued.",
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "complete"
+                ],
+                "type": "string"
+              },
+              "refresh_token": {
+                "description": "Single-use refresh token; present it to `POST /v1/auth/refresh` for a new (token, refresh_token) pair.",
+                "type": "string"
+              },
+              "token": {
+                "description": "Short-lived ES256 JWT access token.",
+                "type": "string"
+              },
+              "user": {
+                "$ref": "#/components/schemas/UserInfo"
+              }
+            },
+            "required": [
+              "outcome",
+              "refresh_token",
+              "token",
+              "user"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Authentication needs a second factor before tokens are issued. Carry the `challenge_token` to `/v1/auth/login/verify`.",
+            "properties": {
+              "challenge_token": {
+                "description": "Short-lived signed token. The client posts this verbatim alongside the second-factor code to `/v1/auth/login/verify`. Treat as opaque — the token's claims and TTL are server-side implementation details.",
+                "type": "string"
+              },
+              "methods": {
+                "description": "Methods the client may use to satisfy the challenge. v1 only emits `[totp]`, but clients should tolerate additional values via the `Unknown` variant rather than failing closed.",
+                "items": {
+                  "$ref": "#/components/schemas/ChallengeMethod"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "enum": [
+                  "challenge_required"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "challenge_token",
+              "methods",
+              "outcome"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "LoginRequest": {
         "description": "`POST /v1/auth/login` request body.",
         "properties": {
@@ -1591,7 +1672,7 @@
         "type": "object"
       },
       "LoginResponse": {
-        "description": "`POST /v1/auth/login` response body.",
+        "description": "`POST /v1/auth/login` response body when the password is correct and no second factor is required. Also the response body of `POST /v1/auth/login/verify` (which always completes a session).",
         "properties": {
           "refresh_token": {
             "description": "Single-use refresh token; present it to `POST /v1/auth/refresh` for a new (token, refresh_token) pair.",
@@ -1609,6 +1690,24 @@
           "refresh_token",
           "token",
           "user"
+        ],
+        "type": "object"
+      },
+      "LoginVerifyRequest": {
+        "description": "`POST /v1/auth/login/verify` request body.",
+        "properties": {
+          "challenge_token": {
+            "description": "The exact `challenge_token` value from the `ChallengeRequired` outcome. Treated as opaque.",
+            "type": "string"
+          },
+          "code": {
+            "description": "6-digit code from the user's authenticator app.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "code"
         ],
         "type": "object"
       },
@@ -3936,7 +4035,7 @@
     },
     "/v1/auth/login": {
       "post": {
-        "description": "On success the response body carries the tokens and a `Set-Cookie` header with the access token for browser clients. CLI clients can ignore the cookie and read the token from the JSON body.",
+        "description": "require a second factor.\n\nThe response body is a tagged [`LoginOutcome`]:\n\n* `complete` — password was correct and the user has no 2FA enrolment; the embedded fields are identical to the historical [`LoginResponse`] shape and a `Set-Cookie` header carries the access token for browser clients. * `challenge_required` — password was correct but the user has a second factor enrolled; the embedded [`LoginChallenge`] carries a `challenge_token` and the list of methods the client may use. The client must POST the `challenge_token` plus a code to `/v1/auth/login/verify`. No cookie is set on this branch since the session has not been established yet.",
         "operationId": "auth_login",
         "requestBody": {
           "content": {
@@ -3953,7 +4052,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LoginResponse"
+                  "$ref": "#/components/schemas/LoginOutcome"
                 }
               }
             },
@@ -3966,7 +4065,7 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "summary": "Authenticate an LDAP user and issue an access + refresh token pair.",
+        "summary": "Authenticate an LDAP user and either issue tokens directly or",
         "tags": [
           "auth"
         ]
@@ -3995,6 +4094,44 @@
           }
         },
         "summary": "Exchange a proof-of-SSH-key-ownership for an access + refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/login/verify": {
+      "post": {
+        "description": "second-factor code.\n\nCalled only when `/v1/auth/login` returned a `challenge_required` outcome. The server re-reads the user's TOTP secret from UFDS (it is never carried in the challenge), verifies the code, and returns the standard [`LoginResponse`] — same shape, same `Set-Cookie` semantics — that `/v1/auth/login` issues for non-2FA users.",
+        "operationId": "auth_login_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Complete a 2FA login by presenting the challenge token and a",
         "tags": [
           "auth"
         ]

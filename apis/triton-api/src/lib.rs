@@ -29,11 +29,22 @@ pub trait TritonApi {
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<PingResponse>, HttpError>;
 
-    /// Authenticate an LDAP user and issue an access + refresh token pair.
+    /// Authenticate an LDAP user and either issue tokens directly or
+    /// require a second factor.
     ///
-    /// On success the response body carries the tokens and a `Set-Cookie`
-    /// header with the access token for browser clients. CLI clients can
-    /// ignore the cookie and read the token from the JSON body.
+    /// The response body is a tagged [`LoginOutcome`]:
+    ///
+    ///   * `complete` — password was correct and the user has no 2FA
+    ///     enrolment; the embedded fields are identical to the
+    ///     historical [`LoginResponse`] shape and a `Set-Cookie`
+    ///     header carries the access token for browser clients.
+    ///   * `challenge_required` — password was correct but the user
+    ///     has a second factor enrolled; the embedded
+    ///     [`LoginChallenge`] carries a `challenge_token` and the
+    ///     list of methods the client may use. The client must POST
+    ///     the `challenge_token` plus a code to
+    ///     `/v1/auth/login/verify`. No cookie is set on this branch
+    ///     since the session has not been established yet.
     #[endpoint {
         method = POST,
         path = "/v1/auth/login",
@@ -42,6 +53,25 @@ pub trait TritonApi {
     async fn auth_login(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<LoginRequest>,
+    ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginOutcome>>, HttpError>;
+
+    /// Complete a 2FA login by presenting the challenge token and a
+    /// second-factor code.
+    ///
+    /// Called only when `/v1/auth/login` returned a
+    /// `challenge_required` outcome. The server re-reads the user's
+    /// TOTP secret from UFDS (it is never carried in the challenge),
+    /// verifies the code, and returns the standard [`LoginResponse`]
+    /// — same shape, same `Set-Cookie` semantics — that
+    /// `/v1/auth/login` issues for non-2FA users.
+    #[endpoint {
+        method = POST,
+        path = "/v1/auth/login/verify",
+        tags = ["auth"],
+    }]
+    async fn auth_login_verify(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<LoginVerifyRequest>,
     ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError>;
 
     /// Exchange a proof-of-SSH-key-ownership for an access + refresh
