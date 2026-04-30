@@ -873,6 +873,99 @@ pub mod types {
         }
     }
 
+    #[doc = "Second-factor authentication method offered for a login challenge.\n\nForward-compatible: clients deserialising an older binary can receive new method names from a newer server and round-trip them through `Unknown` rather than failing."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Second-factor authentication method offered for a login challenge.\\n\\nForward-compatible: clients deserialising an older binary can receive new method names from a newer server and round-trip them through `Unknown` rather than failing.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Time-based one-time password (RFC 6238). Currently the only method tritonapi issues challenges for.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"totp\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Catch-all for forward compatibility; an unrecognised method from a newer server.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum ChallengeMethod {
+        #[doc = "Time-based one-time password (RFC 6238). Currently the only method tritonapi issues challenges for."]
+        #[serde(rename = "totp")]
+        Totp,
+        #[doc = "Catch-all for forward compatibility; an unrecognised method from a newer server."]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for ChallengeMethod {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Totp => f.write_str("totp"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for ChallengeMethod {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "totp" => Ok(Self::Totp),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for ChallengeMethod {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for ChallengeMethod {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for ChallengeMethod {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Request to change user password"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4002,6 +4095,99 @@ pub mod types {
         }
     }
 
+    #[doc = "Outcome of `POST /v1/auth/login`.\n\nTagged on the wire by the `outcome` field. The common case is `complete`: the password verified, no second factor is enrolled, and the response carries the same fields a non-2FA `LoginResponse` always has. Users enrolled in 2FA receive `challenge_required`, must read a code from their authenticator, and post it together with the `challenge_token` to `/v1/auth/login/verify` to obtain a `LoginResponse`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Outcome of `POST /v1/auth/login`.\\n\\nTagged on the wire by the `outcome` field. The common case is `complete`: the password verified, no second factor is enrolled, and the response carries the same fields a non-2FA `LoginResponse` always has. Users enrolled in 2FA receive `challenge_required`, must read a code from their authenticator, and post it together with the `challenge_token` to `/v1/auth/login/verify` to obtain a `LoginResponse`.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Authentication is complete; tokens are issued.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"outcome\","]
+    #[doc = "        \"refresh_token\","]
+    #[doc = "        \"token\","]
+    #[doc = "        \"user\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"outcome\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"complete\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"refresh_token\": {"]
+    #[doc = "          \"description\": \"Single-use refresh token; present it to `POST /v1/auth/refresh` for a new (token, refresh_token) pair.\","]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        },"]
+    #[doc = "        \"token\": {"]
+    #[doc = "          \"description\": \"Short-lived ES256 JWT access token.\","]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        },"]
+    #[doc = "        \"user\": {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/UserInfo\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Authentication needs a second factor before tokens are issued. Carry the `challenge_token` to `/v1/auth/login/verify`.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"challenge_token\","]
+    #[doc = "        \"methods\","]
+    #[doc = "        \"outcome\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"challenge_token\": {"]
+    #[doc = "          \"description\": \"Short-lived signed token. The client posts this verbatim alongside the second-factor code to `/v1/auth/login/verify`. Treat as opaque — the token's claims and TTL are server-side implementation details.\","]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        },"]
+    #[doc = "        \"methods\": {"]
+    #[doc = "          \"description\": \"Methods the client may use to satisfy the challenge. v1 only emits `[totp]`, but clients should tolerate additional values via the `Unknown` variant rather than failing closed.\","]
+    #[doc = "          \"type\": \"array\","]
+    #[doc = "          \"items\": {"]
+    #[doc = "            \"$ref\": \"#/components/schemas/ChallengeMethod\""]
+    #[doc = "          }"]
+    #[doc = "        },"]
+    #[doc = "        \"outcome\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"challenge_required\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "outcome")]
+    pub enum LoginOutcome {
+        #[doc = "Authentication is complete; tokens are issued."]
+        #[serde(rename = "complete")]
+        Complete {
+            #[doc = "Single-use refresh token; present it to `POST /v1/auth/refresh` for a new (token, refresh_token) pair."]
+            refresh_token: ::std::string::String,
+            #[doc = "Short-lived ES256 JWT access token."]
+            token: ::std::string::String,
+            user: UserInfo,
+        },
+        #[doc = "Authentication needs a second factor before tokens are issued. Carry the `challenge_token` to `/v1/auth/login/verify`."]
+        #[serde(rename = "challenge_required")]
+        ChallengeRequired {
+            #[doc = "Short-lived signed token. The client posts this verbatim alongside the second-factor code to `/v1/auth/login/verify`. Treat as opaque — the token's claims and TTL are server-side implementation details."]
+            challenge_token: ::std::string::String,
+            #[doc = "Methods the client may use to satisfy the challenge. v1 only emits `[totp]`, but clients should tolerate additional values via the `Unknown` variant rather than failing closed."]
+            methods: ::std::vec::Vec<ChallengeMethod>,
+        },
+    }
+
     #[doc = "`POST /v1/auth/login` request body."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4039,13 +4225,13 @@ pub mod types {
         }
     }
 
-    #[doc = "`POST /v1/auth/login` response body."]
+    #[doc = "`POST /v1/auth/login` response body when the password is correct and no second factor is required. Also the response body of `POST /v1/auth/login/verify` (which always completes a session)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"`POST /v1/auth/login` response body.\","]
+    #[doc = "  \"description\": \"`POST /v1/auth/login` response body when the password is correct and no second factor is required. Also the response body of `POST /v1/auth/login/verify` (which always completes a session).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"refresh_token\","]
@@ -4081,6 +4267,47 @@ pub mod types {
 
     impl LoginResponse {
         pub fn builder() -> builder::LoginResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "`POST /v1/auth/login/verify` request body."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"`POST /v1/auth/login/verify` request body.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"challenge_token\","]
+    #[doc = "    \"code\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"challenge_token\": {"]
+    #[doc = "      \"description\": \"The exact `challenge_token` value from the `ChallengeRequired` outcome. Treated as opaque.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"description\": \"6-digit code from the user's authenticator app.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct LoginVerifyRequest {
+        #[doc = "The exact `challenge_token` value from the `ChallengeRequired` outcome. Treated as opaque."]
+        pub challenge_token: ::std::string::String,
+        #[doc = "6-digit code from the user's authenticator app."]
+        pub code: ::std::string::String,
+    }
+
+    impl LoginVerifyRequest {
+        pub fn builder() -> builder::LoginVerifyRequest {
             Default::default()
         }
     }
@@ -13837,6 +14064,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct LoginVerifyRequest {
+            challenge_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+            code: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for LoginVerifyRequest {
+            fn default() -> Self {
+                Self {
+                    challenge_token: Err("no value supplied for challenge_token".to_string()),
+                    code: Err("no value supplied for code".to_string()),
+                }
+            }
+        }
+
+        impl LoginVerifyRequest {
+            pub fn challenge_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.challenge_token = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for challenge_token: {e}")
+                });
+                self
+            }
+            pub fn code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<LoginVerifyRequest> for super::LoginVerifyRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LoginVerifyRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    challenge_token: value.challenge_token?,
+                    code: value.code?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::LoginVerifyRequest> for LoginVerifyRequest {
+            fn from(value: super::LoginVerifyRequest) -> Self {
+                Self {
+                    challenge_token: Ok(value.challenge_token),
+                    code: Ok(value.code),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct LogoutResponse {
             ok: ::std::result::Result<bool, ::std::string::String>,
         }
@@ -19285,7 +19571,7 @@ impl Client {
         builder::AuthJwks::new(self)
     }
 
-    #[doc = "Authenticate an LDAP user and issue an access + refresh token pair\n\nOn success the response body carries the tokens and a `Set-Cookie` header with the access token for browser clients. CLI clients can ignore the cookie and read the token from the JSON body.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.auth_login()\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Authenticate an LDAP user and either issue tokens directly or\n\nrequire a second factor.\n\nThe response body is a tagged [`LoginOutcome`]:\n\n* `complete` — password was correct and the user has no 2FA enrolment; the embedded fields are identical to the historical [`LoginResponse`] shape and a `Set-Cookie` header carries the access token for browser clients. * `challenge_required` — password was correct but the user has a second factor enrolled; the embedded [`LoginChallenge`] carries a `challenge_token` and the list of methods the client may use. The client must POST the `challenge_token` plus a code to `/v1/auth/login/verify`. No cookie is set on this branch since the session has not been established yet.\n\nSends a `POST` request to `/v1/auth/login`\n\n```ignore\nlet response = client.auth_login()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn auth_login(&self) -> builder::AuthLogin<'_> {
         builder::AuthLogin::new(self)
     }
@@ -19293,6 +19579,11 @@ impl Client {
     #[doc = "Exchange a proof-of-SSH-key-ownership for an access + refresh\n\ntoken pair. The caller presents an `Authorization: Signature …` header (draft-cavage HTTP Signature, same dialect cloudapi accepts). The server resolves the key via mahi, verifies the signature, and issues tokens via the same path the password login uses.\n\nRequest body is empty — all auth material is in the headers. Response mirrors `POST /v1/auth/login`.\n\nSends a `POST` request to `/v1/auth/login-ssh`\n\n```ignore\nlet response = client.auth_login_ssh()\n    .send()\n    .await;\n```"]
     pub fn auth_login_ssh(&self) -> builder::AuthLoginSsh<'_> {
         builder::AuthLoginSsh::new(self)
+    }
+
+    #[doc = "Complete a 2FA login by presenting the challenge token and a\n\nsecond-factor code.\n\nCalled only when `/v1/auth/login` returned a `challenge_required` outcome. The server re-reads the user's TOTP secret from UFDS (it is never carried in the challenge), verifies the code, and returns the standard [`LoginResponse`] — same shape, same `Set-Cookie` semantics — that `/v1/auth/login` issues for non-2FA users.\n\nSends a `POST` request to `/v1/auth/login/verify`\n\n```ignore\nlet response = client.auth_login_verify()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn auth_login_verify(&self) -> builder::AuthLoginVerify<'_> {
+        builder::AuthLoginVerify::new(self)
     }
 
     #[doc = "Revoke all outstanding refresh tokens for the caller and clear\n\nthe auth cookie. Accepts an expired access token so that callers whose session has already expired can still log out cleanly.\n\nSends a `POST` request to `/v1/auth/logout`\n\n```ignore\nlet response = client.auth_logout()\n    .send()\n    .await;\n```"]
@@ -20365,9 +20656,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `POST` request to `/v1/auth/login`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<types::LoginResponse>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<types::LoginOutcome>, Error<types::Error>> {
             let Self { client, body } = self;
             let body = body
                 .and_then(|v| types::LoginRequest::try_from(v).map_err(|e| e.to_string()))
@@ -20447,6 +20736,92 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "auth_login_ssh",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::auth_login_verify`]\n\n[`Client::auth_login_verify`]: super::Client::auth_login_verify"]
+    #[derive(Debug, Clone)]
+    pub struct AuthLoginVerify<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::LoginVerifyRequest, String>,
+    }
+
+    impl<'a> AuthLoginVerify<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::LoginVerifyRequest>,
+            <V as std::convert::TryInto<types::LoginVerifyRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `LoginVerifyRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::LoginVerifyRequest,
+                ) -> types::builder::LoginVerifyRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/auth/login/verify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::LoginResponse>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::LoginVerifyRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/auth/login/verify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "auth_login_verify",
             };
             match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
                 Ok(_) => (),

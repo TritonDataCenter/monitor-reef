@@ -30,7 +30,9 @@ use anyhow::{Context, Result, anyhow};
 use clap::Args;
 use serde::{Deserialize, Serialize};
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::LoginResponse;
+use triton_gateway_client::types::{
+    ChallengeMethod, LoginOutcome, LoginResponse, LoginVerifyRequest,
+};
 
 use crate::config::{Profile, paths};
 
@@ -298,6 +300,59 @@ async fn password_login(client: &TypedClient, username: &str) -> Result<LoginRes
         .send()
         .await
         .map_err(|e| anyhow!("password login failed: {e}"))?;
+
+    match response.into_inner() {
+        LoginOutcome::Complete {
+            token,
+            refresh_token,
+            user,
+        } => Ok(LoginResponse {
+            token,
+            refresh_token,
+            user,
+        }),
+        LoginOutcome::ChallengeRequired {
+            challenge_token,
+            methods,
+        } => prompt_and_verify_totp(client, challenge_token, &methods).await,
+    }
+}
+
+/// Handle a `LoginOutcome::ChallengeRequired`: confirm the server
+/// is asking for a method we know how to satisfy, prompt for a
+/// TOTP code (or read it from `TRITON_TOTP_CODE` for non-tty
+/// flows), and exchange the challenge for a real `LoginResponse`.
+async fn prompt_and_verify_totp(
+    client: &TypedClient,
+    challenge_token: String,
+    methods: &[ChallengeMethod],
+) -> Result<LoginResponse> {
+    // v1 only knows TOTP. If the server offers only methods we
+    // don't support, refuse before prompting -- otherwise we'd
+    // collect a code we couldn't possibly use.
+    if !methods.iter().any(|m| matches!(m, ChallengeMethod::Totp)) {
+        return Err(anyhow!(
+            "server requires a second-factor method this CLI does not support; \
+             upgrade `triton` and try again"
+        ));
+    }
+
+    let code = match std::env::var("TRITON_TOTP_CODE").ok() {
+        Some(c) => c,
+        None => rpassword::prompt_password("Authenticator code: ")
+            .map_err(|e| anyhow!("failed to read authenticator code: {e}"))?,
+    };
+    let body = LoginVerifyRequest {
+        challenge_token,
+        code,
+    };
+    let response = client
+        .inner()
+        .auth_login_verify()
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("two-factor verification failed: {e}"))?;
     Ok(response.into_inner())
 }
 
