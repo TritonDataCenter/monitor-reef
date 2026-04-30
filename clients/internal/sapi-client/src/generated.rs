@@ -982,6 +982,7 @@ pub mod types {
         Ord,
         PartialEq,
         PartialOrd,
+        clap :: ValueEnum,
         schemars :: JsonSchema,
     )]
     pub enum SapiMode {
@@ -1208,6 +1209,7 @@ pub mod types {
         Ord,
         PartialEq,
         PartialOrd,
+        clap :: ValueEnum,
         schemars :: JsonSchema,
     )]
     pub enum ServiceType {
@@ -1508,6 +1510,7 @@ pub mod types {
         Ord,
         PartialEq,
         PartialOrd,
+        clap :: ValueEnum,
         schemars :: JsonSchema,
     )]
     pub enum UpdateAction {

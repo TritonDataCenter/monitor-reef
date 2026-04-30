@@ -200,10 +200,15 @@ fn configure_triton_gateway(settings: &mut GenerationSettings) {
 }
 
 fn configure_sapi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
-        .with_derive("schemars::JsonSchema");
+        .with_derive("schemars::JsonSchema")
+        .with_patch("ServiceType", &value_enum_patch)
+        .with_patch("UpdateAction", &value_enum_patch)
+        .with_patch("SapiMode", &value_enum_patch);
 }
 
 fn configure_imgapi(settings: &mut GenerationSettings) {

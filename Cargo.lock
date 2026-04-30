@@ -3380,6 +3380,7 @@ dependencies = [
 name = "sapi-client"
 version = "2.1.3"
 dependencies = [
+ "clap",
  "progenitor-client",
  "reqwest",
  "sapi-api",
