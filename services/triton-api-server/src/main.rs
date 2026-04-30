@@ -207,6 +207,23 @@ impl TritonApi for TritonApiImpl {
         issue_login_outcome(jwt, &auth_info, ctx.cookie_secure).await
     }
 
+    // Operator runbook: lost authenticator
+    // ------------------------------------
+    // tritonapi only verifies in v1 -- enrollment and disable still
+    // live in piranha. To unenroll a user who lost access to their
+    // authenticator, clear the TOTP secret stored under
+    // `metadata=portal, uuid=<USER_UUID>, ou=users, o=smartdc` --
+    // either via the piranha "Disable two-factor" UI, or directly
+    // from the headnode:
+    //
+    //   sdc-ufds search -s base \
+    //     -b 'metadata=portal, uuid=<USER_UUID>, ou=users, o=smartdc' \
+    //     '(objectclass=capimetadata)'
+    //
+    // Then either remove the `usemoresecurity` attribute or set its
+    // `secretkey` field to an empty string. `read_totp_secret` treats
+    // both as "not enrolled" and the user's next login skips the
+    // challenge entirely.
     async fn auth_login_verify(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<LoginVerifyRequest>,
