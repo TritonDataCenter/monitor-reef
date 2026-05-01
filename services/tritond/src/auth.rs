@@ -85,7 +85,11 @@ permit(
         Action::"project_list",
         Action::"project_create",
         Action::"project_get",
-        Action::"project_delete"
+        Action::"project_delete",
+        Action::"vpc_list",
+        Action::"vpc_create",
+        Action::"vpc_get",
+        Action::"vpc_delete"
     ],
     resource
 ) when {
@@ -193,6 +197,10 @@ pub enum Action {
     ProjectCreate,
     ProjectGet,
     ProjectDelete,
+    VpcList,
+    VpcCreate,
+    VpcGet,
+    VpcDelete,
 }
 
 impl Action {
@@ -220,6 +228,10 @@ impl Action {
             Action::ProjectCreate => "project_create",
             Action::ProjectGet => "project_get",
             Action::ProjectDelete => "project_delete",
+            Action::VpcList => "vpc_list",
+            Action::VpcCreate => "vpc_create",
+            Action::VpcGet => "vpc_get",
+            Action::VpcDelete => "vpc_delete",
         }
     }
 

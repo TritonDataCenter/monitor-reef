@@ -24,6 +24,8 @@ foundationdb = ["dep:foundationdb", "dep:serde_json", "dep:sha2"]
 async-trait = { workspace = true }
 chrono = { workspace = true }
 foundationdb = { workspace = true, optional = true }
+ipnetwork = { workspace = true }
+rand = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, optional = true }

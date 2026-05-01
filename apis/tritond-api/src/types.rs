@@ -17,4 +17,6 @@ pub use tritond_audit::{
     Actor as AuditActor, AuditEvent, ChainHead as AuditChainHead, Decision as AuditDecision,
     EventHash as AuditEventHash, Outcome as AuditOutcome, VerifyOutcome as AuditVerifyOutcome,
 };
-pub use tritond_store::{ApiKeyView, IdpConfigView, NewProject, NewSilo, Project, Silo, UserView};
+pub use tritond_store::{
+    ApiKeyView, IdpConfigView, NewProject, NewSilo, NewVpc, Project, Silo, UserView, Vpc,
+};

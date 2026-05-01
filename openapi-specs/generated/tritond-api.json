@@ -722,6 +722,219 @@
           }
         }
       }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/vpcs": {
+      "get": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "List the VPCs inside a project. Returns 404 when the silo or",
+        "description": "project does not exist (or the project belongs to a different silo).",
+        "operationId": "list_project_vpcs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Vpc",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vpc"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "Create a VPC in a project. Returns 400 if neither `ipv4_block`",
+        "description": "nor `ipv6_block` is provided. Returns 409 if a VPC with the same name already exists in the project. The server assigns `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and `created_at`.",
+        "operationId": "create_project_vpc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVpc"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vpc"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}": {
+      "get": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "Read a single VPC. Returns 404 when the VPC does not exist or",
+        "description": "belongs to a different silo or project (cross-tenant probes do not learn that the resource exists).",
+        "operationId": "get_project_vpc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vpc"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "Delete a VPC. Returns 404 when the VPC does not exist or",
+        "description": "belongs to a different silo or project.",
+        "operationId": "delete_project_vpc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1154,6 +1367,33 @@
           "name"
         ]
       },
+      "NewVpc": {
+        "description": "Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv4_block": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv6_block": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "Outcome": {
         "description": "Outcome of the action after the handler finished.",
         "oneOf": [
@@ -1405,6 +1645,59 @@
             "additionalProperties": false
           }
         ]
+      },
+      "Vpc": {
+        "description": "Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ipv4_block": {
+            "nullable": true,
+            "description": "Primary IPv4 CIDR for the VPC overlay. `None` for IPv6-only. Wire format is the canonical CIDR string, e.g. `\"10.0.0.0/24\"`.",
+            "type": "string"
+          },
+          "ipv6_block": {
+            "nullable": true,
+            "description": "Primary IPv6 CIDR for the VPC overlay. `None` for IPv4-only. Wire format is the canonical CIDR string, e.g. `\"fd00::/48\"`.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vni": {
+            "description": "Geneve Virtual Network Identifier. Server-assigned at create time, drawn from `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`, unique rack-wide.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "name",
+          "project_id",
+          "silo_id",
+          "vni"
+        ]
       }
     },
     "responses": {
@@ -1435,6 +1728,9 @@
     },
     {
       "name": "system"
+    },
+    {
+      "name": "vpcs"
     }
   ]
 }

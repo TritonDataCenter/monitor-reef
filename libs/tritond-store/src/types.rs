@@ -7,6 +7,7 @@
 //! Domain types shared between the storage layer and the wire surface.
 
 use chrono::{DateTime, Utc};
+use ipnetwork::{Ipv4Network, Ipv6Network};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -137,6 +138,62 @@ pub struct NewProject {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+/// Reserved-VNI ceiling. Values below this are off-limits for tenant
+/// VPCs; the dataplane keeps `[0, 4096)` for system VNIs (boundary
+/// services, transit, future internal traffic). 4096 matches Oxide's
+/// reserved range.
+pub const VPC_VNI_RESERVED_CEILING: u32 = 4096;
+
+/// 24-bit Geneve VNI ceiling (exclusive). VNIs are drawn from
+/// `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`.
+pub const VPC_VNI_MAX: u32 = 1 << 24;
+
+/// Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC
+/// fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve
+/// VNI plus an optional primary IPv4 CIDR and optional primary IPv6
+/// CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or
+/// dual-stack). Per-NIC concerns (guest MAC, private IPs, external
+/// IPs, attached_subnets, DHCP) are *not* on the VPC record — those
+/// land on subnet/instance/NIC resources in later slices.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Vpc {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// Geneve Virtual Network Identifier. Server-assigned at create
+    /// time, drawn from `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`,
+    /// unique rack-wide.
+    pub vni: u32,
+    /// Primary IPv4 CIDR for the VPC overlay. `None` for IPv6-only.
+    /// Wire format is the canonical CIDR string, e.g. `"10.0.0.0/24"`.
+    #[schemars(with = "Option<String>")]
+    pub ipv4_block: Option<Ipv4Network>,
+    /// Primary IPv6 CIDR for the VPC overlay. `None` for IPv4-only.
+    /// Wire format is the canonical CIDR string, e.g. `"fd00::/48"`.
+    #[schemars(with = "Option<String>")]
+    pub ipv6_block: Option<Ipv6Network>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating a VPC. The owning silo + project come
+/// from the URL path, not the body. The server assigns `id`, `vni`,
+/// and `created_at`. At least one of `ipv4_block` / `ipv6_block` must
+/// be `Some`; the API rejects requests with both `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewVpc {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub ipv4_block: Option<Ipv4Network>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub ipv6_block: Option<Ipv6Network>,
 }
 
 impl From<IdpConfig> for IdpConfigView {

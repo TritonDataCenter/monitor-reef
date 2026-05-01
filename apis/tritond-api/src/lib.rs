@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewProject, NewSilo,
-    Project, Silo,
+    NewVpc, Project, Silo, Vpc,
 };
 
 /// Liveness response.
@@ -106,6 +106,15 @@ pub struct AuditEventPath {
 pub struct SiloProjectPath {
     pub silo_id: Uuid,
     pub project_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single VPC inside a
+/// project inside a silo.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectVpcPath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -380,5 +389,59 @@ pub trait TritondApi {
     async fn delete_silo_project(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List the VPCs inside a project. Returns 404 when the silo or
+    /// project does not exist (or the project belongs to a different
+    /// silo).
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs",
+        tags = ["vpcs"],
+    }]
+    async fn list_project_vpcs(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<Vpc>>, HttpError>;
+
+    /// Create a VPC in a project. Returns 400 if neither `ipv4_block`
+    /// nor `ipv6_block` is provided. Returns 409 if a VPC with the
+    /// same name already exists in the project. The server assigns
+    /// `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and
+    /// `created_at`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs",
+        tags = ["vpcs"],
+    }]
+    async fn create_project_vpc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewVpc>,
+    ) -> Result<HttpResponseCreated<Vpc>, HttpError>;
+
+    /// Read a single VPC. Returns 404 when the VPC does not exist or
+    /// belongs to a different silo or project (cross-tenant probes
+    /// do not learn that the resource exists).
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}",
+        tags = ["vpcs"],
+    }]
+    async fn get_project_vpc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vpc>, HttpError>;
+
+    /// Delete a VPC. Returns 404 when the VPC does not exist or
+    /// belongs to a different silo or project.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}",
+        tags = ["vpcs"],
+    }]
+    async fn delete_project_vpc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 }

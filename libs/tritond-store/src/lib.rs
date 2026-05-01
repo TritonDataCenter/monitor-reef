@@ -31,8 +31,8 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, Project, Silo,
-    SystemKey, User, UserView,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, NewVpc, Project,
+    Silo, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -196,4 +196,47 @@ pub trait Store: Send + Sync + 'static {
     /// Delete a project by id. Returns [`StoreError::NotFound`] if the
     /// id does not exist.
     async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // VPCs (project-scoped)
+    // ------------------------------------------------------------------
+
+    /// Create a VPC inside a project.
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * The project must exist and `project.silo_id == silo_id`. A
+    ///   `silo_id` mismatch returns [`StoreError::NotFound`] (treating
+    ///   the project as invisible to the wrong silo).
+    /// * `name` must not collide with an existing VPC in the same
+    ///   project — collision returns [`StoreError::Conflict`].
+    /// * `vni` is server-assigned, drawn uniformly at random from
+    ///   `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`, with
+    ///   collision-retry against the rack-wide VNI index. If the
+    ///   retry loop is exhausted (operationally unreachable),
+    ///   returns [`StoreError::Backend`].
+    /// * The caller is expected to have validated `req.ipv4_block.is_some()
+    ///   || req.ipv6_block.is_some()` at the API layer; the store
+    ///   does not re-validate.
+    async fn create_vpc(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewVpc,
+    ) -> Result<Vpc, StoreError>;
+
+    /// Look up a VPC by id. Returns [`StoreError::NotFound`] when no
+    /// such VPC exists, regardless of silo or project. Handlers add
+    /// silo_id + project_id rechecks on top.
+    async fn get_vpc(&self, vpc_id: Uuid) -> Result<Vpc, StoreError>;
+
+    /// List every VPC belonging to `project_id`. Order is unspecified.
+    /// Returns an empty vec if the project has no VPCs *or* if the
+    /// project does not exist — distinguishing the two would require
+    /// a project-existence read the caller has already done.
+    async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError>;
+
+    /// Delete a VPC by id. Returns [`StoreError::NotFound`] if the id
+    /// does not exist.
+    async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError>;
 }

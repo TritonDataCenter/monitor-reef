@@ -918,6 +918,62 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4_block\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv6_block\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewVpc {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv4_block: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv6_block: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+    }
+
+    impl NewVpc {
+        pub fn builder() -> builder::NewVpc {
+            Default::default()
+        }
+    }
+
     #[doc = "Outcome of the action after the handler finished."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1314,6 +1370,96 @@ pub mod types {
             message: ::std::string::String,
             seq: u64,
         },
+    }
+
+    #[doc = "Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"silo_id\","]
+    #[doc = "    \"vni\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4_block\": {"]
+    #[doc = "      \"description\": \"Primary IPv4 CIDR for the VPC overlay. `None` for IPv6-only. Wire format is the canonical CIDR string, e.g. `\\\"10.0.0.0/24\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv6_block\": {"]
+    #[doc = "      \"description\": \"Primary IPv6 CIDR for the VPC overlay. `None` for IPv4-only. Wire format is the canonical CIDR string, e.g. `\\\"fd00::/48\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"vni\": {"]
+    #[doc = "      \"description\": \"Geneve Virtual Network Identifier. Server-assigned at create time, drawn from `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`, unique rack-wide.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Vpc {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        #[doc = "Primary IPv4 CIDR for the VPC overlay. `None` for IPv6-only. Wire format is the canonical CIDR string, e.g. `\"10.0.0.0/24\"`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv4_block: ::std::option::Option<::std::string::String>,
+        #[doc = "Primary IPv6 CIDR for the VPC overlay. `None` for IPv4-only. Wire format is the canonical CIDR string, e.g. `\"fd00::/48\"`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv6_block: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        pub silo_id: ::uuid::Uuid,
+        #[doc = "Geneve Virtual Network Identifier. Server-assigned at create time, drawn from `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`, unique rack-wide."]
+        pub vni: u32,
+    }
+
+    impl Vpc {
+        pub fn builder() -> builder::Vpc {
+            Default::default()
+        }
     }
 
     #[doc = r" Types for composing complex structures."]
@@ -2418,6 +2564,102 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NewVpc {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv4_block: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv6_block: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewVpc {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    ipv4_block: Ok(Default::default()),
+                    ipv6_block: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NewVpc {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn ipv4_block<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4_block = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4_block: {e}"));
+                self
+            }
+            pub fn ipv6_block<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv6_block = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv6_block: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewVpc> for super::NewVpc {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewVpc,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    ipv4_block: value.ipv4_block?,
+                    ipv6_block: value.ipv6_block?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewVpc> for NewVpc {
+            fn from(value: super::NewVpc) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    ipv4_block: Ok(value.ipv4_block),
+                    ipv6_block: Ok(value.ipv6_block),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Project {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -2746,6 +2988,170 @@ pub mod types {
                 }
             }
         }
+
+        #[derive(Clone, Debug)]
+        pub struct Vpc {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            ipv4_block: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv6_block: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            vni: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Vpc {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    ipv4_block: Ok(Default::default()),
+                    ipv6_block: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    vni: Err("no value supplied for vni".to_string()),
+                }
+            }
+        }
+
+        impl Vpc {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn ipv4_block<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4_block = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4_block: {e}"));
+                self
+            }
+            pub fn ipv6_block<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv6_block = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv6_block: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+            pub fn vni<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vni = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vni: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Vpc> for super::Vpc {
+            type Error = super::error::ConversionError;
+            fn try_from(value: Vpc) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    ipv4_block: value.ipv4_block?,
+                    ipv6_block: value.ipv6_block?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    silo_id: value.silo_id?,
+                    vni: value.vni?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Vpc> for Vpc {
+            fn from(value: super::Vpc) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    ipv4_block: Ok(value.ipv4_block),
+                    ipv6_block: Ok(value.ipv6_block),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    silo_id: Ok(value.silo_id),
+                    vni: Ok(value.vni),
+                }
+            }
+        }
     }
 }
 
@@ -2897,6 +3303,26 @@ impl Client {
     #[doc = "Delete a project. Returns 404 when the project does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}`\n\n```ignore\nlet response = client.delete_silo_project()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_project(&self) -> builder::DeleteSiloProject<'_> {
         builder::DeleteSiloProject::new(self)
+    }
+
+    #[doc = "List the VPCs inside a project. Returns 404 when the silo or\n\nproject does not exist (or the project belongs to a different silo).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_vpcs(&self) -> builder::ListProjectVpcs<'_> {
+        builder::ListProjectVpcs::new(self)
+    }
+
+    #[doc = "Create a VPC in a project. Returns 400 if neither `ipv4_block`\n\nnor `ipv6_block` is provided. Returns 409 if a VPC with the same name already exists in the project. The server assigns `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and `created_at`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.create_project_vpc()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_vpc(&self) -> builder::CreateProjectVpc<'_> {
+        builder::CreateProjectVpc::new(self)
+    }
+
+    #[doc = "Read a single VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different silo or project (cross-tenant probes do not learn that the resource exists).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.get_project_vpc()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_vpc(&self) -> builder::GetProjectVpc<'_> {
+        builder::GetProjectVpc::new(self)
+    }
+
+    #[doc = "Delete a VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different silo or project.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_project_vpc()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_vpc(&self) -> builder::DeleteProjectVpc<'_> {
+        builder::DeleteProjectVpc::new(self)
     }
 }
 
@@ -4278,6 +4704,413 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_project",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_project_vpcs`]\n\n[`Client::list_project_vpcs`]: super::Client::list_project_vpcs"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectVpcs<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectVpcs<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Vpc>>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/vpcs",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_vpcs",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_vpc`]\n\n[`Client::create_project_vpc`]: super::Client::create_project_vpc"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectVpc<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewVpc, String>,
+    }
+
+    impl<'a> CreateProjectVpc<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewVpc>,
+            <V as std::convert::TryInto<types::NewVpc>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewVpc` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewVpc) -> types::builder::NewVpc,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewVpc::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/vpcs",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_vpc`]\n\n[`Client::get_project_vpc`]: super::Client::get_project_vpc"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectVpc<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectVpc<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/vpcs/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_vpc`]\n\n[`Client::delete_project_vpc`]: super::Client::delete_project_vpc"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectVpc<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteProjectVpc<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/vpcs/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_vpc",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

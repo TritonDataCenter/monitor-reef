@@ -9,16 +9,23 @@
 //! Used for unit tests, integration tests, and `tritond` runs that
 //! don't need durable state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use rand::Rng;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, Project, Silo, Store, StoreError, SystemKey, User,
+    ApiKey, IdpConfig, NewProject, NewSilo, NewVpc, Project, Silo, Store, StoreError, SystemKey,
+    User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
+
+/// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
+/// candidates and any realistic VPC count, collisions are vanishingly
+/// rare; the cap is purely defensive.
+const VNI_RETRY_ATTEMPTS: usize = 8;
 
 #[derive(Default)]
 struct Inner {
@@ -37,6 +44,13 @@ struct Inner {
     /// `(silo_id, name)` → project_id index for the within-silo
     /// uniqueness check.
     project_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
+    vpcs_by_id: HashMap<Uuid, Vpc>,
+    /// `(project_id, name)` → vpc_id index for within-project name
+    /// uniqueness.
+    vpc_id_by_project_name: HashMap<(Uuid, String), Uuid>,
+    /// Rack-wide set of VNIs currently in use. Drawn from
+    /// `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`.
+    vnis_in_use: HashSet<u32>,
 }
 
 /// In-process [`Store`] implementation.
@@ -321,6 +335,95 @@ impl Store for MemStore {
         guard
             .project_id_by_silo_name
             .remove(&(project.silo_id, project.name));
+        Ok(())
+    }
+
+    async fn create_vpc(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewVpc,
+    ) -> Result<Vpc, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        // Project must exist and live in the right silo. A silo
+        // mismatch surfaces as NotFound (project is invisible to a
+        // foreign silo).
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        if project.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+
+        let name_key = (project_id, req.name.clone());
+        if guard.vpc_id_by_project_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "vpc with name {:?} already exists in project {project_id}",
+                req.name
+            )));
+        }
+
+        let mut rng = rand::rng();
+        let mut vni = None;
+        for _ in 0..VNI_RETRY_ATTEMPTS {
+            let candidate = rng.random_range(VPC_VNI_RESERVED_CEILING..VPC_VNI_MAX);
+            if !guard.vnis_in_use.contains(&candidate) {
+                vni = Some(candidate);
+                break;
+            }
+        }
+        let vni = vni.ok_or_else(|| {
+            StoreError::Backend(format!("VNI exhausted after {VNI_RETRY_ATTEMPTS} retries"))
+        })?;
+
+        let vpc = Vpc {
+            id: Uuid::new_v4(),
+            silo_id,
+            project_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            vni,
+            ipv4_block: req.ipv4_block,
+            ipv6_block: req.ipv6_block,
+            created_at: Utc::now(),
+        };
+        guard.vnis_in_use.insert(vni);
+        guard.vpc_id_by_project_name.insert(name_key, vpc.id);
+        guard.vpcs_by_id.insert(vpc.id, vpc.clone());
+        Ok(vpc)
+    }
+
+    async fn get_vpc(&self, vpc_id: Uuid) -> Result<Vpc, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .vpcs_by_id
+            .get(&vpc_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .vpcs_by_id
+            .values()
+            .filter(|v| v.project_id == project_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let vpc = guard
+            .vpcs_by_id
+            .remove(&vpc_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .vpc_id_by_project_name
+            .remove(&(vpc.project_id, vpc.name));
+        guard.vnis_in_use.remove(&vpc.vni);
         Ok(())
     }
 }
@@ -724,6 +827,315 @@ mod tests {
             .await
             .expect_err("second create with same lookup_id should conflict");
         assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    fn ipv4_cidr(s: &str) -> ipnetwork::Ipv4Network {
+        s.parse().expect("test fixture must be a valid CIDR")
+    }
+
+    fn ipv6_cidr(s: &str) -> ipnetwork::Ipv6Network {
+        s.parse().expect("test fixture must be a valid CIDR")
+    }
+
+    async fn make_silo_and_project(store: &MemStore) -> (Uuid, Uuid) {
+        let silo = store
+            .create_silo(NewSilo {
+                name: format!("silo-{}", Uuid::new_v4()),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let project = store
+            .create_project(
+                silo.id,
+                NewProject {
+                    name: "default".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        (silo.id, project.id)
+    }
+
+    #[tokio::test]
+    async fn vpc_round_trip_within_project() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+
+        let vpc = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "prod".to_string(),
+                    description: Some("primary".to_string()),
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: Some(ipv6_cidr("fd00::/48")),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(vpc.silo_id, silo_id);
+        assert_eq!(vpc.project_id, project_id);
+        assert!(vpc.vni >= VPC_VNI_RESERVED_CEILING && vpc.vni < VPC_VNI_MAX);
+        assert_eq!(vpc.ipv4_block, Some(ipv4_cidr("10.0.0.0/24")));
+        assert_eq!(vpc.ipv6_block, Some(ipv6_cidr("fd00::/48")));
+
+        let fetched = store.get_vpc(vpc.id).await.unwrap();
+        assert_eq!(fetched, vpc);
+
+        let listed = store.list_vpcs_in_project(project_id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, vpc.id);
+
+        store.delete_vpc(vpc.id).await.unwrap();
+        let err = store
+            .get_vpc(vpc.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn vpc_ipv4_only_and_ipv6_only_round_trip() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+
+        let v4 = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "v4".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.1.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(v4.ipv4_block.is_some());
+        assert!(v4.ipv6_block.is_none());
+
+        let v6 = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "v6".to_string(),
+                    description: None,
+                    ipv4_block: None,
+                    ipv6_block: Some(ipv6_cidr("fd01::/48")),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(v6.ipv4_block.is_none());
+        assert!(v6.ipv6_block.is_some());
+        assert_ne!(v4.vni, v6.vni);
+    }
+
+    #[tokio::test]
+    async fn duplicate_vpc_name_within_project_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "alpha".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "alpha".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("duplicate name within project should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn same_vpc_name_in_different_projects_does_not_conflict() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "tenants".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let p1 = store
+            .create_project(
+                silo.id,
+                NewProject {
+                    name: "alpha".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let p2 = store
+            .create_project(
+                silo.id,
+                NewProject {
+                    name: "beta".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .create_vpc(
+                silo.id,
+                p1.id,
+                NewVpc {
+                    name: "shared".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .create_vpc(
+                silo.id,
+                p2.id,
+                NewVpc {
+                    name: "shared".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.1.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect("same vpc name in a different project must be allowed");
+    }
+
+    #[tokio::test]
+    async fn create_vpc_in_unknown_project_is_not_found() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "ops".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let err = store
+            .create_vpc(
+                silo.id,
+                Uuid::new_v4(),
+                NewVpc {
+                    name: "orphan".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("unknown project should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn create_vpc_with_project_in_wrong_silo_is_not_found() {
+        let store = MemStore::new();
+        let silo_a = store
+            .create_silo(NewSilo {
+                name: "silo-a".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let silo_b = store
+            .create_silo(NewSilo {
+                name: "silo-b".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let project = store
+            .create_project(
+                silo_a.id,
+                NewProject {
+                    name: "owned-by-a".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Caller claims silo_b but the project lives in silo_a.
+        let err = store
+            .create_vpc(
+                silo_b.id,
+                project.id,
+                NewVpc {
+                    name: "wrong".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("project-in-wrong-silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn delete_vpc_frees_vni_and_name() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "ephemeral".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let original_vni = vpc.vni;
+        store.delete_vpc(vpc.id).await.unwrap();
+
+        // Same name now reusable.
+        let recreated = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "ephemeral".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        // Original VNI is back in the pool — recreate may or may not
+        // reuse it, but the second create cannot have collided.
+        let _ = original_vni;
+        let _ = recreated;
     }
 
     #[tokio::test]

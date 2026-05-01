@@ -36,6 +36,10 @@
 //! project/by_id/<uuid>              -> JSON-encoded Project
 //! project/by_silo/<silo>/<name>     -> uuid hyphenated bytes
 //! project/in_silo/<silo>/<proj>     -> empty (membership index)
+//! vpc/by_id/<uuid>                  -> JSON-encoded Vpc
+//! vpc/by_project/<proj>/<name>      -> uuid hyphenated bytes
+//! vpc/in_project/<proj>/<vpc>       -> empty (membership index)
+//! vpc/by_vni/<vni-hex8>             -> uuid hyphenated bytes
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -47,11 +51,18 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use chrono::Utc;
 use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
+use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, Project, Silo, Store, StoreError, SystemKey, User,
+    ApiKey, IdpConfig, NewProject, NewSilo, NewVpc, Project, Silo, Store, StoreError, SystemKey,
+    User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
+
+/// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
+/// in-memory store's cap; with ~16.7M candidates this is operationally
+/// unreachable.
+const VNI_RETRY_ATTEMPTS: usize = 8;
 
 static FDB_NETWORK: OnceLock<()> = OnceLock::new();
 
@@ -167,6 +178,26 @@ impl FdbStore {
 
     fn project_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
         format!("project/in_silo/{silo_id}/").into_bytes()
+    }
+
+    fn vpc_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("vpc/by_id/{id}").into_bytes()
+    }
+
+    fn vpc_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
+        format!("vpc/by_project/{project_id}/{name}").into_bytes()
+    }
+
+    fn vpc_in_project_key(project_id: Uuid, vpc_id: Uuid) -> Vec<u8> {
+        format!("vpc/in_project/{project_id}/{vpc_id}").into_bytes()
+    }
+
+    fn vpc_in_project_prefix(project_id: Uuid) -> Vec<u8> {
+        format!("vpc/in_project/{project_id}/").into_bytes()
+    }
+
+    fn vpc_by_vni_key(vni: u32) -> Vec<u8> {
+        format!("vpc/by_vni/{vni:08x}").into_bytes()
     }
 }
 
@@ -780,6 +811,203 @@ impl Store for FdbStore {
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_silo_key);
+                    Ok(DelOut::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DelOut::Deleted) => Ok(()),
+            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_vpc(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewVpc,
+    ) -> Result<Vpc, StoreError> {
+        // Outcome distinguishes our four invariant failures from FDB
+        // transport errors. VniTaken triggers a retry at this layer
+        // (a fresh draw + new transaction); the others surface to the
+        // caller verbatim.
+        enum Outcome {
+            Created(Vpc),
+            ProjectMissingOrWrongSilo,
+            NameTaken,
+            VniTaken,
+        }
+
+        let project_check_key = Self::project_by_id_key(project_id);
+        let by_name_key = Self::vpc_by_project_name_key(project_id, &req.name);
+
+        for _ in 0..VNI_RETRY_ATTEMPTS {
+            let vni = rand::rng().random_range(VPC_VNI_RESERVED_CEILING..VPC_VNI_MAX);
+            let candidate = Vpc {
+                id: Uuid::new_v4(),
+                silo_id,
+                project_id,
+                name: req.name.clone(),
+                description: req.description.clone().unwrap_or_default(),
+                vni,
+                ipv4_block: req.ipv4_block,
+                ipv6_block: req.ipv6_block,
+                created_at: Utc::now(),
+            };
+            let value = serde_json::to_vec(&candidate)
+                .map_err(|e| StoreError::Backend(format!("serialize vpc: {e}")))?;
+            let by_id_key = Self::vpc_by_id_key(candidate.id);
+            let in_project_key = Self::vpc_in_project_key(project_id, candidate.id);
+            let by_vni_key = Self::vpc_by_vni_key(vni);
+            let id_str = candidate.id.to_string();
+
+            let outcome: Result<Outcome, FdbBindingError> = self
+                .db
+                .run(|tr, _| {
+                    let project_check_key = project_check_key.clone();
+                    let by_id_key = by_id_key.clone();
+                    let by_name_key = by_name_key.clone();
+                    let in_project_key = in_project_key.clone();
+                    let by_vni_key = by_vni_key.clone();
+                    let value = value.clone();
+                    let id_bytes = id_str.as_bytes().to_vec();
+                    let candidate = candidate.clone();
+                    async move {
+                        // Project must exist and live in the silo the
+                        // caller claims. Silo mismatch surfaces as
+                        // NotFound (project is invisible to a foreign
+                        // silo).
+                        let project_bytes = match tr.get(&project_check_key, false).await? {
+                            Some(b) => b,
+                            None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        };
+                        let project: Project = match serde_json::from_slice(&project_bytes) {
+                            Ok(p) => p,
+                            Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        };
+                        if project.silo_id != silo_id {
+                            return Ok(Outcome::ProjectMissingOrWrongSilo);
+                        }
+                        if tr.get(&by_name_key, false).await?.is_some() {
+                            return Ok(Outcome::NameTaken);
+                        }
+                        if tr.get(&by_vni_key, false).await?.is_some() {
+                            return Ok(Outcome::VniTaken);
+                        }
+                        tr.set(&by_id_key, &value);
+                        tr.set(&by_name_key, &id_bytes);
+                        tr.set(&in_project_key, b"");
+                        tr.set(&by_vni_key, &id_bytes);
+                        Ok(Outcome::Created(candidate))
+                    }
+                })
+                .await;
+
+            match outcome {
+                Ok(Outcome::Created(vpc)) => return Ok(vpc),
+                Ok(Outcome::ProjectMissingOrWrongSilo) => return Err(StoreError::NotFound),
+                Ok(Outcome::NameTaken) => {
+                    return Err(StoreError::Conflict(format!(
+                        "vpc with name {:?} already exists in project {project_id}",
+                        req.name
+                    )));
+                }
+                Ok(Outcome::VniTaken) => continue,
+                Err(e) => return Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+            }
+        }
+
+        Err(StoreError::Backend(format!(
+            "VNI exhausted after {VNI_RETRY_ATTEMPTS} retries"
+        )))
+    }
+
+    async fn get_vpc(&self, vpc_id: Uuid) -> Result<Vpc, StoreError> {
+        let key = Self::vpc_by_id_key(vpc_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize vpc: {e}")))
+    }
+
+    async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError> {
+        let prefix = Self::vpc_in_project_prefix(project_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("vpc index uuid: {e}")))?;
+            let by_id_key = Self::vpc_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let vpc: Vpc = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize vpc: {e}")))?;
+                out.push(vpc);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError> {
+        // Read the row outside the transaction so we know project_id +
+        // name + vni for the index clears.
+        let by_id_key = Self::vpc_by_id_key(vpc_id);
+        let bytes = match self.read_bytes(&by_id_key).await? {
+            Some(b) => b,
+            None => return Err(StoreError::NotFound),
+        };
+        let vpc: Vpc = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize vpc: {e}")))?;
+        let by_name_key = Self::vpc_by_project_name_key(vpc.project_id, &vpc.name);
+        let in_project_key = Self::vpc_in_project_key(vpc.project_id, vpc.id);
+        let by_vni_key = Self::vpc_by_vni_key(vpc.vni);
+
+        enum DelOut {
+            Deleted,
+            Vanished,
+        }
+        let outcome: Result<DelOut, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_project_key = in_project_key.clone();
+                let by_vni_key = by_vni_key.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Ok(DelOut::Vanished);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_project_key);
+                    tr.clear(&by_vni_key);
                     Ok(DelOut::Deleted)
                 }
             })

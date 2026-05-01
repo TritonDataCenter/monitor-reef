@@ -146,6 +146,54 @@ enum SiloProjectCommand {
     },
     /// Delete a project.
     Delete { silo_id: Uuid, project_id: Uuid },
+    /// Manage VPCs inside a project.
+    Vpc {
+        #[command(subcommand)]
+        command: SiloProjectVpcCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectVpcCommand {
+    /// List VPCs in a project.
+    List {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new VPC in a project. At least one of `--ipv4-block`
+    /// and `--ipv6-block` must be provided.
+    Create {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// IPv4 CIDR for the VPC overlay, e.g. `10.0.0.0/24`.
+        #[arg(long)]
+        ipv4_block: Option<String>,
+        /// IPv6 CIDR for the VPC overlay, e.g. `fd00::/48`.
+        #[arg(long)]
+        ipv6_block: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single VPC.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a VPC.
+    Delete {
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+    },
 }
 
 #[derive(Subcommand)]
@@ -361,6 +409,74 @@ async fn main() -> Result<()> {
                     commands::silo_project_delete(cli.endpoint, cli.api_key, silo_id, project_id)
                         .await
                 }
+                SiloProjectCommand::Vpc { command } => match command {
+                    SiloProjectVpcCommand::List {
+                        silo_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::silo_project_vpc_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectVpcCommand::Create {
+                        silo_id,
+                        project_id,
+                        name,
+                        description,
+                        ipv4_block,
+                        ipv6_block,
+                        json,
+                    } => {
+                        commands::silo_project_vpc_create(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            name,
+                            description,
+                            ipv4_block,
+                            ipv6_block,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectVpcCommand::Get {
+                        silo_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    } => {
+                        commands::silo_project_vpc_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectVpcCommand::Delete {
+                        silo_id,
+                        project_id,
+                        vpc_id,
+                    } => {
+                        commands::silo_project_vpc_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            vpc_id,
+                        )
+                        .await
+                    }
+                },
             },
         },
     }

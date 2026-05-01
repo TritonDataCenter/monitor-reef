@@ -34,8 +34,10 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloPath, SiloProjectPath, TokenResponse, TritondApi,
-    types::{ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, Project, Silo},
+    SiloPath, SiloProjectPath, SiloProjectVpcPath, TokenResponse, TritondApi,
+    types::{
+        ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, NewVpc, Project, Silo, Vpc,
+    },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
 use tritond_auth::OidcConfig;
@@ -730,6 +732,225 @@ impl TritondApi for TritondServiceImpl {
             .await;
         Ok(HttpResponseDeleted())
     }
+
+    async fn list_project_vpcs(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<Vpc>>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::VpcList,
+            silo_id,
+        )
+        .await?;
+
+        // Verify the project actually lives in the path's silo. A
+        // project_id that names some other silo's project is treated
+        // as not-found; this stops cross-tenant enumeration via the
+        // VPC list endpoint.
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.silo_id != silo_id {
+            return Err(not_found());
+        }
+        let vpcs = ctx
+            .store
+            .list_vpcs_in_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(vpcs))
+    }
+
+    async fn create_project_vpc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewVpc>,
+    ) -> Result<HttpResponseCreated<Vpc>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::VpcCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // At least one IP family is required (matches OPTE's IpCfg
+        // enum: Ipv4, Ipv6, or DualStack — never neither). Reject at
+        // the API edge so the store doesn't have to re-validate.
+        if req.ipv4_block.is_none() && req.ipv6_block.is_none() {
+            let outcome = AuditOutcome::ClientError {
+                code: 400,
+                message: "vpc must specify ipv4_block, ipv6_block, or both".to_string(),
+            };
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::VpcCreate,
+                    request_id,
+                    None,
+                    outcome,
+                    serde_json::json!({ "silo_id": silo_id, "project_id": project_id }),
+                )
+                .await;
+            return Err(HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                "vpc must specify ipv4_block, ipv6_block, or both".to_string(),
+            ));
+        }
+
+        match ctx.store.create_vpc(silo_id, project_id, req).await {
+            Ok(vpc) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::VpcCreate,
+                        request_id,
+                        Some(format!("Vpc::\"{}\"", vpc.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Vpc::\"{}\"", vpc.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                            "name": vpc.name,
+                            "vni": vpc.vni,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(vpc))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::VpcCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_project_vpc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vpc>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectVpcPath {
+            silo_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::VpcGet,
+            silo_id,
+        )
+        .await?;
+        let vpc = ctx
+            .store
+            .get_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        // Defence-in-depth: the VPC must live in *both* the path's
+        // silo and the path's project. Mismatch on either dimension is
+        // a 404 so cross-tenant probes don't learn the resource exists
+        // somewhere else.
+        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(vpc))
+    }
+
+    async fn delete_project_vpc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectVpcPath {
+            silo_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::VpcDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        // Same defence-in-depth shape as get_project_vpc.
+        let vpc = ctx
+            .store
+            .get_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+            return Err(not_found());
+        }
+        ctx.store
+            .delete_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::VpcDelete,
+                request_id,
+                Some(format!("Vpc::\"{vpc_id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("Vpc::\"{vpc_id}\"")),
+                },
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "project_id": project_id,
+                }),
+            )
+            .await;
+        Ok(HttpResponseDeleted())
+    }
+}
+
+/// Generic 404 "not found" used by the defence-in-depth path checks.
+/// Same shape as `store_error_to_http` for `StoreError::NotFound`,
+/// just inlined so handlers don't have to roll a synthetic StoreError.
+fn not_found() -> HttpError {
+    HttpError::for_client_error(
+        Some("NotFound".to_string()),
+        ClientErrorStatusCode::NOT_FOUND,
+        "not found".to_string(),
+    )
 }
 
 fn parse_request_id<T>(rqctx: &RequestContext<T>) -> Option<Uuid>

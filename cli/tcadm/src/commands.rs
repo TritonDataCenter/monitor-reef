@@ -497,6 +497,153 @@ pub async fn silo_project_delete(
     Ok(())
 }
 
+fn fmt_opt_cidr(opt: Option<&String>) -> &str {
+    opt.map(|s| s.as_str()).unwrap_or("(none)")
+}
+
+/// List the VPCs in a project.
+pub async fn silo_project_vpc_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let vpcs = client
+        .list_project_vpcs()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("list vpcs")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&vpcs)?);
+        return Ok(());
+    }
+    if vpcs.is_empty() {
+        println!("(no vpcs)");
+        return Ok(());
+    }
+    for v in vpcs {
+        println!(
+            "{}  vni={:>8}  v4={}  v6={}  {}",
+            v.id,
+            v.vni,
+            fmt_opt_cidr(v.ipv4_block.as_ref()),
+            fmt_opt_cidr(v.ipv6_block.as_ref()),
+            v.name
+        );
+    }
+    Ok(())
+}
+
+/// Create a new VPC in a project.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_vpc_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    name: String,
+    description: String,
+    ipv4_block: Option<String>,
+    ipv6_block: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    if ipv4_block.is_none() && ipv6_block.is_none() {
+        anyhow::bail!("at least one of --ipv4-block or --ipv6-block is required");
+    }
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let vpc = client
+        .create_project_vpc()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .body(tritond_client::types::NewVpc {
+            name,
+            description: Some(description),
+            ipv4_block,
+            ipv6_block,
+        })
+        .send()
+        .await
+        .context("create vpc")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&vpc)?);
+    } else {
+        println!("Created vpc {} in project {project_id}", vpc.id);
+        println!("  name:        {}", vpc.name);
+        println!("  description: {}", vpc.description);
+        println!("  vni:         {}", vpc.vni);
+        println!("  ipv4_block:  {}", fmt_opt_cidr(vpc.ipv4_block.as_ref()));
+        println!("  ipv6_block:  {}", fmt_opt_cidr(vpc.ipv6_block.as_ref()));
+        println!("  created:     {}", vpc.created_at);
+    }
+    Ok(())
+}
+
+/// Read a single VPC.
+pub async fn silo_project_vpc_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let vpc = client
+        .get_project_vpc()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("get vpc")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&vpc)?);
+    } else {
+        println!("Vpc {} in project {project_id}", vpc.id);
+        println!("  name:        {}", vpc.name);
+        println!("  description: {}", vpc.description);
+        println!("  vni:         {}", vpc.vni);
+        println!("  ipv4_block:  {}", fmt_opt_cidr(vpc.ipv4_block.as_ref()));
+        println!("  ipv6_block:  {}", fmt_opt_cidr(vpc.ipv6_block.as_ref()));
+        println!("  created:     {}", vpc.created_at);
+    }
+    Ok(())
+}
+
+/// Delete a VPC.
+pub async fn silo_project_vpc_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_project_vpc()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("delete vpc")?;
+    println!("Deleted vpc {vpc_id} from project {project_id}");
+    Ok(())
+}
+
 /// Walk the chain and recompute hashes.
 pub async fn audit_verify(
     endpoint_override: Option<String>,
