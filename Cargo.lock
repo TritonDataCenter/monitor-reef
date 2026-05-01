@@ -2377,6 +2377,7 @@ dependencies = [
  "semver 1.0.28",
  "serde_json",
  "tempfile",
+ "tritond-api",
  "vmapi-api",
 ]
 
@@ -4436,6 +4437,44 @@ dependencies = [
  "triton-auth",
  "uuid",
  "webpki-roots 1.0.6",
+]
+
+[[package]]
+name = "tritond"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dropshot",
+ "reqwest",
+ "schemars",
+ "semver 1.0.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tritond-api",
+ "tritond-client",
+]
+
+[[package]]
+name = "tritond-api"
+version = "0.1.0"
+dependencies = [
+ "dropshot",
+ "schemars",
+ "serde",
+]
+
+[[package]]
+name = "tritond-client"
+version = "0.1.0"
+dependencies = [
+ "progenitor-client",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -145,6 +145,13 @@ fn configure_jira(settings: &mut GenerationSettings) {
         .with_tag(progenitor::TagStyle::Merged);
 }
 
+fn configure_tritond(settings: &mut GenerationSettings) {
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema");
+}
+
 /// Registry of all managed clients.
 static CLIENTS: &[ClientConfig] = &[
     ClientConfig {
@@ -164,6 +171,12 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/generated/jira-api.json",
         output_path: "clients/internal/jira-client/src/generated.rs",
         configure: configure_jira,
+    },
+    ClientConfig {
+        name: "tritond-client",
+        spec_path: "openapi-specs/generated/tritond-api.json",
+        output_path: "clients/internal/tritond-client/src/generated.rs",
+        configure: configure_tritond,
     },
     ClientConfig {
         name: "vmapi-client",
