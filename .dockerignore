@@ -1,0 +1,33 @@
+# Build artifacts and toolchain caches
+target/
+**/target/
+cache/
+rust/
+make_stamps/
+
+# VCS / CI
+.git/
+.github/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project-internal tooling that isn't needed by cargo
+.beads/
+.claude/
+deps/
+conversion-plans/
+docs/
+
+# Misc
+*.log
+.env
+node_modules/
+
+# Docker artifacts (avoid recursive copies)
+Dockerfile
+.dockerignore
+docker-compose.yml

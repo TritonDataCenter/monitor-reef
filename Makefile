@@ -49,6 +49,7 @@ endif
 .PHONY: go-test go-build go-vet go-coverage
 .PHONY: go-test-integration
 .PHONY: clients-generate clients-check
+.PHONY: docker-build docker-up docker-down docker-logs docker-smoke
 
 # Default target
 help: ## Show this help message
@@ -405,3 +406,37 @@ doc-lint: ## Check doc comments for implementation details that leak into OpenAP
 	else \
 		echo "No implementation detail leaks found in doc comments."; \
 	fi
+
+# Docker development environment
+#
+# The image built here is intended to be the artifact deployed inside
+# SmartOS LX-branded zones; the Linux Docker workflow exists so we can
+# iterate locally without a SmartOS host.
+DOCKER_IMAGE ?= tritond:dev
+DOCKER_HOST_PORT ?= 8080
+
+docker-build: ## Build the tritond Docker image
+	docker build -t $(DOCKER_IMAGE) .
+
+docker-up: ## Start the tritond Docker stack (detached)
+	docker compose up -d --build
+
+docker-down: ## Stop and remove the tritond Docker stack
+	docker compose down
+
+docker-logs: ## Tail tritond container logs
+	docker compose logs -f tritond
+
+docker-smoke: ## Smoke-test the running tritond container against /v2/health
+	@echo "Waiting for tritond to come up on port $(DOCKER_HOST_PORT)..."
+	@for i in $$(seq 1 30); do \
+		if curl -fsS "http://localhost:$(DOCKER_HOST_PORT)/v2/health" >/dev/null 2>&1; then \
+			BODY=$$(curl -fsS "http://localhost:$(DOCKER_HOST_PORT)/v2/health"); \
+			echo "OK: $$BODY"; \
+			exit 0; \
+		fi; \
+		sleep 1; \
+	done; \
+	echo "FAIL: tritond did not respond on /v2/health within 30s"; \
+	docker compose logs --tail 50 tritond; \
+	exit 1

@@ -1,0 +1,24 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+# Local Triton Cloud development stack.
+#
+# Phase 0 ships only tritond. Phase 0b will add a foundationdb service
+# alongside it; downstream services will join as they are written.
+
+services:
+  tritond:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tritond:dev
+    container_name: tritond
+    ports:
+      - "8080:8080"
+    environment:
+      RUST_LOG: info
+      TRITOND_BIND_ADDRESS: 0.0.0.0:8080
+    restart: unless-stopped
