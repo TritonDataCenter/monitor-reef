@@ -109,12 +109,10 @@ pub trait Store: Send + Sync + 'static {
     /// api-key list`.
     async fn list_api_keys(&self, user_id: Uuid) -> Result<Vec<ApiKey>, StoreError>;
 
-    /// Iterate every API key in the cluster. The auth middleware
-    /// uses this to find the matching hash for an inbound bearer
-    /// presented as an API key. Phase 0 keeps the surface simple;
-    /// Phase 1 will index by a key prefix to avoid the linear scan
-    /// once we have more than a handful of keys.
-    async fn all_api_keys(&self) -> Result<Vec<ApiKey>, StoreError>;
+    /// Look up an API key by its non-secret `lookup_id` segment.
+    /// Returns [`StoreError::NotFound`] if no such key exists. The
+    /// auth middleware uses this for O(1) credential resolution.
+    async fn get_api_key_by_lookup_id(&self, lookup_id: &str) -> Result<ApiKey, StoreError>;
 
     /// Delete an API key by id. Returns [`StoreError::NotFound`] if
     /// the id does not belong to `user_id`'s set.

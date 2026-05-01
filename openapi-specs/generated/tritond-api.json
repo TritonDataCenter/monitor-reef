@@ -382,7 +382,7 @@
         ]
       },
       "LoginRequest": {
-        "description": "Request body for `POST /v2/auth/login`.",
+        "description": "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.",
         "type": "object",
         "properties": {
           "password": {

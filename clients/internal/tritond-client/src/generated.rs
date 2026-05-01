@@ -221,13 +221,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/auth/login`."]
+    #[doc = "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/auth/login`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v2/auth/login`.\\n\\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"password\","]

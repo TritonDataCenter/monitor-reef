@@ -15,7 +15,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
-use tritond_auth::{JwtKey, hash_password, mint_access};
+use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
 use tritond_client::types::NewSilo;
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
@@ -35,7 +35,9 @@ impl TestServer {
         let user = User {
             id: user_id,
             username: "root".to_string(),
-            password_hash: hash_password("ignored-by-token-tests").unwrap(),
+            password_hash: hash_password(&RedactedString::from("ignored-by-token-tests"))
+                .await
+                .unwrap(),
             is_root: true,
             created_at: Utc::now(),
         };

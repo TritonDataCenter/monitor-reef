@@ -29,6 +29,7 @@
 //! user/by_id/<uuid>                 -> JSON-encoded User
 //! user/by_name/<username>           -> uuid hyphenated bytes
 //! apikey/by_id/<uuid>               -> JSON-encoded ApiKey
+//! apikey/by_lookup/<lookup_id>      -> uuid hyphenated bytes
 //! apikey/by_user/<uuid>/<key-uuid>  -> empty (membership index)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
@@ -100,16 +101,16 @@ impl FdbStore {
         format!("apikey/by_id/{id}").into_bytes()
     }
 
-    fn apikey_index_key(user_id: Uuid, key_id: Uuid) -> Vec<u8> {
+    fn apikey_by_lookup_key(lookup_id: &str) -> Vec<u8> {
+        format!("apikey/by_lookup/{lookup_id}").into_bytes()
+    }
+
+    fn apikey_user_index_key(user_id: Uuid, key_id: Uuid) -> Vec<u8> {
         format!("apikey/by_user/{user_id}/{key_id}").into_bytes()
     }
 
-    fn apikey_index_prefix(user_id: Uuid) -> Vec<u8> {
+    fn apikey_user_index_prefix(user_id: Uuid) -> Vec<u8> {
         format!("apikey/by_user/{user_id}/").into_bytes()
-    }
-
-    fn apikey_id_prefix() -> &'static [u8] {
-        b"apikey/by_id/"
     }
 
     fn system_key(key: SystemKey) -> Vec<u8> {
@@ -283,27 +284,42 @@ impl Store for FdbStore {
         let value = serde_json::to_vec(&key)
             .map_err(|e| StoreError::Backend(format!("serialize api key: {e}")))?;
         let by_id_key = Self::apikey_by_id_key(key.id);
-        let index_key = Self::apikey_index_key(key.user_id, key.id);
+        let by_lookup_key = Self::apikey_by_lookup_key(&key.lookup_id);
+        let user_index_key = Self::apikey_user_index_key(key.user_id, key.id);
+        let id_str = key.id.to_string();
+        let lookup_id = key.lookup_id.clone();
 
-        let result: Result<(), FdbBindingError> = self
+        let outcome: Result<CreateOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let index_key = index_key.clone();
+                let by_lookup_key = by_lookup_key.clone();
+                let user_index_key = user_index_key.clone();
                 let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
                 async move {
+                    if tr.get(&by_lookup_key, false).await?.is_some() {
+                        return Ok(CreateOutcome::NameTaken);
+                    }
                     tr.set(&by_id_key, &value);
-                    tr.set(&index_key, b"");
-                    Ok(())
+                    tr.set(&by_lookup_key, &id_bytes);
+                    tr.set(&user_index_key, b"");
+                    Ok(CreateOutcome::Created)
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
-        Ok(key)
+
+        match outcome {
+            Ok(CreateOutcome::Created) => Ok(key),
+            Ok(CreateOutcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "api key with lookup id {lookup_id:?} already exists"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 
     async fn list_api_keys(&self, user_id: Uuid) -> Result<Vec<ApiKey>, StoreError> {
-        let prefix = Self::apikey_index_prefix(user_id);
+        let prefix = Self::apikey_user_index_prefix(user_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -347,52 +363,59 @@ impl Store for FdbStore {
         Ok(out)
     }
 
-    async fn all_api_keys(&self) -> Result<Vec<ApiKey>, StoreError> {
-        let (begin, end) = prefix_range(Self::apikey_id_prefix());
-        let result: Result<Vec<Vec<u8>>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
-                }
-            })
-            .await;
-        let raw = result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
-        let mut out = Vec::with_capacity(raw.len());
-        for bytes in raw {
-            let key: ApiKey = serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))?;
-            out.push(key);
-        }
-        Ok(out)
+    async fn get_api_key_by_lookup_id(&self, lookup_id: &str) -> Result<ApiKey, StoreError> {
+        let by_lookup_key = Self::apikey_by_lookup_key(lookup_id);
+        let id_bytes = self
+            .read_bytes(&by_lookup_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("api key lookup index not utf8: {e}")))?;
+        let id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("api key lookup index not uuid: {e}")))?;
+        let by_id_key = Self::apikey_by_id_key(id);
+        let bytes = self
+            .read_bytes(&by_id_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))
     }
 
     async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = Self::apikey_by_id_key(key_id);
-        let index_key = Self::apikey_index_key(user_id, key_id);
+        let user_index_key = Self::apikey_user_index_key(user_id, key_id);
+
+        // We need the lookup_id to clear the by_lookup index. Read
+        // the record outside the transaction; the rare race where it
+        // was concurrently deleted resolves to NotFound below.
+        let record_bytes = match self.read_bytes(&by_id_key).await? {
+            Some(bytes) => bytes,
+            None => return Err(StoreError::NotFound),
+        };
+        let record: ApiKey = serde_json::from_slice(&record_bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))?;
+        if record.user_id != user_id {
+            return Err(StoreError::NotFound);
+        }
+        let by_lookup_key = Self::apikey_by_lookup_key(&record.lookup_id);
 
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
-                let index_key = index_key.clone();
+                let by_lookup_key = by_lookup_key.clone();
+                let user_index_key = user_index_key.clone();
                 async move {
-                    // The index entry is the source of truth for
-                    // ownership: if the (user_id, key_id) pair isn't
-                    // there, the caller doesn't get to delete this key.
-                    if tr.get(&index_key, false).await?.is_none() {
+                    // The user-index entry is the source of truth for
+                    // ownership; if it's gone, somebody already
+                    // deleted the key.
+                    if tr.get(&user_index_key, false).await?.is_none() {
                         return Ok(DeleteOutcome::NotFound);
                     }
                     tr.clear(&by_id_key);
-                    tr.clear(&index_key);
+                    tr.clear(&by_lookup_key);
+                    tr.clear(&user_index_key);
                     Ok(DeleteOutcome::Deleted)
                 }
             })

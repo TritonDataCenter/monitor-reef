@@ -36,8 +36,9 @@ use cedar_policy::{
     RestrictedExpression,
 };
 use dropshot::{ClientErrorStatusCode, HttpError, RequestContext};
-use tritond_auth::{JwtKey, TokenKind, verify, verify_api_key};
-use tritond_store::Store;
+use tracing::warn;
+use tritond_auth::{JwtKey, TokenKind, parse_api_key, verify, verify_api_key_secret};
+use tritond_store::{Store, StoreError};
 use uuid::Uuid;
 
 /// Embedded Cedar policy bundle.
@@ -68,11 +69,37 @@ permit(
 
 /// Result of authenticating an inbound request.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Principal {
     /// Authenticated operator. `is_root` is captured at lookup time.
     Operator { user_id: Uuid, is_root: bool },
-    /// No valid credential was presented.
+    /// No valid credential was presented (or the presented one was
+    /// invalid). Cedar will allow this principal only on
+    /// public-action endpoints.
     Anonymous,
+}
+
+/// Errors that can come out of [`AuthService::authenticate`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum AuthError {
+    /// The backing store reported a failure that the auth path
+    /// can't paper over (e.g. FoundationDB unreachable). We do **not**
+    /// downgrade these to anonymous, because then a partial outage
+    /// would silently de-authenticate every caller and produce 403
+    /// noise instead of an honest 503.
+    #[error("auth backend unavailable: {0}")]
+    Backend(StoreError),
+}
+
+impl From<AuthError> for HttpError {
+    fn from(err: AuthError) -> Self {
+        match err {
+            AuthError::Backend(inner) => {
+                HttpError::for_internal_error(format!("auth backend unavailable: {inner}"))
+            }
+        }
+    }
 }
 
 impl Principal {
@@ -156,12 +183,23 @@ impl AuthService {
         &self.jwt_key
     }
 
-    /// Authenticate the inbound request. Never returns an error: a
-    /// missing or invalid credential simply yields [`Principal::Anonymous`]
-    /// so that downstream Cedar rules can decide what to do with it.
-    pub async fn authenticate(&self, store: &dyn Store, bearer: Option<&str>) -> Principal {
+    /// Authenticate the inbound request.
+    ///
+    /// Returns:
+    /// * [`Principal::Operator`] on a valid credential.
+    /// * [`Principal::Anonymous`] on missing, malformed, expired, or
+    ///   unknown credentials — anything that points at the user
+    ///   rather than the system.
+    /// * [`AuthError::Backend`] when the store itself fails. The
+    ///   caller maps this to a 5xx so a half-broken cluster does not
+    ///   silently deauthenticate every caller as 403.
+    pub async fn authenticate(
+        &self,
+        store: &dyn Store,
+        bearer: Option<&str>,
+    ) -> Result<Principal, AuthError> {
         let Some(token) = bearer else {
-            return Principal::Anonymous;
+            return Ok(Principal::Anonymous);
         };
 
         if token.starts_with(tritond_auth::API_KEY_PREFIX) {
@@ -171,39 +209,70 @@ impl AuthService {
         }
     }
 
-    async fn authenticate_jwt(&self, store: &dyn Store, token: &str) -> Principal {
-        let Ok(claims) = verify(&self.jwt_key, token, TokenKind::Access) else {
-            return Principal::Anonymous;
+    async fn authenticate_jwt(
+        &self,
+        store: &dyn Store,
+        token: &str,
+    ) -> Result<Principal, AuthError> {
+        let claims = match verify(&self.jwt_key, token, TokenKind::Access) {
+            Ok(claims) => claims,
+            Err(e) => {
+                // Bad-token errors are not interesting (clients hit
+                // them on every expired-token retry); log at debug.
+                tracing::debug!(error = %e, "rejecting invalid jwt as anonymous");
+                return Ok(Principal::Anonymous);
+            }
         };
         match store.get_user_by_id(claims.sub).await {
-            Ok(user) => Principal::Operator {
+            Ok(user) => Ok(Principal::Operator {
                 user_id: user.id,
                 is_root: user.is_root,
-            },
-            Err(_) => Principal::Anonymous,
+            }),
+            Err(StoreError::NotFound) => Ok(Principal::Anonymous),
+            Err(e) => {
+                warn!(error = %e, "store failure while resolving JWT principal");
+                Err(AuthError::Backend(e))
+            }
         }
     }
 
-    async fn authenticate_api_key(&self, store: &dyn Store, token: &str) -> Principal {
-        // Linear scan — fine while the cluster has handfuls of keys;
-        // Phase 1 indexes by a key prefix to avoid the bcrypt-per-key
-        // cost on every request.
-        let keys = match store.all_api_keys().await {
-            Ok(k) => k,
-            Err(_) => return Principal::Anonymous,
+    async fn authenticate_api_key(
+        &self,
+        store: &dyn Store,
+        token: &str,
+    ) -> Result<Principal, AuthError> {
+        let Some((lookup_id, secret)) = parse_api_key(token) else {
+            return Ok(Principal::Anonymous);
         };
-        for record in keys {
-            if matches!(verify_api_key(token, &record.hash), Ok(true)) {
-                return match store.get_user_by_id(record.user_id).await {
-                    Ok(user) => Principal::Operator {
-                        user_id: user.id,
-                        is_root: user.is_root,
-                    },
-                    Err(_) => Principal::Anonymous,
-                };
+        let record = match store.get_api_key_by_lookup_id(lookup_id).await {
+            Ok(record) => record,
+            Err(StoreError::NotFound) => return Ok(Principal::Anonymous),
+            Err(e) => {
+                warn!(error = %e, "store failure while resolving api key by lookup id");
+                return Err(AuthError::Backend(e));
+            }
+        };
+        let verified = match verify_api_key_secret(secret, &record.hash).await {
+            Ok(b) => b,
+            Err(e) => {
+                warn!(error = %e, "bcrypt failure while verifying api key");
+                return Ok(Principal::Anonymous);
+            }
+        };
+        if !verified {
+            return Ok(Principal::Anonymous);
+        }
+        match store.get_user_by_id(record.user_id).await {
+            Ok(user) => Ok(Principal::Operator {
+                user_id: user.id,
+                is_root: user.is_root,
+            }),
+            Err(StoreError::NotFound) => Ok(Principal::Anonymous),
+            Err(e) => {
+                warn!(error = %e, "store failure while resolving api-key user");
+                Err(AuthError::Backend(e))
             }
         }
-        Principal::Anonymous
     }
 
     /// Evaluate the embedded Cedar policy. Returns `Ok(())` on
@@ -272,7 +341,7 @@ where
     C: dropshot::ServerContext,
 {
     let bearer = extract_bearer(rqctx);
-    let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await;
+    let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await?;
     auth.authorize(&principal, action)?;
     Ok(principal)
 }
@@ -373,7 +442,7 @@ mod tests {
         store.create_user(user).await.unwrap();
         let (token, _) = mint_access(auth.jwt_key(), user_id).unwrap();
 
-        let p = auth.authenticate(&store, Some(&token)).await;
+        let p = auth.authenticate(&store, Some(&token)).await.unwrap();
         match p {
             Principal::Operator {
                 user_id: got_id,
@@ -387,10 +456,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn jwt_for_unknown_user_yields_anonymous() {
+        let auth = fresh_service();
+        let store = MemStore::new();
+        let (token, _) = mint_access(auth.jwt_key(), Uuid::new_v4()).unwrap();
+        let p = auth.authenticate(&store, Some(&token)).await.unwrap();
+        assert!(matches!(p, Principal::Anonymous));
+    }
+
+    #[tokio::test]
     async fn bogus_jwt_yields_anonymous() {
         let auth = fresh_service();
         let store = MemStore::new();
-        let p = auth.authenticate(&store, Some("not.a.jwt")).await;
+        let p = auth.authenticate(&store, Some("not.a.jwt")).await.unwrap();
+        assert!(matches!(p, Principal::Anonymous));
+    }
+
+    #[tokio::test]
+    async fn malformed_api_key_token_yields_anonymous() {
+        let auth = fresh_service();
+        let store = MemStore::new();
+        // Right prefix, wrong length: not a real api key.
+        let p = auth
+            .authenticate(&store, Some("tcadm_short"))
+            .await
+            .unwrap();
         assert!(matches!(p, Principal::Anonymous));
     }
 }

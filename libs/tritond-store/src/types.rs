@@ -71,8 +71,10 @@ impl From<User> for UserView {
     }
 }
 
-/// API key record. Storage carries only the bcrypt hash; the
-/// plaintext is shown to the operator exactly once at creation time.
+/// API key record. Storage carries the bcrypt hash of the secret
+/// segment plus the non-secret `lookup_id` used to find the record
+/// in O(1). Plaintext is shown to the operator exactly once at
+/// creation time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiKey {
     pub id: Uuid,
@@ -80,7 +82,10 @@ pub struct ApiKey {
     pub user_id: Uuid,
     /// Operator-supplied free-text label (e.g. "ci-pipeline").
     pub description: String,
-    /// Bcrypt hash of the wire-form key.
+    /// Non-secret 12-character lookup identifier — the prefix half of
+    /// the wire-form secret. Indexed by `Store` for O(1) lookup.
+    pub lookup_id: String,
+    /// Bcrypt hash of the secret segment of the wire-form key.
     pub hash: String,
     pub created_at: DateTime<Utc>,
 }

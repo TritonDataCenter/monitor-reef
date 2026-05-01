@@ -132,6 +132,7 @@ impl TritondApi for TritondServiceImpl {
             Err(e) => return Err(store_error_to_http(e)),
         };
         let password_ok = verify_password(&req.password, &user.password_hash)
+            .await
             .map_err(|e| HttpError::for_internal_error(format!("verify password: {e}")))?;
         if !password_ok {
             return Err(invalid_credentials());
@@ -173,11 +174,13 @@ impl TritondApi for TritondServiceImpl {
         let req = body.into_inner();
 
         let material = generate_api_key()
+            .await
             .map_err(|e| HttpError::for_internal_error(format!("generate api key: {e}")))?;
         let record = ApiKey {
             id: Uuid::new_v4(),
             user_id,
             description: req.description,
+            lookup_id: material.lookup_id,
             hash: material.hash,
             created_at: chrono::Utc::now(),
         };

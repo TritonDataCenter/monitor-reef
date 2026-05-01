@@ -24,6 +24,7 @@ use dropshot::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{ApiKeyView, NewSilo, Silo};
@@ -48,10 +49,14 @@ pub struct ApiKeyPath {
 }
 
 /// Request body for `POST /v2/auth/login`.
+///
+/// `password` is a [`RedactedString`] so a stray `Debug` of this
+/// struct does not print the credential and so the in-memory copy
+/// is zeroed when the value drops.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct LoginRequest {
     pub username: String,
-    pub password: String,
+    pub password: RedactedString,
 }
 
 /// Request body for `POST /v2/auth/refresh`.

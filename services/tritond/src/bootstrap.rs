@@ -69,7 +69,9 @@ async fn ensure_root_user(store: &dyn Store) -> Result<()> {
     }
 
     let plaintext = generate_random_password();
-    let password_hash = hash_password(&plaintext).context("hash bootstrap password")?;
+    let password_hash = hash_password(&plaintext)
+        .await
+        .context("hash bootstrap password")?;
     let user = User {
         id: Uuid::new_v4(),
         username: ROOT_USERNAME.to_string(),
@@ -84,12 +86,14 @@ async fn ensure_root_user(store: &dyn Store) -> Result<()> {
 
     // Banner deliberately uses eprintln rather than `info!` so the
     // operator can see it even when tracing is filtered to warn-only.
+    // `plaintext` is a `RedactedString`; we explicitly expose it once
+    // here, then it is zeroed when the function returns.
     eprintln!();
     eprintln!("============================================================");
     eprintln!("  tritond bootstrap: created root operator");
     eprintln!();
     eprintln!("  username: {ROOT_USERNAME}");
-    eprintln!("  password: {plaintext}");
+    eprintln!("  password: {}", plaintext.expose());
     eprintln!();
     eprintln!("  Save this password now. It will not be shown again.");
     eprintln!("  Use `tcadm configure` to authenticate, then create");

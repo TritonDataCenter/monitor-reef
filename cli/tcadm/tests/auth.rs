@@ -21,7 +21,7 @@ use chrono::Utc;
 use tempfile::TempDir;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
-use tritond_auth::{JwtKey, hash_password, mint_access};
+use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
 
@@ -40,7 +40,9 @@ impl TestServer {
         let user = User {
             id: user_id,
             username: "root".to_string(),
-            password_hash: hash_password(ROOT_PASSWORD).unwrap(),
+            password_hash: hash_password(&RedactedString::from(ROOT_PASSWORD))
+                .await
+                .unwrap(),
             is_root: true,
             created_at: Utc::now(),
         };

@@ -25,6 +25,7 @@ struct Inner {
     users_by_id: HashMap<Uuid, User>,
     user_id_by_username: HashMap<String, Uuid>,
     api_keys_by_id: HashMap<Uuid, ApiKey>,
+    api_key_id_by_lookup_id: HashMap<String, Uuid>,
     system_keys: HashMap<SystemKey, Vec<u8>>,
 }
 
@@ -128,6 +129,15 @@ impl Store for MemStore {
 
     async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError> {
         let mut guard = self.inner.write().await;
+        if guard.api_key_id_by_lookup_id.contains_key(&key.lookup_id) {
+            return Err(StoreError::Conflict(format!(
+                "api key with lookup id {:?} already exists",
+                key.lookup_id
+            )));
+        }
+        guard
+            .api_key_id_by_lookup_id
+            .insert(key.lookup_id.clone(), key.id);
         guard.api_keys_by_id.insert(key.id, key.clone());
         Ok(key)
     }
@@ -142,20 +152,29 @@ impl Store for MemStore {
             .collect())
     }
 
-    async fn all_api_keys(&self) -> Result<Vec<ApiKey>, StoreError> {
+    async fn get_api_key_by_lookup_id(&self, lookup_id: &str) -> Result<ApiKey, StoreError> {
         let guard = self.inner.read().await;
-        Ok(guard.api_keys_by_id.values().cloned().collect())
+        let key_id = guard
+            .api_key_id_by_lookup_id
+            .get(lookup_id)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .api_keys_by_id
+            .get(&key_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
     }
 
     async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
-        match guard.api_keys_by_id.get(&key_id) {
-            Some(k) if k.user_id == user_id => {
-                guard.api_keys_by_id.remove(&key_id);
-                Ok(())
-            }
-            _ => Err(StoreError::NotFound),
-        }
+        let lookup_id = match guard.api_keys_by_id.get(&key_id) {
+            Some(k) if k.user_id == user_id => k.lookup_id.clone(),
+            _ => return Err(StoreError::NotFound),
+        };
+        guard.api_keys_by_id.remove(&key_id);
+        guard.api_key_id_by_lookup_id.remove(&lookup_id);
+        Ok(())
     }
 
     async fn get_system_key(&self, key: SystemKey) -> Result<Vec<u8>, StoreError> {
@@ -291,6 +310,7 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: owner.id,
             description: "ci".to_string(),
+            lookup_id: "AAAAAAAAAAAA".to_string(),
             hash: "$hashA".to_string(),
             created_at: Utc::now(),
         };
@@ -298,6 +318,7 @@ mod tests {
             id: Uuid::new_v4(),
             user_id: other.id,
             description: "tf".to_string(),
+            lookup_id: "BBBBBBBBBBBB".to_string(),
             hash: "$hashB".to_string(),
             created_at: Utc::now(),
         };
@@ -308,6 +329,13 @@ mod tests {
         assert_eq!(owner_keys.len(), 1);
         assert_eq!(owner_keys[0].id, key_a.id);
 
+        // O(1) lookup by lookup_id resolves to the right record.
+        let resolved = store
+            .get_api_key_by_lookup_id("AAAAAAAAAAAA")
+            .await
+            .unwrap();
+        assert_eq!(resolved.id, key_a.id);
+
         // delete by wrong owner is not-found
         let err = store
             .delete_api_key(other.id, key_a.id)
@@ -315,13 +343,41 @@ mod tests {
             .expect_err("cross-owner delete should be not-found");
         assert!(matches!(err, StoreError::NotFound));
 
-        // delete by right owner works, then double-delete is not-found
+        // delete by right owner works, removes the lookup index, and
+        // a second delete is not-found.
         store.delete_api_key(owner.id, key_a.id).await.unwrap();
+        let err = store
+            .get_api_key_by_lookup_id("AAAAAAAAAAAA")
+            .await
+            .expect_err("post-delete lookup should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
         let err = store
             .delete_api_key(owner.id, key_a.id)
             .await
             .expect_err("repeat delete should be not-found");
         assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn duplicate_lookup_id_conflicts() {
+        let store = MemStore::new();
+        let owner = user_fixture("alice");
+        store.create_user(owner.clone()).await.unwrap();
+
+        let make = |id: Uuid| ApiKey {
+            id,
+            user_id: owner.id,
+            description: "dup".to_string(),
+            lookup_id: "AAAAAAAAAAAA".to_string(),
+            hash: "$hash".to_string(),
+            created_at: Utc::now(),
+        };
+        store.create_api_key(make(Uuid::new_v4())).await.unwrap();
+        let err = store
+            .create_api_key(make(Uuid::new_v4()))
+            .await
+            .expect_err("second create with same lookup_id should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
     }
 
     #[tokio::test]

@@ -17,12 +17,17 @@
 //! Both use the same symmetric `JwtKey` and discriminate via a `typ`
 //! claim, so a refresh token cannot be silently used as an access
 //! token (or vice versa).
+//!
+//! The public error surface deliberately doesn't expose
+//! `jsonwebtoken`'s error type; consumers match on stable variants
+//! and can swap the underlying crate later without an API break.
 
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 /// Symmetric key length. 32 bytes (256 bits) matches the HS256 block
 /// size and matches what most other ecosystems do.
@@ -35,22 +40,50 @@ pub const ACCESS_TOKEN_TTL_MINUTES: i64 = 15;
 pub const REFRESH_TOKEN_TTL_HOURS: i64 = 24;
 
 /// Errors returned by the JWT helpers.
+///
+/// The variants are stable; the underlying `jsonwebtoken` types are
+/// not part of the public API.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum JwtError {
-    /// jsonwebtoken rejected the token (bad signature, expired, malformed).
-    #[error("jwt error: {0}")]
-    Jwt(#[from] jsonwebtoken::errors::Error),
+    /// Token expired according to its `exp` claim.
+    #[error("token has expired")]
+    Expired,
+
+    /// Token signature did not match the verifying key.
+    #[error("token signature mismatch")]
+    BadSignature,
+
+    /// Token failed validation for any other reason (malformed,
+    /// missing required claim, unsupported algorithm, etc.).
+    #[error("invalid token: {0}")]
+    Invalid(String),
 
     /// The token type embedded in the `typ` claim does not match the
     /// type the caller asked us to verify (e.g. an access endpoint
     /// received a refresh token).
     #[error("token kind mismatch: expected {expected:?}, got {got:?}")]
     KindMismatch { expected: TokenKind, got: TokenKind },
+
+    /// Encoding the claims failed. Practically reachable only on a
+    /// programmer error (e.g. claims not serde-serializable).
+    #[error("token encode error: {0}")]
+    Encode(String),
+}
+
+fn map_decode_err(err: jsonwebtoken::errors::Error) -> JwtError {
+    use jsonwebtoken::errors::ErrorKind;
+    match err.kind() {
+        ErrorKind::ExpiredSignature => JwtError::Expired,
+        ErrorKind::InvalidSignature => JwtError::BadSignature,
+        _ => JwtError::Invalid(err.to_string()),
+    }
 }
 
 /// Kind of token. Encoded as the `typ` claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum TokenKind {
     Access,
     Refresh,
@@ -58,6 +91,11 @@ pub enum TokenKind {
 
 /// HS256 signing/verifying key. Wraps the raw bytes plus the
 /// jsonwebtoken encode/decode keys derived once.
+///
+/// `Drop` zeroes the raw bytes; `EncodingKey` and `DecodingKey` hold
+/// their own copies that are not zeroed because `jsonwebtoken` does
+/// not expose a destructor — that residue is the limit of what this
+/// crate can do without forking the dep.
 pub struct JwtKey {
     encoding: EncodingKey,
     decoding: DecodingKey,
@@ -65,8 +103,9 @@ pub struct JwtKey {
 }
 
 impl JwtKey {
-    /// Generate a fresh random key. Use this once at cluster
-    /// bootstrap; persist `bytes()` to FoundationDB.
+    /// Generate a fresh random key. Call once at cluster bootstrap;
+    /// persist [`Self::bytes`] to FoundationDB.
+    #[must_use = "the generated key is the only copy of this credential"]
     pub fn generate() -> Self {
         let mut bytes = [0u8; JWT_KEY_BYTES];
         rand::rng().fill_bytes(&mut bytes);
@@ -74,6 +113,7 @@ impl JwtKey {
     }
 
     /// Reconstruct from previously-persisted bytes.
+    #[must_use]
     pub fn from_bytes(bytes: [u8; JWT_KEY_BYTES]) -> Self {
         Self {
             encoding: EncodingKey::from_secret(&bytes),
@@ -83,8 +123,15 @@ impl JwtKey {
     }
 
     /// Borrow the raw key bytes (e.g. for persistence).
+    #[must_use]
     pub fn bytes(&self) -> &[u8; JWT_KEY_BYTES] {
         &self.bytes
+    }
+}
+
+impl Drop for JwtKey {
+    fn drop(&mut self) {
+        self.bytes.zeroize();
     }
 }
 
@@ -112,6 +159,7 @@ pub struct RefreshClaims {
 /// Mint an access token for `user_id`. Returns the wire-form JWT and
 /// the expiration time so the client can cache and pre-empt
 /// refresh.
+#[must_use = "the minted token is the only copy of this credential"]
 pub fn mint_access(key: &JwtKey, user_id: Uuid) -> Result<(String, DateTime<Utc>), JwtError> {
     let now = Utc::now();
     let expires_at = now + Duration::minutes(ACCESS_TOKEN_TTL_MINUTES);
@@ -121,12 +169,14 @@ pub fn mint_access(key: &JwtKey, user_id: Uuid) -> Result<(String, DateTime<Utc>
         iat: now.timestamp(),
         typ: TokenKind::Access,
     };
-    let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &key.encoding)?;
+    let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &key.encoding)
+        .map_err(|e| JwtError::Encode(e.to_string()))?;
     Ok((token, expires_at))
 }
 
 /// Mint a refresh token for `user_id`. Returns the JWT and the
 /// expiration time.
+#[must_use = "the minted token is the only copy of this credential"]
 pub fn mint_refresh(key: &JwtKey, user_id: Uuid) -> Result<(String, DateTime<Utc>), JwtError> {
     let now = Utc::now();
     let expires_at = now + Duration::hours(REFRESH_TOKEN_TTL_HOURS);
@@ -137,7 +187,8 @@ pub fn mint_refresh(key: &JwtKey, user_id: Uuid) -> Result<(String, DateTime<Utc
         iat: now.timestamp(),
         typ: TokenKind::Refresh,
     };
-    let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &key.encoding)?;
+    let token = jsonwebtoken::encode(&Header::new(Algorithm::HS256), &claims, &key.encoding)
+        .map_err(|e| JwtError::Encode(e.to_string()))?;
     Ok((token, expires_at))
 }
 
@@ -146,10 +197,12 @@ pub fn mint_refresh(key: &JwtKey, user_id: Uuid) -> Result<(String, DateTime<Utc
 /// `expected` distinguishes access from refresh — passing a refresh
 /// token to a handler that wanted an access token (or vice versa)
 /// is rejected via [`JwtError::KindMismatch`].
+#[must_use = "the verification result must be checked before trusting the token"]
 pub fn verify(key: &JwtKey, token: &str, expected: TokenKind) -> Result<AccessClaims, JwtError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_required_spec_claims(&["exp", "sub"]);
-    let data = jsonwebtoken::decode::<AccessClaims>(token, &key.decoding, &validation)?;
+    let data = jsonwebtoken::decode::<AccessClaims>(token, &key.decoding, &validation)
+        .map_err(map_decode_err)?;
     if data.claims.typ != expected {
         return Err(JwtError::KindMismatch {
             expected,
@@ -192,12 +245,19 @@ mod tests {
     }
 
     #[test]
-    fn wrong_key_rejects_token() {
+    fn wrong_key_rejects_token_with_bad_signature() {
         let key_a = JwtKey::generate();
         let key_b = JwtKey::generate();
         let (token, _) = mint_access(&key_a, Uuid::new_v4()).unwrap();
         let err = verify(&key_b, &token, TokenKind::Access).unwrap_err();
-        assert!(matches!(err, JwtError::Jwt(_)));
+        assert!(matches!(err, JwtError::BadSignature));
+    }
+
+    #[test]
+    fn malformed_token_yields_invalid() {
+        let key = JwtKey::generate();
+        let err = verify(&key, "not.a.token", TokenKind::Access).unwrap_err();
+        assert!(matches!(err, JwtError::Invalid(_)));
     }
 
     #[test]
