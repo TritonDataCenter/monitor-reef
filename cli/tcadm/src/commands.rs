@@ -385,6 +385,118 @@ pub async fn silo_idp_delete(
     Ok(())
 }
 
+/// List the projects in a silo.
+pub async fn silo_project_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let projects = client
+        .list_silo_projects()
+        .silo_id(silo_id)
+        .send()
+        .await
+        .context("list projects")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&projects)?);
+        return Ok(());
+    }
+    if projects.is_empty() {
+        println!("(no projects)");
+        return Ok(());
+    }
+    for p in projects {
+        println!("{}  {}  {}", p.id, p.created_at, p.name);
+    }
+    Ok(())
+}
+
+/// Create a new project in a silo.
+pub async fn silo_project_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    name: String,
+    description: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let project = client
+        .create_silo_project()
+        .silo_id(silo_id)
+        .body(tritond_client::types::NewProject {
+            name,
+            description: Some(description),
+        })
+        .send()
+        .await
+        .context("create project")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&project)?);
+    } else {
+        println!("Created project {} in silo {silo_id}", project.id);
+        println!("  name:        {}", project.name);
+        println!("  description: {}", project.description);
+        println!("  created:     {}", project.created_at);
+    }
+    Ok(())
+}
+
+/// Read a single project.
+pub async fn silo_project_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let project = client
+        .get_silo_project()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("get project")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&project)?);
+    } else {
+        println!("Project {} in silo {silo_id}", project.id);
+        println!("  name:        {}", project.name);
+        println!("  description: {}", project.description);
+        println!("  created:     {}", project.created_at);
+    }
+    Ok(())
+}
+
+/// Delete a project.
+pub async fn silo_project_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_silo_project()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("delete project")?;
+    println!("Deleted project {project_id} from silo {silo_id}");
+    Ok(())
+}
+
 /// Walk the chain and recompute hashes.
 pub async fn audit_verify(
     endpoint_override: Option<String>,

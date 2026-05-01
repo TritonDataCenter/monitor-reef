@@ -33,6 +33,9 @@
 //! apikey/by_lookup/<lookup_id>      -> uuid hyphenated bytes
 //! apikey/by_user/<uuid>/<key-uuid>  -> empty (membership index)
 //! idp/by_silo/<uuid>                -> JSON-encoded IdpConfig
+//! project/by_id/<uuid>              -> JSON-encoded Project
+//! project/by_silo/<silo>/<name>     -> uuid hyphenated bytes
+//! project/in_silo/<silo>/<proj>     -> empty (membership index)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -46,7 +49,9 @@ use chrono::Utc;
 use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
 use uuid::Uuid;
 
-use crate::{ApiKey, IdpConfig, NewSilo, Silo, Store, StoreError, SystemKey, User};
+use crate::{
+    ApiKey, IdpConfig, NewProject, NewSilo, Project, Silo, Store, StoreError, SystemKey, User,
+};
 
 static FDB_NETWORK: OnceLock<()> = OnceLock::new();
 
@@ -146,6 +151,22 @@ impl FdbStore {
 
     fn idp_config_prefix() -> &'static [u8] {
         b"idp/by_silo/"
+    }
+
+    fn project_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("project/by_id/{id}").into_bytes()
+    }
+
+    fn project_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
+        format!("project/by_silo/{silo_id}/{name}").into_bytes()
+    }
+
+    fn project_in_silo_key(silo_id: Uuid, project_id: Uuid) -> Vec<u8> {
+        format!("project/in_silo/{silo_id}/{project_id}").into_bytes()
+    }
+
+    fn project_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
+        format!("project/in_silo/{silo_id}/").into_bytes()
     }
 }
 
@@ -615,6 +636,160 @@ impl Store for FdbStore {
             out.push((silo_id, config));
         }
         Ok(out)
+    }
+
+    async fn create_project(&self, silo_id: Uuid, req: NewProject) -> Result<Project, StoreError> {
+        let project = Project {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name,
+            description: req.description.unwrap_or_default(),
+            created_at: Utc::now(),
+        };
+        let value = serde_json::to_vec(&project)
+            .map_err(|e| StoreError::Backend(format!("serialize project: {e}")))?;
+        let by_id_key = Self::project_by_id_key(project.id);
+        let by_name_key = Self::project_by_silo_name_key(silo_id, &project.name);
+        let in_silo_key = Self::project_in_silo_key(silo_id, project.id);
+        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let id_str = project.id.to_string();
+        let name_str = project.name.clone();
+
+        // Outcome distinguishes silo-missing from name-conflict so the
+        // single transaction can convey both into our caller's error
+        // shape.
+        enum Outcome {
+            Created,
+            SiloMissing,
+            NameTaken,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                let silo_check_key = silo_check_key.clone();
+                let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                async move {
+                    if tr.get(&silo_check_key, false).await?.is_none() {
+                        return Ok(Outcome::SiloMissing);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_silo_key, b"");
+                    Ok(Outcome::Created)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created) => Ok(project),
+            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "project with name {name_str:?} already exists in silo {silo_id}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError> {
+        let key = Self::project_by_id_key(project_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))
+    }
+
+    async fn list_projects_in_silo(&self, silo_id: Uuid) -> Result<Vec<Project>, StoreError> {
+        let prefix = Self::project_in_silo_prefix(silo_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("project index uuid: {e}")))?;
+            let by_id_key = Self::project_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let project: Project = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+                out.push(project);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError> {
+        // Read the row outside the transaction so we know the
+        // silo_id + name to clear from the indices. Concurrent
+        // delete shows up as Outcome::Vanished below.
+        let by_id_key = Self::project_by_id_key(project_id);
+        let bytes = match self.read_bytes(&by_id_key).await? {
+            Some(b) => b,
+            None => return Err(StoreError::NotFound),
+        };
+        let project: Project = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+        let by_name_key = Self::project_by_silo_name_key(project.silo_id, &project.name);
+        let in_silo_key = Self::project_in_silo_key(project.silo_id, project.id);
+
+        enum DelOut {
+            Deleted,
+            Vanished,
+        }
+        let outcome: Result<DelOut, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Ok(DelOut::Vanished);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_silo_key);
+                    Ok(DelOut::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DelOut::Deleted) => Ok(()),
+            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 }
 

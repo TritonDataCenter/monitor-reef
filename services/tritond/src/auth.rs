@@ -50,12 +50,17 @@ use crate::audit::AuditService;
 
 /// Embedded Cedar policy bundle.
 ///
-/// The set is intentionally small for Phase 0e:
+/// Three rules, ordered by specificity:
 ///
 /// * Anonymous callers can hit `health`, `login`, and `refresh`.
 /// * Authenticated operators with `is_root == true` can perform any
-///   action.
-/// * Every other access is denied by Cedar's default deny.
+///   action (the bootstrap-root path).
+/// * Federated users in a silo can perform a hand-curated set of
+///   tenant-scoped actions when `principal.silo_id ==
+///   resource.silo_id`. Adding a new tenant-facing action means
+///   appending it to the action list in this rule.
+///
+/// Every other access falls through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
 @id("anonymous-public-actions")
 permit(
@@ -72,14 +77,37 @@ permit(
 ) when {
     principal has is_root && principal.is_root == true
 };
+
+@id("silo-member-allows-silo-scoped-tenant-actions")
+permit(
+    principal,
+    action in [
+        Action::"project_list",
+        Action::"project_create",
+        Action::"project_get",
+        Action::"project_delete"
+    ],
+    resource
+) when {
+    principal has silo_id &&
+    resource has silo_id &&
+    principal.silo_id == resource.silo_id
+};
 "#;
 
 /// Result of authenticating an inbound request.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Principal {
-    /// Authenticated operator. `is_root` is captured at lookup time.
-    Operator { user_id: Uuid, is_root: bool },
+    /// Authenticated operator or federated user. `is_root` is true
+    /// for the bootstrap operator and any other cluster-wide
+    /// account; `silo_id` is `Some(...)` for federated users (and,
+    /// in future, for silo-scoped admin operators).
+    Operator {
+        user_id: Uuid,
+        is_root: bool,
+        silo_id: Option<Uuid>,
+    },
     /// No valid credential was presented (or the presented one was
     /// invalid). Cedar will allow this principal only on
     /// public-action endpoints.
@@ -119,15 +147,25 @@ impl Principal {
         EntityUid::from_str(&raw).context("constructing principal entity uid")
     }
 
-    /// Cedar entity carrying the principal's attributes (e.g. `is_root`).
+    /// Cedar entity carrying the principal's attributes (`is_root`
+    /// for bootstrap-style accounts, `silo_id` for silo-scoped ones).
     fn entity(&self) -> Result<Entity> {
         let uid = self.entity_uid()?;
         let mut attrs: HashMap<String, RestrictedExpression> = HashMap::new();
-        if let Principal::Operator { is_root, .. } = self {
+        if let Principal::Operator {
+            is_root, silo_id, ..
+        } = self
+        {
             attrs.insert(
                 "is_root".to_string(),
                 RestrictedExpression::new_bool(*is_root),
             );
+            if let Some(silo_id) = silo_id {
+                attrs.insert(
+                    "silo_id".to_string(),
+                    RestrictedExpression::new_string(silo_id.to_string()),
+                );
+            }
         }
         Entity::new(uid, attrs, HashSet::new()).context("constructing principal entity")
     }
@@ -151,6 +189,10 @@ pub enum Action {
     SiloIdpSet,
     SiloIdpGet,
     SiloIdpDelete,
+    ProjectList,
+    ProjectCreate,
+    ProjectGet,
+    ProjectDelete,
 }
 
 impl Action {
@@ -174,6 +216,10 @@ impl Action {
             Action::SiloIdpSet => "silo_idp_set",
             Action::SiloIdpGet => "silo_idp_get",
             Action::SiloIdpDelete => "silo_idp_delete",
+            Action::ProjectList => "project_list",
+            Action::ProjectCreate => "project_create",
+            Action::ProjectGet => "project_get",
+            Action::ProjectDelete => "project_delete",
         }
     }
 
@@ -252,6 +298,7 @@ impl AuthService {
                 Ok(user) => Ok(Principal::Operator {
                     user_id: user.id,
                     is_root: user.is_root,
+                    silo_id: user.silo_id,
                 }),
                 Err(StoreError::NotFound) => Ok(Principal::Anonymous),
                 Err(e) => {
@@ -353,6 +400,7 @@ impl AuthService {
         Ok(Principal::Operator {
             user_id: user.id,
             is_root: user.is_root,
+            silo_id: user.silo_id,
         })
     }
 
@@ -386,6 +434,7 @@ impl AuthService {
             Ok(user) => Ok(Principal::Operator {
                 user_id: user.id,
                 is_root: user.is_root,
+                silo_id: user.silo_id,
             }),
             Err(StoreError::NotFound) => Ok(Principal::Anonymous),
             Err(e) => {
@@ -395,24 +444,65 @@ impl AuthService {
         }
     }
 
-    /// Evaluate the embedded Cedar policy. Returns `Ok(())` on
-    /// permit, `Err(403)` on deny.
+    /// Evaluate the embedded Cedar policy against `System::"global"`.
+    /// Returns `Ok(())` on permit, `Err(403)` on deny. Used for
+    /// fleet-scoped actions (no silo in the URL path).
     pub fn authorize(&self, principal: &Principal, action: Action) -> Result<(), HttpError> {
+        let resource_uid = EntityUid::from_str("System::\"global\"")
+            .map_err(|e| HttpError::for_internal_error(format!("resource uid: {e}")))?;
+        let resource_entity = Entity::new(resource_uid.clone(), HashMap::new(), HashSet::new())
+            .map_err(|e| HttpError::for_internal_error(format!("resource entity: {e}")))?;
+        match self.evaluate(principal, action, resource_uid, resource_entity)? {
+            CedarDecision::Allow => Ok(()),
+            CedarDecision::Deny => Err(forbidden_for(action)),
+        }
+    }
+
+    /// Evaluate the policy against a `Silo::"<silo_id>"` resource
+    /// carrying a `silo_id` attribute, so the silo-membership rule
+    /// can fire. Returns `Ok(())` on permit; on deny, returns **404
+    /// Not Found** rather than 403 — a federated user from silo A
+    /// hitting silo B's resources should not be able to learn that
+    /// silo B exists.
+    pub fn authorize_in_silo(
+        &self,
+        principal: &Principal,
+        action: Action,
+        silo_id: Uuid,
+    ) -> Result<(), HttpError> {
+        let resource_uid = EntityUid::from_str(&format!("Silo::\"{silo_id}\""))
+            .map_err(|e| HttpError::for_internal_error(format!("silo resource uid: {e}")))?;
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "silo_id".to_string(),
+            RestrictedExpression::new_string(silo_id.to_string()),
+        );
+        let resource_entity = Entity::new(resource_uid.clone(), attrs, HashSet::new())
+            .map_err(|e| HttpError::for_internal_error(format!("silo resource entity: {e}")))?;
+        match self.evaluate(principal, action, resource_uid, resource_entity)? {
+            CedarDecision::Allow => Ok(()),
+            CedarDecision::Deny => Err(not_found_in_silo()),
+        }
+    }
+
+    fn evaluate(
+        &self,
+        principal: &Principal,
+        action: Action,
+        resource_uid: EntityUid,
+        resource_entity: Entity,
+    ) -> Result<CedarDecision, HttpError> {
         let principal_uid = principal
             .entity_uid()
             .map_err(|e| HttpError::for_internal_error(e.to_string()))?;
         let action_uid = action
             .entity_uid()
             .map_err(|e| HttpError::for_internal_error(e.to_string()))?;
-        let resource_uid = EntityUid::from_str("System::\"global\"")
-            .map_err(|e| HttpError::for_internal_error(format!("resource uid: {e}")))?;
-
-        let entity = principal
+        let principal_entity = principal
             .entity()
             .map_err(|e| HttpError::for_internal_error(e.to_string()))?;
-        let entities = Entities::from_entities([entity], None)
+        let entities = Entities::from_entities([principal_entity, resource_entity], None)
             .map_err(|e| HttpError::for_internal_error(format!("entities: {e}")))?;
-
         let request = Request::new(
             principal_uid,
             action_uid,
@@ -421,14 +511,10 @@ impl AuthService {
             None,
         )
         .map_err(|e| HttpError::for_internal_error(format!("cedar request: {e}")))?;
-
         let response = self
             .authorizer
             .is_authorized(&request, &self.policy_set, &entities);
-        match response.decision() {
-            CedarDecision::Allow => Ok(()),
-            CedarDecision::Deny => Err(forbidden_for(action)),
-        }
+        Ok(response.decision())
     }
 }
 
@@ -491,7 +577,9 @@ where
 /// (e.g. /v2/auth/api-keys must run as somebody).
 pub fn require_authenticated(principal: Principal) -> Result<(Uuid, bool), HttpError> {
     match principal {
-        Principal::Operator { user_id, is_root } => Ok((user_id, is_root)),
+        Principal::Operator {
+            user_id, is_root, ..
+        } => Ok((user_id, is_root)),
         Principal::Anonymous => Err(HttpError::for_client_error(
             Some("Unauthenticated".to_string()),
             ClientErrorStatusCode::UNAUTHORIZED,
@@ -506,6 +594,51 @@ fn forbidden_for(action: Action) -> HttpError {
         ClientErrorStatusCode::FORBIDDEN,
         format!("not authorised for {}", action.cedar_id()),
     )
+}
+
+/// Cross-silo deny: return 404 so cross-tenant probes can't enumerate
+/// silos. The shape matches resource-not-found errors from
+/// `store_error_to_http`, which is intentional.
+fn not_found_in_silo() -> HttpError {
+    HttpError::for_client_error(
+        Some("NotFound".to_string()),
+        ClientErrorStatusCode::NOT_FOUND,
+        "not found".to_string(),
+    )
+}
+
+/// Silo-scoped variant of [`authenticate_and_authorize`]. The Cedar
+/// resource is `Silo::"<silo_id>"` so the `silo-member-allows-silo-
+/// scoped-tenant-actions` rule can fire; deny returns **404** rather
+/// than 403 so cross-tenant probes can't enumerate silos.
+pub async fn authenticate_and_authorize_in_silo<C>(
+    rqctx: &RequestContext<C>,
+    auth: &AuthService,
+    audit: &AuditService,
+    store: &Arc<dyn Store>,
+    action: Action,
+    silo_id: Uuid,
+) -> Result<Principal, HttpError>
+where
+    C: dropshot::ServerContext,
+{
+    let bearer = extract_bearer(rqctx);
+    let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await?;
+    let request_id = Uuid::parse_str(&rqctx.request_id).ok();
+    match auth.authorize_in_silo(&principal, action, silo_id) {
+        Ok(()) => {
+            audit
+                .record_decision(&principal, action, request_id, AuditDecision::Allow)
+                .await;
+            Ok(principal)
+        }
+        Err(http_err) => {
+            audit
+                .record_decision(&principal, action, request_id, AuditDecision::Deny)
+                .await;
+            Err(http_err)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -541,6 +674,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            silo_id: None,
         };
         for action in [
             Action::CreateSilo,
@@ -559,6 +693,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: false,
+            silo_id: None,
         };
         assert!(auth.authorize(&p, Action::Health).is_ok());
         let err = auth
@@ -589,6 +724,7 @@ mod tests {
             Principal::Operator {
                 user_id: got_id,
                 is_root,
+                ..
             } => {
                 assert_eq!(got_id, user_id);
                 assert!(is_root);

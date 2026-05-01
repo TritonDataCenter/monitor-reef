@@ -31,8 +31,8 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewSilo, Silo, SystemKey, User,
-    UserView,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, Project, Silo,
+    SystemKey, User, UserView,
 };
 
 use async_trait::async_trait;
@@ -171,4 +171,29 @@ pub trait Store: Send + Sync + 'static {
     /// middleware to find the IdP whose `issuer` matches an inbound
     /// token's `iss` claim.
     async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Projects (silo-scoped)
+    // ------------------------------------------------------------------
+
+    /// Create a project inside a silo. Returns
+    /// [`StoreError::Conflict`] if `name` is already in use within
+    /// the same silo. Returns [`StoreError::NotFound`] if the silo
+    /// itself doesn't exist (the caller is expected to have already
+    /// resolved silo existence via Cedar; the check here is a
+    /// defence-in-depth race guard).
+    async fn create_project(&self, silo_id: Uuid, req: NewProject) -> Result<Project, StoreError>;
+
+    /// Look up a project by id. Returns [`StoreError::NotFound`] when
+    /// no such project exists, regardless of silo.
+    async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError>;
+
+    /// List every project belonging to `silo_id`. Order is unspecified
+    /// for Phase 0e-c; pagination lands when the list grows beyond a
+    /// single response.
+    async fn list_projects_in_silo(&self, silo_id: Uuid) -> Result<Vec<Project>, StoreError>;
+
+    /// Delete a project by id. Returns [`StoreError::NotFound`] if the
+    /// id does not exist.
+    async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError>;
 }

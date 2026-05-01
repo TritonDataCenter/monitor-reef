@@ -116,6 +116,29 @@ pub struct IdpConfigView {
     pub audience: Option<String>,
 }
 
+/// Sub-tenancy boundary inside a silo. Workload resources
+/// (instances, volumes, networks) eventually nest under projects.
+/// Phase 0e-c carries only the bare-minimum identifying fields;
+/// quota envelopes and per-project Cedar bindings come in later
+/// slices.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Project {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating a project. The owning silo comes from
+/// the URL path, not the body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewProject {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 impl From<IdpConfig> for IdpConfigView {
     fn from(config: IdpConfig) -> Self {
         IdpConfigView {

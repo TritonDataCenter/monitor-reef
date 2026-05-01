@@ -34,8 +34,8 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloPath, TokenResponse, TritondApi,
-    types::{ApiKeyView, AuditEvent, IdpConfigView, NewSilo, Silo},
+    SiloPath, SiloProjectPath, TokenResponse, TritondApi,
+    types::{ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, Project, Silo},
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
 use tritond_auth::OidcConfig;
@@ -46,7 +46,10 @@ use tritond_store::{ApiKey, IdpConfig, MemStore, Store, StoreError};
 use uuid::Uuid;
 
 use crate::audit::AuditService;
-use crate::auth::{Action, AuthService, authenticate_and_authorize, require_authenticated};
+use crate::auth::{
+    Action, AuthService, authenticate_and_authorize, authenticate_and_authorize_in_silo,
+    require_authenticated,
+};
 
 /// Service version, populated from Cargo at build time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -560,6 +563,171 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         ctx.auth.oidc().invalidate(&silo_id.to_string()).await;
+        Ok(HttpResponseDeleted())
+    }
+
+    async fn list_silo_projects(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<Project>>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ProjectList,
+            silo_id,
+        )
+        .await?;
+        let projects = ctx
+            .store
+            .list_projects_in_silo(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(projects))
+    }
+
+    async fn create_silo_project(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewProject>,
+    ) -> Result<HttpResponseCreated<Project>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ProjectCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        match ctx.store.create_project(silo_id, req).await {
+            Ok(project) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::ProjectCreate,
+                        request_id,
+                        Some(format!("Project::\"{}\"", project.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Project::\"{}\"", project.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "name": project.name,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(project))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::ProjectCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_silo_project(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Project>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ProjectGet,
+            silo_id,
+        )
+        .await?;
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        // Project found globally — confirm it actually belongs to the
+        // path's silo. Cross-silo lookups (would-be probes) get the
+        // same 404 as a missing project.
+        if project.silo_id != silo_id {
+            return Err(HttpError::for_client_error(
+                Some("NotFound".to_string()),
+                ClientErrorStatusCode::NOT_FOUND,
+                "not found".to_string(),
+            ));
+        }
+        Ok(HttpResponseOk(project))
+    }
+
+    async fn delete_silo_project(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ProjectDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        // Confirm silo membership before deleting; cross-silo deletes
+        // get a 404 like cross-silo gets.
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.silo_id != silo_id {
+            return Err(HttpError::for_client_error(
+                Some("NotFound".to_string()),
+                ClientErrorStatusCode::NOT_FOUND,
+                "not found".to_string(),
+            ));
+        }
+        ctx.store
+            .delete_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::ProjectDelete,
+                request_id,
+                Some(format!("Project::\"{project_id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("Project::\"{project_id}\"")),
+                },
+                serde_json::json!({ "silo_id": silo_id }),
+            )
+            .await;
         Ok(HttpResponseDeleted())
     }
 }

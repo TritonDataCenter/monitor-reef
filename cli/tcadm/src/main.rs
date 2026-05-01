@@ -112,6 +112,40 @@ enum SiloCommand {
         #[command(subcommand)]
         command: SiloIdpCommand,
     },
+    /// Manage projects inside a silo.
+    Project {
+        #[command(subcommand)]
+        command: SiloProjectCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectCommand {
+    /// List projects in the silo.
+    List {
+        silo_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new project.
+    Create {
+        silo_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single project.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a project.
+    Delete { silo_id: Uuid, project_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -290,6 +324,42 @@ async fn main() -> Result<()> {
                 }
                 SiloIdpCommand::Delete { silo_id } => {
                     commands::silo_idp_delete(cli.endpoint, cli.api_key, silo_id).await
+                }
+            },
+            SiloCommand::Project { command } => match command {
+                SiloProjectCommand::List { silo_id, json } => {
+                    commands::silo_project_list(cli.endpoint, cli.api_key, silo_id, json).await
+                }
+                SiloProjectCommand::Create {
+                    silo_id,
+                    name,
+                    description,
+                    json,
+                } => {
+                    commands::silo_project_create(
+                        cli.endpoint,
+                        cli.api_key,
+                        silo_id,
+                        name,
+                        description,
+                        json,
+                    )
+                    .await
+                }
+                SiloProjectCommand::Get {
+                    silo_id,
+                    project_id,
+                    json,
+                } => {
+                    commands::silo_project_get(cli.endpoint, cli.api_key, silo_id, project_id, json)
+                        .await
+                }
+                SiloProjectCommand::Delete {
+                    silo_id,
+                    project_id,
+                } => {
+                    commands::silo_project_delete(cli.endpoint, cli.api_key, silo_id, project_id)
+                        .await
                 }
             },
         },

@@ -16,7 +16,9 @@ use chrono::Utc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{ApiKey, IdpConfig, NewSilo, Silo, Store, StoreError, SystemKey, User};
+use crate::{
+    ApiKey, IdpConfig, NewProject, NewSilo, Project, Silo, Store, StoreError, SystemKey, User,
+};
 
 #[derive(Default)]
 struct Inner {
@@ -31,6 +33,10 @@ struct Inner {
     api_key_id_by_lookup_id: HashMap<String, Uuid>,
     system_keys: HashMap<SystemKey, Vec<u8>>,
     idp_configs_by_silo: HashMap<Uuid, IdpConfig>,
+    projects_by_id: HashMap<Uuid, Project>,
+    /// `(silo_id, name)` → project_id index for the within-silo
+    /// uniqueness check.
+    project_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
 }
 
 /// In-process [`Store`] implementation.
@@ -262,6 +268,61 @@ impl Store for MemStore {
             .map(|(k, v)| (*k, v.clone()))
             .collect())
     }
+
+    async fn create_project(&self, silo_id: Uuid, req: NewProject) -> Result<Project, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.silos_by_id.contains_key(&silo_id) {
+            return Err(StoreError::NotFound);
+        }
+        let key = (silo_id, req.name.clone());
+        if guard.project_id_by_silo_name.contains_key(&key) {
+            return Err(StoreError::Conflict(format!(
+                "project with name {:?} already exists in silo {silo_id}",
+                req.name
+            )));
+        }
+        let project = Project {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            created_at: Utc::now(),
+        };
+        guard.project_id_by_silo_name.insert(key, project.id);
+        guard.projects_by_id.insert(project.id, project.clone());
+        Ok(project)
+    }
+
+    async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .projects_by_id
+            .get(&project_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_projects_in_silo(&self, silo_id: Uuid) -> Result<Vec<Project>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .projects_by_id
+            .values()
+            .filter(|p| p.silo_id == silo_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let project = guard
+            .projects_by_id
+            .remove(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .project_id_by_silo_name
+            .remove(&(project.silo_id, project.name));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -483,6 +544,132 @@ mod tests {
             .await
             .expect_err("duplicate federation triple should conflict");
         assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn project_round_trip_within_silo() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "tenants".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+
+        let p = store
+            .create_project(
+                silo.id,
+                NewProject {
+                    name: "alpha".to_string(),
+                    description: Some("first".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(p.silo_id, silo.id);
+
+        let fetched = store.get_project(p.id).await.unwrap();
+        assert_eq!(fetched, p);
+
+        let listed = store.list_projects_in_silo(silo.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, p.id);
+
+        store.delete_project(p.id).await.unwrap();
+        let err = store
+            .get_project(p.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn duplicate_project_name_within_silo_conflicts() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "ops".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_project(
+                silo.id,
+                NewProject {
+                    name: "alpha".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_project(
+                silo.id,
+                NewProject {
+                    name: "alpha".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("duplicate within silo conflicts");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn same_project_name_in_different_silos_does_not_conflict() {
+        let store = MemStore::new();
+        let a = store
+            .create_silo(NewSilo {
+                name: "silo-a".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let b = store
+            .create_silo(NewSilo {
+                name: "silo-b".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_project(
+                a.id,
+                NewProject {
+                    name: "shared".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .create_project(
+                b.id,
+                NewProject {
+                    name: "shared".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("same name across silos must be allowed");
+    }
+
+    #[tokio::test]
+    async fn create_project_in_unknown_silo_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .create_project(
+                Uuid::new_v4(),
+                NewProject {
+                    name: "orphan".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("unknown silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     #[tokio::test]

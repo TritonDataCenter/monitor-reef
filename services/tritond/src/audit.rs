@@ -156,7 +156,9 @@ impl AuditService {
 
 fn principal_to_actor(principal: &Principal) -> Actor {
     match principal {
-        Principal::Operator { user_id, is_root } => Actor::Operator {
+        Principal::Operator {
+            user_id, is_root, ..
+        } => Actor::Operator {
             user_id: *user_id,
             is_root: *is_root,
         },
@@ -194,6 +196,7 @@ mod tests {
         let principal = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: false,
+            silo_id: None,
         };
         let emitted = svc
             .record_decision(&principal, Action::CreateSilo, None, Decision::Deny)

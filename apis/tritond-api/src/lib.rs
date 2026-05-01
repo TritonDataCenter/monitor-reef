@@ -28,7 +28,8 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewSilo, Silo,
+    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewProject, NewSilo,
+    Project, Silo,
 };
 
 /// Liveness response.
@@ -97,6 +98,14 @@ pub struct ApiKeyCreated {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AuditEventPath {
     pub seq: u64,
+}
+
+/// Path parameters for endpoints that operate on a single project
+/// inside a silo.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectPath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -322,5 +331,54 @@ pub trait TritondApi {
     async fn delete_silo_idp(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List the projects inside a silo.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects",
+        tags = ["projects"],
+    }]
+    async fn list_silo_projects(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<Project>>, HttpError>;
+
+    /// Create a project in a silo. Returns 409 if the project name
+    /// is already in use within that silo.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects",
+        tags = ["projects"],
+    }]
+    async fn create_silo_project(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewProject>,
+    ) -> Result<HttpResponseCreated<Project>, HttpError>;
+
+    /// Read a single project. Returns 404 when the project does not
+    /// exist or belongs to a different silo (cross-silo probes do not
+    /// learn that other silos exist).
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}",
+        tags = ["projects"],
+    }]
+    async fn get_silo_project(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Project>, HttpError>;
+
+    /// Delete a project. Returns 404 when the project does not exist
+    /// or belongs to a different silo.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/projects/{project_id}",
+        tags = ["projects"],
+    }]
+    async fn delete_silo_project(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 }
