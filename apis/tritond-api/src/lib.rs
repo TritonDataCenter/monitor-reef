@@ -19,15 +19,15 @@ pub mod types;
 
 use chrono::{DateTime, Utc};
 use dropshot::{
-    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, Path, RequestContext,
-    TypedBody,
+    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, Path, Query,
+    RequestContext, TypedBody,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tritond_auth::RedactedString;
 use uuid::Uuid;
 
-use crate::types::{ApiKeyView, NewSilo, Silo};
+use crate::types::{ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, NewSilo, Silo};
 
 /// Liveness response.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -89,6 +89,48 @@ pub struct ApiKeyCreated {
     #[serde(flatten)]
     pub key: ApiKeyView,
     pub secret: String,
+}
+
+/// Path parameters for endpoints that operate on a single audit event.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditEventPath {
+    pub seq: u64,
+}
+
+/// Query parameters for `GET /v2/audit/events`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditListQuery {
+    /// Return events with `seq > after_seq`. Default 0 (start of chain).
+    #[serde(default)]
+    pub after_seq: Option<u64>,
+    /// Maximum events to return. Default 100, max 1000.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// Response body for `GET /v2/audit/events`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AuditEventList {
+    pub events: Vec<AuditEvent>,
+    pub head: Option<AuditChainHead>,
+}
+
+/// Query parameters for `GET /v2/audit/verify`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AuditVerifyQuery {
+    /// First seq to walk. Default 0.
+    #[serde(default)]
+    pub from: Option<u64>,
+    /// Last seq to walk. Default = current chain head.
+    #[serde(default)]
+    pub to: Option<u64>,
+}
+
+/// Response body for `GET /v2/audit/verify`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AuditVerifyResponse {
+    pub outcome: AuditVerifyOutcome,
+    pub head: Option<AuditChainHead>,
 }
 
 #[dropshot::api_description]
@@ -188,4 +230,41 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<ApiKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Page through audit events. Returns at most `limit` events with
+    /// `seq > after_seq` plus the current chain head.
+    #[endpoint {
+        method = GET,
+        path = "/v2/audit/events",
+        tags = ["audit"],
+    }]
+    async fn list_audit_events(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<AuditListQuery>,
+    ) -> Result<HttpResponseOk<AuditEventList>, HttpError>;
+
+    /// Fetch a single audit event by sequence number.
+    #[endpoint {
+        method = GET,
+        path = "/v2/audit/events/{seq}",
+        tags = ["audit"],
+    }]
+    async fn get_audit_event(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AuditEventPath>,
+    ) -> Result<HttpResponseOk<AuditEvent>, HttpError>;
+
+    /// Walk the audit chain in `[from, to]` and recompute hashes.
+    /// Returns the first divergence (if any) plus the current head.
+    /// Cheap on small ranges; auditors typically walk the entire
+    /// chain once per export.
+    #[endpoint {
+        method = GET,
+        path = "/v2/audit/verify",
+        tags = ["audit"],
+    }]
+    async fn verify_audit_chain(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<AuditVerifyQuery>,
+    ) -> Result<HttpResponseOk<AuditVerifyResponse>, HttpError>;
 }

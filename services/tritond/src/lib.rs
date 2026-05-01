@@ -18,6 +18,7 @@
 //! `bootstrap::ensure`) so integration tests can spin up the service
 //! in-process; the binary is a thin wrapper around them.
 
+pub mod audit;
 pub mod auth;
 pub mod bootstrap;
 
@@ -28,19 +29,22 @@ use anyhow::{Context, Result};
 use dropshot::{
     ApiDescription, ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel,
     HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, HttpServer,
-    HttpServerStarter, Path, RequestContext, TypedBody,
+    HttpServerStarter, Path, Query, RequestContext, TypedBody,
 };
 use tritond_api::{
-    ApiKeyCreated, ApiKeyPath, HealthResponse, LoginRequest, NewApiKey, RefreshRequest, SiloPath,
+    ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
+    AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, RefreshRequest, SiloPath,
     TokenResponse, TritondApi,
-    types::{ApiKeyView, NewSilo, Silo},
+    types::{ApiKeyView, AuditEvent, NewSilo, Silo},
 };
+use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
 use tritond_auth::{
     JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{ApiKey, MemStore, Store, StoreError};
 use uuid::Uuid;
 
+use crate::audit::AuditService;
 use crate::auth::{Action, AuthService, authenticate_and_authorize, require_authenticated};
 
 /// Service version, populated from Cargo at build time.
@@ -53,19 +57,22 @@ pub const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
 pub struct ApiContext {
     pub store: Arc<dyn Store>,
     pub auth: Arc<AuthService>,
+    pub audit: Arc<AuditService>,
 }
 
 impl ApiContext {
-    pub fn new(store: Arc<dyn Store>, auth: Arc<AuthService>) -> Self {
-        Self { store, auth }
+    pub fn new(store: Arc<dyn Store>, auth: Arc<AuthService>, audit: Arc<AuditService>) -> Self {
+        Self { store, auth, audit }
     }
 
-    /// Build a context backed by a fresh in-memory store and a fresh
-    /// random JWT key. Convenient for integration tests.
+    /// Build a context backed by a fresh in-memory store, a fresh
+    /// random JWT key, and an in-memory audit chain. Convenient for
+    /// integration tests.
     pub fn in_memory() -> Result<Self> {
         let store: Arc<dyn Store> = Arc::new(MemStore::new());
         let auth = Arc::new(AuthService::new(JwtKey::generate())?);
-        Ok(Self::new(store, auth))
+        let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
+        Ok(Self::new(store, auth, audit))
     }
 }
 
@@ -79,7 +86,8 @@ impl TritondApi for TritondServiceImpl {
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<HealthResponse>, HttpError> {
         let ctx = rqctx.context();
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::Health).await?;
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::Health)
+            .await?;
         Ok(HttpResponseOk(HealthResponse {
             status: "ok".to_string(),
             version: VERSION.to_string(),
@@ -91,13 +99,46 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<NewSilo>,
     ) -> Result<HttpResponseCreated<Silo>, HttpError> {
         let ctx = rqctx.context();
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::CreateSilo).await?;
-        let silo = ctx
-            .store
-            .create_silo(body.into_inner())
-            .await
-            .map_err(store_error_to_http)?;
-        Ok(HttpResponseCreated(silo))
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::CreateSilo,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        match ctx.store.create_silo(req).await {
+            Ok(silo) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::CreateSilo,
+                        request_id,
+                        Some(format!("Silo::\"{}\"", silo.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Silo::\"{}\"", silo.id)),
+                        },
+                        serde_json::json!({ "name": silo.name }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(silo))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::CreateSilo,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 
     async fn get_silo(
@@ -105,7 +146,8 @@ impl TritondApi for TritondServiceImpl {
         path: Path<SiloPath>,
     ) -> Result<HttpResponseOk<Silo>, HttpError> {
         let ctx = rqctx.context();
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::GetSilo).await?;
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::GetSilo)
+            .await?;
         let silo_id = path.into_inner().silo_id;
         let silo = ctx
             .store
@@ -123,22 +165,63 @@ impl TritondApi for TritondServiceImpl {
         // Cedar still gates login (the public-actions rule), partly so
         // the policy bundle is the single source of truth for what an
         // unauth'd caller can do.
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::Login).await?;
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::Login)
+            .await?;
+        let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
 
-        let user = match ctx.store.get_user_by_username(&req.username).await {
+        let username = req.username.clone();
+        let user = match ctx.store.get_user_by_username(&username).await {
             Ok(user) => user,
-            Err(StoreError::NotFound) => return Err(invalid_credentials()),
+            Err(StoreError::NotFound) => {
+                ctx.audit
+                    .record_auth_event(
+                        Action::Login,
+                        &username,
+                        request_id,
+                        AuditActor::Anonymous,
+                        AuditOutcome::Unauthenticated {
+                            reason: "unknown user".to_string(),
+                        },
+                    )
+                    .await;
+                return Err(invalid_credentials());
+            }
             Err(e) => return Err(store_error_to_http(e)),
         };
         let password_ok = verify_password(&req.password, &user.password_hash)
             .await
             .map_err(|e| HttpError::for_internal_error(format!("verify password: {e}")))?;
         if !password_ok {
+            ctx.audit
+                .record_auth_event(
+                    Action::Login,
+                    &username,
+                    request_id,
+                    AuditActor::Anonymous,
+                    AuditOutcome::Unauthenticated {
+                        reason: "bad password".to_string(),
+                    },
+                )
+                .await;
             return Err(invalid_credentials());
         }
 
         let response = mint_token_pair(&ctx.auth, user.id)?;
+        ctx.audit
+            .record_auth_event(
+                Action::Login,
+                &username,
+                request_id,
+                AuditActor::Operator {
+                    user_id: user.id,
+                    is_root: user.is_root,
+                },
+                AuditOutcome::Success {
+                    resource: Some(format!("User::\"{}\"", user.id)),
+                },
+            )
+            .await;
         Ok(HttpResponseOk(response))
     }
 
@@ -147,19 +230,56 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<RefreshRequest>,
     ) -> Result<HttpResponseOk<TokenResponse>, HttpError> {
         let ctx = rqctx.context();
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::Refresh).await?;
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::Refresh)
+            .await?;
+        let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
 
-        let claims = verify(ctx.auth.jwt_key(), &req.refresh_token, TokenKind::Refresh)
-            .map_err(|_| invalid_credentials())?;
+        let claims =
+            verify(ctx.auth.jwt_key(), &req.refresh_token, TokenKind::Refresh).map_err(|_| {
+                // We don't have a username here; record the rejection
+                // with an empty username. Operators learn from the chain
+                // that someone presented a bad refresh.
+                let audit = ctx.audit.clone();
+                let req_id = request_id;
+                tokio::spawn(async move {
+                    audit
+                        .record_auth_event(
+                            Action::Refresh,
+                            "",
+                            req_id,
+                            AuditActor::Anonymous,
+                            AuditOutcome::Unauthenticated {
+                                reason: "invalid refresh token".to_string(),
+                            },
+                        )
+                        .await;
+                });
+                invalid_credentials()
+            })?;
         // Confirm the user still exists; deactivated users can't
         // silently extend their session via stored refresh tokens.
-        ctx.store
+        let user = ctx
+            .store
             .get_user_by_id(claims.sub)
             .await
             .map_err(|_| invalid_credentials())?;
 
         let response = mint_token_pair(&ctx.auth, claims.sub)?;
+        ctx.audit
+            .record_auth_event(
+                Action::Refresh,
+                &user.username,
+                request_id,
+                AuditActor::Operator {
+                    user_id: user.id,
+                    is_root: user.is_root,
+                },
+                AuditOutcome::Success {
+                    resource: Some(format!("User::\"{}\"", user.id)),
+                },
+            )
+            .await;
         Ok(HttpResponseOk(response))
     }
 
@@ -168,9 +288,16 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<NewApiKey>,
     ) -> Result<HttpResponseCreated<ApiKeyCreated>, HttpError> {
         let ctx = rqctx.context();
-        let principal =
-            authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::CreateApiKey).await?;
-        let (user_id, _) = require_authenticated(principal)?;
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::CreateApiKey,
+        )
+        .await?;
+        let (user_id, _) = require_authenticated(principal.clone())?;
+        let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
 
         let material = generate_api_key()
@@ -189,6 +316,21 @@ impl TritondApi for TritondServiceImpl {
             .create_api_key(record)
             .await
             .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::CreateApiKey,
+                request_id,
+                Some(format!("ApiKey::\"{}\"", saved.id)),
+                AuditOutcome::Success {
+                    resource: Some(format!("ApiKey::\"{}\"", saved.id)),
+                },
+                serde_json::json!({
+                    "description": saved.description,
+                    "lookup_id": saved.lookup_id,
+                }),
+            )
+            .await;
         let view: ApiKeyView = saved.into();
         Ok(HttpResponseCreated(ApiKeyCreated {
             key: view,
@@ -200,8 +342,14 @@ impl TritondApi for TritondServiceImpl {
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<Vec<ApiKeyView>>, HttpError> {
         let ctx = rqctx.context();
-        let principal =
-            authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::ListApiKeys).await?;
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ListApiKeys,
+        )
+        .await?;
         let (user_id, _) = require_authenticated(principal)?;
         let keys = ctx
             .store
@@ -216,15 +364,139 @@ impl TritondApi for TritondServiceImpl {
         path: Path<ApiKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let principal =
-            authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.store, Action::DeleteApiKey).await?;
-        let (user_id, _) = require_authenticated(principal)?;
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DeleteApiKey,
+        )
+        .await?;
+        let (user_id, _) = require_authenticated(principal.clone())?;
+        let request_id = parse_request_id(&rqctx);
         let key_id = path.into_inner().api_key_id;
         ctx.store
             .delete_api_key(user_id, key_id)
             .await
             .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::DeleteApiKey,
+                request_id,
+                Some(format!("ApiKey::\"{key_id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("ApiKey::\"{key_id}\"")),
+                },
+                serde_json::Value::Null,
+            )
+            .await;
         Ok(HttpResponseDeleted())
+    }
+
+    async fn list_audit_events(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<AuditListQuery>,
+    ) -> Result<HttpResponseOk<AuditEventList>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::AuditList)
+            .await?;
+        let q = query.into_inner();
+        let after_seq = q.after_seq.unwrap_or(0);
+        let limit = q.limit.unwrap_or(100).min(1000) as usize;
+
+        let chain = ctx.audit.chain();
+        let events = chain
+            .list(after_seq, limit)
+            .await
+            .map_err(audit_error_to_http)?;
+        let head = chain.head().await.map_err(audit_error_to_http)?;
+        Ok(HttpResponseOk(AuditEventList { events, head }))
+    }
+
+    async fn get_audit_event(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AuditEventPath>,
+    ) -> Result<HttpResponseOk<AuditEvent>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AuditFetch,
+        )
+        .await?;
+        let seq = path.into_inner().seq;
+        let event = ctx
+            .audit
+            .chain()
+            .get(seq)
+            .await
+            .map_err(audit_error_to_http)?;
+        Ok(HttpResponseOk(event))
+    }
+
+    async fn verify_audit_chain(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<AuditVerifyQuery>,
+    ) -> Result<HttpResponseOk<AuditVerifyResponse>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AuditVerify,
+        )
+        .await?;
+        let q = query.into_inner();
+        let chain = ctx.audit.chain();
+        let head = chain.head().await.map_err(audit_error_to_http)?;
+        let from = q.from.unwrap_or(0);
+        let to = q.to.unwrap_or_else(|| head.as_ref().map_or(0, |h| h.seq));
+        let outcome = chain.verify(from, to).await.map_err(audit_error_to_http)?;
+        Ok(HttpResponseOk(AuditVerifyResponse { outcome, head }))
+    }
+}
+
+fn parse_request_id<T>(rqctx: &RequestContext<T>) -> Option<Uuid>
+where
+    T: dropshot::ServerContext,
+{
+    Uuid::parse_str(&rqctx.request_id).ok()
+}
+
+fn store_error_to_audit_outcome(err: &StoreError) -> AuditOutcome {
+    match err {
+        StoreError::NotFound => AuditOutcome::ClientError {
+            code: 404,
+            message: "not found".to_string(),
+        },
+        StoreError::Conflict(msg) => AuditOutcome::ClientError {
+            code: 409,
+            message: msg.clone(),
+        },
+        StoreError::Backend(msg) => AuditOutcome::ServerError {
+            message: msg.clone(),
+        },
+    }
+}
+
+fn audit_error_to_http(err: tritond_audit::AuditError) -> HttpError {
+    use tritond_audit::AuditError;
+    let display = err.to_string();
+    match err {
+        AuditError::PastHead { .. } => HttpError::for_client_error(
+            Some("NotFound".to_string()),
+            ClientErrorStatusCode::NOT_FOUND,
+            display,
+        ),
+        AuditError::Backend(msg) | AuditError::Serialise(msg) => HttpError::for_internal_error(msg),
+        // ChainBroken or any future variant: surface as 500 with the
+        // generic display impl so audit-runtime errors don't leak
+        // structure-of-the-chain detail to the caller.
+        _ => HttpError::for_internal_error(display),
     }
 }
 

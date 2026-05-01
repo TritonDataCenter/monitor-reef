@@ -12,8 +12,10 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
+use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::types::{LoginRequest, NewApiKey, NewSilo, RefreshRequest};
 use tritond_store::{MemStore, Store, User};
@@ -39,7 +41,8 @@ impl TestServer {
         };
         store.create_user(user).await.unwrap();
         let auth = Arc::new(AuthService::new(JwtKey::generate()).unwrap());
-        let context = ApiContext::new(store, auth);
+        let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
+        let context = ApiContext::new(store, auth, audit);
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .unwrap();

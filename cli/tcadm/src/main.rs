@@ -93,6 +93,41 @@ enum Commands {
         #[command(subcommand)]
         command: ApiKeyCommand,
     },
+    /// Inspect and verify the audit log.
+    Audit {
+        #[command(subcommand)]
+        command: AuditCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuditCommand {
+    /// Page through audit events.
+    List {
+        /// Return events with seq > after_seq.
+        #[arg(long)]
+        after_seq: Option<u64>,
+        /// Maximum events to return (default 100, max 1000).
+        #[arg(long)]
+        limit: Option<u32>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fetch a single audit event by sequence.
+    Get {
+        seq: u64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Walk the chain and check hash integrity.
+    Verify {
+        #[arg(long)]
+        from: Option<u64>,
+        #[arg(long)]
+        to: Option<u64>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -169,6 +204,19 @@ async fn main() -> Result<()> {
             }
             ApiKeyCommand::Delete { api_key_id } => {
                 commands::api_key_delete(cli.endpoint, cli.api_key, api_key_id).await
+            }
+        },
+        Commands::Audit { command } => match command {
+            AuditCommand::List {
+                after_seq,
+                limit,
+                json,
+            } => commands::audit_list(cli.endpoint, cli.api_key, after_seq, limit, json).await,
+            AuditCommand::Get { seq, json } => {
+                commands::audit_get(cli.endpoint, cli.api_key, seq, json).await
+            }
+            AuditCommand::Verify { from, to, json } => {
+                commands::audit_verify(cli.endpoint, cli.api_key, from, to, json).await
             }
         },
     }

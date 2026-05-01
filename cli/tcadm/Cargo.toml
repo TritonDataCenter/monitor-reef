@@ -41,5 +41,6 @@ predicates = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tritond = { workspace = true }
+tritond-audit = { workspace = true }
 tritond-auth = { workspace = true }
 tritond-store = { workspace = true }

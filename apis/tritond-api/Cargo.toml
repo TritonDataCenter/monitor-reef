@@ -17,6 +17,7 @@ chrono = { workspace = true }
 dropshot = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
+tritond-audit = { workspace = true }
 tritond-auth = { workspace = true }
 tritond-store = { workspace = true }
 uuid = { workspace = true }

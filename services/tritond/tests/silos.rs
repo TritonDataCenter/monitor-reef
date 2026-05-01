@@ -13,8 +13,10 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
+use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
 use tritond_client::types::NewSilo;
 use tritond_store::{MemStore, Store, User};
@@ -46,7 +48,8 @@ impl TestServer {
         let jwt_key = JwtKey::generate();
         let (token, _) = mint_access(&jwt_key, user_id).unwrap();
         let auth = Arc::new(AuthService::new(jwt_key).unwrap());
-        let context = ApiContext::new(store, auth);
+        let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
+        let context = ApiContext::new(store, auth, audit);
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .expect("server should start on ephemeral port");

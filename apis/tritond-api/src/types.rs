@@ -13,4 +13,8 @@
 //! (e.g. computed fields, redaction), define the wire-only type here
 //! and convert in the service layer.
 
+pub use tritond_audit::{
+    Actor as AuditActor, AuditEvent, ChainHead as AuditChainHead, Decision as AuditDecision,
+    EventHash as AuditEventHash, Outcome as AuditOutcome, VerifyOutcome as AuditVerifyOutcome,
+};
 pub use tritond_store::{ApiKeyView, NewSilo, Silo, UserView};

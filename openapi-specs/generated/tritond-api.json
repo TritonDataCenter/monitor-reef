@@ -6,6 +6,149 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v2/audit/events": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Page through audit events. Returns at most `limit` events with",
+        "description": "`seq > after_seq` plus the current chain head.",
+        "operationId": "list_audit_events",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after_seq",
+            "description": "Return events with `seq > after_seq`. Default 0 (start of chain).",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum events to return. Default 100, max 1000.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/audit/events/{seq}": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Fetch a single audit event by sequence number.",
+        "operationId": "get_audit_event",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "seq",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEvent"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/audit/verify": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Walk the audit chain in `[from, to]` and recompute hashes.",
+        "description": "Returns the first divergence (if any) plus the current head. Cheap on small ranges; auditors typically walk the entire chain once per export.",
+        "operationId": "verify_audit_chain",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "description": "First seq to walk. Default 0.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "Last seq to walk. Default = current chain head.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditVerifyResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/auth/api-keys": {
       "get": {
         "tags": [
@@ -288,6 +431,90 @@
   },
   "components": {
     "schemas": {
+      "Actor": {
+        "description": "Who initiated the action.",
+        "oneOf": [
+          {
+            "description": "Authenticated operator with an `is_root` flag captured at the time of the event.",
+            "type": "object",
+            "properties": {
+              "is_root": {
+                "type": "boolean"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "operator"
+                ]
+              },
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "is_root",
+              "kind",
+              "user_id"
+            ]
+          },
+          {
+            "description": "Authenticated via API key. `key_id` lets auditors trace the credential without revealing it.",
+            "type": "object",
+            "properties": {
+              "key_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "api_key"
+                ]
+              },
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "key_id",
+              "kind",
+              "user_id"
+            ]
+          },
+          {
+            "description": "No credential presented. Used only for events where logging the unauthenticated principal is intentional (e.g. login attempts; not for routine deny-on-anonymous probes).",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "anonymous"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "Internal system action (bootstrap, cron, replication).",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "system"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          }
+        ]
+      },
       "ApiKeyCreated": {
         "description": "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.",
         "type": "object",
@@ -344,6 +571,149 @@
           "description",
           "id",
           "user_id"
+        ]
+      },
+      "AuditEvent": {
+        "description": "Materialised audit event. The `hash` is `SHA-256(canonical-JSON of every field except hash itself)` so a verifier reading any prefix of the chain can recompute and compare.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/Actor"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/Outcome"
+          },
+          "payload": {},
+          "prev_hash": {
+            "type": "string"
+          },
+          "request_id": {
+            "nullable": true,
+            "type": "string",
+            "format": "uuid"
+          },
+          "resource": {
+            "nullable": true,
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "action",
+          "actor",
+          "decision",
+          "hash",
+          "outcome",
+          "payload",
+          "prev_hash",
+          "seq",
+          "ts"
+        ]
+      },
+      "AuditEventList": {
+        "description": "Response body for `GET /v2/audit/events`.",
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            }
+          },
+          "head": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChainHead"
+              }
+            ]
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "AuditVerifyResponse": {
+        "description": "Response body for `GET /v2/audit/verify`.",
+        "type": "object",
+        "properties": {
+          "head": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChainHead"
+              }
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/VerifyOutcome"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "ChainHead": {
+        "description": "Snapshot of where the chain currently ends.",
+        "type": "object",
+        "properties": {
+          "hash": {
+            "description": "Its `hash` — the value the next append will use as `prev_hash`.",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Sequence number of the most recently appended event.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "hash",
+          "seq"
+        ]
+      },
+      "Decision": {
+        "description": "Cedar decision recorded with the event.",
+        "oneOf": [
+          {
+            "description": "Cedar permitted the action.",
+            "type": "string",
+            "enum": [
+              "allow"
+            ]
+          },
+          {
+            "description": "Cedar denied the action.",
+            "type": "string",
+            "enum": [
+              "deny"
+            ]
+          },
+          {
+            "description": "Decision was not evaluated (e.g. recorded before Cedar runs).",
+            "type": "string",
+            "enum": [
+              "not_evaluated"
+            ]
+          }
         ]
       },
       "Error": {
@@ -426,6 +796,108 @@
           "name"
         ]
       },
+      "Outcome": {
+        "description": "Outcome of the action after the handler finished.",
+        "oneOf": [
+          {
+            "description": "Handler completed successfully. `resource` carries the affected entity uid when known (e.g. `Silo::\"<uuid>\"`).",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "success"
+                ]
+              },
+              "resource": {
+                "nullable": true,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "Cedar denied; handler did not run.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "forbidden"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "Authentication failed (bad password, expired token, missing key).",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "unauthenticated"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ]
+          },
+          {
+            "description": "Caller-side error (4xx other than 401/403).",
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "client_error"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "kind",
+              "message"
+            ]
+          },
+          {
+            "description": "Server-side error (5xx).",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "server_error"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "message"
+            ]
+          }
+        ]
+      },
       "RefreshRequest": {
         "description": "Request body for `POST /v2/auth/refresh`.",
         "type": "object",
@@ -489,6 +961,61 @@
           "refresh_expires_at",
           "refresh_token"
         ]
+      },
+      "VerifyOutcome": {
+        "description": "Result of [`crate::Chain::verify`].",
+        "oneOf": [
+          {
+            "description": "The walked range is internally consistent and chains back to `from - 1` correctly. `verified_to` is the highest seq reached.",
+            "type": "object",
+            "properties": {
+              "Ok": {
+                "type": "object",
+                "properties": {
+                  "verified_to": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "verified_to"
+                ]
+              }
+            },
+            "required": [
+              "Ok"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "description": "Found a hash mismatch. `seq` is the first event whose stored hash does not match its recomputed value, or whose `prev_hash` does not match the prior event's `hash`. The chain bytes themselves remain queryable; the operator decides what to do.",
+            "type": "object",
+            "properties": {
+              "Mismatch": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "seq": {
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "message",
+                  "seq"
+                ]
+              }
+            },
+            "required": [
+              "Mismatch"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "responses": {
@@ -505,6 +1032,9 @@
     }
   },
   "tags": [
+    {
+      "name": "audit"
+    },
     {
       "name": "auth"
     },

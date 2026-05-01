@@ -11,20 +11,23 @@
 //! * `TRITOND_BIND_ADDRESS` — listen address. Defaults to
 //!   `127.0.0.1:8080`.
 //! * `TRITOND_FDB_CLUSTER_FILE` — path to a FoundationDB cluster file.
-//!   Triggers the FDB-backed [`Store`] when the binary is built with
-//!   the `foundationdb` feature; an error if set with the feature
-//!   disabled.
+//!   Triggers the FDB-backed [`Store`] and audit chain when the
+//!   binary is built with the `foundationdb` feature; an error if
+//!   set with the feature disabled.
 //!
 //! Startup runs [`tritond::bootstrap::ensure`] which mints the JWT
 //! signing key and the root operator on first run, then loads them on
-//! every subsequent run.
+//! every subsequent run. The audit chain ships with the same backend
+//! choice as the store: in-memory by default, FDB when configured.
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use tracing::info;
+use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, DEFAULT_BIND_ADDRESS, VERSION, bootstrap, start_server_with_context};
+use tritond_audit::{Chain, MemChain};
 use tritond_store::{MemStore, Store};
 
 #[tokio::main]
@@ -39,12 +42,13 @@ async fn main() -> Result<()> {
     let bind_address =
         std::env::var("TRITOND_BIND_ADDRESS").unwrap_or_else(|_| DEFAULT_BIND_ADDRESS.to_string());
 
-    let store = build_store()?;
+    let (store, audit_chain) = build_store_and_audit()?;
     let jwt_key = bootstrap::ensure(store.as_ref())
         .await
         .context("first-run bootstrap")?;
     let auth = Arc::new(AuthService::new(jwt_key).context("build auth service")?);
-    let context = ApiContext::new(store, auth);
+    let audit = Arc::new(AuditService::new(audit_chain));
+    let context = ApiContext::new(store, auth, audit);
 
     info!(version = VERSION, %bind_address, "tritond starting");
 
@@ -57,25 +61,34 @@ async fn main() -> Result<()> {
 }
 
 #[cfg(feature = "foundationdb")]
-fn build_store() -> Result<Arc<dyn Store>> {
+fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
     if let Ok(cluster_file) = std::env::var("TRITOND_FDB_CLUSTER_FILE") {
-        info!(%cluster_file, "using FoundationDB backend");
+        info!(%cluster_file, "using FoundationDB backend (store + audit)");
         let store = tritond_store::FdbStore::open(Some(&cluster_file))
             .map_err(|e| anyhow::anyhow!("open FDB store: {e}"))?;
-        Ok(Arc::new(store))
+        // Share the FDB Database handle with the audit chain so we
+        // don't have two `boot()` callers. FdbStore holds it as
+        // Arc<Database>; FdbChain takes its own Arc reference.
+        let audit_chain: Arc<dyn Chain> =
+            Arc::new(tritond_audit::FdbChain::new(store.database()));
+        Ok((Arc::new(store), audit_chain))
     } else {
-        info!("TRITOND_FDB_CLUSTER_FILE not set; using in-memory store");
-        Ok(Arc::new(MemStore::new()))
+        info!("TRITOND_FDB_CLUSTER_FILE not set; using in-memory store + audit");
+        let store: Arc<dyn Store> = Arc::new(MemStore::new());
+        let audit: Arc<dyn Chain> = Arc::new(MemChain::new());
+        Ok((store, audit))
     }
 }
 
 #[cfg(not(feature = "foundationdb"))]
-fn build_store() -> Result<Arc<dyn Store>> {
+fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
     if std::env::var("TRITOND_FDB_CLUSTER_FILE").is_ok() {
         anyhow::bail!(
             "TRITOND_FDB_CLUSTER_FILE is set but tritond was built without the `foundationdb` feature"
         );
     }
-    info!("using in-memory store (binary not built with `foundationdb` feature)");
-    Ok(Arc::new(MemStore::new()))
+    info!("using in-memory store + audit (binary not built with `foundationdb` feature)");
+    let store: Arc<dyn Store> = Arc::new(MemStore::new());
+    let audit: Arc<dyn Chain> = Arc::new(MemChain::new());
+    Ok((store, audit))
 }

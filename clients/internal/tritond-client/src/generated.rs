@@ -37,6 +37,120 @@ pub mod types {
         }
     }
 
+    #[doc = "Who initiated the action."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Who initiated the action.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Authenticated operator with an `is_root` flag captured at the time of the event.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"is_root\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"user_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"is_root\": {"]
+    #[doc = "          \"type\": \"boolean\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"operator\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"user_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Authenticated via API key. `key_id` lets auditors trace the credential without revealing it.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"key_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"user_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"key_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"api_key\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"user_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"No credential presented. Used only for events where logging the unauthenticated principal is intentional (e.g. login attempts; not for routine deny-on-anonymous probes).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"anonymous\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Internal system action (bootstrap, cron, replication).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"system\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind")]
+    pub enum Actor {
+        #[doc = "Authenticated operator with an `is_root` flag captured at the time of the event."]
+        #[serde(rename = "operator")]
+        Operator {
+            is_root: bool,
+            user_id: ::uuid::Uuid,
+        },
+        #[doc = "Authenticated via API key. `key_id` lets auditors trace the credential without revealing it."]
+        #[serde(rename = "api_key")]
+        ApiKey {
+            key_id: ::uuid::Uuid,
+            user_id: ::uuid::Uuid,
+        },
+        #[serde(rename = "anonymous")]
+        Anonymous,
+        #[serde(rename = "system")]
+        System,
+    }
+
     #[doc = "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -139,6 +253,343 @@ pub mod types {
     impl ApiKeyView {
         pub fn builder() -> builder::ApiKeyView {
             Default::default()
+        }
+    }
+
+    #[doc = "Materialised audit event. The `hash` is `SHA-256(canonical-JSON of every field except hash itself)` so a verifier reading any prefix of the chain can recompute and compare."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Materialised audit event. The `hash` is `SHA-256(canonical-JSON of every field except hash itself)` so a verifier reading any prefix of the chain can recompute and compare.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"action\","]
+    #[doc = "    \"actor\","]
+    #[doc = "    \"decision\","]
+    #[doc = "    \"hash\","]
+    #[doc = "    \"outcome\","]
+    #[doc = "    \"payload\","]
+    #[doc = "    \"prev_hash\","]
+    #[doc = "    \"seq\","]
+    #[doc = "    \"ts\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"action\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"actor\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Actor\""]
+    #[doc = "    },"]
+    #[doc = "    \"decision\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Decision\""]
+    #[doc = "    },"]
+    #[doc = "    \"hash\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"outcome\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/Outcome\""]
+    #[doc = "    },"]
+    #[doc = "    \"payload\": {},"]
+    #[doc = "    \"prev_hash\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"request_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"resource\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"seq\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"ts\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AuditEvent {
+        pub action: ::std::string::String,
+        pub actor: Actor,
+        pub decision: Decision,
+        pub hash: ::std::string::String,
+        pub outcome: Outcome,
+        pub payload: ::serde_json::Value,
+        pub prev_hash: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub request_id: ::std::option::Option<::uuid::Uuid>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub resource: ::std::option::Option<::std::string::String>,
+        pub seq: u64,
+        pub ts: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl AuditEvent {
+        pub fn builder() -> builder::AuditEvent {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `GET /v2/audit/events`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v2/audit/events`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"events\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"events\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/AuditEvent\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"head\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ChainHead\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AuditEventList {
+        pub events: ::std::vec::Vec<AuditEvent>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub head: ::std::option::Option<ChainHead>,
+    }
+
+    impl AuditEventList {
+        pub fn builder() -> builder::AuditEventList {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `GET /v2/audit/verify`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v2/audit/verify`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"outcome\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"head\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ChainHead\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"outcome\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/VerifyOutcome\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AuditVerifyResponse {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub head: ::std::option::Option<ChainHead>,
+        pub outcome: VerifyOutcome,
+    }
+
+    impl AuditVerifyResponse {
+        pub fn builder() -> builder::AuditVerifyResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "Snapshot of where the chain currently ends."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Snapshot of where the chain currently ends.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"hash\","]
+    #[doc = "    \"seq\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"hash\": {"]
+    #[doc = "      \"description\": \"Its `hash` — the value the next append will use as `prev_hash`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"seq\": {"]
+    #[doc = "      \"description\": \"Sequence number of the most recently appended event.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ChainHead {
+        #[doc = "Its `hash` — the value the next append will use as `prev_hash`."]
+        pub hash: ::std::string::String,
+        #[doc = "Sequence number of the most recently appended event."]
+        pub seq: u64,
+    }
+
+    impl ChainHead {
+        pub fn builder() -> builder::ChainHead {
+            Default::default()
+        }
+    }
+
+    #[doc = "Cedar decision recorded with the event."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Cedar decision recorded with the event.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Cedar permitted the action.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"allow\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Cedar denied the action.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"deny\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Decision was not evaluated (e.g. recorded before Cedar runs).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"not_evaluated\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum Decision {
+        #[doc = "Cedar permitted the action."]
+        #[serde(rename = "allow")]
+        Allow,
+        #[doc = "Cedar denied the action."]
+        #[serde(rename = "deny")]
+        Deny,
+        #[doc = "Decision was not evaluated (e.g. recorded before Cedar runs)."]
+        #[serde(rename = "not_evaluated")]
+        NotEvaluated,
+    }
+
+    impl ::std::fmt::Display for Decision {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Allow => f.write_str("allow"),
+                Self::Deny => f.write_str("deny"),
+                Self::NotEvaluated => f.write_str("not_evaluated"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for Decision {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "allow" => Ok(Self::Allow),
+                "deny" => Ok(Self::Deny),
+                "not_evaluated" => Ok(Self::NotEvaluated),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for Decision {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for Decision {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for Decision {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -330,6 +781,144 @@ pub mod types {
         }
     }
 
+    #[doc = "Outcome of the action after the handler finished."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Outcome of the action after the handler finished.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Handler completed successfully. `resource` carries the affected entity uid when known (e.g. `Silo::\\\"<uuid>\\\"`).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"success\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"resource\": {"]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Cedar denied; handler did not run.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"forbidden\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Authentication failed (bad password, expired token, missing key).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"reason\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"unauthenticated\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"reason\": {"]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Caller-side error (4xx other than 401/403).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"code\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"message\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"code\": {"]
+    #[doc = "          \"type\": \"integer\","]
+    #[doc = "          \"format\": \"uint16\","]
+    #[doc = "          \"minimum\": 0.0"]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"client_error\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"message\": {"]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Server-side error (5xx).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"message\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"server_error\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"message\": {"]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind")]
+    pub enum Outcome {
+        #[doc = "Handler completed successfully. `resource` carries the affected entity uid when known (e.g. `Silo::\"<uuid>\"`)."]
+        #[serde(rename = "success")]
+        Success {
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            resource: ::std::option::Option<::std::string::String>,
+        },
+        #[serde(rename = "forbidden")]
+        Forbidden,
+        #[doc = "Authentication failed (bad password, expired token, missing key)."]
+        #[serde(rename = "unauthenticated")]
+        Unauthenticated { reason: ::std::string::String },
+        #[doc = "Caller-side error (4xx other than 401/403)."]
+        #[serde(rename = "client_error")]
+        ClientError {
+            code: u16,
+            message: ::std::string::String,
+        },
+        #[doc = "Server-side error (5xx)."]
+        #[serde(rename = "server_error")]
+        ServerError { message: ::std::string::String },
+    }
+
     #[doc = "Request body for `POST /v2/auth/refresh`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -458,6 +1047,81 @@ pub mod types {
         pub fn builder() -> builder::TokenResponse {
             Default::default()
         }
+    }
+
+    #[doc = "Result of [`crate::Chain::verify`]."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Result of [`crate::Chain::verify`].\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"The walked range is internally consistent and chains back to `from - 1` correctly. `verified_to` is the highest seq reached.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"Ok\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"Ok\": {"]
+    #[doc = "          \"type\": \"object\","]
+    #[doc = "          \"required\": ["]
+    #[doc = "            \"verified_to\""]
+    #[doc = "          ],"]
+    #[doc = "          \"properties\": {"]
+    #[doc = "            \"verified_to\": {"]
+    #[doc = "              \"type\": \"integer\","]
+    #[doc = "              \"format\": \"uint64\","]
+    #[doc = "              \"minimum\": 0.0"]
+    #[doc = "            }"]
+    #[doc = "          }"]
+    #[doc = "        }"]
+    #[doc = "      },"]
+    #[doc = "      \"additionalProperties\": false"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Found a hash mismatch. `seq` is the first event whose stored hash does not match its recomputed value, or whose `prev_hash` does not match the prior event's `hash`. The chain bytes themselves remain queryable; the operator decides what to do.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"Mismatch\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"Mismatch\": {"]
+    #[doc = "          \"type\": \"object\","]
+    #[doc = "          \"required\": ["]
+    #[doc = "            \"message\","]
+    #[doc = "            \"seq\""]
+    #[doc = "          ],"]
+    #[doc = "          \"properties\": {"]
+    #[doc = "            \"message\": {"]
+    #[doc = "              \"type\": \"string\""]
+    #[doc = "            },"]
+    #[doc = "            \"seq\": {"]
+    #[doc = "              \"type\": \"integer\","]
+    #[doc = "              \"format\": \"uint64\","]
+    #[doc = "              \"minimum\": 0.0"]
+    #[doc = "            }"]
+    #[doc = "          }"]
+    #[doc = "        }"]
+    #[doc = "      },"]
+    #[doc = "      \"additionalProperties\": false"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub enum VerifyOutcome {
+        #[doc = "The walked range is internally consistent and chains back to `from - 1` correctly. `verified_to` is the highest seq reached."]
+        Ok { verified_to: u64 },
+        #[doc = "Found a hash mismatch. `seq` is the first event whose stored hash does not match its recomputed value, or whose `prev_hash` does not match the prior event's `hash`. The chain bytes themselves remain queryable; the operator decides what to do."]
+        Mismatch {
+            message: ::std::string::String,
+            seq: u64,
+        },
     }
 
     #[doc = r" Types for composing complex structures."]
@@ -652,6 +1316,382 @@ pub mod types {
                     description: Ok(value.description),
                     id: Ok(value.id),
                     user_id: Ok(value.user_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AuditEvent {
+            action: ::std::result::Result<::std::string::String, ::std::string::String>,
+            actor: ::std::result::Result<super::Actor, ::std::string::String>,
+            decision: ::std::result::Result<super::Decision, ::std::string::String>,
+            hash: ::std::result::Result<::std::string::String, ::std::string::String>,
+            outcome: ::std::result::Result<super::Outcome, ::std::string::String>,
+            payload: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+            prev_hash: ::std::result::Result<::std::string::String, ::std::string::String>,
+            request_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            resource: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            seq: ::std::result::Result<u64, ::std::string::String>,
+            ts: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for AuditEvent {
+            fn default() -> Self {
+                Self {
+                    action: Err("no value supplied for action".to_string()),
+                    actor: Err("no value supplied for actor".to_string()),
+                    decision: Err("no value supplied for decision".to_string()),
+                    hash: Err("no value supplied for hash".to_string()),
+                    outcome: Err("no value supplied for outcome".to_string()),
+                    payload: Err("no value supplied for payload".to_string()),
+                    prev_hash: Err("no value supplied for prev_hash".to_string()),
+                    request_id: Ok(Default::default()),
+                    resource: Ok(Default::default()),
+                    seq: Err("no value supplied for seq".to_string()),
+                    ts: Err("no value supplied for ts".to_string()),
+                }
+            }
+        }
+
+        impl AuditEvent {
+            pub fn action<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.action = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for action: {e}"));
+                self
+            }
+            pub fn actor<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Actor>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.actor = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for actor: {e}"));
+                self
+            }
+            pub fn decision<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Decision>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.decision = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for decision: {e}"));
+                self
+            }
+            pub fn hash<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hash = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hash: {e}"));
+                self
+            }
+            pub fn outcome<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Outcome>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.outcome = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for outcome: {e}"));
+                self
+            }
+            pub fn payload<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.payload = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for payload: {e}"));
+                self
+            }
+            pub fn prev_hash<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.prev_hash = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for prev_hash: {e}"));
+                self
+            }
+            pub fn request_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.request_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for request_id: {e}"));
+                self
+            }
+            pub fn resource<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.resource = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for resource: {e}"));
+                self
+            }
+            pub fn seq<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.seq = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for seq: {e}"));
+                self
+            }
+            pub fn ts<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ts = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ts: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AuditEvent> for super::AuditEvent {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AuditEvent,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    action: value.action?,
+                    actor: value.actor?,
+                    decision: value.decision?,
+                    hash: value.hash?,
+                    outcome: value.outcome?,
+                    payload: value.payload?,
+                    prev_hash: value.prev_hash?,
+                    request_id: value.request_id?,
+                    resource: value.resource?,
+                    seq: value.seq?,
+                    ts: value.ts?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AuditEvent> for AuditEvent {
+            fn from(value: super::AuditEvent) -> Self {
+                Self {
+                    action: Ok(value.action),
+                    actor: Ok(value.actor),
+                    decision: Ok(value.decision),
+                    hash: Ok(value.hash),
+                    outcome: Ok(value.outcome),
+                    payload: Ok(value.payload),
+                    prev_hash: Ok(value.prev_hash),
+                    request_id: Ok(value.request_id),
+                    resource: Ok(value.resource),
+                    seq: Ok(value.seq),
+                    ts: Ok(value.ts),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AuditEventList {
+            events:
+                ::std::result::Result<::std::vec::Vec<super::AuditEvent>, ::std::string::String>,
+            head: ::std::result::Result<
+                ::std::option::Option<super::ChainHead>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for AuditEventList {
+            fn default() -> Self {
+                Self {
+                    events: Err("no value supplied for events".to_string()),
+                    head: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl AuditEventList {
+            pub fn events<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::AuditEvent>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.events = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for events: {e}"));
+                self
+            }
+            pub fn head<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ChainHead>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.head = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for head: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AuditEventList> for super::AuditEventList {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AuditEventList,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    events: value.events?,
+                    head: value.head?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AuditEventList> for AuditEventList {
+            fn from(value: super::AuditEventList) -> Self {
+                Self {
+                    events: Ok(value.events),
+                    head: Ok(value.head),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AuditVerifyResponse {
+            head: ::std::result::Result<
+                ::std::option::Option<super::ChainHead>,
+                ::std::string::String,
+            >,
+            outcome: ::std::result::Result<super::VerifyOutcome, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AuditVerifyResponse {
+            fn default() -> Self {
+                Self {
+                    head: Ok(Default::default()),
+                    outcome: Err("no value supplied for outcome".to_string()),
+                }
+            }
+        }
+
+        impl AuditVerifyResponse {
+            pub fn head<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ChainHead>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.head = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for head: {e}"));
+                self
+            }
+            pub fn outcome<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::VerifyOutcome>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.outcome = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for outcome: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AuditVerifyResponse> for super::AuditVerifyResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AuditVerifyResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    head: value.head?,
+                    outcome: value.outcome?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AuditVerifyResponse> for AuditVerifyResponse {
+            fn from(value: super::AuditVerifyResponse) -> Self {
+                Self {
+                    head: Ok(value.head),
+                    outcome: Ok(value.outcome),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ChainHead {
+            hash: ::std::result::Result<::std::string::String, ::std::string::String>,
+            seq: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ChainHead {
+            fn default() -> Self {
+                Self {
+                    hash: Err("no value supplied for hash".to_string()),
+                    seq: Err("no value supplied for seq".to_string()),
+                }
+            }
+        }
+
+        impl ChainHead {
+            pub fn hash<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hash = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hash: {e}"));
+                self
+            }
+            pub fn seq<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.seq = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for seq: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ChainHead> for super::ChainHead {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ChainHead,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    hash: value.hash?,
+                    seq: value.seq?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ChainHead> for ChainHead {
+            fn from(value: super::ChainHead) -> Self {
+                Self {
+                    hash: Ok(value.hash),
+                    seq: Ok(value.seq),
                 }
             }
         }
@@ -1245,6 +2285,21 @@ impl ClientInfo<()> for Client {
 
 impl ClientHooks<()> for &Client {}
 impl Client {
+    #[doc = "Page through audit events. Returns at most `limit` events with\n\n`seq > after_seq` plus the current chain head.\n\nSends a `GET` request to `/v2/audit/events`\n\nArguments:\n- `after_seq`: Return events with `seq > after_seq`. Default 0 (start of chain).\n- `limit`: Maximum events to return. Default 100, max 1000.\n```ignore\nlet response = client.list_audit_events()\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    pub fn list_audit_events(&self) -> builder::ListAuditEvents<'_> {
+        builder::ListAuditEvents::new(self)
+    }
+
+    #[doc = "Fetch a single audit event by sequence number\n\nSends a `GET` request to `/v2/audit/events/{seq}`\n\n```ignore\nlet response = client.get_audit_event()\n    .seq(seq)\n    .send()\n    .await;\n```"]
+    pub fn get_audit_event(&self) -> builder::GetAuditEvent<'_> {
+        builder::GetAuditEvent::new(self)
+    }
+
+    #[doc = "Walk the audit chain in `[from, to]` and recompute hashes\n\nReturns the first divergence (if any) plus the current head. Cheap on small ranges; auditors typically walk the entire chain once per export.\n\nSends a `GET` request to `/v2/audit/verify`\n\nArguments:\n- `from`: First seq to walk. Default 0.\n- `to`: Last seq to walk. Default = current chain head.\n```ignore\nlet response = client.verify_audit_chain()\n    .from(from)\n    .to(to)\n    .send()\n    .await;\n```"]
+    pub fn verify_audit_chain(&self) -> builder::VerifyAuditChain<'_> {
+        builder::VerifyAuditChain::new(self)
+    }
+
     #[doc = "List the calling user's API keys. The plaintext secret is never\n\nreturned by this endpoint.\n\nSends a `GET` request to `/v2/auth/api-keys`\n\n```ignore\nlet response = client.list_api_keys()\n    .send()\n    .await;\n```"]
     pub fn list_api_keys(&self) -> builder::ListApiKeys<'_> {
         builder::ListApiKeys::new(self)
@@ -1295,6 +2350,247 @@ pub mod builder {
         ByteStream, ClientHooks, ClientInfo, Error, OperationInfo, RequestBuilderExt,
         ResponseValue, encode_path,
     };
+    #[doc = "Builder for [`Client::list_audit_events`]\n\n[`Client::list_audit_events`]: super::Client::list_audit_events"]
+    #[derive(Debug, Clone)]
+    pub struct ListAuditEvents<'a> {
+        client: &'a super::Client,
+        after_seq: Result<Option<u64>, String>,
+        limit: Result<Option<u32>, String>,
+    }
+
+    impl<'a> ListAuditEvents<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                after_seq: Ok(None),
+                limit: Ok(None),
+            }
+        }
+
+        pub fn after_seq<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.after_seq = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for after_seq failed".to_string());
+            self
+        }
+
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for limit failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/audit/events`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AuditEventList>, Error<types::Error>> {
+            let Self {
+                client,
+                after_seq,
+                limit,
+            } = self;
+            let after_seq = after_seq.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/audit/events", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("after_seq", &after_seq))
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_audit_events",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_audit_event`]\n\n[`Client::get_audit_event`]: super::Client::get_audit_event"]
+    #[derive(Debug, Clone)]
+    pub struct GetAuditEvent<'a> {
+        client: &'a super::Client,
+        seq: Result<u64, String>,
+    }
+
+    impl<'a> GetAuditEvent<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                seq: Err("seq was not initialized".to_string()),
+            }
+        }
+
+        pub fn seq<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.seq = value
+                .try_into()
+                .map_err(|_| "conversion to `u64` for seq failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/audit/events/{seq}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::AuditEvent>, Error<types::Error>> {
+            let Self { client, seq } = self;
+            let seq = seq.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/audit/events/{}",
+                client.baseurl,
+                encode_path(&seq.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_audit_event",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::verify_audit_chain`]\n\n[`Client::verify_audit_chain`]: super::Client::verify_audit_chain"]
+    #[derive(Debug, Clone)]
+    pub struct VerifyAuditChain<'a> {
+        client: &'a super::Client,
+        from: Result<Option<u64>, String>,
+        to: Result<Option<u64>, String>,
+    }
+
+    impl<'a> VerifyAuditChain<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                from: Ok(None),
+                to: Ok(None),
+            }
+        }
+
+        pub fn from<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.from = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for from failed".to_string());
+            self
+        }
+
+        pub fn to<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.to = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for to failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/audit/verify`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AuditVerifyResponse>, Error<types::Error>> {
+            let Self { client, from, to } = self;
+            let from = from.map_err(Error::InvalidRequest)?;
+            let to = to.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/audit/verify", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("from", &from))
+                .query(&progenitor_client::QueryParam::new("to", &to))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "verify_audit_chain",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::list_api_keys`]\n\n[`Client::list_api_keys`]: super::Client::list_api_keys"]
     #[derive(Debug, Clone)]
     pub struct ListApiKeys<'a> {

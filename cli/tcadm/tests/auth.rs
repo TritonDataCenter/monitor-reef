@@ -19,8 +19,10 @@ use std::sync::Arc;
 use assert_cmd::Command;
 use chrono::Utc;
 use tempfile::TempDir;
+use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
+use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
@@ -50,7 +52,8 @@ impl TestServer {
         let jwt_key = JwtKey::generate();
         let auth_service =
             Arc::new(AuthService::new(JwtKey::from_bytes(*jwt_key.bytes())).unwrap());
-        let context = ApiContext::new(store, auth_service);
+        let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
+        let context = ApiContext::new(store, auth_service, audit);
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .unwrap();

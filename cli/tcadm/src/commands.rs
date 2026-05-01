@@ -217,6 +217,110 @@ pub async fn api_key_delete(
     Ok(())
 }
 
+/// Page through audit events.
+pub async fn audit_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    after_seq: Option<u64>,
+    limit: Option<u32>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_audit_events();
+    if let Some(s) = after_seq {
+        req = req.after_seq(s);
+    }
+    if let Some(l) = limit {
+        req = req.limit(l);
+    }
+    let response = req.send().await.context("list audit events")?.into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+        return Ok(());
+    }
+
+    if response.events.is_empty() {
+        println!("(no events)");
+    } else {
+        for ev in &response.events {
+            println!(
+                "{:>6}  {}  {:?}  {}  {:?}",
+                ev.seq, ev.ts, ev.actor, ev.action, ev.decision
+            );
+        }
+    }
+    if let Some(head) = response.head {
+        println!();
+        println!("head: seq={} hash={}", head.seq, head.hash);
+    }
+    Ok(())
+}
+
+/// Fetch a single audit event by sequence.
+///
+/// `json_output` is accepted for symmetry with the other audit
+/// subcommands; the human form is just pretty-printed JSON because an
+/// AuditEvent has no shorter useful textual representation.
+pub async fn audit_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    seq: u64,
+    _json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let event = client
+        .get_audit_event()
+        .seq(seq)
+        .send()
+        .await
+        .context("get audit event")?
+        .into_inner();
+    println!("{}", serde_json::to_string_pretty(&event)?);
+    Ok(())
+}
+
+/// Walk the chain and recompute hashes.
+pub async fn audit_verify(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    from: Option<u64>,
+    to: Option<u64>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.verify_audit_chain();
+    if let Some(f) = from {
+        req = req.from(f);
+    }
+    if let Some(t) = to {
+        req = req.to(t);
+    }
+    let response = req.send().await.context("verify audit chain")?.into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+        return Ok(());
+    }
+
+    use tritond_client::types::VerifyOutcome;
+    match &response.outcome {
+        VerifyOutcome::Ok { verified_to } => {
+            println!("OK: verified up to seq {verified_to}");
+        }
+        VerifyOutcome::Mismatch { seq, message } => {
+            println!("MISMATCH at seq {seq}: {message}");
+        }
+    }
+    if let Some(head) = response.head {
+        println!("head: seq={} hash={}", head.seq, head.hash);
+    }
+    Ok(())
+}
+
 fn read_password(from_stdin: bool) -> Result<String> {
     if from_stdin {
         let mut s = String::new();

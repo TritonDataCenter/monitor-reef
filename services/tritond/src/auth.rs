@@ -32,14 +32,17 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use cedar_policy::{
-    Authorizer, Context as CedarContext, Decision, Entities, Entity, EntityUid, PolicySet, Request,
-    RestrictedExpression,
+    Authorizer, Context as CedarContext, Decision as CedarDecision, Entities, Entity, EntityUid,
+    PolicySet, Request, RestrictedExpression,
 };
 use dropshot::{ClientErrorStatusCode, HttpError, RequestContext};
 use tracing::warn;
+use tritond_audit::Decision as AuditDecision;
 use tritond_auth::{JwtKey, TokenKind, parse_api_key, verify, verify_api_key_secret};
 use tritond_store::{Store, StoreError};
 use uuid::Uuid;
+
+use crate::audit::AuditService;
 
 /// Embedded Cedar policy bundle.
 ///
@@ -128,6 +131,7 @@ impl Principal {
 
 /// Stable identifier for a Cedar action — one entry per endpoint.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum Action {
     Health,
     Login,
@@ -137,10 +141,17 @@ pub enum Action {
     CreateApiKey,
     ListApiKeys,
     DeleteApiKey,
+    AuditList,
+    AuditFetch,
+    AuditVerify,
 }
 
 impl Action {
-    fn cedar_id(self) -> &'static str {
+    /// Stable string identifier used in Cedar policies and audit
+    /// events. Public so the audit emitter can name the action it
+    /// just gated on without redoing the match.
+    #[must_use]
+    pub fn cedar_id(self) -> &'static str {
         match self {
             Action::Health => "health",
             Action::Login => "login",
@@ -150,6 +161,9 @@ impl Action {
             Action::CreateApiKey => "create_api_key",
             Action::ListApiKeys => "list_api_keys",
             Action::DeleteApiKey => "delete_api_key",
+            Action::AuditList => "audit_list",
+            Action::AuditFetch => "audit_fetch",
+            Action::AuditVerify => "audit_verify",
         }
     }
 
@@ -306,8 +320,8 @@ impl AuthService {
             .authorizer
             .is_authorized(&request, &self.policy_set, &entities);
         match response.decision() {
-            Decision::Allow => Ok(()),
-            Decision::Deny => Err(forbidden_for(action)),
+            CedarDecision::Allow => Ok(()),
+            CedarDecision::Deny => Err(forbidden_for(action)),
         }
     }
 }
@@ -331,9 +345,16 @@ where
 /// Authenticate then authorize a request in one shot. Returns the
 /// principal so handlers that care about identity (e.g. `create_api_key`,
 /// `list_api_keys`) can use it without a second round trip.
+///
+/// Emits exactly one audit event per call:
+/// - Cedar **Allow** on any principal → logs Allow.
+/// - Cedar **Deny** on an authenticated principal → logs Deny.
+/// - Cedar **Deny** on an anonymous principal → does not log
+///   (probe noise; see [`crate::audit::AuditService::record_decision`]).
 pub async fn authenticate_and_authorize<C>(
     rqctx: &RequestContext<C>,
     auth: &AuthService,
+    audit: &AuditService,
     store: &Arc<dyn Store>,
     action: Action,
 ) -> Result<Principal, HttpError>
@@ -342,8 +363,21 @@ where
 {
     let bearer = extract_bearer(rqctx);
     let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await?;
-    auth.authorize(&principal, action)?;
-    Ok(principal)
+    let request_id = Uuid::parse_str(&rqctx.request_id).ok();
+    match auth.authorize(&principal, action) {
+        Ok(()) => {
+            audit
+                .record_decision(&principal, action, request_id, AuditDecision::Allow)
+                .await;
+            Ok(principal)
+        }
+        Err(http_err) => {
+            audit
+                .record_decision(&principal, action, request_id, AuditDecision::Deny)
+                .await;
+            Err(http_err)
+        }
+    }
 }
 
 /// 401 helper — used by handlers that need an *authenticated*

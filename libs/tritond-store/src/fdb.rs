@@ -37,7 +37,7 @@
 //! Each multi-key write happens in a single transaction so name
 //! uniqueness and index consistency are enforced atomically.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -63,7 +63,7 @@ fn ensure_fdb_booted() {
 
 /// FoundationDB-backed [`Store`].
 pub struct FdbStore {
-    db: Database,
+    db: Arc<Database>,
 }
 
 impl FdbStore {
@@ -74,7 +74,15 @@ impl FdbStore {
         ensure_fdb_booted();
         let db = Database::new(cluster_file_path)
             .map_err(|e| StoreError::Backend(format!("open FDB cluster: {e}")))?;
-        Ok(Self { db })
+        Ok(Self { db: Arc::new(db) })
+    }
+
+    /// Get a shared handle to the underlying [`foundationdb::Database`].
+    /// Used by adjacent crates (e.g. `tritond-audit::FdbChain`) that
+    /// need to share the boot-once FDB network thread without opening
+    /// a separate `Database` handle.
+    pub fn database(&self) -> Arc<Database> {
+        Arc::clone(&self.db)
     }
 
     fn silo_by_id_key(id: Uuid) -> Vec<u8> {

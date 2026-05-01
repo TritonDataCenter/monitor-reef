@@ -4671,6 +4671,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tritond",
+ "tritond-audit",
  "tritond-auth",
  "tritond-client",
  "tritond-store",
@@ -5247,6 +5248,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tritond-api",
+ "tritond-audit",
  "tritond-auth",
  "tritond-client",
  "tritond-store",
@@ -5261,8 +5263,26 @@ dependencies = [
  "dropshot",
  "schemars 0.8.22",
  "serde",
+ "tritond-audit",
  "tritond-auth",
  "tritond-store",
+ "uuid",
+]
+
+[[package]]
+name = "tritond-audit"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "foundationdb",
+ "hex",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
  "uuid",
 ]
 
