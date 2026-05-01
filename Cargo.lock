@@ -4656,14 +4656,25 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "chrono",
  "clap",
+ "dialoguer",
+ "dirs",
+ "dropshot",
  "predicates",
+ "reqwest",
+ "rpassword",
+ "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "tritond",
+ "tritond-auth",
  "tritond-client",
+ "tritond-store",
+ "uuid",
 ]
 
 [[package]]

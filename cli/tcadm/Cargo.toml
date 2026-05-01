@@ -18,16 +18,28 @@ name = "tcadm"
 path = "src/main.rs"
 
 [dependencies]
-tritond-client = { workspace = true }
 anyhow = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
+dialoguer = { workspace = true }
+dirs = { workspace = true }
+reqwest = { workspace = true }
+rpassword = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tritond-client = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
-tritond = { workspace = true }
 assert_cmd = { workspace = true }
+chrono = { workspace = true }
+dropshot = { workspace = true }
 predicates = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
+tritond = { workspace = true }
+tritond-auth = { workspace = true }
+tritond-store = { workspace = true }

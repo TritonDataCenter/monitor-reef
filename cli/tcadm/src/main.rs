@@ -6,20 +6,45 @@
 
 //! tcadm — Triton Cloud operator CLI.
 //!
-//! Phase 0 ships a single subcommand, `bootstrap`, that verifies a
-//! freshly deployed `tritond` is reachable and serving the expected
-//! version. Subsequent phases extend this into a full lifecycle tool
-//! (FoundationDB schema init, root credential issuance, silo
-//! provisioning, Cedar policy upload).
+//! Phase 0e ships:
+//!
+//! * `tcadm bootstrap` — health-check ping (anonymous-allowed).
+//! * `tcadm configure` / `tcadm login` / `tcadm logout` — interactive
+//!   login flow that persists tokens at `~/.config/tcadm/config.json`.
+//! * `tcadm env` — emit shell exports so the access token can be
+//!   embedded in `eval "$(tcadm env)"` style invocations.
+//! * `tcadm api-key {create,list,delete}` — long-lived bearer
+//!   credentials for automation. The plaintext is shown once at
+//!   creation and never persisted server-side.
+//!
+//! `--endpoint` and `--api-key` are global flags; they short-circuit
+//! the on-disk config in priority order documented in
+//! [`crate::session`].
 
-use anyhow::{Context, Result};
+mod commands;
+mod config;
+mod session;
+
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(name = "tcadm")]
 #[command(about = "Triton Cloud operator CLI", long_about = None)]
 #[command(version)]
 struct Cli {
+    /// Override the cluster endpoint. Falls back to `TCADM_ENDPOINT`
+    /// then to the `endpoint` field in the on-disk config.
+    #[arg(long, global = true)]
+    endpoint: Option<String>,
+
+    /// Authenticate with this API key instead of the stored login
+    /// session. Falls back to `TCADM_API_KEY` if not given on the
+    /// command line.
+    #[arg(long, global = true)]
+    api_key: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -27,22 +52,67 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Verify that a tritond control plane is reachable.
-    ///
-    /// Phase 0 contract: hit `/v2/health`, print the reported status
-    /// and version, exit 0 on success.
     Bootstrap {
-        /// Base URL of the tritond control plane.
-        #[arg(
-            long,
-            env = "TRITOND_ENDPOINT",
-            default_value = "http://localhost:8080"
-        )]
-        endpoint: String,
-
-        /// Emit the raw JSON response instead of the human-readable form.
+        /// Endpoint to probe; defaults to http://localhost:8080 if no
+        /// global `--endpoint` / `TCADM_ENDPOINT` is set.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Emit JSON instead of the human-readable form.
         #[arg(long)]
         json: bool,
     },
+    /// Interactive login: prompts for endpoint + username + password
+    /// and writes `~/.config/tcadm/config.json`.
+    Configure {
+        /// Skip the endpoint prompt.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Skip the username prompt.
+        #[arg(long)]
+        username: Option<String>,
+        /// Read the password from stdin (one line) instead of the TTY.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+    /// Re-authenticate against the stored endpoint, e.g. after the
+    /// refresh token has expired.
+    Login {
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long)]
+        username: Option<String>,
+        #[arg(long)]
+        password_stdin: bool,
+    },
+    /// Delete the on-disk config (forgets endpoint and tokens).
+    Logout,
+    /// Print shell `export` lines for the current session.
+    Env,
+    /// Manage long-lived API keys.
+    ApiKey {
+        #[command(subcommand)]
+        command: ApiKeyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ApiKeyCommand {
+    /// Mint a new API key. The plaintext is shown once.
+    Create {
+        /// Free-text label, e.g. `ci-pipeline`.
+        #[arg(long)]
+        description: String,
+        /// Emit JSON instead of the human-readable form.
+        #[arg(long)]
+        json: bool,
+    },
+    /// List the calling user's API keys (no secret material).
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete one of the calling user's API keys by id.
+    Delete { api_key_id: Uuid },
 }
 
 #[tokio::main]
@@ -58,36 +128,48 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Bootstrap { endpoint, json } => bootstrap(&endpoint, json).await,
+        Commands::Bootstrap {
+            endpoint: subcmd_endpoint,
+            json,
+        } => {
+            let endpoint = subcmd_endpoint
+                .or(cli.endpoint)
+                .or_else(|| std::env::var("TCADM_ENDPOINT").ok())
+                .unwrap_or_else(|| "http://localhost:8080".to_string());
+            commands::bootstrap(&endpoint, json).await
+        }
+        Commands::Configure {
+            endpoint,
+            username,
+            password_stdin,
+        } => {
+            let endpoint = endpoint
+                .or(cli.endpoint)
+                .or_else(|| std::env::var("TCADM_ENDPOINT").ok());
+            commands::configure(endpoint, username, password_stdin).await
+        }
+        Commands::Login {
+            endpoint,
+            username,
+            password_stdin,
+        } => {
+            let endpoint = endpoint
+                .or(cli.endpoint)
+                .or_else(|| std::env::var("TCADM_ENDPOINT").ok());
+            commands::login(endpoint, username, password_stdin).await
+        }
+        Commands::Logout => commands::logout(),
+        Commands::Env => commands::env(cli.endpoint, cli.api_key).await,
+        Commands::ApiKey { command } => match command {
+            ApiKeyCommand::Create { description, json } => {
+                commands::api_key_create(cli.endpoint, cli.api_key, description, json).await
+            }
+            ApiKeyCommand::List { json } => {
+                commands::api_key_list(cli.endpoint, cli.api_key, json).await
+            }
+            ApiKeyCommand::Delete { api_key_id } => {
+                commands::api_key_delete(cli.endpoint, cli.api_key, api_key_id).await
+            }
+        },
     }
-}
-
-async fn bootstrap(endpoint: &str, json_output: bool) -> Result<()> {
-    let client = tritond_client::Client::new(endpoint);
-
-    let response = client
-        .health()
-        .send()
-        .await
-        .with_context(|| format!("failed to reach tritond at {endpoint}"))?;
-    let body = response.into_inner();
-
-    if json_output {
-        let payload = serde_json::json!({
-            "endpoint": endpoint,
-            "status": body.status,
-            "version": body.version,
-        });
-        println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else {
-        println!("tritond at {endpoint}");
-        println!("  status:  {}", body.status);
-        println!("  version: {}", body.version);
-    }
-
-    if body.status != "ok" {
-        anyhow::bail!("tritond reported non-ok status: {}", body.status);
-    }
-
-    Ok(())
 }
