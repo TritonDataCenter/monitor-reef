@@ -21,24 +21,29 @@
 //!
 //! # Schema
 //!
-//! Phase 0 lays down two index keys per silo:
+//! Phase 0 lays down the following key prefixes:
 //!
 //! ```text
-//! silo/by_id/<uuid>      -> JSON-encoded Silo
-//! silo/by_name/<name>    -> uuid hyphenated bytes
+//! silo/by_id/<uuid>                 -> JSON-encoded Silo
+//! silo/by_name/<name>               -> uuid hyphenated bytes
+//! user/by_id/<uuid>                 -> JSON-encoded User
+//! user/by_name/<username>           -> uuid hyphenated bytes
+//! apikey/by_id/<uuid>               -> JSON-encoded ApiKey
+//! apikey/by_user/<uuid>/<key-uuid>  -> empty (membership index)
+//! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
-//! Both writes happen in a single transaction so name uniqueness is
-//! enforced atomically.
+//! Each multi-key write happens in a single transaction so name
+//! uniqueness and index consistency are enforced atomically.
 
 use std::sync::OnceLock;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use foundationdb::{Database, FdbBindingError};
+use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
 use uuid::Uuid;
 
-use crate::{NewSilo, Silo, Store, StoreError};
+use crate::{ApiKey, NewSilo, Silo, Store, StoreError, SystemKey, User};
 
 static FDB_NETWORK: OnceLock<()> = OnceLock::new();
 
@@ -71,12 +76,44 @@ impl FdbStore {
         Ok(Self { db })
     }
 
-    fn by_id_key(id: Uuid) -> Vec<u8> {
+    fn silo_by_id_key(id: Uuid) -> Vec<u8> {
         format!("silo/by_id/{id}").into_bytes()
     }
 
-    fn by_name_key(name: &str) -> Vec<u8> {
+    fn silo_by_name_key(name: &str) -> Vec<u8> {
         format!("silo/by_name/{name}").into_bytes()
+    }
+
+    fn user_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("user/by_id/{id}").into_bytes()
+    }
+
+    fn user_by_name_key(name: &str) -> Vec<u8> {
+        format!("user/by_name/{name}").into_bytes()
+    }
+
+    fn user_prefix() -> &'static [u8] {
+        b"user/by_id/"
+    }
+
+    fn apikey_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("apikey/by_id/{id}").into_bytes()
+    }
+
+    fn apikey_index_key(user_id: Uuid, key_id: Uuid) -> Vec<u8> {
+        format!("apikey/by_user/{user_id}/{key_id}").into_bytes()
+    }
+
+    fn apikey_index_prefix(user_id: Uuid) -> Vec<u8> {
+        format!("apikey/by_user/{user_id}/").into_bytes()
+    }
+
+    fn apikey_id_prefix() -> &'static [u8] {
+        b"apikey/by_id/"
+    }
+
+    fn system_key(key: SystemKey) -> Vec<u8> {
+        format!("system/{}", key.tag()).into_bytes()
     }
 }
 
@@ -86,6 +123,30 @@ impl FdbStore {
 enum CreateOutcome {
     Created,
     NameTaken,
+}
+
+/// Outcome of an api-key delete transaction.
+enum DeleteOutcome {
+    Deleted,
+    NotFound,
+}
+
+/// Compute the half-open range `[prefix, prefix++)` for prefix scans.
+fn prefix_range(prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let mut end = prefix.to_vec();
+    // Increment the last byte to get the exclusive upper bound. If
+    // every byte were 0xFF the prefix would be at the end of the
+    // keyspace, but our key bytes are ASCII so that case never arises.
+    for byte in end.iter_mut().rev() {
+        if *byte < 0xFF {
+            *byte += 1;
+            return (prefix.to_vec(), end);
+        }
+        *byte = 0;
+    }
+    // Fallthrough: append a 0 byte to widen the range.
+    end.push(0);
+    (prefix.to_vec(), end)
 }
 
 #[async_trait]
@@ -99,8 +160,8 @@ impl Store for FdbStore {
         };
         let value = serde_json::to_vec(&silo)
             .map_err(|e| StoreError::Backend(format!("serialize silo: {e}")))?;
-        let by_id_key = Self::by_id_key(silo.id);
-        let by_name_key = Self::by_name_key(&silo.name);
+        let by_id_key = Self::silo_by_id_key(silo.id);
+        let by_name_key = Self::silo_by_name_key(&silo.name);
         let id_str = silo.id.to_string();
 
         let outcome: Result<CreateOutcome, FdbBindingError> = self
@@ -132,20 +193,253 @@ impl Store for FdbStore {
     }
 
     async fn get_silo(&self, id: Uuid) -> Result<Silo, StoreError> {
-        let key = Self::by_id_key(id);
-        let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
+        let key = Self::silo_by_id_key(id);
+        let bytes = self.read_bytes(&key).await?;
+        match bytes {
+            Some(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize silo: {e}"))),
+            None => Err(StoreError::NotFound),
+        }
+    }
+
+    async fn create_user(&self, user: User) -> Result<User, StoreError> {
+        let value = serde_json::to_vec(&user)
+            .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
+        let by_id_key = Self::user_by_id_key(user.id);
+        let by_name_key = Self::user_by_name_key(&user.username);
+        let id_str = user.id.to_string();
+
+        let outcome: Result<CreateOutcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                async move {
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(CreateOutcome::NameTaken);
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    Ok(CreateOutcome::Created)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(CreateOutcome::Created) => Ok(user),
+            Ok(CreateOutcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "user with username {:?} already exists",
+                user.username
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_user_by_username(&self, username: &str) -> Result<User, StoreError> {
+        let by_name_key = Self::user_by_name_key(username);
+        let id_bytes = self
+            .read_bytes(&by_name_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("user index value not utf8: {e}")))?;
+        let id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("user index value not uuid: {e}")))?;
+        self.get_user_by_id(id).await
+    }
+
+    async fn get_user_by_id(&self, id: Uuid) -> Result<User, StoreError> {
+        let key = Self::user_by_id_key(id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize user: {e}")))
+    }
+
+    async fn has_any_user(&self) -> Result<bool, StoreError> {
+        let (begin, end) = prefix_range(Self::user_prefix());
+        let result: Result<bool, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        limit: Some(1),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().next().is_some())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError> {
+        let value = serde_json::to_vec(&key)
+            .map_err(|e| StoreError::Backend(format!("serialize api key: {e}")))?;
+        let by_id_key = Self::apikey_by_id_key(key.id);
+        let index_key = Self::apikey_index_key(key.user_id, key.id);
+
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let index_key = index_key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&by_id_key, &value);
+                    tr.set(&index_key, b"");
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        Ok(key)
+    }
+
+    async fn list_api_keys(&self, user_id: Uuid) -> Result<Vec<ApiKey>, StoreError> {
+        let prefix = Self::apikey_index_prefix(user_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        // Collect the key ids that this user owns.
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("api key index uuid: {e}")))?;
+            let by_id_key = Self::apikey_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let key: ApiKey = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))?;
+                out.push(key);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn all_api_keys(&self) -> Result<Vec<ApiKey>, StoreError> {
+        let (begin, end) = prefix_range(Self::apikey_id_prefix());
+        let result: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let raw = result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(raw.len());
+        for bytes in raw {
+            let key: ApiKey = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize api key: {e}")))?;
+            out.push(key);
+        }
+        Ok(out)
+    }
+
+    async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::apikey_by_id_key(key_id);
+        let index_key = Self::apikey_index_key(user_id, key_id);
+
+        let outcome: Result<DeleteOutcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let index_key = index_key.clone();
+                async move {
+                    // The index entry is the source of truth for
+                    // ownership: if the (user_id, key_id) pair isn't
+                    // there, the caller doesn't get to delete this key.
+                    if tr.get(&index_key, false).await?.is_none() {
+                        return Ok(DeleteOutcome::NotFound);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&index_key);
+                    Ok(DeleteOutcome::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DeleteOutcome::Deleted) => Ok(()),
+            Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_system_key(&self, key: SystemKey) -> Result<Vec<u8>, StoreError> {
+        let storage_key = Self::system_key(key);
+        self.read_bytes(&storage_key)
+            .await?
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn put_system_key(&self, key: SystemKey, value: Vec<u8>) -> Result<(), StoreError> {
+        let storage_key = Self::system_key(key);
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let storage_key = storage_key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&storage_key, &value);
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+}
+
+impl FdbStore {
+    /// Read the value for a single key, returning `None` if absent.
+    async fn read_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
+        let key = key.to_vec();
+        let result: Result<Option<Vec<u8>>, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let key = key.clone();
                 async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
             })
             .await;
-
-        match bytes {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes)
-                .map_err(|e| StoreError::Backend(format!("deserialize silo: {e}"))),
-            Ok(None) => Err(StoreError::NotFound),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
-        }
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
     }
 }

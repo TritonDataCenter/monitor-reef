@@ -30,7 +30,7 @@ mod types;
 #[cfg(feature = "foundationdb")]
 pub use fdb::FdbStore;
 pub use mem::MemStore;
-pub use types::{NewSilo, Silo};
+pub use types::{ApiKey, ApiKeyView, NewSilo, Silo, SystemKey, User, UserView};
 
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -64,6 +64,10 @@ pub enum StoreError {
 /// async by being trivially `await`-able.
 #[async_trait]
 pub trait Store: Send + Sync + 'static {
+    // ------------------------------------------------------------------
+    // Silos
+    // ------------------------------------------------------------------
+
     /// Create a new silo.
     ///
     /// Returns [`StoreError::Conflict`] if `req.name` is already in use.
@@ -73,4 +77,57 @@ pub trait Store: Send + Sync + 'static {
     ///
     /// Returns [`StoreError::NotFound`] if no silo with that id exists.
     async fn get_silo(&self, id: Uuid) -> Result<Silo, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Users
+    // ------------------------------------------------------------------
+
+    /// Create a new operator account.
+    ///
+    /// Returns [`StoreError::Conflict`] if `user.username` is already
+    /// in use.
+    async fn create_user(&self, user: User) -> Result<User, StoreError>;
+
+    /// Look up an operator by username.
+    async fn get_user_by_username(&self, username: &str) -> Result<User, StoreError>;
+
+    /// Look up an operator by id.
+    async fn get_user_by_id(&self, id: Uuid) -> Result<User, StoreError>;
+
+    /// True if any user record exists. Used by the bootstrap path to
+    /// decide whether to mint the root operator at first run.
+    async fn has_any_user(&self) -> Result<bool, StoreError>;
+
+    // ------------------------------------------------------------------
+    // API keys
+    // ------------------------------------------------------------------
+
+    /// Persist a freshly issued API key (storage form: bcrypt hash).
+    async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError>;
+
+    /// List the API keys belonging to a single user. Used by `tcadm
+    /// api-key list`.
+    async fn list_api_keys(&self, user_id: Uuid) -> Result<Vec<ApiKey>, StoreError>;
+
+    /// Iterate every API key in the cluster. The auth middleware
+    /// uses this to find the matching hash for an inbound bearer
+    /// presented as an API key. Phase 0 keeps the surface simple;
+    /// Phase 1 will index by a key prefix to avoid the linear scan
+    /// once we have more than a handful of keys.
+    async fn all_api_keys(&self) -> Result<Vec<ApiKey>, StoreError>;
+
+    /// Delete an API key by id. Returns [`StoreError::NotFound`] if
+    /// the id does not belong to `user_id`'s set.
+    async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // System keys
+    // ------------------------------------------------------------------
+
+    /// Read a cluster-level system key, e.g. the JWT signing secret.
+    async fn get_system_key(&self, key: SystemKey) -> Result<Vec<u8>, StoreError>;
+
+    /// Persist a cluster-level system key. Overwrites any existing
+    /// value; rotation policy lives in the caller.
+    async fn put_system_key(&self, key: SystemKey, value: Vec<u8>) -> Result<(), StoreError>;
 }

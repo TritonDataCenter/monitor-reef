@@ -13,4 +13,4 @@
 //! (e.g. computed fields, redaction), define the wire-only type here
 //! and convert in the service layer.
 
-pub use tritond_store::{NewSilo, Silo};
+pub use tritond_store::{ApiKeyView, NewSilo, Silo, UserView};

@@ -20,6 +20,7 @@ members = [
     "clients/internal/tritond-client",
     "clients/internal/vmapi-client",
     "libs/triton-auth",
+    "libs/tritond-auth",
     "libs/tritond-store",
     "client-generator",
     "openapi-manager",
@@ -64,6 +65,9 @@ expect_used = "deny"
 [workspace.dependencies]
 aes = "0.8"
 anyhow = "1.0"
+bcrypt = "0.19"
+cedar-policy = "4.10"
+jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 askama = "0.15"
 assert_cmd = "2.0"
 async-trait = "0.1"
@@ -177,6 +181,7 @@ jira-stub-server = { path = "services/jira-stub-server" }
 triton-auth = { path = "libs/triton-auth" }
 tritond = { path = "services/tritond" }
 tritond-api = { path = "apis/tritond-api" }
+tritond-auth = { path = "libs/tritond-auth" }
 tritond-client = { path = "clients/internal/tritond-client" }
 tritond-store = { path = "libs/tritond-store" }
 vmapi-api = { path = "apis/vmapi-api" }

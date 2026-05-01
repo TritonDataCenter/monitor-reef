@@ -6,21 +6,25 @@
 
 //! Triton Cloud control plane daemon (binary entry point).
 //!
-//! All meaningful logic lives in the library (`tritond::*`). This file
-//! parses environment variables, configures tracing, picks a store
-//! backend, and runs the server to completion.
+//! Configuration:
 //!
-//! Backend selection:
+//! * `TRITOND_BIND_ADDRESS` — listen address. Defaults to
+//!   `127.0.0.1:8080`.
+//! * `TRITOND_FDB_CLUSTER_FILE` — path to a FoundationDB cluster file.
+//!   Triggers the FDB-backed [`Store`] when the binary is built with
+//!   the `foundationdb` feature; an error if set with the feature
+//!   disabled.
 //!
-//! * `TRITOND_FDB_CLUSTER_FILE` set and `foundationdb` feature
-//!   compiled in → use FoundationDB at the given cluster file path.
-//! * Otherwise → use [`tritond_store::MemStore`] (ephemeral, in-process).
+//! Startup runs [`tritond::bootstrap::ensure`] which mints the JWT
+//! signing key and the root operator on first run, then loads them on
+//! every subsequent run.
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::info;
-use tritond::{DEFAULT_BIND_ADDRESS, VERSION, start_server_with_store};
+use tritond::auth::AuthService;
+use tritond::{ApiContext, DEFAULT_BIND_ADDRESS, VERSION, bootstrap, start_server_with_context};
 use tritond_store::{MemStore, Store};
 
 #[tokio::main]
@@ -36,10 +40,15 @@ async fn main() -> Result<()> {
         std::env::var("TRITOND_BIND_ADDRESS").unwrap_or_else(|_| DEFAULT_BIND_ADDRESS.to_string());
 
     let store = build_store()?;
+    let jwt_key = bootstrap::ensure(store.as_ref())
+        .await
+        .context("first-run bootstrap")?;
+    let auth = Arc::new(AuthService::new(jwt_key).context("build auth service")?);
+    let context = ApiContext::new(store, auth);
 
     info!(version = VERSION, %bind_address, "tritond starting");
 
-    let server = start_server_with_store(&bind_address, store).await?;
+    let server = start_server_with_context(&bind_address, context).await?;
     server
         .await
         .map_err(|e| anyhow::anyhow!("HTTP server error: {e}"))?;

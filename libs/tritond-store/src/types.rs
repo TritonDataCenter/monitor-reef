@@ -33,3 +33,92 @@ pub struct NewSilo {
     #[serde(default)]
     pub description: Option<String>,
 }
+
+/// Operator account. Phase 0 has exactly one role bit (`is_root`)
+/// because Cedar authorisation is still expressed against the root
+/// principal. Once richer policies land, this grows to carry group
+/// membership, silo binding, and the federation source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct User {
+    pub id: Uuid,
+    pub username: String,
+    /// Bcrypt hash of the operator's password.
+    pub password_hash: String,
+    /// True for the bootstrap operator. Cedar policy uses this to
+    /// short-circuit to "permit anything" until per-action policies
+    /// are written.
+    pub is_root: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Wire-safe view of a [`User`]: same identity, no credential material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UserView {
+    pub id: Uuid,
+    pub username: String,
+    pub is_root: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<User> for UserView {
+    fn from(user: User) -> Self {
+        UserView {
+            id: user.id,
+            username: user.username,
+            is_root: user.is_root,
+            created_at: user.created_at,
+        }
+    }
+}
+
+/// API key record. Storage carries only the bcrypt hash; the
+/// plaintext is shown to the operator exactly once at creation time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiKey {
+    pub id: Uuid,
+    /// User this key authenticates as.
+    pub user_id: Uuid,
+    /// Operator-supplied free-text label (e.g. "ci-pipeline").
+    pub description: String,
+    /// Bcrypt hash of the wire-form key.
+    pub hash: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Wire-safe view of an [`ApiKey`]: identifying metadata, no hash.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ApiKeyView {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<ApiKey> for ApiKeyView {
+    fn from(key: ApiKey) -> Self {
+        ApiKeyView {
+            id: key.id,
+            user_id: key.user_id,
+            description: key.description,
+            created_at: key.created_at,
+        }
+    }
+}
+
+/// Cluster-level system keys. Phase 0 has exactly one
+/// (`SystemKey::JwtSigning`); future entries will include the
+/// transit-engine master key and any per-silo OIDC client secrets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SystemKey {
+    /// 32-byte HS256 secret used to sign and validate operator JWTs.
+    JwtSigning,
+}
+
+impl SystemKey {
+    /// Stable storage tag, used as the FDB key suffix.
+    pub fn tag(self) -> &'static str {
+        match self {
+            SystemKey::JwtSigning => "jwt_signing",
+        }
+    }
+}

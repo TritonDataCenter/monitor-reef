@@ -37,6 +37,111 @@ pub mod types {
         }
     }
 
+    #[doc = "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `POST /v2/auth/api-keys`.\\n\\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"secret\","]
+    #[doc = "    \"user_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"secret\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"user_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ApiKeyCreated {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub secret: ::std::string::String,
+        pub user_id: ::uuid::Uuid,
+    }
+
+    impl ApiKeyCreated {
+        pub fn builder() -> builder::ApiKeyCreated {
+            Default::default()
+        }
+    }
+
+    #[doc = "Wire-safe view of an [`ApiKey`]: identifying metadata, no hash."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Wire-safe view of an [`ApiKey`]: identifying metadata, no hash.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"user_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"user_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ApiKeyView {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub user_id: ::uuid::Uuid,
+    }
+
+    impl ApiKeyView {
+        pub fn builder() -> builder::ApiKeyView {
+            Default::default()
+        }
+    }
+
     #[doc = "Error information from a response."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -116,6 +221,75 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v2/auth/login`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/auth/login`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"password\","]
+    #[doc = "    \"username\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"password\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"username\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct LoginRequest {
+        pub password: ::std::string::String,
+        pub username: ::std::string::String,
+    }
+
+    impl LoginRequest {
+        pub fn builder() -> builder::LoginRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/auth/api-keys`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/auth/api-keys`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"description\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewApiKey {
+        pub description: ::std::string::String,
+    }
+
+    impl NewApiKey {
+        pub fn builder() -> builder::NewApiKey {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for creating a silo.\n\nDistinct from [`Silo`] because the server assigns `id` and `created_at`. `description` is optional on the wire and stored as an empty string when omitted."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -152,6 +326,38 @@ pub mod types {
 
     impl NewSilo {
         pub fn builder() -> builder::NewSilo {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/auth/refresh`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/auth/refresh`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"refresh_token\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"refresh_token\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RefreshRequest {
+        pub refresh_token: ::std::string::String,
+    }
+
+    impl RefreshRequest {
+        pub fn builder() -> builder::RefreshRequest {
             Default::default()
         }
     }
@@ -205,8 +411,251 @@ pub mod types {
         }
     }
 
+    #[doc = "Response body for both login and refresh."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for both login and refresh.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"access_expires_at\","]
+    #[doc = "    \"access_token\","]
+    #[doc = "    \"refresh_expires_at\","]
+    #[doc = "    \"refresh_token\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"access_expires_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"access_token\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"refresh_expires_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"refresh_token\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct TokenResponse {
+        pub access_expires_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub access_token: ::std::string::String,
+        pub refresh_expires_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub refresh_token: ::std::string::String,
+    }
+
+    impl TokenResponse {
+        pub fn builder() -> builder::TokenResponse {
+            Default::default()
+        }
+    }
+
     #[doc = r" Types for composing complex structures."]
     pub mod builder {
+        #[derive(Clone, Debug)]
+        pub struct ApiKeyCreated {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            secret: ::std::result::Result<::std::string::String, ::std::string::String>,
+            user_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ApiKeyCreated {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    secret: Err("no value supplied for secret".to_string()),
+                    user_id: Err("no value supplied for user_id".to_string()),
+                }
+            }
+        }
+
+        impl ApiKeyCreated {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn secret<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.secret = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for secret: {e}"));
+                self
+            }
+            pub fn user_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.user_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for user_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ApiKeyCreated> for super::ApiKeyCreated {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ApiKeyCreated,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    secret: value.secret?,
+                    user_id: value.user_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ApiKeyCreated> for ApiKeyCreated {
+            fn from(value: super::ApiKeyCreated) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    secret: Ok(value.secret),
+                    user_id: Ok(value.user_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ApiKeyView {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            user_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ApiKeyView {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    user_id: Err("no value supplied for user_id".to_string()),
+                }
+            }
+        }
+
+        impl ApiKeyView {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn user_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.user_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for user_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ApiKeyView> for super::ApiKeyView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ApiKeyView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    user_id: value.user_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ApiKeyView> for ApiKeyView {
+            fn from(value: super::ApiKeyView) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    user_id: Ok(value.user_id),
+                }
+            }
+        }
+
         #[derive(Clone, Debug)]
         pub struct Error {
             error_code: ::std::result::Result<
@@ -343,6 +792,110 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct LoginRequest {
+            password: ::std::result::Result<::std::string::String, ::std::string::String>,
+            username: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for LoginRequest {
+            fn default() -> Self {
+                Self {
+                    password: Err("no value supplied for password".to_string()),
+                    username: Err("no value supplied for username".to_string()),
+                }
+            }
+        }
+
+        impl LoginRequest {
+            pub fn password<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.password = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for password: {e}"));
+                self
+            }
+            pub fn username<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.username = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for username: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<LoginRequest> for super::LoginRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LoginRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    password: value.password?,
+                    username: value.username?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::LoginRequest> for LoginRequest {
+            fn from(value: super::LoginRequest) -> Self {
+                Self {
+                    password: Ok(value.password),
+                    username: Ok(value.username),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewApiKey {
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewApiKey {
+            fn default() -> Self {
+                Self {
+                    description: Err("no value supplied for description".to_string()),
+                }
+            }
+        }
+
+        impl NewApiKey {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewApiKey> for super::NewApiKey {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewApiKey,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewApiKey> for NewApiKey {
+            fn from(value: super::NewApiKey) -> Self {
+                Self {
+                    description: Ok(value.description),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewSilo {
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -400,6 +953,51 @@ pub mod types {
                 Self {
                     description: Ok(value.description),
                     name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RefreshRequest {
+            refresh_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RefreshRequest {
+            fn default() -> Self {
+                Self {
+                    refresh_token: Err("no value supplied for refresh_token".to_string()),
+                }
+            }
+        }
+
+        impl RefreshRequest {
+            pub fn refresh_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.refresh_token = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for refresh_token: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RefreshRequest> for super::RefreshRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RefreshRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    refresh_token: value.refresh_token?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RefreshRequest> for RefreshRequest {
+            fn from(value: super::RefreshRequest) -> Self {
+                Self {
+                    refresh_token: Ok(value.refresh_token),
                 }
             }
         }
@@ -491,6 +1089,99 @@ pub mod types {
                 }
             }
         }
+
+        #[derive(Clone, Debug)]
+        pub struct TokenResponse {
+            access_expires_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            access_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+            refresh_expires_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            refresh_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for TokenResponse {
+            fn default() -> Self {
+                Self {
+                    access_expires_at: Err("no value supplied for access_expires_at".to_string()),
+                    access_token: Err("no value supplied for access_token".to_string()),
+                    refresh_expires_at: Err("no value supplied for refresh_expires_at".to_string()),
+                    refresh_token: Err("no value supplied for refresh_token".to_string()),
+                }
+            }
+        }
+
+        impl TokenResponse {
+            pub fn access_expires_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.access_expires_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for access_expires_at: {e}")
+                });
+                self
+            }
+            pub fn access_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.access_token = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for access_token: {e}"));
+                self
+            }
+            pub fn refresh_expires_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.refresh_expires_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for refresh_expires_at: {e}")
+                });
+                self
+            }
+            pub fn refresh_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.refresh_token = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for refresh_token: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<TokenResponse> for super::TokenResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: TokenResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    access_expires_at: value.access_expires_at?,
+                    access_token: value.access_token?,
+                    refresh_expires_at: value.refresh_expires_at?,
+                    refresh_token: value.refresh_token?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::TokenResponse> for TokenResponse {
+            fn from(value: super::TokenResponse) -> Self {
+                Self {
+                    access_expires_at: Ok(value.access_expires_at),
+                    access_token: Ok(value.access_token),
+                    refresh_expires_at: Ok(value.refresh_expires_at),
+                    refresh_token: Ok(value.refresh_token),
+                }
+            }
+        }
     }
 }
 
@@ -554,6 +1245,31 @@ impl ClientInfo<()> for Client {
 
 impl ClientHooks<()> for &Client {}
 impl Client {
+    #[doc = "List the calling user's API keys. The plaintext secret is never\n\nreturned by this endpoint.\n\nSends a `GET` request to `/v2/auth/api-keys`\n\n```ignore\nlet response = client.list_api_keys()\n    .send()\n    .await;\n```"]
+    pub fn list_api_keys(&self) -> builder::ListApiKeys<'_> {
+        builder::ListApiKeys::new(self)
+    }
+
+    #[doc = "Create a long-lived API key for the calling user. The plaintext\n\nsecret is included in the response **once** and never shown again.\n\nSends a `POST` request to `/v2/auth/api-keys`\n\n```ignore\nlet response = client.create_api_key()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_api_key(&self) -> builder::CreateApiKey<'_> {
+        builder::CreateApiKey::new(self)
+    }
+
+    #[doc = "Delete one of the calling user's API keys. Returns 404 if the\n\nid does not belong to the calling user.\n\nSends a `DELETE` request to `/v2/auth/api-keys/{api_key_id}`\n\n```ignore\nlet response = client.delete_api_key()\n    .api_key_id(api_key_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_api_key(&self) -> builder::DeleteApiKey<'_> {
+        builder::DeleteApiKey::new(self)
+    }
+
+    #[doc = "Exchange username + password for an access/refresh token pair\n\nReturns 401 if credentials are invalid.\n\nSends a `POST` request to `/v2/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn login(&self) -> builder::Login<'_> {
+        builder::Login::new(self)
+    }
+
+    #[doc = "Exchange a valid refresh token for a fresh access/refresh pair\n\nReturns 401 if the refresh token is invalid or expired.\n\nSends a `POST` request to `/v2/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn refresh(&self) -> builder::Refresh<'_> {
+        builder::Refresh::new(self)
+    }
+
     #[doc = "Liveness check. Returns service status and version string\n\nSends a `GET` request to `/v2/health`\n\n```ignore\nlet response = client.health()\n    .send()\n    .await;\n```"]
     pub fn health(&self) -> builder::Health<'_> {
         builder::Health::new(self)
@@ -579,6 +1295,368 @@ pub mod builder {
         ByteStream, ClientHooks, ClientInfo, Error, OperationInfo, RequestBuilderExt,
         ResponseValue, encode_path,
     };
+    #[doc = "Builder for [`Client::list_api_keys`]\n\n[`Client::list_api_keys`]: super::Client::list_api_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListApiKeys<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListApiKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/auth/api-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::ApiKeyView>>, Error<types::Error>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v2/auth/api-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_api_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_api_key`]\n\n[`Client::create_api_key`]: super::Client::create_api_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreateApiKey<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewApiKey, String>,
+    }
+
+    impl<'a> CreateApiKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewApiKey>,
+            <V as std::convert::TryInto<types::NewApiKey>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewApiKey` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewApiKey) -> types::builder::NewApiKey,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/auth/api-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ApiKeyCreated>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewApiKey::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/auth/api-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_api_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_api_key`]\n\n[`Client::delete_api_key`]: super::Client::delete_api_key"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteApiKey<'a> {
+        client: &'a super::Client,
+        api_key_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteApiKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                api_key_id: Err("api_key_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn api_key_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.api_key_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for api_key_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/auth/api-keys/{api_key_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, api_key_id } = self;
+            let api_key_id = api_key_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/auth/api-keys/{}",
+                client.baseurl,
+                encode_path(&api_key_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_api_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::login`]\n\n[`Client::login`]: super::Client::login"]
+    #[derive(Debug, Clone)]
+    pub struct Login<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::LoginRequest, String>,
+    }
+
+    impl<'a> Login<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::LoginRequest>,
+            <V as std::convert::TryInto<types::LoginRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `LoginRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::LoginRequest) -> types::builder::LoginRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/auth/login`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::TokenResponse>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::LoginRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/auth/login", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "login",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::refresh`]\n\n[`Client::refresh`]: super::Client::refresh"]
+    #[derive(Debug, Clone)]
+    pub struct Refresh<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::RefreshRequest, String>,
+    }
+
+    impl<'a> Refresh<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::RefreshRequest>,
+            <V as std::convert::TryInto<types::RefreshRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `RefreshRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::RefreshRequest) -> types::builder::RefreshRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/auth/refresh`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::TokenResponse>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::RefreshRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/auth/refresh", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "refresh",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::health`]\n\n[`Client::health`]: super::Client::health"]
     #[derive(Debug, Clone)]
     pub struct Health<'a> {
