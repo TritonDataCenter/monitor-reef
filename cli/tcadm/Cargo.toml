@@ -1,0 +1,33 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tcadm"
+version = "0.1.0"
+edition.workspace = true
+description = "Operator CLI for the Triton Cloud control plane"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "tcadm"
+path = "src/main.rs"
+
+[dependencies]
+tritond-client = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tritond = { workspace = true }
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+tokio = { workspace = true }
