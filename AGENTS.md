@@ -227,3 +227,32 @@ Tutorial content for less-frequent tasks has been moved to dedicated files:
 - [Dropshot Documentation](https://github.com/oxidecomputer/dropshot)
 - [Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)
 - [Progenitor Documentation](https://github.com/oxidecomputer/progenitor)
+
+## Triton Cloud control plane (`tritond`, `tcadm`, `libs/tritond-*`)
+
+Phase 0 of a from-scratch rebuild of Triton DataCenter (control-plane
+side) is in flight on this monorepo. If you are working on any of the
+following, the canonical orientation lives one directory up:
+
+- `services/tritond` — control plane daemon
+- `cli/tcadm` — operator CLI
+- `apis/tritond-api` — Dropshot trait + OpenAPI source of truth
+- `clients/internal/tritond-client` — generated Progenitor client
+- `libs/tritond-{auth,audit,store}` — supporting crates
+
+**Read these in order before touching code:**
+
+1. **[`../STATUS.md`](../STATUS.md)** — current branch state, locked
+   architectural decisions, deferred work, the cookbook for adding the
+   next tenant resource, and the gotchas list. **Start here.**
+2. **[`../DESIGN.md`](../DESIGN.md)** — the canonical architecture doc
+   for Triton Cloud. §4 Substrates, §8 Storage, §12 Identity, §14 API
+   surface, §18 Audit log are the load-bearing sections.
+3. **[`../MANTA_NOTES.md`](../MANTA_NOTES.md)** — Triton-Cloud-relevant
+   distillation of the manta-storage planning workspace. Names the two
+   in-flight implementations (`tritonfs`, `mantad`) and the v1 target.
+
+The active branch is `nick-tritond-phase0` (13+ commits ahead of
+`main`, **local only** as of writing — not pushed). Each commit's
+message is substantive and self-describing; `git log --oneline
+main..nick-tritond-phase0` is a reasonable starting index.
