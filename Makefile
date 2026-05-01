@@ -103,8 +103,8 @@ api-new: ## Create new API trait (usage: make api-new API=my-service-api)
 	@if [ -z "$(API)" ]; then echo "Usage: make api-new API=my-service-api"; exit 1; fi
 	@if [ -d "apis/$(API)" ]; then echo "API $(API) already exists"; exit 1; fi
 	cp -r apis/api-template apis/$(API)
-	sed -i 's/example-api/$(API)/g' apis/$(API)/Cargo.toml
-	sed -i 's/ExampleApi/$(shell echo $(API) | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g' | sed 's/ //g')/g' apis/$(API)/src/lib.rs
+	perl -i -pe 's/example-api/$(API)/g' apis/$(API)/Cargo.toml
+	perl -i -pe 's/ExampleApi/join("", map ucfirst, split(\/-\/, "$(API)"))/ge' apis/$(API)/src/lib.rs
 	@echo "Created new API: apis/$(API)"
 	@echo ""
 	@echo "Next steps:"
@@ -118,7 +118,7 @@ service-new: ## Create new service (usage: make service-new SERVICE=my-service A
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-new SERVICE=my-service API=my-service-api"; exit 1; fi
 	@if [ -d "services/$(SERVICE)" ]; then echo "Service $(SERVICE) already exists"; exit 1; fi
 	cp -r services/service-template services/$(SERVICE)
-	sed -i 's/service-template/$(SERVICE)/g' services/$(SERVICE)/Cargo.toml
+	perl -i -pe 's/service-template/$(SERVICE)/g' services/$(SERVICE)/Cargo.toml
 	@if [ ! -z "$(API)" ]; then \
 		echo "$$API = { workspace = true }" >> services/$(SERVICE)/Cargo.toml; \
 		echo "Added dependency on $(API)"; \
@@ -148,8 +148,8 @@ client-new: ## Create new client (usage: make client-new CLIENT=my-service-clien
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-new CLIENT=my-service-client API=my-api"; exit 1; fi
 	@if [ -d "clients/internal/$(CLIENT)" ]; then echo "Client $(CLIENT) already exists"; exit 1; fi
 	cp -r clients/internal/client-template clients/internal/$(CLIENT)
-	sed -i 's/client-template/$(CLIENT)/g' clients/internal/$(CLIENT)/Cargo.toml
-	sed -i 's/client_template/$(shell echo $(CLIENT) | tr '-' '_')/g' clients/internal/$(CLIENT)/Cargo.toml
+	perl -i -pe 's/client-template/$(CLIENT)/g' clients/internal/$(CLIENT)/Cargo.toml
+	perl -i -pe 's/client_template/$(shell echo $(CLIENT) | tr '-' '_')/g' clients/internal/$(CLIENT)/Cargo.toml
 	@echo "Created new client: clients/internal/$(CLIENT)"
 	@echo ""
 	@echo "Next steps:"
