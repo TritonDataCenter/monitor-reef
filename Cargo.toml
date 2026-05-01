@@ -9,6 +9,7 @@ members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
     "apis/jira-api",
+    "apis/tritond-api",
     "apis/vmapi-api",
     "cli/bugview-cli",
     "cli/triton-cli",
@@ -16,12 +17,14 @@ members = [
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
     "clients/internal/jira-client",
+    "clients/internal/tritond-client",
     "clients/internal/vmapi-client",
     "libs/triton-auth",
     "client-generator",
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",
+    "services/tritond",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
@@ -165,5 +168,7 @@ jira-api = { path = "apis/jira-api" }
 jira-client = { path = "clients/internal/jira-client" }
 jira-stub-server = { path = "services/jira-stub-server" }
 triton-auth = { path = "libs/triton-auth" }
+tritond-api = { path = "apis/tritond-api" }
+tritond-client = { path = "clients/internal/tritond-client" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

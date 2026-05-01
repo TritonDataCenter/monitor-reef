@@ -91,6 +91,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "tritond-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/tritond-api")?,
+            },
+            title: "Triton Cloud Control Plane",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton Cloud control-plane API. Phase 0 surface (`/v2/health`); subsequent phases add silos, instances, VPCs, audit, secrets, and the rest of DESIGN.md §14.",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: tritond_api::tritond_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "vmapi-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/vmapi-api")?,

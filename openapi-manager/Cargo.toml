@@ -23,6 +23,7 @@ dropshot-api-manager-types = { workspace = true }
 bugview-api = { workspace = true }
 cloudapi-api = { workspace = true }
 jira-api = { workspace = true }
+tritond-api = { workspace = true }
 vmapi-api = { workspace = true }
 anyhow = { workspace = true }
 camino = { workspace = true }
