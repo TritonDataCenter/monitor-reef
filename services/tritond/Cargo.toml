@@ -12,6 +12,12 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# Compile in the FoundationDB backend (libs/tritond-store/foundationdb).
+# Builds with this feature require libfdb_c.so on the build/run host.
+foundationdb = ["tritond-store/foundationdb"]
+
 [lib]
 name = "tritond"
 path = "src/lib.rs"

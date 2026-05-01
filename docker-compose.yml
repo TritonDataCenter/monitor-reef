@@ -6,19 +6,78 @@
 
 # Local Triton Cloud development stack.
 #
-# Phase 0 ships only tritond. Phase 0b will add a foundationdb service
-# alongside it; downstream services will join as they are written.
+# Phase 0 ships tritond plus a single-node FoundationDB. Subsequent
+# services join as they are written.
 
 services:
+  foundationdb:
+    image: foundationdb/foundationdb:7.3.27
+    platform: linux/amd64
+    container_name: triton-fdb
+    environment:
+      FDB_NETWORKING_MODE: container
+      FDB_COORDINATOR_PORT: "4500"
+    ports:
+      - "4500:4500"
+    volumes:
+      - fdb-config:/var/fdb
+    healthcheck:
+      test: ["CMD-SHELL", "fdbcli --exec 'status minimal' 2>&1 | grep -q 'Database available'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  fdb-init:
+    image: foundationdb/foundationdb:7.3.27
+    platform: linux/amd64
+    container_name: triton-fdb-init
+    depends_on:
+      foundationdb:
+        condition: service_started
+    volumes:
+      - fdb-config:/var/fdb
+    entrypoint: ["/bin/bash", "-c"]
+    # Wait for FDB to come up, then create the database if it does not
+    # exist yet. configure new succeeds the first time and returns
+    # non-zero on every subsequent run, which is fine.
+    command:
+      - |
+        set -e
+        export FDB_CLUSTER_FILE=/var/fdb/fdb.cluster
+        for i in $(seq 1 30); do
+          if fdbcli --exec 'status minimal' 2>&1 | grep -q 'available\|unavailable'; then
+            break
+          fi
+          sleep 1
+        done
+        if fdbcli --exec 'status minimal' 2>&1 | grep -q 'Database available'; then
+          echo "FDB already initialised"
+        else
+          fdbcli --exec 'configure new single ssd'
+          echo "FDB initialised"
+        fi
+    restart: "no"
+
   tritond:
     build:
       context: .
       dockerfile: Dockerfile
     image: tritond:dev
     container_name: tritond
+    platform: linux/amd64
+    depends_on:
+      fdb-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
       RUST_LOG: info
       TRITOND_BIND_ADDRESS: 0.0.0.0:8080
+      TRITOND_FDB_CLUSTER_FILE: /fdb/fdb.cluster
+    volumes:
+      - fdb-config:/fdb:ro
     restart: unless-stopped
+
+volumes:
+  fdb-config:

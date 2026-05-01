@@ -82,6 +82,11 @@ des = "0.8"
 dialoguer = "0.12"
 dirs = "6.0"
 dropshot = { version = "0.16" }
+# FoundationDB Rust client. Gated behind the `foundationdb` feature on
+# tritond-store so default builds don't need libfdb_c installed.
+# embedded-fdb-include vendors the FDB header so build time only needs
+# libfdb_c.so, not the FDB headers.
+foundationdb = { version = "0.10", default-features = false, features = ["fdb-7_3", "embedded-fdb-include"] }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
 dsa = "0.6"

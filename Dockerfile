@@ -19,6 +19,23 @@
 
 FROM rust:1.92-bookworm AS builder
 
+# FoundationDB client library version. Must match the FDB server in
+# docker-compose. embedded-fdb-include lets the foundationdb crate
+# build with only libfdb_c.so present (no headers needed).
+ARG FDB_VERSION=7.3.27
+
+RUN set -eux; \
+    arch=$(dpkg --print-architecture); \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      curl ca-certificates \
+      clang libclang-dev; \
+    curl -fsSL -o /tmp/fdb-clients.deb \
+      "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_${arch}.deb"; \
+    dpkg -i /tmp/fdb-clients.deb; \
+    rm /tmp/fdb-clients.deb; \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 
 # Copy only what cargo needs to resolve and build the workspace. The
@@ -34,23 +51,29 @@ COPY client-generator ./client-generator
 COPY openapi-manager ./openapi-manager
 COPY openapi-specs ./openapi-specs
 
-# Build only tritond. Cache the cargo registry, git index, and target
-# directory across builds via BuildKit cache mounts. The final cp lifts
-# the binary out of the (ephemeral) target cache mount before the layer
-# is committed.
+# Build tritond with the foundationdb feature; cache cargo state.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo build --release --locked -p tritond \
+    cargo build --release --locked -p tritond --features foundationdb \
     && cp /build/target/release/tritond /usr/local/bin/tritond
 
 FROM debian:bookworm-slim AS runtime
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system --gid 1000 tritond \
-    && useradd --system --uid 1000 --gid 1000 \
+ARG FDB_VERSION=7.3.27
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl; \
+    arch=$(dpkg --print-architecture); \
+    curl -fsSL -o /tmp/fdb-clients.deb \
+      "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_${arch}.deb"; \
+    dpkg -i /tmp/fdb-clients.deb; \
+    rm /tmp/fdb-clients.deb; \
+    apt-get purge -y --auto-remove curl; \
+    rm -rf /var/lib/apt/lists/*; \
+    groupadd --system --gid 1000 tritond; \
+    useradd --system --uid 1000 --gid 1000 \
        --no-create-home --shell /usr/sbin/nologin tritond
 
 COPY --from=builder /usr/local/bin/tritond /usr/local/bin/tritond

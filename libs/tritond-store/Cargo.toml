@@ -14,11 +14,19 @@ license = "MPL-2.0"
 [lints]
 workspace = true
 
+[features]
+default = []
+# FoundationDB-backed `Store` implementation. Requires libfdb_c.so on
+# the build/run host (FDB 7.3.x).
+foundationdb = ["dep:foundationdb", "dep:serde_json"]
+
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
+foundationdb = { workspace = true, optional = true }
 schemars = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }

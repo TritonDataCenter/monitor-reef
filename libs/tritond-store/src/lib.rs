@@ -22,9 +22,13 @@
 //! `tritond-api` and re-uses the types defined here so there is no
 //! API↔storage conversion layer to keep in sync.
 
+#[cfg(feature = "foundationdb")]
+pub mod fdb;
 pub mod mem;
 mod types;
 
+#[cfg(feature = "foundationdb")]
+pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{NewSilo, Silo};
 

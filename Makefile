@@ -427,16 +427,33 @@ docker-down: ## Stop and remove the tritond Docker stack
 docker-logs: ## Tail tritond container logs
 	docker compose logs -f tritond
 
-docker-smoke: ## Smoke-test the running tritond container against /v2/health
+docker-smoke: ## Smoke-test the running tritond container (health + silo round-trip)
 	@echo "Waiting for tritond to come up on port $(DOCKER_HOST_PORT)..."
-	@for i in $$(seq 1 30); do \
+	@for i in $$(seq 1 60); do \
 		if curl -fsS "http://localhost:$(DOCKER_HOST_PORT)/v2/health" >/dev/null 2>&1; then \
-			BODY=$$(curl -fsS "http://localhost:$(DOCKER_HOST_PORT)/v2/health"); \
-			echo "OK: $$BODY"; \
-			exit 0; \
+			break; \
 		fi; \
 		sleep 1; \
-	done; \
-	echo "FAIL: tritond did not respond on /v2/health within 30s"; \
-	docker compose logs --tail 50 tritond; \
-	exit 1
+	done
+	@HEALTH=$$(curl -fsS "http://localhost:$(DOCKER_HOST_PORT)/v2/health" 2>&1); \
+		if [ -z "$$HEALTH" ]; then \
+			echo "FAIL: tritond did not respond on /v2/health within 60s"; \
+			docker compose logs --tail 80 tritond; \
+			exit 1; \
+		fi; \
+		echo "/v2/health: $$HEALTH"
+	@SILO_NAME="smoke-$$$$"; \
+		echo "POST /v2/silos { name: $$SILO_NAME }"; \
+		CREATED=$$(curl -fsS -X POST "http://localhost:$(DOCKER_HOST_PORT)/v2/silos" \
+			-H 'Content-Type: application/json' \
+			-d "{\"name\":\"$$SILO_NAME\",\"description\":\"docker smoke\"}"); \
+		echo "  -> $$CREATED"; \
+		ID=$$(echo "$$CREATED" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'); \
+		if [ -z "$$ID" ]; then \
+			echo "FAIL: no id in create response"; exit 1; \
+		fi; \
+		echo "GET /v2/silos/$$ID"; \
+		FETCHED=$$(curl -fsS "http://localhost:$(DOCKER_HOST_PORT)/v2/silos/$$ID"); \
+		echo "  -> $$FETCHED"; \
+		echo "$$FETCHED" | grep -q "\"name\":\"$$SILO_NAME\"" || (echo "FAIL: round-trip mismatch"; exit 1); \
+		echo "OK: silo round-trip succeeded"
