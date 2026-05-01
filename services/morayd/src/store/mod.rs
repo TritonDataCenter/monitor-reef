@@ -35,6 +35,54 @@ pub struct PutOpts {
     pub headers: serde_json::Map<String, Value>,
 }
 
+/// One operation inside a `batch` RPC. The store applies a slice of these
+/// **atomically**: either every op commits or none do. This is the
+/// invariant Moray callers depend on (sdc-napi's `commitBatch` issues
+/// `[put, update, put]` and would loop forever on stale etags if a
+/// partial commit landed). Construct via the builder-style `From` impls
+/// or manually; the order of variants in the slice is the order the
+/// store applies them.
+#[derive(Debug, Clone)]
+pub enum BatchOp {
+    Put {
+        bucket: String,
+        key: String,
+        value: Value,
+        opts: PutOpts,
+        unique_cols: Vec<(String, Vec<String>)>,
+    },
+    Delete {
+        bucket: String,
+        key: String,
+        expected_etag: Option<String>,
+    },
+    /// Read every row in `bucket` matching `filter_str`, merge `fields`
+    /// over the value, then put the rewritten value under the same key.
+    /// `prepared_rows` carries the already-fetched + already-trigger-
+    /// processed rows so the store can apply them inside the same FDB
+    /// transaction as the surrounding `put`/`delete` ops.
+    UpdateRows {
+        bucket: String,
+        rows: Vec<(String, Value, Vec<(String, Vec<String>)>)>,
+    },
+    /// Delete the keys listed (already resolved by the rpc layer from a
+    /// filter scan).
+    DeleteKeys {
+        bucket: String,
+        keys: Vec<String>,
+    },
+}
+
+/// Per-op result echoed back to the wire. `etag`/`_id` only set for puts.
+#[derive(Debug, Clone)]
+pub struct BatchOpResult {
+    pub bucket: String,
+    pub key: Option<String>,
+    pub etag: Option<String>,
+    pub id: Option<u64>,
+    pub count: Option<usize>,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait MorayStore: Send + Sync + 'static {
     /// Create a bucket. Fails with `BucketAlreadyExists` if one already
@@ -117,4 +165,12 @@ pub trait MorayStore: Send + Sync + 'static {
         &self,
         bucket: &str,
     ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Apply a slice of `BatchOp`s atomically. Either every op commits or
+    /// none do. This is the invariant `commitBatch` callers depend on —
+    /// see the comment on [`BatchOp`].
+    fn apply_batch(
+        &self,
+        ops: Vec<BatchOp>,
+    ) -> impl Future<Output = Result<Vec<BatchOpResult>>> + Send;
 }

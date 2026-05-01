@@ -16,10 +16,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error::{MorayError, Result};
-use crate::store::{MorayStore, PutOpts};
+use crate::store::{BatchOp, BatchOpResult, MorayStore, PutOpts};
 use crate::types::{Bucket, BucketConfig, ObjectMeta, ReindexState};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Inner {
     buckets: HashMap<String, Bucket>,
     /// (bucket, key) -> (value, id, etag, mtime)
@@ -354,6 +354,227 @@ impl MorayStore for MemStore {
         }
         Ok(())
     }
+
+    async fn apply_batch(&self, ops: Vec<BatchOp>) -> Result<Vec<BatchOpResult>> {
+        // Atomic semantics for the in-memory backend: snapshot under
+        // the lock, apply every op against the snapshot, and only
+        // commit the result back to `self.inner` if every op
+        // succeeded. Any error rolls the snapshot away unchanged. The
+        // FDB backend gets the same guarantee from a single
+        // `client.transact` closure.
+        let mut inner = self.inner.lock();
+        let mut staged = inner.clone();
+        let mut results: Vec<BatchOpResult> = Vec::with_capacity(ops.len());
+
+        for op in ops {
+            match op {
+                BatchOp::Put { bucket, key, value, opts, unique_cols } => {
+                    let r = mem_put_impl(
+                        &mut staged,
+                        &bucket,
+                        &key,
+                        value,
+                        opts,
+                        unique_cols,
+                    )?;
+                    results.push(BatchOpResult {
+                        bucket,
+                        key: Some(key),
+                        etag: Some(r.etag),
+                        id: Some(r.id),
+                        count: None,
+                    });
+                }
+                BatchOp::Delete { bucket, key, expected_etag } => {
+                    mem_delete_impl(&mut staged, &bucket, &key, expected_etag.as_deref())?;
+                    results.push(BatchOpResult {
+                        bucket,
+                        key: Some(key),
+                        etag: None,
+                        id: None,
+                        count: None,
+                    });
+                }
+                BatchOp::UpdateRows { bucket, rows } => {
+                    let count = rows.len();
+                    for (key, value, unique_cols) in rows {
+                        mem_put_impl(
+                            &mut staged,
+                            &bucket,
+                            &key,
+                            value,
+                            PutOpts::default(),
+                            unique_cols,
+                        )?;
+                    }
+                    results.push(BatchOpResult {
+                        bucket,
+                        key: None,
+                        etag: None,
+                        id: None,
+                        count: Some(count),
+                    });
+                }
+                BatchOp::DeleteKeys { bucket, keys } => {
+                    let count = keys.len();
+                    for key in keys {
+                        // ObjectNotFound is tolerated here — moray's
+                        // deleteMany is "best effort": missing rows are
+                        // a no-op. Skip the etag guard since none is
+                        // provided.
+                        let _ = mem_delete_impl(&mut staged, &bucket, &key, None);
+                    }
+                    results.push(BatchOpResult {
+                        bucket,
+                        key: None,
+                        etag: None,
+                        id: None,
+                        count: Some(count),
+                    });
+                }
+            }
+        }
+
+        // Commit.
+        *inner = staged;
+        Ok(results)
+    }
+}
+
+/// Apply one put against an Inner snapshot. Same semantics as the
+/// trait's `put_object` but operates on a borrowed map so the caller
+/// can compose multiple ops atomically (apply_batch).
+fn mem_put_impl(
+    inner: &mut Inner,
+    bucket: &str,
+    key: &str,
+    value: Value,
+    opts: PutOpts,
+    unique_cols: Vec<(String, Vec<String>)>,
+) -> Result<ObjectMeta> {
+    if !inner.buckets.contains_key(bucket) {
+        return Err(MorayError::BucketNotFound(bucket.into()));
+    }
+    if let Some(want_etag) = opts.etag.as_deref() {
+        let current = inner.objects.get(&(bucket.to_string(), key.to_string()));
+        let actual = current.map_or_else(|| "null".to_string(), |c| c.etag.clone());
+        match (want_etag, current) {
+            ("" | "null", None) => {}
+            ("" | "null", Some(_)) => {
+                return Err(MorayError::EtagConflict {
+                    bucket: bucket.into(),
+                    key: key.into(),
+                    expected: want_etag.to_string(),
+                    actual,
+                })
+            }
+            (want, Some(c)) if c.etag == want => {}
+            _ => {
+                return Err(MorayError::EtagConflict {
+                    bucket: bucket.into(),
+                    key: key.into(),
+                    expected: want_etag.to_string(),
+                    actual,
+                })
+            }
+        }
+    }
+    for (col, values) in &unique_cols {
+        for v in values {
+            let idx_key = (bucket.to_string(), col.clone(), v.clone());
+            if let Some(owner) = inner.unique_index.get(&idx_key)
+                && owner != key
+            {
+                return Err(MorayError::UniqueConstraint {
+                    bucket: bucket.into(),
+                    column: col.clone(),
+                    value: v.clone(),
+                });
+            }
+        }
+    }
+    let prior_values: Vec<(String, String)> = inner
+        .unique_index
+        .iter()
+        .filter(|((b, _, _), owner)| b == bucket && owner.as_str() == key)
+        .map(|((_, c, v), _)| (c.clone(), v.clone()))
+        .collect();
+    for (c, v) in prior_values {
+        inner.unique_index.remove(&(bucket.to_string(), c, v));
+    }
+    for (col, values) in &unique_cols {
+        for v in values {
+            inner.unique_index.insert(
+                (bucket.to_string(), col.clone(), v.clone()),
+                key.to_string(),
+            );
+        }
+    }
+    let id = {
+        let counter = inner.next_id.entry(bucket.into()).or_insert(0);
+        *counter += 1;
+        *counter
+    };
+    let meta = ObjectMeta {
+        key: key.into(),
+        id,
+        etag: etag_of(&value),
+        mtime: Utc::now(),
+        value,
+    };
+    inner.objects.insert((bucket.into(), key.into()), meta.clone());
+    Ok(meta)
+}
+
+fn mem_delete_impl(
+    inner: &mut Inner,
+    bucket: &str,
+    key: &str,
+    expected_etag: Option<&str>,
+) -> Result<()> {
+    if !inner.buckets.contains_key(bucket) {
+        return Err(MorayError::BucketNotFound(bucket.into()));
+    }
+    if let Some(want) = expected_etag {
+        let current = inner.objects.get(&(bucket.to_string(), key.to_string()));
+        let actual = current.map_or_else(|| "null".to_string(), |c| c.etag.clone());
+        match (want, current) {
+            (_, None) => {
+                return Err(MorayError::ObjectNotFound {
+                    bucket: bucket.into(),
+                    key: key.into(),
+                })
+            }
+            (w, Some(o)) if o.etag == w => {}
+            _ => {
+                return Err(MorayError::EtagConflict {
+                    bucket: bucket.into(),
+                    key: key.into(),
+                    expected: want.to_string(),
+                    actual,
+                })
+            }
+        }
+    }
+    let removed = inner
+        .objects
+        .remove(&(bucket.to_string(), key.to_string()));
+    if removed.is_none() {
+        return Err(MorayError::ObjectNotFound {
+            bucket: bucket.into(),
+            key: key.into(),
+        });
+    }
+    let prior_values: Vec<(String, String)> = inner
+        .unique_index
+        .iter()
+        .filter(|((b, _, _), owner)| b == bucket && owner.as_str() == key)
+        .map(|((_, c, v), _)| (c.clone(), v.clone()))
+        .collect();
+    for (c, v) in prior_values {
+        inner.unique_index.remove(&(bucket.to_string(), c, v));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

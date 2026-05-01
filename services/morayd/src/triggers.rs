@@ -25,12 +25,16 @@
 //!   `modify` (those are the mutation paths that receive freshly parsed
 //!   LDAP data; other operations already have typed values).
 //!
-//! The registry is closed. If a bucket's pre/post contains a function
-//! we don't recognise, we log and skip it (preserving upstream's
-//! best-effort semantics — a missing trigger is not a put error).
+//! The registry is **closed**: if a bucket's pre/post carries a
+//! function we don't recognise, we hard-fail. Silent-skip would let a
+//! service team register a new trigger that we'd then never run,
+//! masking divergence between morayd and upstream moray. Failing loud
+//! at both bucket-create time (`validate.rs`) and at put time (here)
+//! forces every new trigger through a code change to this registry.
 
 use serde_json::{Map, Value};
 
+use crate::error::MorayError;
 use crate::types::Bucket;
 
 /// Inputs the trigger can read or mutate. Mirrors what upstream Moray
@@ -47,13 +51,20 @@ pub struct TriggerContext<'a> {
 type TriggerFn = fn(&mut Value, &TriggerContext<'_>);
 
 /// Look up a trigger by its function-name identifier. Returns `None`
-/// for unknown names — callers treat that as a no-op.
+/// for unknown names — callers must treat `None` as a hard error,
+/// **not** a no-op.
 pub fn resolve(name: &str) -> Option<TriggerFn> {
     match name {
         "timestamps" => Some(timestamps),
         "fixTypes" => Some(fix_types),
         _ => None,
     }
+}
+
+/// Cheap registry-membership check for `validate.rs` so it doesn't
+/// have to materialise the function pointer.
+pub fn is_known(name: &str) -> bool {
+    resolve(name).is_some()
 }
 
 /// Extract the first identifier from a function-string body
@@ -87,26 +98,54 @@ pub fn collect_from_bucket(b: &Bucket) -> Vec<String> {
     out
 }
 
-/// Run every recognised trigger registered on this bucket against the
-/// incoming value, mutating in place. Unrecognised triggers are
-/// silently skipped (logging happens at registration time).
+/// Run every trigger registered on this bucket against the incoming
+/// value, mutating in place. Returns `NotFunction` if any entry has no
+/// parseable function identifier or names a function not in the
+/// registry — the caller surfaces this to node-moray as a
+/// `NotFunctionError` so the bad write fails immediately rather than
+/// silently bypassing the trigger.
 pub fn apply<'a>(
     bucket: &Bucket,
     value: &mut Value,
     headers: &Map<String, Value>,
-) {
+) -> Result<(), MorayError> {
     let ctx = TriggerContext {
         schema: &bucket.options.index,
         headers,
     };
-    for side in [&bucket.options.pre, &bucket.options.post] {
+    for (side_name, side) in [
+        ("pre", &bucket.options.pre),
+        ("post", &bucket.options.post),
+    ] {
         for entry in side {
-            let Value::String(body) = entry else { continue };
-            let Some(name) = identifier_of(body) else { continue };
-            let Some(f) = resolve(name) else { continue };
+            // The structural shape (string-bodied function) is enforced
+            // at bucket-create / update time in `validate.rs`. Anything
+            // else here is a corrupt-config invariant violation.
+            let Value::String(body) = entry else {
+                return Err(MorayError::NotFunction(format!(
+                    "bucket '{}' {} trigger entry is not a function string",
+                    bucket.name, side_name
+                )));
+            };
+            let Some(name) = identifier_of(body) else {
+                return Err(MorayError::NotFunction(format!(
+                    "bucket '{}' {} trigger has no parseable function identifier; \
+                     anonymous triggers are not supported (only named entries from \
+                     the morayd registry can run server-side)",
+                    bucket.name, side_name
+                )));
+            };
+            let Some(f) = resolve(name) else {
+                return Err(MorayError::NotFunction(format!(
+                    "bucket '{}' {} trigger '{}' is not in morayd's trigger registry; \
+                     add a Rust implementation in src/triggers.rs and re-deploy",
+                    bucket.name, side_name, name
+                )));
+            };
             f(value, &ctx);
         }
     }
+    Ok(())
 }
 
 // --- concrete triggers ---
@@ -268,6 +307,57 @@ mod tests {
         assert_eq!(v["age"], json!([42]));
         // unchanged because no schema entry
         assert_eq!(v["name"], json!(["alice"]));
+    }
+
+    fn bucket_with_pre(pre: Vec<Value>) -> Bucket {
+        use crate::types::BucketConfig;
+        Bucket {
+            name: "t".into(),
+            id: uuid::Uuid::nil(),
+            options: BucketConfig {
+                index: Map::new(),
+                pre,
+                post: Vec::new(),
+                options: Map::new(),
+            },
+            mtime: chrono::Utc::now(),
+            reindex_active: None,
+            reindex_just_finished: false,
+        }
+    }
+
+    #[test]
+    fn apply_rejects_unknown_named_trigger() {
+        let bucket = bucket_with_pre(vec![json!(
+            "function makeCoffee(req, cb) { cb(); }"
+        )]);
+        let mut v = json!({"x": 1});
+        let headers = Map::new();
+        let err = apply(&bucket, &mut v, &headers).unwrap_err();
+        assert!(matches!(err, MorayError::NotFunction(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn apply_rejects_anonymous_trigger() {
+        let bucket = bucket_with_pre(vec![json!("function (req, cb) { cb(); }")]);
+        let mut v = json!({"x": 1});
+        let headers = Map::new();
+        let err = apply(&bucket, &mut v, &headers).unwrap_err();
+        match err {
+            MorayError::NotFunction(msg) => assert!(msg.contains("anonymous"), "{msg}"),
+            other => panic!("expected NotFunction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_runs_known_triggers() {
+        let bucket = bucket_with_pre(vec![json!(
+            "function timestamps(req, cb) { cb(); }"
+        )]);
+        let mut v = json!({"name": "p"});
+        let headers = Map::new();
+        apply(&bucket, &mut v, &headers).unwrap();
+        assert!(v["updated_at"].as_u64().is_some());
     }
 
     #[test]

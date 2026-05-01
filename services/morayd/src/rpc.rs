@@ -424,7 +424,21 @@ async fn handle<S: MorayStore>(
                     )));
                 }
             }
-            let mut etags: Vec<Value> = Vec::with_capacity(requests.len());
+            // Build a list of BatchOps. Pre-compute everything we can
+            // outside the storage transaction (trigger application,
+            // unique-column extraction, filter scans for update /
+            // deleteMany) so the storage call only has to perform the
+            // writes — atomically. The store's `apply_batch` either
+            // commits all ops or none. That guarantee is what stops
+            // sdc-napi's commitBatch retry loop dead: if any op of the
+            // batch fails, no earlier op leaves a partial commit
+            // behind to make the retry's cached etag stale.
+            let mut ops: Vec<crate::store::BatchOp> = Vec::with_capacity(requests.len());
+            // Mirror the response shape upstream produces. Per-op:
+            // {bucket,key,etag,_id} for puts; {bucket,key} for
+            // deletes; {bucket,count} for update/deleteMany.
+            let mut wire_results: Vec<Value> = Vec::with_capacity(requests.len());
+
             for req in requests {
                 let op = req
                     .get("operation")
@@ -453,21 +467,21 @@ async fn handle<S: MorayStore>(
                             &opts.headers,
                         )
                         .await?;
-                        let uniq = collect_unique_claims(
-                            store.as_ref(),
-                            &bucket,
-                            &value,
-                        )
-                        .await?;
-                        let meta = store
-                            .put_object(&bucket, &key, value, opts, uniq)
-                            .await?;
-                        etags.push(json!({
+                        let uniq =
+                            collect_unique_claims(store.as_ref(), &bucket, &value).await?;
+                        wire_results.push(json!({
                             "bucket": bucket,
-                            "key": key,
-                            "etag": meta.etag,
-                            "_id": meta.id,
+                            "key":    key,
+                            // etag/_id replaced from the store's
+                            // BatchOpResult after apply_batch returns.
                         }));
+                        ops.push(crate::store::BatchOp::Put {
+                            bucket,
+                            key,
+                            value,
+                            opts,
+                            unique_cols: uniq,
+                        });
                     }
                     "delete" => {
                         let key = req
@@ -475,14 +489,148 @@ async fn handle<S: MorayStore>(
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| {
                                 MorayError::InvalidArg("batch.delete: missing key".into())
-                            })?;
-                        store.delete_object(&bucket, key, None).await?;
-                        etags.push(json!({"bucket": bucket, "key": key}));
+                            })?
+                            .to_string();
+                        wire_results.push(json!({
+                            "bucket": bucket,
+                            "key":    key,
+                        }));
+                        ops.push(crate::store::BatchOp::Delete {
+                            bucket,
+                            key,
+                            expected_etag: None,
+                        });
                     }
-                    "update" | "deleteMany" => {
-                        return Err(MorayError::NotImplemented(format!(
-                            "batch.{op}"
-                        )))
+                    // sdc-napi (and a few other Triton services) routinely
+                    // submit batches whose middle op is `update` — e.g.
+                    // "set primary_flag=false on sibling nics". Earlier
+                    // morayd returned NotImplemented for `update` /
+                    // `deleteMany` and let the previous `put` commit
+                    // anyway, leaving a partial state that pinned the
+                    // retry's cached etag and caused an infinite
+                    // EtagConflict loop. We now apply every op in a
+                    // single FDB transaction so partial commits are
+                    // impossible.
+                    "update" => {
+                        let filter_str = req
+                            .get("filter")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                MorayError::InvalidArg(
+                                    "batch.update: missing filter".into(),
+                                )
+                            })?
+                            .to_string();
+                        let fields_map = req
+                            .get("fields")
+                            .and_then(|v| v.as_object())
+                            .cloned()
+                            .ok_or_else(|| {
+                                MorayError::InvalidArg(
+                                    "batch.update: missing fields object".into(),
+                                )
+                            })?;
+                        if fields_map.is_empty() {
+                            return Err(MorayError::EmptyFieldUpdate);
+                        }
+                        for (k, v) in fields_map.iter() {
+                            if v.is_null() {
+                                return Err(MorayError::NotNullable {
+                                    field: k.clone(),
+                                });
+                            }
+                        }
+                        let bucket_meta = store.get_bucket(&bucket).await?;
+                        if let Some(state) = bucket_meta.reindex_active.as_ref() {
+                            for k in fields_map.keys() {
+                                if state.columns.iter().any(|c| c == k) {
+                                    return Err(MorayError::NotIndexed {
+                                        bucket: bucket.clone(),
+                                        filter: filter_str.clone(),
+                                        reindexing: vec![k.clone()],
+                                        unindexed: Vec::new(),
+                                    });
+                                }
+                            }
+                        }
+                        let scan_opts = json!({
+                            "requireOnlineReindexing": true,
+                            "requireIndexes": true,
+                        });
+                        let (rows, _) = find_impl(
+                            store.as_ref(),
+                            &bucket,
+                            &filter_str,
+                            &scan_opts,
+                        )
+                        .await?;
+                        let headers = req
+                            .get("options")
+                            .and_then(|v| v.get("headers"))
+                            .and_then(|v| v.as_object())
+                            .cloned()
+                            .unwrap_or_default();
+
+                        let mut prepared: Vec<(String, Value, Vec<(String, Vec<String>)>)> =
+                            Vec::with_capacity(rows.len());
+                        for row in rows {
+                            let mut new_value = row.value.clone();
+                            if let Some(obj) = new_value.as_object_mut() {
+                                for (k, v) in fields_map.iter() {
+                                    obj.insert(k.clone(), v.clone());
+                                }
+                            }
+                            let new_value = prepare_value_for_put(
+                                store.as_ref(),
+                                &bucket,
+                                new_value,
+                                &headers,
+                            )
+                            .await?;
+                            let uniq = collect_unique_claims(
+                                store.as_ref(),
+                                &bucket,
+                                &new_value,
+                            )
+                            .await?;
+                            prepared.push((row.key, new_value, uniq));
+                        }
+                        wire_results.push(json!({
+                            "bucket": bucket,
+                            "count":  prepared.len(),
+                        }));
+                        ops.push(crate::store::BatchOp::UpdateRows {
+                            bucket,
+                            rows: prepared,
+                        });
+                    }
+                    "deleteMany" => {
+                        let filter_str = req
+                            .get("filter")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                MorayError::InvalidArg(
+                                    "batch.deleteMany: missing filter".into(),
+                                )
+                            })?
+                            .to_string();
+                        let scan_opts = json!({
+                            "requireOnlineReindexing": true,
+                            "requireIndexes": true,
+                        });
+                        let (rows, _) = find_impl(
+                            store.as_ref(),
+                            &bucket,
+                            &filter_str,
+                            &scan_opts,
+                        )
+                        .await?;
+                        let keys: Vec<String> = rows.into_iter().map(|r| r.key).collect();
+                        wire_results.push(json!({
+                            "bucket": bucket,
+                            "count":  keys.len(),
+                        }));
+                        ops.push(crate::store::BatchOp::DeleteKeys { bucket, keys });
                     }
                     other => {
                         return Err(MorayError::InvalidArg(format!(
@@ -491,7 +639,23 @@ async fn handle<S: MorayStore>(
                     }
                 }
             }
-            Ok(vec![json!({"etags": etags})])
+
+            // Atomic commit (or atomic abort): one FDB transaction.
+            let store_results = store.apply_batch(ops).await?;
+            // Stitch the store's per-op result back into our wire
+            // shape (etag/_id for Put ops). We zip on index — both
+            // Vecs are produced in the same order.
+            for (slot, r) in wire_results.iter_mut().zip(store_results.iter()) {
+                if let Some(obj) = slot.as_object_mut() {
+                    if let Some(e) = &r.etag {
+                        obj.insert("etag".into(), Value::String(e.clone()));
+                    }
+                    if let Some(id) = r.id {
+                        obj.insert("_id".into(), json!(id));
+                    }
+                }
+            }
+            Ok(vec![json!({"etags": wire_results})])
         }
 
         // `getTokens` is a cluster-membership RPC the client uses to
@@ -503,21 +667,21 @@ async fn handle<S: MorayStore>(
             Ok(vec![json!({"tokens": []})])
         }
 
-        // `sql` validates its arguments the same way upstream does, then
-        // bails with an `InternalError` — we don't translate SQL into
-        // FDB. Tests that probe argument validation before executing
-        // expect InvocationError for bad inputs, so run those checks
-        // first.
+        // `sql` runs through a pattern dispatcher in `crate::sql` that
+        // recognises the fixed set of statement shapes Triton actually
+        // emits in production. Argument validation still mirrors what
+        // upstream moray does so test-suite probes get the same errors
+        // before any execution happens.
         "sql" => {
-            let _stmt = expect_nonempty_string(&args, 0, "sql", "statement")?;
-            match args.get(1) {
-                Some(Value::Array(_)) => {}
+            let stmt = expect_nonempty_string(&args, 0, "sql", "statement")?;
+            let values_arr: Vec<Value> = match args.get(1) {
+                Some(Value::Array(arr)) => arr.clone(),
                 _ => {
                     return Err(MorayError::Invocation(
                         "sql expects \"values\" (args[1]) to be an array".into(),
                     ))
                 }
-            }
+            };
             let opts = expect_options_object(&args, 2, "sql")?;
             if let Some(req_id) = opts.get("req_id")
                 && let Some(s) = req_id.as_str()
@@ -543,9 +707,7 @@ async fn handle<S: MorayStore>(
                     ));
                 }
             }
-            Err(MorayError::NotImplemented(
-                "sql is not supported by the FDB backend".into(),
-            ))
+            crate::sql::execute(store.as_ref(), &stmt, &values_arr).await
         }
 
         other => Err(MorayError::UnsupportedRpc(other.into())),
@@ -766,10 +928,18 @@ async fn find_impl<S: MorayStore>(
     let limit = if no_limit {
         MAX_FIND_LIMIT
     } else {
-        opts.get("limit")
-            .and_then(coerce_usize)
-            .map(|n| n.min(MAX_FIND_LIMIT))
-            .unwrap_or(DEFAULT_FIND_LIMIT)
+        // Triton callers (sdc-papi, sdc-vmapi, others) idiomatically
+        // pass `limit: params.limit || 0` — relying on upstream moray
+        // treating an explicit `0` as "no caller-supplied limit, use
+        // the server default". A strict reading would return zero rows
+        // for limit=0; we match upstream semantics so PAPI's
+        // `/packages` listing (and the rest of the fleet) doesn't
+        // silently return empty after the cutover.
+        let raw = opts.get("limit").and_then(coerce_usize);
+        match raw {
+            None | Some(0) => DEFAULT_FIND_LIMIT,
+            Some(n) => n.min(MAX_FIND_LIMIT),
+        }
     };
     let offset = opts.get("offset").and_then(coerce_usize).unwrap_or(0);
 
@@ -898,7 +1068,13 @@ async fn prepare_value_for_put<S: MorayStore>(
     headers: &serde_json::Map<String, Value>,
 ) -> Result<Value, MorayError> {
     if let Ok(meta) = store.get_bucket(bucket).await {
-        triggers::apply(&meta, &mut value, headers);
+        // Hard-fail on unrecognised triggers — see triggers.rs. The
+        // bucket-create/update path also rejects unknown triggers, so
+        // hitting this is either a stale bucket on disk or a deploy
+        // skew between fleet members. Either way the caller should
+        // see the error rather than have their put silently miss the
+        // mutation step.
+        triggers::apply(&meta, &mut value, headers)?;
     }
     coerce_value_for_schema(store, bucket, value).await
 }

@@ -162,6 +162,13 @@ fn validate_triggers(v: &Value, field: &str) -> Result<(), MorayError> {
         //     [Function]"`.
         let trimmed = s.trim_start();
         if trimmed.starts_with("function") {
+            // Beyond shape: morayd has a closed registry of named
+            // triggers, so reject anything we wouldn't actually run.
+            // This is morayd-specific (upstream moray would just eval
+            // the body) — failing at registration time gives the
+            // service a clear signal at first contact instead of
+            // silently dropping triggers on every put.
+            ensure_trigger_in_registry(s, field)?;
             continue;
         }
         let looks_like_js_value = trimmed
@@ -178,6 +185,23 @@ fn validate_triggers(v: &Value, field: &str) -> Result<(), MorayError> {
         ));
     }
     Ok(())
+}
+
+/// Reject any trigger function-string whose identifier isn't in
+/// `triggers::resolve`. Anonymous bodies (`function (req, cb) {…}`) and
+/// unknown names both fail here.
+fn ensure_trigger_in_registry(body: &str, field: &str) -> Result<(), MorayError> {
+    match crate::triggers::identifier_of(body) {
+        Some(name) if crate::triggers::is_known(name) => Ok(()),
+        Some(name) => Err(MorayError::NotFunction(format!(
+            "bucket.{field}: trigger '{name}' is not in morayd's named-trigger \
+             registry; add a Rust implementation in src/triggers.rs and re-deploy"
+        ))),
+        None => Err(MorayError::NotFunction(format!(
+            "bucket.{field}: anonymous triggers are not supported by morayd; \
+             only named functions whose identifier resolves in the trigger registry"
+        ))),
+    }
 }
 
 fn validate_index(v: &Value) -> Result<(), MorayError> {
@@ -294,7 +318,50 @@ mod tests {
             bucket_config(&json!({"pre": ["hello"]})),
             Err(MorayError::NotFunction(_))
         ));
-        bucket_config(&json!({"pre": ["function(r,cb){cb()}"]})).unwrap();
+        // Named function that's in the registry — accepted.
+        bucket_config(&json!({
+            "pre": ["function timestamps(req,cb){cb()}"],
+        }))
+        .unwrap();
+    }
+
+    #[test]
+    fn bucket_config_rejects_anonymous_trigger() {
+        // Anonymous body (no identifier) — must reject.
+        let err = bucket_config(&json!({"pre": ["function(r,cb){cb()}"]})).unwrap_err();
+        match err {
+            MorayError::NotFunction(msg) => {
+                assert!(msg.contains("anonymous"), "got: {msg}");
+            }
+            other => panic!("expected NotFunction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bucket_config_rejects_unknown_trigger() {
+        // Named function that's NOT in morayd's registry — must reject
+        // at registration time so we never silently drop the trigger
+        // on subsequent puts.
+        let err = bucket_config(&json!({
+            "post": ["function makeCoffee(req,cb){cb()}"],
+        }))
+        .unwrap_err();
+        match err {
+            MorayError::NotFunction(msg) => {
+                assert!(msg.contains("makeCoffee"), "got: {msg}");
+                assert!(msg.contains("registry"), "got: {msg}");
+            }
+            other => panic!("expected NotFunction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bucket_config_accepts_known_triggers() {
+        bucket_config(&json!({
+            "pre":  ["function fixTypes(req,cb){cb()}"],
+            "post": ["function timestamps(req,cb){cb()}"],
+        }))
+        .unwrap();
     }
 
     #[test]

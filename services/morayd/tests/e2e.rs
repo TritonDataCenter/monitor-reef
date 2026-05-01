@@ -151,6 +151,118 @@ async fn full_bucket_object_cycle() {
     let _ = call(&mut framed, 13, "delObject", json!(["packages", "p1", {}])).await;
     let _ = call(&mut framed, 14, "delBucket", json!(["packages", {}])).await;
 
+    // --- limit=0 means "use the default", not "literally zero rows" ---
+    // PAPI and other Triton callers idiomatically pass `limit: opts.limit
+    // || 0`, relying on upstream Postgres-moray's behaviour of treating
+    // an explicit 0 as "no caller-supplied limit". A strict reading
+    // returns nothing and silently breaks /packages, /vms, etc. — this
+    // regression test pins the upstream-compatible semantics.
+    let _ = call(&mut framed, 20, "createBucket", json!(["lim_test", {}, {}])).await;
+    for i in 0u64..3 {
+        let _ = call(
+            &mut framed,
+            21 + i as u32,
+            "putObject",
+            json!(["lim_test", format!("k{i}"), {"i": i}, {}]),
+        )
+        .await;
+    }
+    let rs = call(
+        &mut framed,
+        30,
+        "findObjects",
+        json!(["lim_test", "(_id>=0)", {"limit": 0}]),
+    )
+    .await;
+    let data_rows: Vec<_> =
+        rs.iter().filter(|r| r.status == FastStatus::Data).collect();
+    assert_eq!(
+        data_rows.len(),
+        3,
+        "limit=0 must mean default-limit (returned all 3 rows), got {}",
+        data_rows.len()
+    );
+    let _ = call(&mut framed, 31, "delBucket", json!(["lim_test", {}])).await;
+
+    // --- batch atomicity: a failing op must roll back prior ops ---
+    // sdc-napi sends `[put, update, put]` shaped batches. Earlier
+    // morayd applied each op in its own FDB transaction, so an error
+    // in op 2 left op 1 committed — that pinned the caller's stale
+    // etag and caused an infinite EtagConflict retry loop. The fix
+    // wraps the whole batch in one transaction. We simulate the bug
+    // shape with `put` then a deliberately-failing `put` (etag guard
+    // mismatch) and verify the first op did NOT commit.
+    let _ = call(
+        &mut framed,
+        40,
+        "createBucket",
+        json!(["atomic_test", {"index": {"v": {"type": "number"}}}, {}]),
+    )
+    .await;
+    let _ = call(
+        &mut framed,
+        41,
+        "putObject",
+        json!(["atomic_test", "existing", {"v": 1}, {}]),
+    )
+    .await;
+    // Snapshot the existing row's etag so we can reference an
+    // intentionally-stale value below.
+    let rs = call(&mut framed, 42, "getObject", json!(["atomic_test", "existing", {}])).await;
+    let prior_etag = rs
+        .iter()
+        .find(|r| r.status == FastStatus::Data)
+        .and_then(|d| d.data.d[0]["_etag"].as_str())
+        .map(|s| s.to_string())
+        .expect("etag");
+
+    // Batch: op 1 puts a brand-new key "first". Op 2 tries to put
+    // "existing" but with a stale etag guard ("xxxxxxxx") — that op
+    // MUST fail. With the atomicity fix, op 1 must not have committed
+    // either: getObject "first" should return ObjectNotFoundError.
+    let rs = call(
+        &mut framed,
+        43,
+        "batch",
+        json!([
+            [
+                {"bucket": "atomic_test", "operation": "put", "key": "first",  "value": {"v": 100}},
+                {"bucket": "atomic_test", "operation": "put", "key": "existing", "value": {"v": 2},
+                 "options": {"etag": "deadbeefdeadbeef"}},
+            ],
+            {}
+        ]),
+    )
+    .await;
+    let err = rs.last().expect("frame");
+    assert_eq!(
+        err.status, FastStatus::Error,
+        "batch with stale-etag op should fail"
+    );
+    assert_eq!(err.data.d["name"], "EtagConflictError");
+    let _ = prior_etag;
+
+    // Op 1 must NOT have left "first" behind.
+    let rs = call(&mut framed, 44, "getObject", json!(["atomic_test", "first", {}])).await;
+    let err = rs.last().expect("frame");
+    assert_eq!(
+        err.status,
+        FastStatus::Error,
+        "atomicity violated: \"first\" was created despite the batch failing"
+    );
+    assert_eq!(err.data.d["name"], "ObjectNotFoundError");
+
+    // And "existing" must still have its original value (v=1, not v=2).
+    let rs = call(&mut framed, 45, "getObject", json!(["atomic_test", "existing", {}])).await;
+    let row = rs.iter().find(|r| r.status == FastStatus::Data).expect("data");
+    assert_eq!(
+        row.data.d[0]["value"]["v"],
+        1,
+        "atomicity violated: failed batch wrote partial state"
+    );
+    let _ = call(&mut framed, 46, "delObject", json!(["atomic_test", "existing", {}])).await;
+    let _ = call(&mut framed, 47, "delBucket", json!(["atomic_test", {}])).await;
+
     // delBucket [name, opts]
     let rs = call(&mut framed, 8, "delBucket", json!(["users", {}])).await;
     assert_eq!(rs.last().unwrap().status, FastStatus::End);

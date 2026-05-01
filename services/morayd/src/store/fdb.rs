@@ -28,7 +28,7 @@ use serde_json::Value;
 use triton_fdb::FdbClient;
 
 use crate::error::{MorayError, Result};
-use crate::store::{MorayStore, PutOpts};
+use crate::store::{BatchOp, BatchOpResult, MorayStore, PutOpts};
 use crate::types::{Bucket, BucketConfig, ObjectMeta, ReindexState};
 
 pub struct FdbStore {
@@ -734,4 +734,377 @@ impl MorayStore for FdbStore {
         Ok(())
     }
 
+    async fn apply_batch(&self, ops: Vec<BatchOp>) -> Result<Vec<BatchOpResult>> {
+        let client = self.client.clone();
+        // Pre-compute the etag/mtime per Put so the closure (which may
+        // be retried by FDB on conflict) sees the same values across
+        // attempts. We deliberately do NOT bump mtime per retry — the
+        // caller's intended write should be deterministic.
+        let now = chrono::Utc::now();
+        // Snapshot the input so the per-retry closure can clone it.
+        let ops_snapshot = ops.clone();
+
+        let outcomes = client
+            .transact("apply_batch", move |trx, _| {
+                let ops = ops_snapshot.clone();
+                async move {
+                    let mut results: Vec<BatchOpResult> = Vec::with_capacity(ops.len());
+                    for op in ops {
+                        match op {
+                            BatchOp::Put {
+                                bucket,
+                                key,
+                                value,
+                                opts,
+                                unique_cols,
+                            } => {
+                                let bk = bucket_key(&bucket);
+                                let ok = object_key(&bucket, &key);
+                                let ck = counter_key(&bucket);
+                                let back = unique_back_key(&bucket, &key);
+
+                                if trx.get(&bk, false).await?.is_none() {
+                                    return Err(FdbBindingError::new_custom_error(
+                                        format!("bucket_missing:{bucket}").into(),
+                                    ));
+                                }
+
+                                // Clear prior unique-index claims for
+                                // this key, then set the new ones,
+                                // refusing to overwrite a slot owned by
+                                // a different key.
+                                if let Some(prior) = trx.get(&back, false).await? {
+                                    let prior: Vec<(String, String)> =
+                                        serde_json::from_slice(&prior).unwrap_or_default();
+                                    for (c, v) in prior {
+                                        trx.clear(&unique_index_key(&bucket, &c, &v));
+                                    }
+                                }
+                                for (col, values) in &unique_cols {
+                                    for v in values {
+                                        let idx_key =
+                                            unique_index_key(&bucket, col, v);
+                                        if let Some(owner) =
+                                            trx.get(&idx_key, false).await?
+                                            && owner.as_ref() != key.as_bytes()
+                                        {
+                                            return Err(
+                                                FdbBindingError::new_custom_error(
+                                                    format!(
+                                                        "unique_violation:{bucket}:{col}:{v}"
+                                                    )
+                                                    .into(),
+                                                ),
+                                            );
+                                        }
+                                        trx.set(&idx_key, key.as_bytes());
+                                    }
+                                }
+                                let pairs: Vec<(String, String)> = unique_cols
+                                    .iter()
+                                    .flat_map(|(c, vs)| {
+                                        vs.iter().map(move |v| (c.clone(), v.clone()))
+                                    })
+                                    .collect();
+                                if pairs.is_empty() {
+                                    trx.clear(&back);
+                                } else {
+                                    let bv = serde_json::to_vec(&pairs).map_err(|e| {
+                                        FdbBindingError::new_custom_error(
+                                            format!("encode: {e}").into(),
+                                        )
+                                    })?;
+                                    trx.set(&back, &bv);
+                                }
+
+                                // Etag guard.
+                                if let Some(want) = opts.etag.as_deref() {
+                                    let cur_raw = trx.get(&ok, false).await?;
+                                    let must_be_absent = want.is_empty() || want == "null";
+                                    match (must_be_absent, cur_raw) {
+                                        (true, None) => {}
+                                        (true, Some(_)) => {
+                                            return Err(FdbBindingError::new_custom_error(
+                                                format!(
+                                                    "etag_conflict:{bucket}:{key}"
+                                                )
+                                                .into(),
+                                            ));
+                                        }
+                                        (false, Some(raw)) => {
+                                            let cur: ObjectMeta = wdec(&raw)?;
+                                            if cur.etag != want {
+                                                return Err(
+                                                    FdbBindingError::new_custom_error(
+                                                        format!(
+                                                            "etag_conflict:{bucket}:{key}"
+                                                        )
+                                                        .into(),
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                        (false, None) => {
+                                            return Err(FdbBindingError::new_custom_error(
+                                                format!(
+                                                    "etag_conflict:{bucket}:{key}"
+                                                )
+                                                .into(),
+                                            ));
+                                        }
+                                    }
+                                }
+
+                                // Bump per-bucket counter and write.
+                                let cur_id = trx
+                                    .get(&ck, false)
+                                    .await?
+                                    .map(|s| {
+                                        let mut a = [0u8; 8];
+                                        let src = s.as_ref();
+                                        let n = src.len().min(8);
+                                        a[..n].copy_from_slice(&src[..n]);
+                                        u64::from_le_bytes(a)
+                                    })
+                                    .unwrap_or(0);
+                                let next = cur_id + 1;
+                                trx.set(&ck, &next.to_le_bytes());
+
+                                let etag = etag_of(&value);
+                                let meta = ObjectMeta {
+                                    key: key.clone(),
+                                    id: next,
+                                    etag: etag.clone(),
+                                    mtime: now,
+                                    value,
+                                };
+                                let mv = wenc(&meta)?;
+                                trx.set(&ok, &mv);
+                                results.push(BatchOpResult {
+                                    bucket: bucket.clone(),
+                                    key: Some(key),
+                                    etag: Some(etag),
+                                    id: Some(next),
+                                    count: None,
+                                });
+                            }
+
+                            BatchOp::Delete {
+                                bucket,
+                                key,
+                                expected_etag,
+                            } => {
+                                let bk = bucket_key(&bucket);
+                                let ok = object_key(&bucket, &key);
+                                let back = unique_back_key(&bucket, &key);
+
+                                if trx.get(&bk, false).await?.is_none() {
+                                    return Err(FdbBindingError::new_custom_error(
+                                        format!("bucket_missing:{bucket}").into(),
+                                    ));
+                                }
+                                let raw = trx.get(&ok, false).await?;
+                                if let Some(ref r) = raw
+                                    && let Some(want) = expected_etag.as_deref()
+                                {
+                                    let cur: ObjectMeta = wdec(r)?;
+                                    if cur.etag != want {
+                                        return Err(FdbBindingError::new_custom_error(
+                                            format!("etag_conflict:{bucket}:{key}")
+                                                .into(),
+                                        ));
+                                    }
+                                }
+                                if raw.is_some() {
+                                    trx.clear(&ok);
+                                    if let Some(prior) = trx.get(&back, false).await? {
+                                        let prior: Vec<(String, String)> =
+                                            serde_json::from_slice(&prior)
+                                                .unwrap_or_default();
+                                        for (c, v) in prior {
+                                            trx.clear(&unique_index_key(&bucket, &c, &v));
+                                        }
+                                        trx.clear(&back);
+                                    }
+                                }
+                                results.push(BatchOpResult {
+                                    bucket: bucket.clone(),
+                                    key: Some(key),
+                                    etag: None,
+                                    id: None,
+                                    count: None,
+                                });
+                            }
+
+                            BatchOp::UpdateRows { bucket, rows } => {
+                                let count = rows.len();
+                                for (key, value, unique_cols) in rows {
+                                    // Reuse the put logic — slightly
+                                    // duplicated with the Put arm above
+                                    // but inlined to stay inside this
+                                    // single closure.
+                                    let bk = bucket_key(&bucket);
+                                    let ok = object_key(&bucket, &key);
+                                    let ck = counter_key(&bucket);
+                                    let back = unique_back_key(&bucket, &key);
+
+                                    if trx.get(&bk, false).await?.is_none() {
+                                        return Err(FdbBindingError::new_custom_error(
+                                            format!("bucket_missing:{bucket}").into(),
+                                        ));
+                                    }
+                                    if let Some(prior) = trx.get(&back, false).await? {
+                                        let prior: Vec<(String, String)> =
+                                            serde_json::from_slice(&prior)
+                                                .unwrap_or_default();
+                                        for (c, v) in prior {
+                                            trx.clear(&unique_index_key(&bucket, &c, &v));
+                                        }
+                                    }
+                                    for (col, values) in &unique_cols {
+                                        for v in values {
+                                            let idx_key =
+                                                unique_index_key(&bucket, col, v);
+                                            if let Some(owner) =
+                                                trx.get(&idx_key, false).await?
+                                                && owner.as_ref() != key.as_bytes()
+                                            {
+                                                return Err(
+                                                    FdbBindingError::new_custom_error(
+                                                        format!(
+                                                            "unique_violation:{bucket}:{col}:{v}"
+                                                        )
+                                                        .into(),
+                                                    ),
+                                                );
+                                            }
+                                            trx.set(&idx_key, key.as_bytes());
+                                        }
+                                    }
+                                    let pairs: Vec<(String, String)> = unique_cols
+                                        .iter()
+                                        .flat_map(|(c, vs)| {
+                                            vs.iter()
+                                                .map(move |v| (c.clone(), v.clone()))
+                                        })
+                                        .collect();
+                                    if pairs.is_empty() {
+                                        trx.clear(&back);
+                                    } else {
+                                        let bv =
+                                            serde_json::to_vec(&pairs).map_err(|e| {
+                                                FdbBindingError::new_custom_error(
+                                                    format!("encode: {e}").into(),
+                                                )
+                                            })?;
+                                        trx.set(&back, &bv);
+                                    }
+                                    let cur_id = trx
+                                        .get(&ck, false)
+                                        .await?
+                                        .map(|s| {
+                                            let mut a = [0u8; 8];
+                                            let src = s.as_ref();
+                                            let n = src.len().min(8);
+                                            a[..n].copy_from_slice(&src[..n]);
+                                            u64::from_le_bytes(a)
+                                        })
+                                        .unwrap_or(0);
+                                    let next = cur_id + 1;
+                                    trx.set(&ck, &next.to_le_bytes());
+                                    let etag = etag_of(&value);
+                                    let meta = ObjectMeta {
+                                        key: key.clone(),
+                                        id: next,
+                                        etag,
+                                        mtime: now,
+                                        value,
+                                    };
+                                    let mv = wenc(&meta)?;
+                                    trx.set(&ok, &mv);
+                                }
+                                results.push(BatchOpResult {
+                                    bucket,
+                                    key: None,
+                                    etag: None,
+                                    id: None,
+                                    count: Some(count),
+                                });
+                            }
+
+                            BatchOp::DeleteKeys { bucket, keys } => {
+                                let count = keys.len();
+                                for key in keys {
+                                    let ok = object_key(&bucket, &key);
+                                    let back = unique_back_key(&bucket, &key);
+                                    if trx.get(&ok, false).await?.is_some() {
+                                        trx.clear(&ok);
+                                        if let Some(prior) =
+                                            trx.get(&back, false).await?
+                                        {
+                                            let prior: Vec<(String, String)> =
+                                                serde_json::from_slice(&prior)
+                                                    .unwrap_or_default();
+                                            for (c, v) in prior {
+                                                trx.clear(&unique_index_key(&bucket, &c, &v));
+                                            }
+                                            trx.clear(&back);
+                                        }
+                                    }
+                                }
+                                results.push(BatchOpResult {
+                                    bucket,
+                                    key: None,
+                                    etag: None,
+                                    id: None,
+                                    count: Some(count),
+                                });
+                            }
+                        }
+                    }
+                    Ok::<_, FdbBindingError>(results)
+                }
+            })
+            .await
+            .map_err(|e| match e.to_string().as_str() {
+                s if s.contains("bucket_missing:") => {
+                    let bk = s.split(':').nth(1).unwrap_or("").to_string();
+                    MorayError::BucketNotFound(bk)
+                }
+                s if s.contains("etag_conflict:") => {
+                    let parts: Vec<&str> = s.splitn(3, ':').collect();
+                    let (bk, k) = match parts.as_slice() {
+                        [_, b, k] => ((*b).to_string(), (*k).to_string()),
+                        _ => (String::new(), String::new()),
+                    };
+                    MorayError::EtagConflict {
+                        bucket: bk,
+                        key: k,
+                        expected: String::new(),
+                        actual: String::new(),
+                    }
+                }
+                s if s.starts_with("unique_violation:") => {
+                    let parts: Vec<&str> = s.splitn(4, ':').collect();
+                    let (bk, col, val) = match parts.as_slice() {
+                        [_, b, c, v] => (
+                            (*b).to_string(),
+                            (*c).to_string(),
+                            (*v).to_string(),
+                        ),
+                        _ => (String::new(), String::new(), String::new()),
+                    };
+                    MorayError::UniqueConstraint {
+                        bucket: bk,
+                        column: col,
+                        value: val,
+                    }
+                }
+                _ => to_store_err(e),
+            })?;
+
+        // Force `ops` to be moved into the closure-prep snapshot above.
+        let _ = ops;
+        Ok(outcomes)
+    }
 }

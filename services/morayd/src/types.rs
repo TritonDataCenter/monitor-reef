@@ -21,9 +21,11 @@ pub struct BucketConfig {
     /// Indexed columns. Each entry is `{ "type": "string"|"number"|..., "unique": bool? }`.
     #[serde(default)]
     pub index: serde_json::Map<String, Value>,
-    /// Pre- and post-triggers — node-moray uses these for server-side hooks.
-    /// We store them but do not execute them; any caller that depends on
-    /// server-side triggers gets a NotImplementedError when they fire.
+    /// Pre- and post-triggers — node-moray uses these for server-side
+    /// hooks. morayd executes them via the closed registry in
+    /// `triggers.rs`. createBucket / updateBucket reject any entry
+    /// whose function identifier is not in that registry, so persisted
+    /// values are always runnable.
     #[serde(default)]
     pub pre: Vec<Value>,
     #[serde(default)]

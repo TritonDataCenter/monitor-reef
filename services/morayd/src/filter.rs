@@ -601,17 +601,22 @@ fn parse_range_or_point(s: &str) -> Option<Range> {
     })
 }
 
-/// Look up an attribute in `value` (falling through to synthetic).
-/// Synthetic attrs start with `_`; others are dotted-path lookups over
-/// the JSON object. We accept both.
+/// Look up an attribute in synthetic first, then in `value`. Synthetic
+/// holds the per-row metadata (`_id`, `_key`, `_etag`, `_mtime`); the
+/// row body holds everything the caller stored. Both are JSON objects.
+///
+/// Note that `_`-prefixed names are *not* reserved for synthetic fields:
+/// sdc-ufds in particular indexes user data on `_parent`, `_owner`,
+/// `_imported`, `_replicated`. Earlier code shortcut these to the
+/// synthetic view only, which made every UFDS LDAP search return zero
+/// hits (`(_parent=ou=users, o=smartdc)` always missed) — root cause
+/// of the post-cutover adminui auth failure. We always try synthetic
+/// first (cheap point lookup) and fall through to the value body.
 fn lookup(value: &Value, synthetic: &Value, attr: &str) -> Option<Value> {
-    if attr.starts_with('_') {
-        synthetic.get(attr).cloned()
-    } else if let Some(Value::Object(map)) = Some(value) {
-        map.get(attr).cloned()
-    } else {
-        None
+    if let Some(v) = synthetic.get(attr).cloned() {
+        return Some(v);
     }
+    value.as_object().and_then(|m| m.get(attr).cloned())
 }
 
 fn value_as_string(v: &Value) -> Option<String> {
@@ -747,8 +752,25 @@ impl<'a> Parser<'a> {
     fn parse_list(&mut self) -> Result<Vec<Filter>, FilterError> {
         let mut out = Vec::new();
         self.skip_ws();
-        while self.peek() == Some(b'(') {
-            out.push(self.parse_filter()?);
+        loop {
+            match self.peek() {
+                Some(b'(') => {
+                    out.push(self.parse_filter()?);
+                }
+                // Tolerance for an upstream-moray quirk: sdc-cnapi (and
+                // a few other Triton services) emit `(&(...)!(...))`
+                // instead of the RFC-correct `(&(...)(!(...)))`. The
+                // Postgres-backed moray's filter parser accepts the
+                // bare `!` form, so we mirror it. Treat `!` followed
+                // immediately by a sub-filter as a NOT child of the
+                // current AND/OR list.
+                Some(b'!') => {
+                    self.pos += 1;
+                    let inner = self.parse_filter()?;
+                    out.push(Filter::Not(Box::new(inner)));
+                }
+                _ => break,
+            }
             self.skip_ws();
         }
         if out.is_empty() {
@@ -982,6 +1004,78 @@ mod tests {
         let v = json!({"x": 1});
         let s = json!({"_id": 42});
         let f = Filter::parse("(_id>=10)").unwrap();
+        assert!(f.eval(&v, &s));
+    }
+
+    #[test]
+    fn underscore_value_field_matches() {
+        // sdc-ufds indexes user-data fields whose names start with `_`
+        // (`_parent`, `_owner`, `_imported`, `_replicated`). Earlier we
+        // hard-coded `_*` to mean "synthetic only", which made every
+        // LDAP search against ufds_o_smartdc return zero results — the
+        // post-cutover adminui auth bug. Synthetic still wins for the
+        // four real synthetic fields; everything else falls through to
+        // the value body.
+        let v = json!({
+            "_parent": ["ou=users, o=smartdc"],
+            "_owner":  ["930896af-bf8c-48d4-885c-6573a94b1853"],
+            "login":   ["admin"],
+        });
+        let s = json!({"_id": 7, "_key": "abc", "_etag": "deadbeef", "_mtime": 0});
+
+        // _parent equality (literal with comma-space) lands.
+        assert!(Filter::parse("(_parent=ou=users, o=smartdc)")
+            .unwrap()
+            .eval(&v, &s));
+
+        // _parent presence works.
+        assert!(Filter::parse("(_parent=*)").unwrap().eval(&v, &s));
+
+        // _owner equality on a UUID lands.
+        assert!(Filter::parse(
+            "(_owner=930896af-bf8c-48d4-885c-6573a94b1853)"
+        )
+        .unwrap()
+        .eval(&v, &s));
+
+        // Synthetic still beats value for the genuinely-synthetic fields.
+        assert!(Filter::parse("(_id=7)").unwrap().eval(&v, &s));
+        assert!(!Filter::parse("(_id=99)").unwrap().eval(&v, &s));
+    }
+
+    #[test]
+    fn cnapi_unwrapped_not_in_and_list() {
+        // sdc-cnapi/lib/models/server.js builds `(&(uuid=*)!(uuid=default))`
+        // — a NOT operator without surrounding parens, embedded directly
+        // in an AND list. Strict RFC 2254 requires `(!filter)`, but
+        // upstream moray's parser accepts the bare form, so we do too.
+        let f = Filter::parse("(&(uuid=*)!(uuid=default))").unwrap();
+        let s = json!({"_id": 1, "_key": "k", "_etag": "x", "_mtime": 0});
+        // Real server: matches.
+        assert!(f.eval(
+            &json!({"uuid": "8b2a9975-6354-8a94-39e4-1c697aa96b33"}),
+            &s
+        ));
+        // Pseudo-server "default": filtered out by the negation.
+        assert!(!f.eval(&json!({"uuid": "default"}), &s));
+    }
+
+    #[test]
+    fn ufds_admin_search_filter_matches() {
+        // Exact filter shape sdc-ufds emits during adminui's bind-by-login
+        // flow. Recreates the post-cutover repro: this returned 0 rows
+        // before the lookup() fix, returns the admin record after.
+        let v = json!({
+            "_parent":     ["ou=users, o=smartdc"],
+            "objectclass": ["sdcperson"],
+            "login":       ["admin"],
+        });
+        let s = json!({"_id": 1, "_key": "uuid-...", "_etag": "x", "_mtime": 0});
+        let f = Filter::parse(
+            "(&(&(objectclass=sdcperson)(|(login=admin)(uuid=admin)))\
+             (_parent=ou=users, o=smartdc))",
+        )
+        .unwrap();
         assert!(f.eval(&v, &s));
     }
 }

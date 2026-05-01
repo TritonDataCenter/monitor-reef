@@ -28,6 +28,7 @@ pub mod fast;
 pub mod filter;
 pub mod rpc;
 pub mod server;
+pub mod sql;
 pub mod store;
 pub mod triggers;
 pub mod types;
