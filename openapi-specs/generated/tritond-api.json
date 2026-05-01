@@ -32,6 +32,82 @@
           }
         }
       }
+    },
+    "/v2/silos": {
+      "post": {
+        "tags": [
+          "silos"
+        ],
+        "summary": "Create a silo. Returns 201 with the created silo.",
+        "description": "Fails with 409 if a silo with the requested name already exists.",
+        "operationId": "create_silo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSilo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Silo"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}": {
+      "get": {
+        "tags": [
+          "silos"
+        ],
+        "summary": "Look up a silo by id. Returns 404 if no such silo exists.",
+        "operationId": "get_silo",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Silo"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -56,7 +132,7 @@
         ]
       },
       "HealthResponse": {
-        "description": "Health check response.",
+        "description": "Liveness response.",
         "type": "object",
         "properties": {
           "status": {
@@ -69,6 +145,49 @@
         "required": [
           "status",
           "version"
+        ]
+      },
+      "NewSilo": {
+        "description": "Request body for creating a silo.\n\nDistinct from [`Silo`] because the server assigns `id` and `created_at`. `description` is optional on the wire and stored as an empty string when omitted.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "Silo": {
+        "description": "A tenancy boundary. Every Triton Cloud resource ultimately rolls up to a silo; in production each silo is bound to its own identity provider. Phase 0 carries only the bare-minimum identifying fields.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "name"
         ]
       }
     },
@@ -86,6 +205,9 @@
     }
   },
   "tags": [
+    {
+      "name": "silos"
+    },
     {
       "name": "system"
     }

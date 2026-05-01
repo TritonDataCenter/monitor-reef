@@ -5,16 +5,20 @@
 # Copyright 2026 Edgecast Cloud LLC.
 
 [package]
-name = "tritond-api"
+name = "tritond-store"
 version = "0.1.0"
 edition.workspace = true
+description = "Persistence layer for the Triton Cloud control plane"
+license = "MPL-2.0"
 
 [lints]
 workspace = true
 
 [dependencies]
-dropshot = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
-tritond-store = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
 uuid = { workspace = true }

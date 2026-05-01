@@ -31,7 +31,10 @@ tracing-subscriber = { workspace = true }
 schemars = { workspace = true }
 semver = { workspace = true }
 tritond-api = { workspace = true }
+tritond-store = { workspace = true }
 
 [dev-dependencies]
-tritond-client = { workspace = true }
+progenitor-client = { workspace = true }
 reqwest = { workspace = true }
+tritond-client = { workspace = true }
+uuid = { workspace = true }
