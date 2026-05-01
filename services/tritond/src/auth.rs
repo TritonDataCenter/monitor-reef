@@ -35,11 +35,15 @@ use cedar_policy::{
     Authorizer, Context as CedarContext, Decision as CedarDecision, Entities, Entity, EntityUid,
     PolicySet, Request, RestrictedExpression,
 };
+use chrono::Utc;
 use dropshot::{ClientErrorStatusCode, HttpError, RequestContext};
 use tracing::warn;
 use tritond_audit::Decision as AuditDecision;
-use tritond_auth::{JwtKey, TokenKind, parse_api_key, verify, verify_api_key_secret};
-use tritond_store::{Store, StoreError};
+use tritond_auth::{
+    JwtKey, OidcConfig, OidcVerifier, TokenKind, parse_api_key, peek_issuer, verify,
+    verify_api_key_secret,
+};
+use tritond_store::{Federation, Store, StoreError, User};
 use uuid::Uuid;
 
 use crate::audit::AuditService;
@@ -144,6 +148,9 @@ pub enum Action {
     AuditList,
     AuditFetch,
     AuditVerify,
+    SiloIdpSet,
+    SiloIdpGet,
+    SiloIdpDelete,
 }
 
 impl Action {
@@ -164,6 +171,9 @@ impl Action {
             Action::AuditList => "audit_list",
             Action::AuditFetch => "audit_fetch",
             Action::AuditVerify => "audit_verify",
+            Action::SiloIdpSet => "silo_idp_set",
+            Action::SiloIdpGet => "silo_idp_get",
+            Action::SiloIdpDelete => "silo_idp_delete",
         }
     }
 
@@ -174,12 +184,13 @@ impl Action {
 }
 
 /// Per-cluster auth service: holds the JWT signing key, the parsed
-/// Cedar policy set, and a Cedar `Authorizer` (the latter is cheap to
-/// reuse across requests).
+/// Cedar policy set, the Cedar `Authorizer`, and the OIDC verifier
+/// shared across silos (cheap to reuse across requests).
 pub struct AuthService {
     jwt_key: JwtKey,
     policy_set: PolicySet,
     authorizer: Authorizer,
+    oidc: OidcVerifier,
 }
 
 impl AuthService {
@@ -190,11 +201,16 @@ impl AuthService {
             jwt_key,
             policy_set,
             authorizer: Authorizer::new(),
+            oidc: OidcVerifier::new(),
         })
     }
 
     pub fn jwt_key(&self) -> &JwtKey {
         &self.jwt_key
+    }
+
+    pub fn oidc(&self) -> &OidcVerifier {
+        &self.oidc
     }
 
     /// Authenticate the inbound request.
@@ -228,26 +244,116 @@ impl AuthService {
         store: &dyn Store,
         token: &str,
     ) -> Result<Principal, AuthError> {
-        let claims = match verify(&self.jwt_key, token, TokenKind::Access) {
-            Ok(claims) => claims,
+        // Operator tokens (HS256, our signing key) come first; if the
+        // token isn't one of ours, fall through to OIDC against
+        // configured silo IdPs.
+        match verify(&self.jwt_key, token, TokenKind::Access) {
+            Ok(claims) => match store.get_user_by_id(claims.sub).await {
+                Ok(user) => Ok(Principal::Operator {
+                    user_id: user.id,
+                    is_root: user.is_root,
+                }),
+                Err(StoreError::NotFound) => Ok(Principal::Anonymous),
+                Err(e) => {
+                    warn!(error = %e, "store failure while resolving JWT principal");
+                    Err(AuthError::Backend(e))
+                }
+            },
+            Err(_) => self.authenticate_oidc(store, token).await,
+        }
+    }
+
+    async fn authenticate_oidc(
+        &self,
+        store: &dyn Store,
+        token: &str,
+    ) -> Result<Principal, AuthError> {
+        // Cheaply peek at the `iss` claim so we know which silo's
+        // IdP to verify against. A token without a parseable `iss`
+        // is just anonymous; same goes for one whose issuer doesn't
+        // match any configured silo.
+        let Some(issuer) = peek_issuer(token) else {
+            return Ok(Principal::Anonymous);
+        };
+        let configs = match store.list_idp_configs().await {
+            Ok(c) => c,
             Err(e) => {
-                // Bad-token errors are not interesting (clients hit
-                // them on every expired-token retry); log at debug.
-                tracing::debug!(error = %e, "rejecting invalid jwt as anonymous");
+                warn!(error = %e, "store failure listing idp configs");
+                return Err(AuthError::Backend(e));
+            }
+        };
+        let Some((silo_id, idp)) = configs
+            .into_iter()
+            .find(|(_, cfg)| cfg.issuer_url == issuer)
+        else {
+            return Ok(Principal::Anonymous);
+        };
+
+        let oidc_cfg = OidcConfig {
+            issuer_url: idp.issuer_url,
+            client_id: idp.client_id,
+            client_secret: idp.client_secret,
+            audience: idp.audience,
+        };
+        let cache_key = silo_id.to_string();
+        let claims = match self.oidc.verify(&cache_key, &oidc_cfg, token).await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(error = %e, %silo_id, "rejecting oidc token as anonymous");
                 return Ok(Principal::Anonymous);
             }
         };
-        match store.get_user_by_id(claims.sub).await {
-            Ok(user) => Ok(Principal::Operator {
-                user_id: user.id,
-                is_root: user.is_root,
-            }),
-            Err(StoreError::NotFound) => Ok(Principal::Anonymous),
-            Err(e) => {
-                warn!(error = %e, "store failure while resolving JWT principal");
-                Err(AuthError::Backend(e))
+
+        // JIT user lookup or create for this (silo, issuer, subject).
+        let user = match store
+            .get_user_by_federation(silo_id, &claims.issuer, &claims.subject)
+            .await
+        {
+            Ok(user) => user,
+            Err(StoreError::NotFound) => {
+                let new_user = User {
+                    id: Uuid::new_v4(),
+                    // Disambiguate username across silos so a tenant
+                    // user with the same email in two silos doesn't
+                    // collide on the global username uniqueness key.
+                    username: format!("{}@{silo_id}", claims.username),
+                    password_hash: String::new(),
+                    is_root: false,
+                    created_at: Utc::now(),
+                    silo_id: Some(silo_id),
+                    federation: Some(Federation {
+                        issuer: claims.issuer.clone(),
+                        subject: claims.subject.clone(),
+                    }),
+                };
+                match store.create_user(new_user).await {
+                    Ok(u) => u,
+                    Err(StoreError::Conflict(_)) => {
+                        // A concurrent first login won the race. Re-read.
+                        store
+                            .get_user_by_federation(silo_id, &claims.issuer, &claims.subject)
+                            .await
+                            .map_err(|e| {
+                                warn!(error = %e, "post-conflict refetch failed");
+                                AuthError::Backend(e)
+                            })?
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "JIT create_user failed");
+                        return Err(AuthError::Backend(e));
+                    }
+                }
             }
-        }
+            Err(e) => {
+                warn!(error = %e, "store failure resolving federated user");
+                return Err(AuthError::Backend(e));
+            }
+        };
+
+        Ok(Principal::Operator {
+            user_id: user.id,
+            is_root: user.is_root,
+        })
     }
 
     async fn authenticate_api_key(
@@ -471,6 +577,8 @@ mod tests {
             password_hash: "$2y$12$dummy".to_string(),
             is_root: true,
             created_at: chrono::Utc::now(),
+            silo_id: None,
+            federation: None,
         };
         let user_id = user.id;
         store.create_user(user).await.unwrap();

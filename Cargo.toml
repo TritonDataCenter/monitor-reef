@@ -69,6 +69,7 @@ anyhow = "1.0"
 bcrypt = "0.19"
 cedar-policy = "4.10"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
+openidconnect = { version = "4.0", default-features = false, features = ["reqwest", "rustls-tls"] }
 zeroize = { version = "1.8", features = ["derive"] }
 askama = "0.15"
 assert_cmd = "2.0"

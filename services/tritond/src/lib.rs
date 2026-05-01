@@ -33,15 +33,16 @@ use dropshot::{
 };
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
-    AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, RefreshRequest, SiloPath,
-    TokenResponse, TritondApi,
-    types::{ApiKeyView, AuditEvent, NewSilo, Silo},
+    AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
+    SiloPath, TokenResponse, TritondApi,
+    types::{ApiKeyView, AuditEvent, IdpConfigView, NewSilo, Silo},
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
+use tritond_auth::OidcConfig;
 use tritond_auth::{
     JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
-use tritond_store::{ApiKey, MemStore, Store, StoreError};
+use tritond_store::{ApiKey, IdpConfig, MemStore, Store, StoreError};
 use uuid::Uuid;
 
 use crate::audit::AuditService;
@@ -457,6 +458,109 @@ impl TritondApi for TritondServiceImpl {
         let to = q.to.unwrap_or_else(|| head.as_ref().map_or(0, |h| h.seq));
         let outcome = chain.verify(from, to).await.map_err(audit_error_to_http)?;
         Ok(HttpResponseOk(AuditVerifyResponse { outcome, head }))
+    }
+
+    async fn put_silo_idp(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewIdpConfig>,
+    ) -> Result<HttpResponseCreated<IdpConfigView>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SiloIdpSet,
+        )
+        .await?;
+        let silo_id = path.into_inner().silo_id;
+        // Confirm the silo exists; reject 404 cleanly rather than
+        // dangling an IdP config off a non-existent silo.
+        ctx.store
+            .get_silo(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+
+        let req = body.into_inner();
+        let config = IdpConfig {
+            issuer_url: req.issuer_url,
+            client_id: req.client_id,
+            client_secret: req.client_secret.expose().to_string(),
+            audience: req.audience,
+        };
+
+        // Eager discovery: populate the verifier cache (and prove the
+        // IdP is reachable + speaks OIDC) before persisting. A failed
+        // discovery returns 4xx with the upstream error.
+        let oidc_cfg = OidcConfig {
+            issuer_url: config.issuer_url.clone(),
+            client_id: config.client_id.clone(),
+            client_secret: config.client_secret.clone(),
+            audience: config.audience.clone(),
+        };
+        ctx.auth
+            .oidc()
+            .discover(&silo_id.to_string(), &oidc_cfg)
+            .await
+            .map_err(|e| {
+                HttpError::for_client_error(
+                    Some("IdpUnreachable".to_string()),
+                    ClientErrorStatusCode::BAD_REQUEST,
+                    format!("idp discovery failed: {e}"),
+                )
+            })?;
+
+        let saved = ctx
+            .store
+            .put_idp_config(silo_id, config)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseCreated(saved.into()))
+    }
+
+    async fn get_silo_idp(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<IdpConfigView>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SiloIdpGet,
+        )
+        .await?;
+        let silo_id = path.into_inner().silo_id;
+        let config = ctx
+            .store
+            .get_idp_config(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(config.into()))
+    }
+
+    async fn delete_silo_idp(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SiloIdpDelete,
+        )
+        .await?;
+        let silo_id = path.into_inner().silo_id;
+        ctx.store
+            .delete_idp_config(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.auth.oidc().invalidate(&silo_id.to_string()).await;
+        Ok(HttpResponseDeleted())
     }
 }
 

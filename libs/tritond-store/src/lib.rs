@@ -30,7 +30,10 @@ mod types;
 #[cfg(feature = "foundationdb")]
 pub use fdb::FdbStore;
 pub use mem::MemStore;
-pub use types::{ApiKey, ApiKeyView, NewSilo, Silo, SystemKey, User, UserView};
+pub use types::{
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewSilo, Silo, SystemKey, User,
+    UserView,
+};
 
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -128,4 +131,44 @@ pub trait Store: Send + Sync + 'static {
     /// Persist a cluster-level system key. Overwrites any existing
     /// value; rotation policy lives in the caller.
     async fn put_system_key(&self, key: SystemKey, value: Vec<u8>) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Federated users (OIDC)
+    // ------------------------------------------------------------------
+
+    /// Look up a user by their `(silo_id, issuer, subject)` triple.
+    /// Returns [`StoreError::NotFound`] if no user matches; the auth
+    /// middleware uses that to JIT-create the row on first OIDC
+    /// login.
+    async fn get_user_by_federation(
+        &self,
+        silo_id: Uuid,
+        issuer: &str,
+        subject: &str,
+    ) -> Result<User, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Per-silo IdP configuration
+    // ------------------------------------------------------------------
+
+    /// Persist (or replace) the OIDC IdP config for a silo. Eager
+    /// discovery happens in the caller before this is invoked, so
+    /// failure here is purely storage-side.
+    async fn put_idp_config(
+        &self,
+        silo_id: Uuid,
+        config: IdpConfig,
+    ) -> Result<IdpConfig, StoreError>;
+
+    /// Read the IdP config for a silo. Returns [`StoreError::NotFound`]
+    /// when the silo has no IdP attached.
+    async fn get_idp_config(&self, silo_id: Uuid) -> Result<IdpConfig, StoreError>;
+
+    /// Remove the IdP config for a silo.
+    async fn delete_idp_config(&self, silo_id: Uuid) -> Result<(), StoreError>;
+
+    /// Iterate every (silo_id, IdpConfig) pair. Used by the auth
+    /// middleware to find the IdP whose `issuer` matches an inbound
+    /// token's `iss` claim.
+    async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError>;
 }

@@ -69,8 +69,7 @@ fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
         // Share the FDB Database handle with the audit chain so we
         // don't have two `boot()` callers. FdbStore holds it as
         // Arc<Database>; FdbChain takes its own Arc reference.
-        let audit_chain: Arc<dyn Chain> =
-            Arc::new(tritond_audit::FdbChain::new(store.database()));
+        let audit_chain: Arc<dyn Chain> = Arc::new(tritond_audit::FdbChain::new(store.database()));
         Ok((Arc::new(store), audit_chain))
     } else {
         info!("TRITOND_FDB_CLUSTER_FILE not set; using in-memory store + audit");

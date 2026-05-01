@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 use tritond_auth::RedactedString;
 use uuid::Uuid;
 
-use crate::types::{ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, NewSilo, Silo};
+use crate::types::{
+    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewSilo, Silo,
+};
 
 /// Liveness response.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -131,6 +133,20 @@ pub struct AuditVerifyQuery {
 pub struct AuditVerifyResponse {
     pub outcome: AuditVerifyOutcome,
     pub head: Option<AuditChainHead>,
+}
+
+/// Request body for `POST /v2/silos/{silo_id}/idp`. tritond
+/// **eagerly** fetches the IdP's discovery document on this call;
+/// a 4xx/5xx return means the IdP isn't reachable or doesn't speak
+/// OIDC, and the config is not persisted.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct NewIdpConfig {
+    pub issuer_url: String,
+    pub client_id: String,
+    pub client_secret: RedactedString,
+    /// Expected `aud` claim. Defaults to `client_id` when omitted.
+    #[serde(default)]
+    pub audience: Option<String>,
 }
 
 #[dropshot::api_description]
@@ -267,4 +283,44 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         query: Query<AuditVerifyQuery>,
     ) -> Result<HttpResponseOk<AuditVerifyResponse>, HttpError>;
+
+    /// Configure the OIDC identity provider for a silo. Returns 502
+    /// if the discovery document cannot be fetched, 404 if the silo
+    /// does not exist, otherwise 201 with the redacted view of what
+    /// was persisted.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/idp",
+        tags = ["silos", "auth"],
+    }]
+    async fn put_silo_idp(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewIdpConfig>,
+    ) -> Result<HttpResponseCreated<IdpConfigView>, HttpError>;
+
+    /// Read the OIDC IdP config for a silo. The client secret is
+    /// never returned. 404 when no IdP is configured.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/idp",
+        tags = ["silos", "auth"],
+    }]
+    async fn get_silo_idp(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<IdpConfigView>, HttpError>;
+
+    /// Remove the OIDC IdP config for a silo. Federated users in
+    /// that silo will fail to authenticate until a new config is
+    /// posted.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/idp",
+        tags = ["silos", "auth"],
+    }]
+    async fn delete_silo_idp(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
 }

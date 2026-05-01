@@ -28,9 +28,11 @@
 //! silo/by_name/<name>               -> uuid hyphenated bytes
 //! user/by_id/<uuid>                 -> JSON-encoded User
 //! user/by_name/<username>           -> uuid hyphenated bytes
+//! user/by_federation/<silo>/<sha256>-> uuid hyphenated bytes
 //! apikey/by_id/<uuid>               -> JSON-encoded ApiKey
 //! apikey/by_lookup/<lookup_id>      -> uuid hyphenated bytes
 //! apikey/by_user/<uuid>/<key-uuid>  -> empty (membership index)
+//! idp/by_silo/<uuid>                -> JSON-encoded IdpConfig
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -44,7 +46,7 @@ use chrono::Utc;
 use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
 use uuid::Uuid;
 
-use crate::{ApiKey, NewSilo, Silo, Store, StoreError, SystemKey, User};
+use crate::{ApiKey, IdpConfig, NewSilo, Silo, Store, StoreError, SystemKey, User};
 
 static FDB_NETWORK: OnceLock<()> = OnceLock::new();
 
@@ -124,6 +126,37 @@ impl FdbStore {
     fn system_key(key: SystemKey) -> Vec<u8> {
         format!("system/{}", key.tag()).into_bytes()
     }
+
+    fn user_federation_key(silo_id: Uuid, issuer: &str, subject: &str) -> Vec<u8> {
+        // SHA-256 of `issuer\0subject` → fixed-length, no escaping
+        // worries for arbitrary issuer URLs that contain slashes.
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(issuer.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(subject.as_bytes());
+        let digest = hasher.finalize();
+        let hex = digest_to_hex(&digest);
+        format!("user/by_federation/{silo_id}/{hex}").into_bytes()
+    }
+
+    fn idp_config_key(silo_id: Uuid) -> Vec<u8> {
+        format!("idp/by_silo/{silo_id}").into_bytes()
+    }
+
+    fn idp_config_prefix() -> &'static [u8] {
+        b"idp/by_silo/"
+    }
+}
+
+fn digest_to_hex(digest: &[u8]) -> String {
+    static HEX: &[u8] = b"0123456789abcdef";
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0xF) as usize] as char);
+    }
+    out
 }
 
 /// Outcome carried out of a transaction closure when the conflict
@@ -216,6 +249,14 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
         let by_id_key = Self::user_by_id_key(user.id);
         let by_name_key = Self::user_by_name_key(&user.username);
+        let federation_key = match (user.silo_id, user.federation.as_ref()) {
+            (Some(silo_id), Some(fed)) => Some(Self::user_federation_key(
+                silo_id,
+                &fed.issuer,
+                &fed.subject,
+            )),
+            _ => None,
+        };
         let id_str = user.id.to_string();
 
         let outcome: Result<CreateOutcome, FdbBindingError> = self
@@ -223,14 +264,23 @@ impl Store for FdbStore {
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
                 let by_name_key = by_name_key.clone();
+                let federation_key = federation_key.clone();
                 let value = value.clone();
                 let id_bytes = id_str.as_bytes().to_vec();
                 async move {
                     if tr.get(&by_name_key, false).await?.is_some() {
                         return Ok(CreateOutcome::NameTaken);
                     }
+                    if let Some(fk) = federation_key.as_deref()
+                        && tr.get(fk, false).await?.is_some()
+                    {
+                        return Ok(CreateOutcome::NameTaken);
+                    }
                     tr.set(&by_id_key, &value);
                     tr.set(&by_name_key, &id_bytes);
+                    if let Some(fk) = federation_key.as_deref() {
+                        tr.set(fk, &id_bytes);
+                    }
                     Ok(CreateOutcome::Created)
                 }
             })
@@ -239,7 +289,7 @@ impl Store for FdbStore {
         match outcome {
             Ok(CreateOutcome::Created) => Ok(user),
             Ok(CreateOutcome::NameTaken) => Err(StoreError::Conflict(format!(
-                "user with username {:?} already exists",
+                "user with username {:?} or federation triple already exists",
                 user.username
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
@@ -457,6 +507,114 @@ impl Store for FdbStore {
             })
             .await;
         result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn get_user_by_federation(
+        &self,
+        silo_id: Uuid,
+        issuer: &str,
+        subject: &str,
+    ) -> Result<User, StoreError> {
+        let federation_key = Self::user_federation_key(silo_id, issuer, subject);
+        let id_bytes = self
+            .read_bytes(&federation_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("federation index value not utf8: {e}")))?;
+        let id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("federation index value not uuid: {e}")))?;
+        self.get_user_by_id(id).await
+    }
+
+    async fn put_idp_config(
+        &self,
+        silo_id: Uuid,
+        config: IdpConfig,
+    ) -> Result<IdpConfig, StoreError> {
+        let key = Self::idp_config_key(silo_id);
+        let value = serde_json::to_vec(&config)
+            .map_err(|e| StoreError::Backend(format!("serialize idp config: {e}")))?;
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&key, &value);
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        Ok(config)
+    }
+
+    async fn get_idp_config(&self, silo_id: Uuid) -> Result<IdpConfig, StoreError> {
+        let key = Self::idp_config_key(silo_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize idp config: {e}")))
+    }
+
+    async fn delete_idp_config(&self, silo_id: Uuid) -> Result<(), StoreError> {
+        let key = Self::idp_config_key(silo_id);
+        let outcome: Result<DeleteOutcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    if tr.get(&key, false).await?.is_none() {
+                        return Ok(DeleteOutcome::NotFound);
+                    }
+                    tr.clear(&key);
+                    Ok(DeleteOutcome::Deleted)
+                }
+            })
+            .await;
+        match outcome {
+            Ok(DeleteOutcome::Deleted) => Ok(()),
+            Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError> {
+        let (begin, end) = prefix_range(Self::idp_config_prefix());
+        let prefix_len = Self::idp_config_prefix().len();
+
+        let result: Result<Vec<(Vec<u8>, Vec<u8>)>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs
+                        .iter()
+                        .map(|kv| (kv.key().to_vec(), kv.value().to_vec()))
+                        .collect())
+                }
+            })
+            .await;
+        let raws = result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(raws.len());
+        for (key, value) in raws {
+            let suffix = &key[prefix_len..];
+            let silo_str = std::str::from_utf8(suffix)
+                .map_err(|e| StoreError::Backend(format!("idp index key not utf8: {e}")))?;
+            let silo_id = Uuid::parse_str(silo_str)
+                .map_err(|e| StoreError::Backend(format!("idp index key not uuid: {e}")))?;
+            let config: IdpConfig = serde_json::from_slice(&value)
+                .map_err(|e| StoreError::Backend(format!("deserialize idp config: {e}")))?;
+            out.push((silo_id, config));
+        }
+        Ok(out)
     }
 }
 

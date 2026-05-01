@@ -98,6 +98,50 @@ enum Commands {
         #[command(subcommand)]
         command: AuditCommand,
     },
+    /// Manage per-silo identity-provider configuration.
+    Silo {
+        #[command(subcommand)]
+        command: SiloCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloCommand {
+    /// Manage the silo's OIDC identity provider.
+    Idp {
+        #[command(subcommand)]
+        command: SiloIdpCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloIdpCommand {
+    /// Configure (or replace) the silo's IdP. Eagerly fetches the
+    /// OIDC discovery document; rejects on failure.
+    Set {
+        silo_id: Uuid,
+        #[arg(long)]
+        issuer_url: String,
+        #[arg(long)]
+        client_id: String,
+        /// Read the client secret from stdin (one line).
+        #[arg(long)]
+        client_secret_stdin: bool,
+        /// Pin the expected `aud` claim (defaults to client_id).
+        #[arg(long)]
+        audience: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read the silo's IdP config (client secret never returned).
+    Get {
+        silo_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the silo's IdP config. Federated users in that silo
+    /// will fail to authenticate until a new config is posted.
+    Delete { silo_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -218,6 +262,36 @@ async fn main() -> Result<()> {
             AuditCommand::Verify { from, to, json } => {
                 commands::audit_verify(cli.endpoint, cli.api_key, from, to, json).await
             }
+        },
+        Commands::Silo { command } => match command {
+            SiloCommand::Idp { command } => match command {
+                SiloIdpCommand::Set {
+                    silo_id,
+                    issuer_url,
+                    client_id,
+                    client_secret_stdin,
+                    audience,
+                    json,
+                } => {
+                    commands::silo_idp_set(
+                        cli.endpoint,
+                        cli.api_key,
+                        silo_id,
+                        issuer_url,
+                        client_id,
+                        client_secret_stdin,
+                        audience,
+                        json,
+                    )
+                    .await
+                }
+                SiloIdpCommand::Get { silo_id, json } => {
+                    commands::silo_idp_get(cli.endpoint, cli.api_key, silo_id, json).await
+                }
+                SiloIdpCommand::Delete { silo_id } => {
+                    commands::silo_idp_delete(cli.endpoint, cli.api_key, silo_id).await
+                }
+            },
         },
     }
 }

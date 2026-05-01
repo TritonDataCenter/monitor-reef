@@ -78,6 +78,8 @@ async fn ensure_root_user(store: &dyn Store) -> Result<()> {
         password_hash,
         is_root: true,
         created_at: Utc::now(),
+        silo_id: None,
+        federation: None,
     };
     store
         .create_user(user)

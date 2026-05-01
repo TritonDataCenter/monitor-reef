@@ -427,6 +427,125 @@
           }
         }
       }
+    },
+    "/v2/silos/{silo_id}/idp": {
+      "get": {
+        "tags": [
+          "silos",
+          "auth"
+        ],
+        "summary": "Read the OIDC IdP config for a silo. The client secret is",
+        "description": "never returned. 404 when no IdP is configured.",
+        "operationId": "get_silo_idp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdpConfigView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "silos",
+          "auth"
+        ],
+        "summary": "Configure the OIDC identity provider for a silo. Returns 502",
+        "description": "if the discovery document cannot be fetched, 404 if the silo does not exist, otherwise 201 with the redacted view of what was persisted.",
+        "operationId": "put_silo_idp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewIdpConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdpConfigView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "silos",
+          "auth"
+        ],
+        "summary": "Remove the OIDC IdP config for a silo. Federated users in",
+        "description": "that silo will fail to authenticate until a new config is posted.",
+        "operationId": "delete_silo_idp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -751,6 +870,26 @@
           "version"
         ]
       },
+      "IdpConfigView": {
+        "description": "Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v2/silos/{silo_id}/idp`.",
+        "type": "object",
+        "properties": {
+          "audience": {
+            "nullable": true,
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "issuer_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "issuer_url"
+        ]
+      },
       "LoginRequest": {
         "description": "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.",
         "type": "object",
@@ -777,6 +916,32 @@
         },
         "required": [
           "description"
+        ]
+      },
+      "NewIdpConfig": {
+        "description": "Request body for `POST /v2/silos/{silo_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.",
+        "type": "object",
+        "properties": {
+          "audience": {
+            "nullable": true,
+            "description": "Expected `aud` claim. Defaults to `client_id` when omitted.",
+            "default": null,
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string"
+          },
+          "issuer_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_secret",
+          "issuer_url"
         ]
       },
       "NewSilo": {

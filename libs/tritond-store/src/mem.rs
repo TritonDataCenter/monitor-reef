@@ -16,7 +16,7 @@ use chrono::Utc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::{ApiKey, NewSilo, Silo, Store, StoreError, SystemKey, User};
+use crate::{ApiKey, IdpConfig, NewSilo, Silo, Store, StoreError, SystemKey, User};
 
 #[derive(Default)]
 struct Inner {
@@ -24,9 +24,13 @@ struct Inner {
     silo_id_by_name: HashMap<String, Uuid>,
     users_by_id: HashMap<Uuid, User>,
     user_id_by_username: HashMap<String, Uuid>,
+    /// `(silo_id, issuer, subject)` → user_id index for federated
+    /// users.
+    user_id_by_federation: HashMap<(Uuid, String, String), Uuid>,
     api_keys_by_id: HashMap<Uuid, ApiKey>,
     api_key_id_by_lookup_id: HashMap<String, Uuid>,
     system_keys: HashMap<SystemKey, Vec<u8>>,
+    idp_configs_by_silo: HashMap<Uuid, IdpConfig>,
 }
 
 /// In-process [`Store`] implementation.
@@ -91,6 +95,16 @@ impl Store for MemStore {
                 "user with username {:?} already exists",
                 user.username
             )));
+        }
+        if let (Some(silo_id), Some(fed)) = (user.silo_id, user.federation.as_ref()) {
+            let key = (silo_id, fed.issuer.clone(), fed.subject.clone());
+            if guard.user_id_by_federation.contains_key(&key) {
+                return Err(StoreError::Conflict(format!(
+                    "federated user already exists for silo {silo_id} issuer {} subject {}",
+                    fed.issuer, fed.subject
+                )));
+            }
+            guard.user_id_by_federation.insert(key, user.id);
         }
         guard
             .user_id_by_username
@@ -191,6 +205,63 @@ impl Store for MemStore {
         guard.system_keys.insert(key, value);
         Ok(())
     }
+
+    async fn get_user_by_federation(
+        &self,
+        silo_id: Uuid,
+        issuer: &str,
+        subject: &str,
+    ) -> Result<User, StoreError> {
+        let guard = self.inner.read().await;
+        let key = (silo_id, issuer.to_string(), subject.to_string());
+        let user_id = guard
+            .user_id_by_federation
+            .get(&key)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .users_by_id
+            .get(&user_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn put_idp_config(
+        &self,
+        silo_id: Uuid,
+        config: IdpConfig,
+    ) -> Result<IdpConfig, StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.idp_configs_by_silo.insert(silo_id, config.clone());
+        Ok(config)
+    }
+
+    async fn get_idp_config(&self, silo_id: Uuid) -> Result<IdpConfig, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .idp_configs_by_silo
+            .get(&silo_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn delete_idp_config(&self, silo_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard
+            .idp_configs_by_silo
+            .remove(&silo_id)
+            .map(|_| ())
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .idp_configs_by_silo
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect())
+    }
 }
 
 #[cfg(test)]
@@ -204,6 +275,24 @@ mod tests {
             password_hash: "$2y$12$dummyhash".to_string(),
             is_root: false,
             created_at: Utc::now(),
+            silo_id: None,
+            federation: None,
+        }
+    }
+
+    fn federated_user_fixture(silo_id: Uuid, issuer: &str, subject: &str) -> User {
+        use crate::Federation;
+        User {
+            id: Uuid::new_v4(),
+            username: format!("{subject}@{issuer}"),
+            password_hash: String::new(),
+            is_root: false,
+            created_at: Utc::now(),
+            silo_id: Some(silo_id),
+            federation: Some(Federation {
+                issuer: issuer.to_string(),
+                subject: subject.to_string(),
+            }),
         }
     }
 
@@ -355,6 +444,76 @@ mod tests {
             .delete_api_key(owner.id, key_a.id)
             .await
             .expect_err("repeat delete should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn federated_user_round_trips_by_federation_triple() {
+        let store = MemStore::new();
+        let silo_id = Uuid::new_v4();
+        let user = federated_user_fixture(silo_id, "https://idp.example", "tenant-42");
+        let user_id = user.id;
+        store.create_user(user).await.unwrap();
+
+        let resolved = store
+            .get_user_by_federation(silo_id, "https://idp.example", "tenant-42")
+            .await
+            .unwrap();
+        assert_eq!(resolved.id, user_id);
+        assert_eq!(resolved.silo_id, Some(silo_id));
+    }
+
+    #[tokio::test]
+    async fn duplicate_federation_triple_conflicts() {
+        let store = MemStore::new();
+        let silo_id = Uuid::new_v4();
+        store
+            .create_user(federated_user_fixture(
+                silo_id,
+                "https://idp.example",
+                "tenant-42",
+            ))
+            .await
+            .unwrap();
+        // Same (silo, issuer, subject) but distinct username/uuid:
+        let mut second = federated_user_fixture(silo_id, "https://idp.example", "tenant-42");
+        second.username = format!("alt-{}", second.id);
+        let err = store
+            .create_user(second)
+            .await
+            .expect_err("duplicate federation triple should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn idp_config_round_trip() {
+        let store = MemStore::new();
+        let silo_id = Uuid::new_v4();
+        let config = IdpConfig {
+            issuer_url: "https://idp.example".to_string(),
+            client_id: "tritond".to_string(),
+            client_secret: "shhh".to_string(),
+            audience: None,
+        };
+        let err = store
+            .get_idp_config(silo_id)
+            .await
+            .expect_err("missing idp config is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+
+        store.put_idp_config(silo_id, config.clone()).await.unwrap();
+        let read = store.get_idp_config(silo_id).await.unwrap();
+        assert_eq!(read.issuer_url, "https://idp.example");
+
+        let listed = store.list_idp_configs().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].0, silo_id);
+
+        store.delete_idp_config(silo_id).await.unwrap();
+        let err = store
+            .get_idp_config(silo_id)
+            .await
+            .expect_err("deleted idp config is not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 

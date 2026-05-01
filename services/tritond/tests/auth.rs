@@ -38,6 +38,8 @@ impl TestServer {
                 .unwrap(),
             is_root: true,
             created_at: Utc::now(),
+            silo_id: None,
+            federation: None,
         };
         store.create_user(user).await.unwrap();
         let auth = Arc::new(AuthService::new(JwtKey::generate()).unwrap());

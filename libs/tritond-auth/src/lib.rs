@@ -26,6 +26,7 @@
 
 pub mod api_key;
 pub mod jwt;
+pub mod oidc;
 pub mod password;
 pub mod redacted;
 
@@ -36,5 +37,6 @@ pub use api_key::{
 pub use jwt::{
     AccessClaims, JwtError, JwtKey, RefreshClaims, TokenKind, mint_access, mint_refresh, verify,
 };
+pub use oidc::{OidcClaims, OidcConfig, OidcError, OidcVerifier, peek_issuer};
 pub use password::{PasswordError, generate_random_password, hash_password, verify_password};
 pub use redacted::RedactedString;

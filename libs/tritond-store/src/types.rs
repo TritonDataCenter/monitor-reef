@@ -34,21 +34,96 @@ pub struct NewSilo {
     pub description: Option<String>,
 }
 
-/// Operator account. Phase 0 has exactly one role bit (`is_root`)
-/// because Cedar authorisation is still expressed against the root
-/// principal. Once richer policies land, this grows to carry group
-/// membership, silo binding, and the federation source.
+/// Operator or federated-tenant account.
+///
+/// One `User` row covers two distinct credential models:
+///
+/// * **Password-auth operators** — `silo_id = None`, `federation =
+///   None`, `password_hash` is the bcrypt hash of the operator's
+///   password. The bootstrap root user is the canonical example.
+/// * **Federated users** — `silo_id = Some(...)`, `federation =
+///   Some(...)` carries the OIDC `(issuer, subject)` pair, and
+///   `password_hash` is empty. Created just-in-time on the first
+///   successful OIDC login per `(silo_id, issuer, subject)`.
+///
+/// `is_root` is mutually exclusive with `silo_id`: the root
+/// operator is cluster-wide; federated users are silo-scoped.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
     pub username: String,
-    /// Bcrypt hash of the operator's password.
+    /// Bcrypt hash of the operator's password. Empty string for
+    /// federated users (whose credential is the upstream OIDC
+    /// token).
     pub password_hash: String,
     /// True for the bootstrap operator. Cedar policy uses this to
     /// short-circuit to "permit anything" until per-action policies
     /// are written.
     pub is_root: bool,
     pub created_at: DateTime<Utc>,
+    /// Silo this user belongs to. `None` for the bootstrap root
+    /// operator and other cluster-wide accounts. Federated users
+    /// are always silo-scoped.
+    #[serde(default)]
+    pub silo_id: Option<Uuid>,
+    /// External-IdP linkage when this user authenticates via OIDC.
+    /// `None` for password-auth users.
+    #[serde(default)]
+    pub federation: Option<Federation>,
+}
+
+/// External-IdP linkage for a federated [`User`]. Combined with
+/// [`User::silo_id`] this is the unique key the auth middleware
+/// resolves on each OIDC login.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Federation {
+    /// OIDC `iss` claim — must equal the issuer URL of the silo's
+    /// configured [`IdpConfig`].
+    pub issuer: String,
+    /// OIDC `sub` claim — the upstream IdP's stable identifier for
+    /// this user.
+    pub subject: String,
+}
+
+/// Per-silo OpenID Connect identity-provider configuration.
+///
+/// Operators write one of these per silo via
+/// `POST /v2/silos/{silo_id}/idp`; tritond eagerly fetches the
+/// discovery document at write time and only persists the config if
+/// the IdP is reachable and well-formed. Tenant users in that silo
+/// then authenticate by presenting their IdP-issued ID token as a
+/// `Bearer` credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdpConfig {
+    /// OIDC issuer URL. Must match the `iss` claim on every
+    /// presented ID token.
+    pub issuer_url: String,
+    /// OIDC client identifier registered with the IdP.
+    pub client_id: String,
+    /// OIDC client secret. Stored in plaintext for Phase 0e-b;
+    /// encryption at rest is a manta-storage Phase 0/1 concern.
+    pub client_secret: String,
+    /// Expected `aud` claim. Defaults to `client_id` when absent.
+    pub audience: Option<String>,
+}
+
+/// Wire-safe view of an [`IdpConfig`] with the client secret
+/// redacted. Returned by `GET /v2/silos/{silo_id}/idp`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct IdpConfigView {
+    pub issuer_url: String,
+    pub client_id: String,
+    pub audience: Option<String>,
+}
+
+impl From<IdpConfig> for IdpConfigView {
+    fn from(config: IdpConfig) -> Self {
+        IdpConfigView {
+            issuer_url: config.issuer_url,
+            client_id: config.client_id,
+            audience: config.audience,
+        }
+    }
 }
 
 /// Wire-safe view of a [`User`]: same identity, no credential material.

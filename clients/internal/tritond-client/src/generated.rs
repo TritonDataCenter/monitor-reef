@@ -672,6 +672,51 @@ pub mod types {
         }
     }
 
+    #[doc = "Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v2/silos/{silo_id}/idp`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Wire-safe view of an [`IdpConfig`] with the client secret redacted. Returned by `GET /v2/silos/{silo_id}/idp`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"client_id\","]
+    #[doc = "    \"issuer_url\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"audience\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"client_id\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"issuer_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct IdpConfigView {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub audience: ::std::option::Option<::std::string::String>,
+        pub client_id: ::std::string::String,
+        pub issuer_url: ::std::string::String,
+    }
+
+    impl IdpConfigView {
+        pub fn builder() -> builder::IdpConfigView {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -737,6 +782,58 @@ pub mod types {
 
     impl NewApiKey {
         pub fn builder() -> builder::NewApiKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/silos/{silo_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"client_id\","]
+    #[doc = "    \"client_secret\","]
+    #[doc = "    \"issuer_url\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"audience\": {"]
+    #[doc = "      \"description\": \"Expected `aud` claim. Defaults to `client_id` when omitted.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"client_id\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"client_secret\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"issuer_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewIdpConfig {
+        #[doc = "Expected `aud` claim. Defaults to `client_id` when omitted."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub audience: ::std::option::Option<::std::string::String>,
+        pub client_id: ::std::string::String,
+        pub client_secret: ::std::string::String,
+        pub issuer_url: ::std::string::String,
+    }
+
+    impl NewIdpConfig {
+        pub fn builder() -> builder::NewIdpConfig {
             Default::default()
         }
     }
@@ -1832,6 +1929,82 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct IdpConfigView {
+            audience: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            client_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            issuer_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for IdpConfigView {
+            fn default() -> Self {
+                Self {
+                    audience: Ok(Default::default()),
+                    client_id: Err("no value supplied for client_id".to_string()),
+                    issuer_url: Err("no value supplied for issuer_url".to_string()),
+                }
+            }
+        }
+
+        impl IdpConfigView {
+            pub fn audience<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.audience = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for audience: {e}"));
+                self
+            }
+            pub fn client_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.client_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for client_id: {e}"));
+                self
+            }
+            pub fn issuer_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.issuer_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for issuer_url: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<IdpConfigView> for super::IdpConfigView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: IdpConfigView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    audience: value.audience?,
+                    client_id: value.client_id?,
+                    issuer_url: value.issuer_url?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::IdpConfigView> for IdpConfigView {
+            fn from(value: super::IdpConfigView) -> Self {
+                Self {
+                    audience: Ok(value.audience),
+                    client_id: Ok(value.client_id),
+                    issuer_url: Ok(value.issuer_url),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
             username: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -1931,6 +2104,96 @@ pub mod types {
             fn from(value: super::NewApiKey) -> Self {
                 Self {
                     description: Ok(value.description),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewIdpConfig {
+            audience: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            client_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            client_secret: ::std::result::Result<::std::string::String, ::std::string::String>,
+            issuer_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewIdpConfig {
+            fn default() -> Self {
+                Self {
+                    audience: Ok(Default::default()),
+                    client_id: Err("no value supplied for client_id".to_string()),
+                    client_secret: Err("no value supplied for client_secret".to_string()),
+                    issuer_url: Err("no value supplied for issuer_url".to_string()),
+                }
+            }
+        }
+
+        impl NewIdpConfig {
+            pub fn audience<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.audience = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for audience: {e}"));
+                self
+            }
+            pub fn client_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.client_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for client_id: {e}"));
+                self
+            }
+            pub fn client_secret<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.client_secret = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for client_secret: {e}"));
+                self
+            }
+            pub fn issuer_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.issuer_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for issuer_url: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewIdpConfig> for super::NewIdpConfig {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewIdpConfig,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    audience: value.audience?,
+                    client_id: value.client_id?,
+                    client_secret: value.client_secret?,
+                    issuer_url: value.issuer_url?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewIdpConfig> for NewIdpConfig {
+            fn from(value: super::NewIdpConfig) -> Self {
+                Self {
+                    audience: Ok(value.audience),
+                    client_id: Ok(value.client_id),
+                    client_secret: Ok(value.client_secret),
+                    issuer_url: Ok(value.issuer_url),
                 }
             }
         }
@@ -2338,6 +2601,21 @@ impl Client {
     #[doc = "Look up a silo by id. Returns 404 if no such silo exists\n\nSends a `GET` request to `/v2/silos/{silo_id}`\n\n```ignore\nlet response = client.get_silo()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn get_silo(&self) -> builder::GetSilo<'_> {
         builder::GetSilo::new(self)
+    }
+
+    #[doc = "Read the OIDC IdP config for a silo. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v2/silos/{silo_id}/idp`\n\n```ignore\nlet response = client.get_silo_idp()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    pub fn get_silo_idp(&self) -> builder::GetSiloIdp<'_> {
+        builder::GetSiloIdp::new(self)
+    }
+
+    #[doc = "Configure the OIDC identity provider for a silo. Returns 502\n\nif the discovery document cannot be fetched, 404 if the silo does not exist, otherwise 201 with the redacted view of what was persisted.\n\nSends a `POST` request to `/v2/silos/{silo_id}/idp`\n\n```ignore\nlet response = client.put_silo_idp()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_silo_idp(&self) -> builder::PutSiloIdp<'_> {
+        builder::PutSiloIdp::new(self)
+    }
+
+    #[doc = "Remove the OIDC IdP config for a silo. Federated users in\n\nthat silo will fail to authenticate until a new config is posted.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/idp`\n\n```ignore\nlet response = client.delete_silo_idp()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_silo_idp(&self) -> builder::DeleteSiloIdp<'_> {
+        builder::DeleteSiloIdp::new(self)
     }
 }
 
@@ -3141,6 +3419,247 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_silo_idp`]\n\n[`Client::get_silo_idp`]: super::Client::get_silo_idp"]
+    #[derive(Debug, Clone)]
+    pub struct GetSiloIdp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetSiloIdp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/idp`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
+            let Self { client, silo_id } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/idp",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_silo_idp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::put_silo_idp`]\n\n[`Client::put_silo_idp`]: super::Client::put_silo_idp"]
+    #[derive(Debug, Clone)]
+    pub struct PutSiloIdp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewIdpConfig, String>,
+    }
+
+    impl<'a> PutSiloIdp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewIdpConfig>,
+            <V as std::convert::TryInto<types::NewIdpConfig>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewIdpConfig` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewIdpConfig) -> types::builder::NewIdpConfig,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/idp`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewIdpConfig::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/idp",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_silo_idp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_silo_idp`]\n\n[`Client::delete_silo_idp`]: super::Client::delete_silo_idp"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSiloIdp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSiloIdp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/idp`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, silo_id } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/idp",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_silo_idp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
