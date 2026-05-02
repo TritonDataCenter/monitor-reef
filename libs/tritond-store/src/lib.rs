@@ -31,10 +31,10 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, Instance, LifecycleState,
-    LifecycleStateKind, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewVpc, Project, Quota, Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, Instance, JobKind, JobOutcome,
+    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, ProvisioningJob, Quota,
+    Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -455,4 +455,40 @@ pub trait Store: Send + Sync + 'static {
         expected_from: &[LifecycleStateKind],
         to: LifecycleState,
     ) -> Result<Instance, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Provisioning jobs (FIFO queue consumed by an agent)
+    // ------------------------------------------------------------------
+
+    /// Append a job to the queue. Server assigns `id`, `seq`
+    /// (monotonic, FIFO order), and `created_at`. Initial status
+    /// is [`JobStatus::Pending`].
+    async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError>;
+
+    /// Atomically claim the next Pending job (lowest `seq`),
+    /// transitioning it to [`JobStatus::InProgress`] and stamping
+    /// `claimed_at` + `claimed_by`. Returns
+    /// [`StoreError::NotFound`] if the queue has no Pending jobs.
+    ///
+    /// `claimed_by` is a free-form identifier the agent picks
+    /// (e.g. `"stub-provisioner"` for the in-process stub).
+    async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError>;
+
+    /// Mark a job as terminal (Completed or Failed). Stamps
+    /// `completed_at`. Returns [`StoreError::NotFound`] if the job
+    /// does not exist; [`StoreError::Conflict`] if it is already
+    /// terminal (Completed or Failed).
+    async fn complete_job(
+        &self,
+        job_id: Uuid,
+        outcome: JobOutcome,
+    ) -> Result<ProvisioningJob, StoreError>;
+
+    /// Look up a single job by id.
+    async fn get_job(&self, job_id: Uuid) -> Result<ProvisioningJob, StoreError>;
+
+    /// List the most recent `limit` jobs across all statuses, in
+    /// reverse chronological order (newest first). Used by
+    /// operator debugging surfaces.
+    async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError>;
 }

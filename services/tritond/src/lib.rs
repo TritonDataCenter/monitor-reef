@@ -21,6 +21,7 @@
 pub mod audit;
 pub mod auth;
 pub mod bootstrap;
+pub mod provisioner;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -37,9 +38,9 @@ use tritond_api::{
     SiloImagePath, SiloPath, SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath,
     SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, Image, Instance, LifecycleState, LifecycleStateKind,
-        NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc,
-        Project, Quota, Silo, SshKey, Subnet, Vpc,
+        ApiKeyView, AuditEvent, IdpConfigView, Image, Instance, JobKind, LifecycleState,
+        LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo,
+        NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1784,51 +1785,56 @@ impl TritondApi for TritondServiceImpl {
             }
         };
 
-        // Phase 0 fake-executor: drive Pending → Running synchronously
-        // before responding. When the real provisioning queue lands
-        // (slice 2 of Tier 3), this synchronous transition is replaced
-        // by an async one driven by the stub agent. The store CAS will
-        // catch any concurrent operator-initiated transition.
-        let final_instance = match ctx
+        // Enqueue the provisioning job. The stub provisioner (or
+        // a real per-CN agent in the future) will pick it up and
+        // drive Pending → Provisioning → Running. The response
+        // returns the instance in `Pending` — clients poll the
+        // get endpoint to observe the transition.
+        if let Err(e) = ctx
             .store
-            .transition_instance_lifecycle(
-                instance.id,
-                &[LifecycleStateKind::Pending],
-                LifecycleState::Running,
-            )
+            .enqueue_job(NewJob {
+                kind: JobKind::Provision {
+                    instance_id: instance.id,
+                },
+            })
             .await
         {
-            Ok(i) => i,
-            Err(e) => {
-                // Rare: another caller already transitioned us. Fall
-                // back to whatever the store says is current.
-                ctx.store
-                    .get_instance(instance.id)
-                    .await
-                    .map_err(store_error_to_http)?;
-                return Err(store_error_to_http(e));
-            }
-        };
+            // Failure to enqueue is operationally bad — the instance
+            // record exists but will never provision. Surface as
+            // 5xx; operators can retry by re-creating with a new
+            // name (Phase 0 doesn't support requeue).
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceCreate,
+                    request_id,
+                    Some(format!("Instance::\"{}\"", instance.id)),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            return Err(store_error_to_http(e));
+        }
 
         ctx.audit
             .record_mutation(
                 &principal,
                 Action::InstanceCreate,
                 request_id,
-                Some(format!("Instance::\"{}\"", final_instance.id)),
+                Some(format!("Instance::\"{}\"", instance.id)),
                 AuditOutcome::Success {
-                    resource: Some(format!("Instance::\"{}\"", final_instance.id)),
+                    resource: Some(format!("Instance::\"{}\"", instance.id)),
                 },
                 serde_json::json!({
                     "silo_id": silo_id,
                     "project_id": project_id,
-                    "name": final_instance.name,
-                    "image_id": final_instance.image_id,
-                    "primary_subnet_id": final_instance.primary_subnet_id,
+                    "name": instance.name,
+                    "image_id": instance.image_id,
+                    "primary_subnet_id": instance.primary_subnet_id,
                 }),
             )
             .await;
-        Ok(HttpResponseCreated(final_instance))
+        Ok(HttpResponseCreated(instance))
     }
 
     async fn get_project_instance(
@@ -1929,15 +1935,16 @@ impl TritondApi for TritondServiceImpl {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        // Stopped → Pending; agent then drives Pending → Provisioning
+        // → Running. The response shows Pending; clients poll for
+        // the final state.
         instance_lifecycle_transition(
             rqctx,
             path,
             Action::InstanceStart,
-            // Stopped → Running. Phase 0 collapses the agent path
-            // (Stopped → Pending → Provisioning → Running) the same
-            // way create does.
             &[LifecycleStateKind::Stopped],
-            LifecycleState::Running,
+            LifecycleState::Pending,
+            Some(JobKindTemplate::Provision),
         )
         .await
     }
@@ -1946,14 +1953,14 @@ impl TritondApi for TritondServiceImpl {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        // Running → Stopping; agent then drives Stopping → Stopped.
         instance_lifecycle_transition(
             rqctx,
             path,
             Action::InstanceStop,
-            // Running → Stopped. Phase 0 skips the Stopping
-            // intermediate; the queue slice will introduce it.
             &[LifecycleStateKind::Running],
-            LifecycleState::Stopped,
+            LifecycleState::Stopping,
+            Some(JobKindTemplate::Stop),
         )
         .await
     }
@@ -1962,29 +1969,60 @@ impl TritondApi for TritondServiceImpl {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        // Running → Stopping; agent then drives the full restart
+        // cycle Stopping → Pending → Provisioning → Running.
         instance_lifecycle_transition(
             rqctx,
             path,
             Action::InstanceRestart,
-            // Restart from Running. The Phase 0 collapse means the
-            // result state is still Running; the queue slice will
-            // model an actual Stopping → Pending → Running cycle.
             &[LifecycleStateKind::Running],
-            LifecycleState::Running,
+            LifecycleState::Stopping,
+            Some(JobKindTemplate::Restart),
         )
         .await
     }
 }
 
+/// Token-only enum used by `instance_lifecycle_transition` to pick
+/// the matching `JobKind` after the CAS lands. We don't pass a
+/// `JobKind` directly because that would require the caller to
+/// already know the `instance_id`, which only becomes available
+/// inside the helper.
+#[derive(Debug, Clone, Copy)]
+enum JobKindTemplate {
+    Provision,
+    Stop,
+    Restart,
+}
+
+impl JobKindTemplate {
+    fn for_instance(self, instance_id: Uuid) -> JobKind {
+        match self {
+            JobKindTemplate::Provision => JobKind::Provision { instance_id },
+            JobKindTemplate::Stop => JobKind::Stop { instance_id },
+            JobKindTemplate::Restart => JobKind::Restart { instance_id },
+        }
+    }
+}
+
 /// Shared helper for the three lifecycle-transition handlers. Does
-/// auth, the path-recheck, the store CAS, and the audit emission so
-/// each handler stays a one-liner.
+/// auth, the path-recheck, the store CAS, the optional job
+/// enqueue, and the audit emission.
+///
+/// `enqueue` is `Some(JobKindTemplate)` for endpoints whose
+/// follow-on transitions are agent-driven (start/stop/restart);
+/// the CAS to the *transitional* state runs first (so we get the
+/// right 409 on a stale state), then the job is enqueued. If the
+/// enqueue fails after a successful CAS, the instance is left in
+/// the transitional state and the caller gets a 5xx; a future
+/// slice can move CAS+enqueue into a single FDB transaction.
 async fn instance_lifecycle_transition(
     rqctx: RequestContext<ApiContext>,
     path: Path<SiloProjectInstancePath>,
     action: Action,
     expected_from: &[LifecycleStateKind],
     to: LifecycleState,
+    enqueue: Option<JobKindTemplate>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
     let ctx = rqctx.context();
     let SiloProjectInstancePath {
@@ -1999,8 +2037,6 @@ async fn instance_lifecycle_transition(
     let request_id = parse_request_id(&rqctx);
 
     // Defence-in-depth on silo+project before we try to transition.
-    // get_instance + path check is the same shape used by
-    // get_project_instance / delete_project_instance.
     let instance = ctx
         .store
         .get_instance(instance_id)
@@ -2010,30 +2046,12 @@ async fn instance_lifecycle_transition(
         return Err(not_found());
     }
 
-    match ctx
+    let updated = match ctx
         .store
         .transition_instance_lifecycle(instance_id, expected_from, to.clone())
         .await
     {
-        Ok(updated) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    action,
-                    request_id,
-                    Some(format!("Instance::\"{instance_id}\"")),
-                    AuditOutcome::Success {
-                        resource: Some(format!("Instance::\"{instance_id}\"")),
-                    },
-                    serde_json::json!({
-                        "silo_id": silo_id,
-                        "project_id": project_id,
-                        "to_state": format!("{:?}", to.kind()),
-                    }),
-                )
-                .await;
-            Ok(HttpResponseOk(updated))
-        }
+        Ok(i) => i,
         Err(e) => {
             ctx.audit
                 .record_mutation(
@@ -2045,9 +2063,48 @@ async fn instance_lifecycle_transition(
                     serde_json::Value::Null,
                 )
                 .await;
-            Err(store_error_to_http(e))
+            return Err(store_error_to_http(e));
         }
+    };
+
+    if let Some(template) = enqueue
+        && let Err(e) = ctx
+            .store
+            .enqueue_job(NewJob {
+                kind: template.for_instance(instance_id),
+            })
+            .await
+    {
+        ctx.audit
+            .record_mutation(
+                &principal,
+                action,
+                request_id,
+                Some(format!("Instance::\"{instance_id}\"")),
+                store_error_to_audit_outcome(&e),
+                serde_json::Value::Null,
+            )
+            .await;
+        return Err(store_error_to_http(e));
     }
+
+    ctx.audit
+        .record_mutation(
+            &principal,
+            action,
+            request_id,
+            Some(format!("Instance::\"{instance_id}\"")),
+            AuditOutcome::Success {
+                resource: Some(format!("Instance::\"{instance_id}\"")),
+            },
+            serde_json::json!({
+                "silo_id": silo_id,
+                "project_id": project_id,
+                "to_state": format!("{:?}", to.kind()),
+            }),
+        )
+        .await;
+    Ok(HttpResponseOk(updated))
 }
 
 /// Audit + return a 400 in one shot. Used by `create_project_instance`
@@ -2205,6 +2262,13 @@ pub async fn start_server(bind_address: &str) -> Result<HttpServer<ApiContext>> 
 }
 
 /// Start a Dropshot server backed by an externally-built [`ApiContext`].
+///
+/// Also spawns the in-process stub provisioner (see
+/// [`crate::provisioner`]) so any provisioning jobs the API
+/// handlers enqueue get processed. The provisioner runs as a
+/// detached tokio task and exits when the runtime shuts down. A
+/// future deploy with a real per-CN `tritonagent` will skip the
+/// stub spawn (gated by config).
 pub async fn start_server_with_context(
     bind_address: &str,
     context: ApiContext,
@@ -2225,6 +2289,10 @@ pub async fn start_server_with_context(
     .map_err(|e| anyhow::anyhow!("failed to construct logger: {e}"))?;
 
     let api = api_description()?;
+    // Spawn the stub provisioner before starting the HTTP server
+    // so the queue is being drained from the moment handlers can
+    // accept requests.
+    let _provisioner = provisioner::spawn(Arc::clone(&context.store));
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
         .map_err(|e| anyhow::anyhow!("failed to start HTTP server: {e}"))?

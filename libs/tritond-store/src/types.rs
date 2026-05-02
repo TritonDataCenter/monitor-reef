@@ -653,6 +653,128 @@ pub struct NewInstance {
     pub memory_bytes: u64,
 }
 
+/// What a provisioning job asks an agent to do.
+///
+/// Each variant carries the target `instance_id` so an agent can
+/// look up the current state, do the work, and drive the lifecycle
+/// forward without needing the issuer to embed extra context.
+///
+/// Phase 0 has exactly three kinds. A future slice may add others
+/// (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so
+/// adding a variant is not a breaking change for matchers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum JobKind {
+    /// Drive a Pending instance through Provisioning → Running.
+    /// Used both for first-time create and for `start` (which
+    /// transitions Stopped → Pending and then enqueues a Provision).
+    Provision { instance_id: Uuid },
+    /// Drive a Running instance through Stopping → Stopped.
+    Stop { instance_id: Uuid },
+    /// Drive a Running instance through Stopping → Pending →
+    /// Provisioning → Running. The agent is responsible for the
+    /// whole cycle; the operator never sees Pending in between.
+    Restart { instance_id: Uuid },
+}
+
+impl JobKind {
+    /// Convenience: extract the target instance id without a
+    /// full match.
+    #[must_use]
+    pub fn instance_id(&self) -> Uuid {
+        match self {
+            JobKind::Provision { instance_id }
+            | JobKind::Stop { instance_id }
+            | JobKind::Restart { instance_id } => *instance_id,
+        }
+    }
+}
+
+/// Lifecycle of a single provisioning job.
+///
+/// `Pending` → claimable by the next agent that polls. `InProgress`
+/// → an agent has claimed it; the agent is responsible for driving
+/// to `Completed` or `Failed`. Terminal states (`Completed`,
+/// `Failed`) are not re-queued automatically — operators retry by
+/// issuing the originating action again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum JobStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed { reason: String },
+}
+
+/// Discriminant-only companion to [`JobStatus`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum JobStatusKind {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+}
+
+impl JobStatus {
+    #[must_use]
+    pub fn kind(&self) -> JobStatusKind {
+        match self {
+            JobStatus::Pending => JobStatusKind::Pending,
+            JobStatus::InProgress => JobStatusKind::InProgress,
+            JobStatus::Completed => JobStatusKind::Completed,
+            JobStatus::Failed { .. } => JobStatusKind::Failed,
+        }
+    }
+}
+
+/// A unit of work for a provisioning agent. Created by the tritond
+/// instance handlers; consumed by an agent (the in-process stub
+/// today; a real `tritonagent` per CN in the future).
+///
+/// The wire shape is stable across Phase 0 and the eventual real
+/// agent — the only thing that changes is *who* claims and
+/// completes jobs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProvisioningJob {
+    pub id: Uuid,
+    pub kind: JobKind,
+    pub status: JobStatus,
+    /// Monotonically-increasing sequence number that determines
+    /// the queue order. Older jobs (lower seq) are claimed first.
+    /// Server-assigned at enqueue time.
+    pub seq: u64,
+    pub created_at: DateTime<Utc>,
+    /// Set when the job was first claimed by an agent.
+    #[serde(default)]
+    pub claimed_at: Option<DateTime<Utc>>,
+    /// Identifier of the agent that claimed the job. In Phase 0
+    /// this is the in-process stub's name (e.g. `"stub-provisioner"`).
+    #[serde(default)]
+    pub claimed_by: Option<String>,
+    /// Set when the job reached a terminal status (Completed or
+    /// Failed).
+    #[serde(default)]
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Request body for enqueuing a new job. Server assigns `id`,
+/// `seq`, `created_at`, and starts in `JobStatus::Pending`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewJob {
+    pub kind: JobKind,
+}
+
+/// Outcome a worker reports when finishing a job.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum JobOutcome {
+    Completed,
+    Failed { reason: String },
+}
+
 /// Cluster-level system keys. Phase 0 has exactly one
 /// (`SystemKey::JwtSigning`); future entries will include the
 /// transit-engine master key and any per-silo OIDC client secrets.

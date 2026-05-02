@@ -55,6 +55,9 @@
 //! instance/by_id/<uuid>             -> JSON-encoded Instance
 //! instance/by_project/<proj>/<name> -> uuid hyphenated bytes
 //! instance/in_project/<proj>/<inst> -> empty (membership index)
+//! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
+//! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
+//! job/seq/counter                   -> next seq, big-endian u64
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -70,9 +73,10 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, Instance, LifecycleState, LifecycleStateKind, NewImage, NewInstance,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey,
-    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, Image, Instance, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
+    NewSubnet, NewVpc, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet,
+    SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -286,6 +290,25 @@ impl FdbStore {
 
     fn instance_in_project_prefix(project_id: Uuid) -> Vec<u8> {
         format!("instance/in_project/{project_id}/").into_bytes()
+    }
+
+    fn job_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("job/by_id/{id}").into_bytes()
+    }
+
+    fn job_pending_key(seq: u64) -> Vec<u8> {
+        // 16-char zero-padded hex so the FDB key sort matches the
+        // numeric u64 sort. (Big-endian raw bytes would also work,
+        // but the prefix `job/pending/` is utf8 so we stay readable.)
+        format!("job/pending/{seq:016x}").into_bytes()
+    }
+
+    fn job_pending_prefix() -> &'static [u8] {
+        b"job/pending/"
+    }
+
+    fn job_seq_counter_key() -> &'static [u8] {
+        b"job/seq/counter"
     }
 }
 
@@ -2145,6 +2168,238 @@ impl Store for FdbStore {
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
+
+    async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError> {
+        let counter_key = Self::job_seq_counter_key().to_vec();
+        let job_id = Uuid::new_v4();
+        let by_id_key = Self::job_by_id_key(job_id);
+        let id_str = job_id.to_string();
+
+        let outcome: Result<ProvisioningJob, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let counter_key = counter_key.clone();
+                let by_id_key = by_id_key.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let kind = req.kind.clone();
+                async move {
+                    // Read counter (or default to 0).
+                    let current_seq = match tr.get(&counter_key, false).await? {
+                        Some(bytes) => parse_seq(&bytes).unwrap_or(0),
+                        None => 0,
+                    };
+                    let next_seq = current_seq.saturating_add(1);
+                    let pending_key = Self::job_pending_key(current_seq);
+                    let job = ProvisioningJob {
+                        id: job_id,
+                        kind,
+                        status: JobStatus::Pending,
+                        seq: current_seq,
+                        created_at: Utc::now(),
+                        claimed_at: None,
+                        claimed_by: None,
+                        completed_at: None,
+                    };
+                    let value = serde_json::to_vec(&job).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize job: {e}").into())
+                    })?;
+                    tr.set(&counter_key, &next_seq.to_be_bytes());
+                    tr.set(&by_id_key, &value);
+                    tr.set(&pending_key, &id_bytes);
+                    Ok(job)
+                }
+            })
+            .await;
+        outcome.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError> {
+        let prefix = Self::job_pending_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let claimed_by = claimed_by.to_string();
+
+        enum Outcome {
+            Claimed(Box<ProvisioningJob>),
+            Empty,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                let claimed_by = claimed_by.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        limit: Some(1),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    // Pick the (single) lowest-seq pending entry.
+                    let (pending_key, job_id_bytes) = match kvs.iter().next() {
+                        Some(kv) => (kv.key().to_vec(), kv.value().to_vec()),
+                        None => return Ok(Outcome::Empty),
+                    };
+                    drop(kvs);
+                    let id_str = std::str::from_utf8(&job_id_bytes).map_err(|e| {
+                        FdbBindingError::CustomError(
+                            format!("pending index value not utf8: {e}").into(),
+                        )
+                    })?;
+                    let job_id = Uuid::parse_str(id_str).map_err(|e| {
+                        FdbBindingError::CustomError(
+                            format!("pending index value not uuid: {e}").into(),
+                        )
+                    })?;
+                    let by_id_key = format!("job/by_id/{job_id}").into_bytes();
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        // Pending index points at a vanished record;
+                        // skip the entry by clearing it and treating
+                        // the queue as empty for this attempt.
+                        None => {
+                            tr.clear(&pending_key);
+                            return Ok(Outcome::Empty);
+                        }
+                    };
+                    let mut job: ProvisioningJob = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize job: {e}").into())
+                    })?;
+                    job.status = JobStatus::InProgress;
+                    job.claimed_at = Some(Utc::now());
+                    job.claimed_by = Some(claimed_by);
+                    let value = serde_json::to_vec(&job).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize job: {e}").into())
+                    })?;
+                    tr.set(&by_id_key, &value);
+                    tr.clear(&pending_key);
+                    Ok(Outcome::Claimed(Box::new(job)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Claimed(job)) => Ok(*job),
+            Ok(Outcome::Empty) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn complete_job(
+        &self,
+        job_id: Uuid,
+        outcome: JobOutcome,
+    ) -> Result<ProvisioningJob, StoreError> {
+        let by_id_key = Self::job_by_id_key(job_id);
+
+        enum Out {
+            Completed(Box<ProvisioningJob>),
+            Vanished,
+            AlreadyTerminal(JobStatusKind),
+        }
+
+        let result: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let outcome = outcome.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let mut job: ProvisioningJob = match serde_json::from_slice(&bytes) {
+                        Ok(j) => j,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    let kind = job.status.kind();
+                    if matches!(kind, JobStatusKind::Completed | JobStatusKind::Failed) {
+                        return Ok(Out::AlreadyTerminal(kind));
+                    }
+                    job.status = match outcome {
+                        JobOutcome::Completed => JobStatus::Completed,
+                        JobOutcome::Failed { reason } => JobStatus::Failed { reason },
+                    };
+                    job.completed_at = Some(Utc::now());
+                    let value = match serde_json::to_vec(&job) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Completed(Box::new(job)))
+                }
+            })
+            .await;
+
+        match result {
+            Ok(Out::Completed(job)) => Ok(*job),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::AlreadyTerminal(k)) => Err(StoreError::Conflict(format!(
+                "job {job_id} is already terminal ({k:?})"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_job(&self, job_id: Uuid) -> Result<ProvisioningJob, StoreError> {
+        let key = Self::job_by_id_key(job_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize job: {e}")))
+    }
+
+    async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError> {
+        // Recent = scan all by_id and sort. Phase 0 has no
+        // creation-time index because the queue's normal hot path
+        // is `claim_next_job`; the operator-visible "recent jobs"
+        // surface is rare and small. A future slice can add a
+        // dedicated by_created_at index if list_recent_jobs becomes
+        // a hot path.
+        let prefix = b"job/by_id/".to_vec();
+        let (begin, end) = prefix_range(&prefix);
+
+        let raws: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut jobs: Vec<ProvisioningJob> = raws
+            .into_iter()
+            .filter_map(|b| serde_json::from_slice(&b).ok())
+            .collect();
+        jobs.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| b.seq.cmp(&a.seq))
+        });
+        jobs.truncate(limit);
+        Ok(jobs)
+    }
+}
+
+/// Parse an 8-byte big-endian counter value.
+fn parse_seq(bytes: &[u8]) -> Option<u64> {
+    if bytes.len() != 8 {
+        return None;
+    }
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(bytes);
+    Some(u64::from_be_bytes(buf))
 }
 
 /// Length of the `subnet/in_vpc/<vpc_id>/` prefix bytes for a given

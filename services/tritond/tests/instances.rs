@@ -18,6 +18,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use rsa::rand_core::OsRng;
@@ -238,10 +239,49 @@ fn lifecycle_state(state: &LifecycleState) -> &'static str {
     }
 }
 
+/// Poll the get-instance endpoint until the lifecycle reaches the
+/// expected state, with a deadline. The stub provisioner runs at
+/// 50ms; tests typically settle in 100-200ms with worker_threads=4.
+async fn wait_for_lifecycle(
+    client: &tritond_client::Client,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    expected: &str,
+    deadline: Duration,
+) -> tritond_client::types::Instance {
+    let start = Instant::now();
+    loop {
+        let inst = client
+            .get_project_instance()
+            .silo_id(silo_id)
+            .project_id(project_id)
+            .instance_id(instance_id)
+            .send()
+            .await
+            .unwrap()
+            .into_inner();
+        let observed = lifecycle_state(&inst.lifecycle);
+        if observed == expected {
+            return inst;
+        }
+        if start.elapsed() > deadline {
+            panic!("timeout waiting for lifecycle={expected}; last seen={observed}");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// Reasonable settle deadline for the stub provisioner. Each
+/// provision drives 2 transitions (Pending → Provisioning →
+/// Running); restart drives 4. Even on a loaded CI machine this
+/// should land in well under a second.
+const SETTLE: Duration = Duration::from_secs(5);
+
 // ---------- tests ----------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn instance_create_runs_through_lifecycle_to_running() {
+async fn instance_create_settles_at_running_via_queue() {
     let test = TestServer::start().await;
     let root = test.root_client();
     let fx = build_fixture(&root).await;
@@ -255,11 +295,15 @@ async fn instance_create_runs_through_lifecycle_to_running() {
         .await
         .unwrap()
         .into_inner();
-    // Phase 0 fake-executor synchronously transitions Pending →
-    // Running before responding.
-    assert_eq!(lifecycle_state(&inst.lifecycle), "Running");
+    // Create handler returns Pending; the stub provisioner drives
+    // Pending → Provisioning → Running asynchronously.
+    assert_eq!(lifecycle_state(&inst.lifecycle), "Pending");
     assert_eq!(inst.silo_id, fx.silo_id);
     assert_eq!(inst.project_id, fx.project_id);
+
+    let settled =
+        wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    assert_eq!(lifecycle_state(&settled.lifecycle), "Running");
 
     test.close().await;
 }
@@ -278,9 +322,11 @@ async fn instance_lifecycle_start_stop_restart() {
         .await
         .unwrap()
         .into_inner();
+    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
-    // Running → Stopped
-    let stopped = root
+    // Running → Stopping → Stopped (handler returns Stopping; agent
+    // drives the rest).
+    let stop_response = root
         .stop_project_instance()
         .silo_id(fx.silo_id)
         .project_id(fx.project_id)
@@ -289,9 +335,12 @@ async fn instance_lifecycle_start_stop_restart() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(lifecycle_state(&stopped.lifecycle), "Stopped");
+    assert_eq!(lifecycle_state(&stop_response.lifecycle), "Stopping");
+    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
 
-    // Stop while already stopped → 409
+    // Stop while already stopped → 409 (CAS rejects). NB: there's a
+    // brief window during Stopping where the CAS would also reject;
+    // we guard the test by waiting for Stopped first.
     let err = root
         .stop_project_instance()
         .silo_id(fx.silo_id)
@@ -302,8 +351,9 @@ async fn instance_lifecycle_start_stop_restart() {
         .expect_err("stop a stopped instance must 409");
     assert_status(err, 409);
 
-    // Stopped → Running
-    let started = root
+    // Stopped → Pending → Running (start enqueues a Provision; agent
+    // drives Pending → Provisioning → Running).
+    let start_response = root
         .start_project_instance()
         .silo_id(fx.silo_id)
         .project_id(fx.project_id)
@@ -312,10 +362,12 @@ async fn instance_lifecycle_start_stop_restart() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(lifecycle_state(&started.lifecycle), "Running");
+    assert_eq!(lifecycle_state(&start_response.lifecycle), "Pending");
+    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
-    // Restart → still Running (Phase 0 collapse)
-    let restarted = root
+    // Restart: handler returns Stopping; agent drives the full
+    // restart cycle Stopping → Pending → Provisioning → Running.
+    let restart_response = root
         .restart_project_instance()
         .silo_id(fx.silo_id)
         .project_id(fx.project_id)
@@ -324,7 +376,8 @@ async fn instance_lifecycle_start_stop_restart() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(lifecycle_state(&restarted.lifecycle), "Running");
+    assert_eq!(lifecycle_state(&restart_response.lifecycle), "Stopping");
+    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
     test.close().await;
 }
@@ -343,6 +396,7 @@ async fn delete_running_instance_returns_409() {
         .await
         .unwrap()
         .into_inner();
+    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
     let err = root
         .delete_project_instance()
@@ -354,7 +408,7 @@ async fn delete_running_instance_returns_409() {
         .expect_err("delete while running must 409");
     assert_status(err, 409);
 
-    // Stop, then delete works.
+    // Stop, wait for it to settle, then delete works.
     root.stop_project_instance()
         .silo_id(fx.silo_id)
         .project_id(fx.project_id)
@@ -362,6 +416,7 @@ async fn delete_running_instance_returns_409() {
         .send()
         .await
         .unwrap();
+    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
     root.delete_project_instance()
         .silo_id(fx.silo_id)
         .project_id(fx.project_id)

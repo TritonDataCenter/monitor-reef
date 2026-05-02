@@ -18,9 +18,10 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, Instance, LifecycleState, LifecycleStateKind, NewImage, NewInstance,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey,
-    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, Image, Instance, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
+    NewSubnet, NewVpc, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet,
+    SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -73,6 +74,11 @@ struct Inner {
     /// `(project_id, name)` → instance_id index for within-project
     /// name uniqueness.
     instance_id_by_project_name: HashMap<(Uuid, String), Uuid>,
+    jobs_by_id: HashMap<Uuid, ProvisioningJob>,
+    /// Monotonic job sequence counter; the next job's `seq` value.
+    /// FIFO consumption picks the smallest `seq` with status
+    /// `Pending`.
+    next_job_seq: u64,
 }
 
 /// In-process [`Store`] implementation.
@@ -886,6 +892,92 @@ impl Store for MemStore {
             .remove(&project_id)
             .map(|_| ())
             .ok_or(StoreError::NotFound)
+    }
+
+    async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError> {
+        let mut guard = self.inner.write().await;
+        let seq = guard.next_job_seq;
+        guard.next_job_seq = seq.checked_add(1).ok_or_else(|| {
+            StoreError::Backend("job seq overflow (operationally unreachable)".to_string())
+        })?;
+        let job = ProvisioningJob {
+            id: Uuid::new_v4(),
+            kind: req.kind,
+            status: JobStatus::Pending,
+            seq,
+            created_at: Utc::now(),
+            claimed_at: None,
+            claimed_by: None,
+            completed_at: None,
+        };
+        guard.jobs_by_id.insert(job.id, job.clone());
+        Ok(job)
+    }
+
+    async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError> {
+        let mut guard = self.inner.write().await;
+        // FIFO: lowest `seq` among Pending wins.
+        let target_id = guard
+            .jobs_by_id
+            .values()
+            .filter(|j| matches!(j.status.kind(), JobStatusKind::Pending))
+            .min_by_key(|j| j.seq)
+            .map(|j| j.id);
+        let id = target_id.ok_or(StoreError::NotFound)?;
+        let job = guard.jobs_by_id.get_mut(&id).ok_or(StoreError::NotFound)?;
+        job.status = JobStatus::InProgress;
+        job.claimed_at = Some(Utc::now());
+        job.claimed_by = Some(claimed_by.to_string());
+        Ok(job.clone())
+    }
+
+    async fn complete_job(
+        &self,
+        job_id: Uuid,
+        outcome: JobOutcome,
+    ) -> Result<ProvisioningJob, StoreError> {
+        let mut guard = self.inner.write().await;
+        let job = guard
+            .jobs_by_id
+            .get_mut(&job_id)
+            .ok_or(StoreError::NotFound)?;
+        match job.status.kind() {
+            JobStatusKind::Completed | JobStatusKind::Failed => {
+                return Err(StoreError::Conflict(format!(
+                    "job {job_id} is already terminal ({:?})",
+                    job.status.kind()
+                )));
+            }
+            _ => {}
+        }
+        job.status = match outcome {
+            JobOutcome::Completed => JobStatus::Completed,
+            JobOutcome::Failed { reason } => JobStatus::Failed { reason },
+        };
+        job.completed_at = Some(Utc::now());
+        Ok(job.clone())
+    }
+
+    async fn get_job(&self, job_id: Uuid) -> Result<ProvisioningJob, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .jobs_by_id
+            .get(&job_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut jobs: Vec<ProvisioningJob> = guard.jobs_by_id.values().cloned().collect();
+        // Newest first by creation time (ties broken by seq).
+        jobs.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| b.seq.cmp(&a.seq))
+        });
+        jobs.truncate(limit);
+        Ok(jobs)
     }
 }
 
@@ -2525,6 +2617,115 @@ mod tests {
             .delete_instance(instance.id)
             .await
             .expect("Failed instance is deletable");
+    }
+
+    use crate::JobKind;
+
+    fn provision_job(instance_id: Uuid) -> NewJob {
+        NewJob {
+            kind: JobKind::Provision { instance_id },
+        }
+    }
+
+    #[tokio::test]
+    async fn enqueue_assigns_monotonic_seq() {
+        let store = MemStore::new();
+        let i1 = Uuid::new_v4();
+        let i2 = Uuid::new_v4();
+        let j1 = store.enqueue_job(provision_job(i1)).await.unwrap();
+        let j2 = store.enqueue_job(provision_job(i2)).await.unwrap();
+        assert_eq!(j1.seq, 0);
+        assert_eq!(j2.seq, 1);
+        assert!(matches!(j1.status, JobStatus::Pending));
+    }
+
+    #[tokio::test]
+    async fn claim_next_job_is_fifo() {
+        let store = MemStore::new();
+        let i1 = Uuid::new_v4();
+        let i2 = Uuid::new_v4();
+        let j1 = store.enqueue_job(provision_job(i1)).await.unwrap();
+        let j2 = store.enqueue_job(provision_job(i2)).await.unwrap();
+
+        let claimed = store.claim_next_job("worker-a").await.unwrap();
+        assert_eq!(claimed.id, j1.id);
+        assert!(matches!(claimed.status, JobStatus::InProgress));
+        assert_eq!(claimed.claimed_by.as_deref(), Some("worker-a"));
+
+        let claimed = store.claim_next_job("worker-b").await.unwrap();
+        assert_eq!(claimed.id, j2.id);
+    }
+
+    #[tokio::test]
+    async fn claim_empty_queue_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .claim_next_job("worker")
+            .await
+            .expect_err("empty queue should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn complete_job_terminal_states() {
+        let store = MemStore::new();
+        let job = store
+            .enqueue_job(provision_job(Uuid::new_v4()))
+            .await
+            .unwrap();
+        store.claim_next_job("w").await.unwrap();
+        let done = store
+            .complete_job(job.id, JobOutcome::Completed)
+            .await
+            .unwrap();
+        assert!(matches!(done.status, JobStatus::Completed));
+        assert!(done.completed_at.is_some());
+
+        // Re-completing is a Conflict.
+        let err = store
+            .complete_job(job.id, JobOutcome::Completed)
+            .await
+            .expect_err("double-complete should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn complete_job_with_failure_reason() {
+        let store = MemStore::new();
+        let job = store
+            .enqueue_job(provision_job(Uuid::new_v4()))
+            .await
+            .unwrap();
+        let done = store
+            .complete_job(
+                job.id,
+                JobOutcome::Failed {
+                    reason: "image not ready".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+        match done.status {
+            JobStatus::Failed { reason } => assert_eq!(reason, "image not ready"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_recent_jobs_is_newest_first() {
+        let store = MemStore::new();
+        for _ in 0..5 {
+            store
+                .enqueue_job(provision_job(Uuid::new_v4()))
+                .await
+                .unwrap();
+        }
+        let listed = store.list_recent_jobs(3).await.unwrap();
+        assert_eq!(listed.len(), 3);
+        // Newest = highest seq among the three returned.
+        assert_eq!(listed[0].seq, 4);
+        assert_eq!(listed[1].seq, 3);
+        assert_eq!(listed[2].seq, 2);
     }
 
     #[tokio::test]
