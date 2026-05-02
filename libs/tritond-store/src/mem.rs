@@ -655,8 +655,19 @@ impl Store for MemStore {
                 req.name
             )));
         }
+        let id = match req.id {
+            Some(pinned) => {
+                if guard.images_by_id.contains_key(&pinned) {
+                    return Err(StoreError::Conflict(format!(
+                        "image with id {pinned} already exists",
+                    )));
+                }
+                pinned
+            }
+            None => Uuid::new_v4(),
+        };
         let image = Image {
-            id: Uuid::new_v4(),
+            id,
             silo_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
@@ -2477,6 +2488,7 @@ mod tests {
             size_bytes: 1_000_000_000,
             sha256: "0".repeat(64),
             source_url: Some("mantafs://images/test".to_string()),
+            id: None,
         }
     }
 

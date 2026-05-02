@@ -510,6 +510,15 @@ pub struct NewImage {
     pub sha256: String,
     #[serde(default)]
     pub source_url: Option<String>,
+    /// Optional UUID to pin for the new image. When `Some`, the
+    /// store uses this value instead of generating a fresh UUID
+    /// — useful when an operator wants tritond's image id to
+    /// equal the corresponding `imgadm` UUID on every CN, so the
+    /// per-CN agent can pass it straight through to
+    /// `vmadm create`. The store rejects the create with
+    /// [`StoreError::Conflict`] if the id is already in use.
+    #[serde(default)]
+    pub id: Option<Uuid>,
 }
 
 /// Per-project resource quota. Singleton: each project has at most

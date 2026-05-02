@@ -157,6 +157,12 @@ enum SiloImageCommand {
         /// Optional URL where the image content lives.
         #[arg(long)]
         source_url: Option<String>,
+        /// Optionally pin the image UUID instead of letting the
+        /// server generate one. Used when tritond's image id needs
+        /// to equal the corresponding `imgadm` UUID on every CN
+        /// (so the per-CN agent passes it straight to vmadm).
+        #[arg(long)]
+        id: Option<Uuid>,
         #[arg(long)]
         json: bool,
     },
@@ -1356,6 +1362,7 @@ async fn main() -> Result<()> {
                     size_bytes,
                     sha256,
                     source_url,
+                    id,
                     json,
                 } => {
                     commands::silo_image_add(
@@ -1369,6 +1376,7 @@ async fn main() -> Result<()> {
                         size_bytes,
                         sha256,
                         source_url,
+                        id,
                         json,
                     )
                     .await

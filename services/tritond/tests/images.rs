@@ -127,6 +127,7 @@ fn standard_image(name: &str) -> NewImage {
         size_bytes: 1_000_000_000,
         sha256: "0".repeat(64),
         source_url: Some("mantafs://images/test".to_string()),
+        id: None,
     }
 }
 

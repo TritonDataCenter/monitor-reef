@@ -230,7 +230,8 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
             size_bytes: 1_000_000_000,
             sha256: "0".repeat(64),
             source_url: Some("mantafs://images/ubuntu".to_string()),
-        })
+        id: None,
+    })
         .send()
         .await
         .unwrap()

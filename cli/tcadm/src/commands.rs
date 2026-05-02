@@ -1692,6 +1692,7 @@ pub async fn silo_image_add(
     size_bytes: u64,
     sha256: String,
     source_url: Option<String>,
+    id: Option<Uuid>,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
@@ -1707,6 +1708,7 @@ pub async fn silo_image_add(
             size_bytes,
             sha256,
             source_url,
+            id,
         })
         .send()
         .await

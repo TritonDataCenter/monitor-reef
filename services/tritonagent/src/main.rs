@@ -66,6 +66,14 @@ async fn main() -> Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
+    // rustls 0.23 requires a crypto provider be set as the
+    // process default before the first `ClientConfig::builder()`
+    // call. Reqwest doesn't do this for us in all cases (cold
+    // SmartOS GZ panics without it). aws-lc-rs is the workspace
+    // default; the only failure mode of `install_default` is
+    // "already installed," which is harmless.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let cli = Cli::parse();
     let agent_id = match cli.agent_id {
         Some(id) => id,

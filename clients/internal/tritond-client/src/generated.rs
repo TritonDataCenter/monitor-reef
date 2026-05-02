@@ -2159,6 +2159,14 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Optional UUID to pin for the new image. When `Some`, the store uses this value instead of generating a fresh UUID — useful when an operator wants tritond's image id to equal the corresponding `imgadm` UUID on every CN, so the per-CN agent can pass it straight through to `vmadm create`. The store rejects the create with [`StoreError::Conflict`] if the id is already in use.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
@@ -2192,6 +2200,9 @@ pub mod types {
     pub struct NewImage {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "Optional UUID to pin for the new image. When `Some`, the store uses this value instead of generating a fresh UUID — useful when an operator wants tritond's image id to equal the corresponding `imgadm` UUID on every CN, so the per-CN agent can pass it straight through to `vmadm create`. The store rejects the create with [`StoreError::Conflict`] if the id is already in use."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub id: ::std::option::Option<::uuid::Uuid>,
         pub name: ::std::string::String,
         pub os: ::std::string::String,
         pub sha256: ::std::string::String,
@@ -5692,6 +5703,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            id: ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             os: ::std::result::Result<::std::string::String, ::std::string::String>,
             sha256: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -5707,6 +5719,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     description: Ok(Default::default()),
+                    id: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     os: Err("no value supplied for os".to_string()),
                     sha256: Err("no value supplied for sha256".to_string()),
@@ -5726,6 +5739,16 @@ pub mod types {
                 self.description = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
                 self
             }
             pub fn name<T>(mut self, value: T) -> Self
@@ -5797,6 +5820,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     description: value.description?,
+                    id: value.id?,
                     name: value.name?,
                     os: value.os?,
                     sha256: value.sha256?,
@@ -5811,6 +5835,7 @@ pub mod types {
             fn from(value: super::NewImage) -> Self {
                 Self {
                     description: Ok(value.description),
+                    id: Ok(value.id),
                     name: Ok(value.name),
                     os: Ok(value.os),
                     sha256: Ok(value.sha256),

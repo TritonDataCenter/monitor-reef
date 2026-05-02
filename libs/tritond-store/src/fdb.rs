@@ -1644,8 +1644,9 @@ impl Store for FdbStore {
     }
 
     async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        let id = req.id.unwrap_or_else(Uuid::new_v4);
         let image = Image {
-            id: Uuid::new_v4(),
+            id,
             silo_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
@@ -1668,6 +1669,7 @@ impl Store for FdbStore {
             Created,
             SiloMissing,
             NameTaken,
+            IdTaken,
         }
 
         let outcome: Result<Outcome, FdbBindingError> = self
@@ -1686,6 +1688,13 @@ impl Store for FdbStore {
                     if tr.get(&by_name_key, false).await?.is_some() {
                         return Ok(Outcome::NameTaken);
                     }
+                    // When `req.id` was set, the by_id key may
+                    // already exist for an unrelated image — we
+                    // check inside the transaction so a concurrent
+                    // pin-id create can't race past us.
+                    if tr.get(&by_id_key, false).await?.is_some() {
+                        return Ok(Outcome::IdTaken);
+                    }
                     tr.set(&by_id_key, &value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_silo_key, b"");
@@ -1700,6 +1709,10 @@ impl Store for FdbStore {
             Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
                 "image with name {:?} already exists in silo {silo_id}",
                 req.name
+            ))),
+            Ok(Outcome::IdTaken) => Err(StoreError::Conflict(format!(
+                "image with id {} already exists",
+                image.id,
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }

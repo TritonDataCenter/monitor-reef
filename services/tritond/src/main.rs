@@ -14,6 +14,11 @@
 //!   Triggers the FDB-backed [`Store`] and audit chain when the
 //!   binary is built with the `foundationdb` feature; an error if
 //!   set with the feature disabled.
+//! * `TRITOND_DISABLE_INPROCESS_PROVISIONER` — when set to `1` /
+//!   `true`, skip spawning the in-process stub provisioner. Use
+//!   this when a real `tritonagent` is running against this
+//!   tritond, so the queue is drained by the agent and not by
+//!   the stub.
 //!
 //! Startup runs [`tritond::bootstrap::ensure`] which mints the JWT
 //! signing key and the root operator on first run, then loads them on
@@ -48,7 +53,11 @@ async fn main() -> Result<()> {
         .context("first-run bootstrap")?;
     let auth = Arc::new(AuthService::new(jwt_key).context("build auth service")?);
     let audit = Arc::new(AuditService::new(audit_chain));
-    let context = ApiContext::new(store, auth, audit);
+    let mut context = ApiContext::new(store, auth, audit);
+    if env_flag("TRITOND_DISABLE_INPROCESS_PROVISIONER") {
+        info!("disabling in-process stub provisioner; expecting external tritonagent");
+        context = context.without_in_process_provisioner();
+    }
 
     info!(version = VERSION, %bind_address, "tritond starting");
 
@@ -58,6 +67,14 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("HTTP server error: {e}"))?;
 
     Ok(())
+}
+
+/// True when `name` is set and equals `1` / `true` (case-insensitive).
+fn env_flag(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1") | Some("true") | Some("True") | Some("TRUE")
+    )
 }
 
 #[cfg(feature = "foundationdb")]
