@@ -22,6 +22,7 @@ pub mod audit;
 pub mod auth;
 pub mod bootstrap;
 pub mod provisioner;
+pub mod rate_limit;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -59,6 +60,7 @@ use crate::auth::{
     Action, AuthService, authenticate_and_authorize, authenticate_and_authorize_in_silo,
     require_authenticated,
 };
+use crate::rate_limit::LoginRateLimiter;
 
 /// Service version, populated from Cargo at build time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -71,11 +73,20 @@ pub struct ApiContext {
     pub store: Arc<dyn Store>,
     pub auth: Arc<AuthService>,
     pub audit: Arc<AuditService>,
+    /// Per-source-IP throttle on `POST /v2/auth/login`. See
+    /// [`crate::rate_limit`] for the shape of the limiter and why it
+    /// only fronts login.
+    pub login_rate_limiter: Arc<LoginRateLimiter>,
 }
 
 impl ApiContext {
     pub fn new(store: Arc<dyn Store>, auth: Arc<AuthService>, audit: Arc<AuditService>) -> Self {
-        Self { store, auth, audit }
+        Self {
+            store,
+            auth,
+            audit,
+            login_rate_limiter: Arc::new(LoginRateLimiter::new()),
+        }
     }
 
     /// Build a context backed by a fresh in-memory store, a fresh
@@ -86,6 +97,15 @@ impl ApiContext {
         let auth = Arc::new(AuthService::new(JwtKey::generate())?);
         let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
         Ok(Self::new(store, auth, audit))
+    }
+
+    /// Replace the default login rate limiter — used by integration
+    /// tests that need a tighter quota than production. Returns
+    /// `self` so test setup can chain off `ApiContext::in_memory()`.
+    #[must_use]
+    pub fn with_login_rate_limiter(mut self, limiter: Arc<LoginRateLimiter>) -> Self {
+        self.login_rate_limiter = limiter;
+        self
     }
 }
 
@@ -175,12 +195,32 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<LoginRequest>,
     ) -> Result<HttpResponseOk<TokenResponse>, HttpError> {
         let ctx = rqctx.context();
+        let request_id = parse_request_id(&rqctx);
+        // Per-source-IP throttle. Runs before Cedar and well before
+        // bcrypt so an automated guesser can't burn server CPU on
+        // password verification. We use the TCP peer address; X-
+        // Forwarded-For is intentionally ignored — see crate::rate_limit.
+        let source_ip = rqctx.request.remote_addr().ip();
+        if let Err(retry_after) = ctx.login_rate_limiter.check(source_ip) {
+            ctx.audit
+                .record_auth_event(
+                    Action::Login,
+                    "",
+                    request_id,
+                    AuditActor::Anonymous,
+                    AuditOutcome::ClientError {
+                        code: 429,
+                        message: format!("rate limited from {source_ip}"),
+                    },
+                )
+                .await;
+            return Err(too_many_requests(retry_after));
+        }
         // Cedar still gates login (the public-actions rule), partly so
         // the policy bundle is the single source of truth for what an
         // unauth'd caller can do.
         authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::Login)
             .await?;
-        let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
 
         let username = req.username.clone();
@@ -2697,6 +2737,26 @@ fn invalid_credentials() -> HttpError {
         ClientErrorStatusCode::UNAUTHORIZED,
         "invalid credentials".to_string(),
     )
+}
+
+/// 429 Too Many Requests with a `Retry-After` header carrying the
+/// number of seconds the client should wait before its next attempt.
+/// Used by the login rate limiter — see [`crate::rate_limit`].
+fn too_many_requests(retry_after: std::time::Duration) -> HttpError {
+    // Always at least one second so a client that obeys the header
+    // doesn't spin in a tight retry loop.
+    let secs = retry_after.as_secs().max(1);
+    let mut err = HttpError::for_client_error(
+        Some("TooManyRequests".to_string()),
+        ClientErrorStatusCode::TOO_MANY_REQUESTS,
+        "rate limited; slow down and retry shortly".to_string(),
+    );
+    let mut headers = http::HeaderMap::new();
+    if let Ok(value) = http::HeaderValue::from_str(&secs.to_string()) {
+        headers.insert(http::header::RETRY_AFTER, value);
+    }
+    err.headers = Some(Box::new(headers));
+    err
 }
 
 /// Map a [`StoreError`] to the appropriate HTTP response.
