@@ -102,6 +102,41 @@ pub struct Package {
     pub role_tag: Option<RoleTags>,
 }
 
+/// Query parameters for listing packages
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListPackagesQuery {
+    /// Filter by package name
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Filter by memory (MiB)
+    #[serde(default)]
+    pub memory: Option<u64>,
+    /// Filter by disk (MiB)
+    #[serde(default)]
+    pub disk: Option<u64>,
+    /// Filter by swap (MiB)
+    #[serde(default)]
+    pub swap: Option<u64>,
+    /// Filter by max lightweight processes
+    #[serde(default)]
+    pub lwps: Option<u32>,
+    /// Filter by virtual CPUs
+    #[serde(default)]
+    pub vcpus: Option<u32>,
+    /// Filter by version
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Filter by group
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Filter by flexible disk flag
+    #[serde(default)]
+    pub flexible_disk: Option<bool>,
+    /// Filter by brand
+    #[serde(default)]
+    pub brand: Option<String>,
+}
+
 /// Datacenter map: name -> URL
 ///
 /// The CloudAPI returns datacenters as a map where keys are datacenter names

@@ -10067,6 +10067,106 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Filter by brand",
+            "in": "query",
+            "name": "brand",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by disk (MiB)",
+            "in": "query",
+            "name": "disk",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by flexible disk flag",
+            "in": "query",
+            "name": "flexible_disk",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by group",
+            "in": "query",
+            "name": "group",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by max lightweight processes",
+            "in": "query",
+            "name": "lwps",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by memory (MiB)",
+            "in": "query",
+            "name": "memory",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by package name",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by swap (MiB)",
+            "in": "query",
+            "name": "swap",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by virtual CPUs",
+            "in": "query",
+            "name": "vcpus",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by version",
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10105,6 +10205,106 @@
             "name": "account",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by brand",
+            "in": "query",
+            "name": "brand",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by disk (MiB)",
+            "in": "query",
+            "name": "disk",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by flexible disk flag",
+            "in": "query",
+            "name": "flexible_disk",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by group",
+            "in": "query",
+            "name": "group",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by max lightweight processes",
+            "in": "query",
+            "name": "lwps",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by memory (MiB)",
+            "in": "query",
+            "name": "memory",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by package name",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by swap (MiB)",
+            "in": "query",
+            "name": "swap",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by virtual CPUs",
+            "in": "query",
+            "name": "vcpus",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by version",
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "nullable": true,
               "type": "string"
             }
           }
@@ -12425,6 +12625,53 @@
             "name": "account",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by volume name",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "JSON-encoded krill predicate expression",
+            "in": "query",
+            "name": "predicate",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by size (MiB)",
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by state",
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by volume type",
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "nullable": true,
               "type": "string"
             }
           }

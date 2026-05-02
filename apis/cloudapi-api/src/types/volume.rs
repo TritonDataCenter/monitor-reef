@@ -126,6 +126,26 @@ pub struct VolumeActionQuery {
     pub action: Option<VolumeAction>,
 }
 
+/// Query parameters for listing volumes
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListVolumesQuery {
+    /// Filter by volume name
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Filter by state
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Filter by size (MiB)
+    #[serde(default)]
+    pub size: Option<u64>,
+    /// Filter by volume type
+    #[serde(default, rename = "type")]
+    pub volume_type: Option<String>,
+    /// JSON-encoded krill predicate expression
+    #[serde(default)]
+    pub predicate: Option<String>,
+}
+
 /// Request to update volume
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateVolumeRequest {
