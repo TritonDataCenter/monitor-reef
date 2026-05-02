@@ -43,6 +43,11 @@
 //! subnet/by_id/<uuid>               -> JSON-encoded Subnet
 //! subnet/by_vpc/<vpc>/<name>        -> uuid hyphenated bytes
 //! subnet/in_vpc/<vpc>/<subnet>      -> empty (membership index)
+//! ssh_key/by_id/<uuid>              -> JSON-encoded SshKey
+//! ssh_key/by_silo/<silo>/<name>     -> uuid hyphenated bytes
+//! ssh_key/by_fingerprint/<silo>/<sha256-hex>
+//!                                   -> uuid hyphenated bytes
+//! ssh_key/in_silo/<silo>/<key>      -> empty (membership index)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -58,8 +63,8 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, NewSubnet, NewVpc, Project, Silo, Store, StoreError,
-    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey,
+    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -217,6 +222,26 @@ impl FdbStore {
 
     fn subnet_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
         format!("subnet/in_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn ssh_key_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("ssh_key/by_id/{id}").into_bytes()
+    }
+
+    fn ssh_key_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
+        format!("ssh_key/by_silo/{silo_id}/{name}").into_bytes()
+    }
+
+    fn ssh_key_by_fingerprint_key(silo_id: Uuid, fingerprint: &str) -> Vec<u8> {
+        format!("ssh_key/by_fingerprint/{silo_id}/{fingerprint}").into_bytes()
+    }
+
+    fn ssh_key_in_silo_key(silo_id: Uuid, key_id: Uuid) -> Vec<u8> {
+        format!("ssh_key/in_silo/{silo_id}/{key_id}").into_bytes()
+    }
+
+    fn ssh_key_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
+        format!("ssh_key/in_silo/{silo_id}/").into_bytes()
     }
 }
 
@@ -1286,6 +1311,174 @@ impl Store for FdbStore {
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_vpc_key);
+                    Ok(DelOut::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DelOut::Deleted) => Ok(()),
+            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_ssh_key(
+        &self,
+        silo_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError> {
+        let key = SshKey {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            public_key: req.public_key,
+            fingerprint: fingerprint.clone(),
+            created_at: Utc::now(),
+        };
+        let value = serde_json::to_vec(&key)
+            .map_err(|e| StoreError::Backend(format!("serialize ssh key: {e}")))?;
+        let by_id_key = Self::ssh_key_by_id_key(key.id);
+        let by_name_key = Self::ssh_key_by_silo_name_key(silo_id, &key.name);
+        let by_fp_key = Self::ssh_key_by_fingerprint_key(silo_id, &key.fingerprint);
+        let in_silo_key = Self::ssh_key_in_silo_key(silo_id, key.id);
+        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let id_str = key.id.to_string();
+
+        enum Outcome {
+            Created,
+            SiloMissing,
+            NameTaken,
+            FingerprintTaken,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let by_fp_key = by_fp_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                let silo_check_key = silo_check_key.clone();
+                let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                async move {
+                    if tr.get(&silo_check_key, false).await?.is_none() {
+                        return Ok(Outcome::SiloMissing);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    if tr.get(&by_fp_key, false).await?.is_some() {
+                        return Ok(Outcome::FingerprintTaken);
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&by_fp_key, &id_bytes);
+                    tr.set(&in_silo_key, b"");
+                    Ok(Outcome::Created)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created) => Ok(key),
+            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "ssh key with name {:?} already exists in silo {silo_id}",
+                req.name
+            ))),
+            Ok(Outcome::FingerprintTaken) => Err(StoreError::Conflict(format!(
+                "ssh key with fingerprint {fingerprint} already exists in silo {silo_id}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_ssh_key(&self, key_id: Uuid) -> Result<SshKey, StoreError> {
+        let key = Self::ssh_key_by_id_key(key_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize ssh key: {e}")))
+    }
+
+    async fn list_ssh_keys_in_silo(&self, silo_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
+        let prefix = Self::ssh_key_in_silo_prefix(silo_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("ssh key index uuid: {e}")))?;
+            let by_id_key = Self::ssh_key_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let key: SshKey = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize ssh key: {e}")))?;
+                out.push(key);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::ssh_key_by_id_key(key_id);
+        let bytes = match self.read_bytes(&by_id_key).await? {
+            Some(b) => b,
+            None => return Err(StoreError::NotFound),
+        };
+        let key: SshKey = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize ssh key: {e}")))?;
+        let by_name_key = Self::ssh_key_by_silo_name_key(key.silo_id, &key.name);
+        let by_fp_key = Self::ssh_key_by_fingerprint_key(key.silo_id, &key.fingerprint);
+        let in_silo_key = Self::ssh_key_in_silo_key(key.silo_id, key.id);
+
+        enum DelOut {
+            Deleted,
+            Vanished,
+        }
+        let outcome: Result<DelOut, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let by_fp_key = by_fp_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Ok(DelOut::Vanished);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&by_fp_key);
+                    tr.clear(&in_silo_key);
                     Ok(DelOut::Deleted)
                 }
             })

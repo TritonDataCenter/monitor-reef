@@ -31,8 +31,8 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, NewSubnet,
-    NewVpc, Project, Silo, Subnet, SystemKey, User, UserView, VPC_VNI_MAX,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, NewSshKey,
+    NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
@@ -288,4 +288,42 @@ pub trait Store: Send + Sync + 'static {
     /// Delete a subnet by id. Returns [`StoreError::NotFound`] if the
     /// id does not exist.
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // SSH keys (silo-scoped catalog)
+    // ------------------------------------------------------------------
+
+    /// Register an SSH key in a silo's catalog.
+    ///
+    /// The caller (the API layer) is responsible for parsing
+    /// `req.public_key` as openssh and computing the canonical
+    /// SHA-256 fingerprint. tritond-store stays free of ssh-key
+    /// crate dependencies; the store treats `public_key` as opaque
+    /// and trusts the supplied `fingerprint`.
+    ///
+    /// The store enforces:
+    ///
+    /// * The silo exists. Missing silo → [`StoreError::NotFound`].
+    /// * `name` is unique within the silo. Collision →
+    ///   [`StoreError::Conflict`].
+    /// * `fingerprint` is unique within the silo (re-uploading the
+    ///   same key under a new name is a Conflict so the catalog
+    ///   doesn't accumulate aliased pool entries).
+    async fn create_ssh_key(
+        &self,
+        silo_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError>;
+
+    /// Look up an SSH key by id. Returns [`StoreError::NotFound`]
+    /// when no such key exists, regardless of silo.
+    async fn get_ssh_key(&self, key_id: Uuid) -> Result<SshKey, StoreError>;
+
+    /// List every SSH key registered in a silo's catalog.
+    async fn list_ssh_keys_in_silo(&self, silo_id: Uuid) -> Result<Vec<SshKey>, StoreError>;
+
+    /// Delete an SSH key by id. Returns [`StoreError::NotFound`] if
+    /// the id does not exist.
+    async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError>;
 }

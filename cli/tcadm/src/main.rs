@@ -117,6 +117,47 @@ enum SiloCommand {
         #[command(subcommand)]
         command: SiloProjectCommand,
     },
+    /// Manage SSH keys registered in the silo's catalog.
+    SshKey {
+        #[command(subcommand)]
+        command: SiloSshKeyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloSshKeyCommand {
+    /// List SSH keys in the silo's catalog.
+    List {
+        silo_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new SSH key. Reads the openssh public-key string
+    /// from `--public-key-file` (one line) or `--public-key`.
+    Add {
+        silo_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// OpenSSH public key string (e.g. `ssh-ed25519 AAAA... user@host`).
+        #[arg(long, conflicts_with = "public_key_file")]
+        public_key: Option<String>,
+        /// Path to a file containing the openssh public key (one line).
+        #[arg(long, conflicts_with = "public_key")]
+        public_key_file: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single SSH key.
+    Get {
+        silo_id: Uuid,
+        ssh_key_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an SSH key.
+    Delete { silo_id: Uuid, ssh_key_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -607,6 +648,46 @@ async fn main() -> Result<()> {
                         }
                     },
                 },
+            },
+            SiloCommand::SshKey { command } => match command {
+                SiloSshKeyCommand::List { silo_id, json } => {
+                    commands::silo_ssh_key_list(cli.endpoint, cli.api_key, silo_id, json).await
+                }
+                SiloSshKeyCommand::Add {
+                    silo_id,
+                    name,
+                    description,
+                    public_key,
+                    public_key_file,
+                    json,
+                } => {
+                    commands::silo_ssh_key_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        silo_id,
+                        name,
+                        description,
+                        public_key,
+                        public_key_file,
+                        json,
+                    )
+                    .await
+                }
+                SiloSshKeyCommand::Get {
+                    silo_id,
+                    ssh_key_id,
+                    json,
+                } => {
+                    commands::silo_ssh_key_get(cli.endpoint, cli.api_key, silo_id, ssh_key_id, json)
+                        .await
+                }
+                SiloSshKeyCommand::Delete {
+                    silo_id,
+                    ssh_key_id,
+                } => {
+                    commands::silo_ssh_key_delete(cli.endpoint, cli.api_key, silo_id, ssh_key_id)
+                        .await
+                }
             },
         },
     }

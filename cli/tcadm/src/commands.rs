@@ -807,6 +807,136 @@ pub async fn silo_project_vpc_subnet_delete(
     Ok(())
 }
 
+/// List SSH keys in a silo's catalog.
+pub async fn silo_ssh_key_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let keys = client
+        .list_silo_ssh_keys()
+        .silo_id(silo_id)
+        .send()
+        .await
+        .context("list ssh keys")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&keys)?);
+        return Ok(());
+    }
+    if keys.is_empty() {
+        println!("(no ssh keys)");
+        return Ok(());
+    }
+    for k in keys {
+        println!("{}  {}  {}", k.id, k.fingerprint, k.name);
+    }
+    Ok(())
+}
+
+/// Register a new SSH key in a silo's catalog.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_ssh_key_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    name: String,
+    description: String,
+    public_key: Option<String>,
+    public_key_file: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let public_key = match (public_key, public_key_file) {
+        (Some(s), None) => s,
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .with_context(|| format!("read public key from {path}"))?,
+        (None, None) => {
+            anyhow::bail!("--public-key or --public-key-file is required")
+        }
+        (Some(_), Some(_)) => unreachable!("clap conflicts_with should prevent this"),
+    };
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let key = client
+        .create_silo_ssh_key()
+        .silo_id(silo_id)
+        .body(tritond_client::types::NewSshKey {
+            name,
+            description: Some(description),
+            public_key,
+        })
+        .send()
+        .await
+        .context("create ssh key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&key)?);
+    } else {
+        println!("Registered ssh key {} in silo {silo_id}", key.id);
+        println!("  name:        {}", key.name);
+        println!("  description: {}", key.description);
+        println!("  fingerprint: {}", key.fingerprint);
+        println!("  created:     {}", key.created_at);
+    }
+    Ok(())
+}
+
+/// Read a single SSH key.
+pub async fn silo_ssh_key_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    ssh_key_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let key = client
+        .get_silo_ssh_key()
+        .silo_id(silo_id)
+        .ssh_key_id(ssh_key_id)
+        .send()
+        .await
+        .context("get ssh key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&key)?);
+    } else {
+        println!("SshKey {} in silo {silo_id}", key.id);
+        println!("  name:        {}", key.name);
+        println!("  description: {}", key.description);
+        println!("  fingerprint: {}", key.fingerprint);
+        println!("  public_key:  {}", key.public_key);
+        println!("  created:     {}", key.created_at);
+    }
+    Ok(())
+}
+
+/// Delete an SSH key.
+pub async fn silo_ssh_key_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    ssh_key_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_silo_ssh_key()
+        .silo_id(silo_id)
+        .ssh_key_id(ssh_key_id)
+        .send()
+        .await
+        .context("delete ssh key")?;
+    println!("Deleted ssh key {ssh_key_id} from silo {silo_id}");
+    Ok(())
+}
+
 /// Walk the chain and recompute hashes.
 pub async fn audit_verify(
     endpoint_override: Option<String>,

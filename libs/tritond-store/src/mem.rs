@@ -18,8 +18,8 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, NewSubnet, NewVpc, Project, Silo, Store, StoreError,
-    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey,
+    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -55,6 +55,13 @@ struct Inner {
     /// `(vpc_id, name)` → subnet_id index for within-vpc name
     /// uniqueness.
     subnet_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    ssh_keys_by_id: HashMap<Uuid, SshKey>,
+    /// `(silo_id, name)` → key_id index for within-silo name
+    /// uniqueness.
+    ssh_key_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
+    /// `(silo_id, fingerprint)` → key_id index for within-silo
+    /// fingerprint uniqueness (no aliased pool entries).
+    ssh_key_id_by_silo_fingerprint: HashMap<(Uuid, String), Uuid>,
 }
 
 /// In-process [`Store`] implementation.
@@ -524,6 +531,78 @@ impl Store for MemStore {
         guard
             .subnet_id_by_vpc_name
             .remove(&(subnet.vpc_id, subnet.name));
+        Ok(())
+    }
+
+    async fn create_ssh_key(
+        &self,
+        silo_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.silos_by_id.contains_key(&silo_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (silo_id, req.name.clone());
+        if guard.ssh_key_id_by_silo_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with name {:?} already exists in silo {silo_id}",
+                req.name
+            )));
+        }
+        let fp_key = (silo_id, fingerprint.clone());
+        if guard.ssh_key_id_by_silo_fingerprint.contains_key(&fp_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with fingerprint {fingerprint} already exists in silo {silo_id}"
+            )));
+        }
+        let key = SshKey {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            public_key: req.public_key,
+            fingerprint,
+            created_at: Utc::now(),
+        };
+        guard.ssh_key_id_by_silo_name.insert(name_key, key.id);
+        guard.ssh_key_id_by_silo_fingerprint.insert(fp_key, key.id);
+        guard.ssh_keys_by_id.insert(key.id, key.clone());
+        Ok(key)
+    }
+
+    async fn get_ssh_key(&self, key_id: Uuid) -> Result<SshKey, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .ssh_keys_by_id
+            .get(&key_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_ssh_keys_in_silo(&self, silo_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(|k| k.silo_id == silo_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let key = guard
+            .ssh_keys_by_id
+            .remove(&key_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .ssh_key_id_by_silo_name
+            .remove(&(key.silo_id, key.name));
+        guard
+            .ssh_key_id_by_silo_fingerprint
+            .remove(&(key.silo_id, key.fingerprint));
         Ok(())
     }
 }
@@ -1509,6 +1588,160 @@ mod tests {
         // reuse it, but the second create cannot have collided.
         let _ = original_vni;
         let _ = recreated;
+    }
+
+    fn ssh_key_req(name: &str, public_key: &str) -> NewSshKey {
+        NewSshKey {
+            name: name.to_string(),
+            description: None,
+            public_key: public_key.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn ssh_key_round_trip_within_silo() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "tenants".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+
+        let key = store
+            .create_ssh_key(
+                silo.id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA test"),
+                "SHA256:abc".to_string(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(key.silo_id, silo.id);
+        assert_eq!(key.name, "ci");
+        assert_eq!(key.fingerprint, "SHA256:abc");
+
+        let fetched = store.get_ssh_key(key.id).await.unwrap();
+        assert_eq!(fetched, key);
+
+        let listed = store.list_ssh_keys_in_silo(silo.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, key.id);
+
+        store.delete_ssh_key(key.id).await.unwrap();
+        let err = store
+            .get_ssh_key(key.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn duplicate_ssh_key_name_within_silo_conflicts() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "x".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_ssh_key(
+                silo.id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA"),
+                "SHA256:a".to_string(),
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_ssh_key(
+                silo.id,
+                ssh_key_req("ci", "ssh-ed25519 BBBB"),
+                "SHA256:b".to_string(),
+            )
+            .await
+            .expect_err("duplicate name within silo conflicts");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn duplicate_ssh_key_fingerprint_within_silo_conflicts() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "x".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_ssh_key(
+                silo.id,
+                ssh_key_req("alice", "ssh-ed25519 AAAA"),
+                "SHA256:dup".to_string(),
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_ssh_key(
+                silo.id,
+                ssh_key_req("bob", "ssh-ed25519 AAAA"),
+                "SHA256:dup".to_string(),
+            )
+            .await
+            .expect_err("re-uploading same fingerprint under new name conflicts");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn same_ssh_key_in_different_silos_does_not_conflict() {
+        let store = MemStore::new();
+        let a = store
+            .create_silo(NewSilo {
+                name: "a".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let b = store
+            .create_silo(NewSilo {
+                name: "b".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        // Same name + same fingerprint in two different silos is OK.
+        store
+            .create_ssh_key(
+                a.id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA"),
+                "SHA256:x".to_string(),
+            )
+            .await
+            .unwrap();
+        store
+            .create_ssh_key(
+                b.id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA"),
+                "SHA256:x".to_string(),
+            )
+            .await
+            .expect("same key in a different silo must be allowed");
+    }
+
+    #[tokio::test]
+    async fn create_ssh_key_in_unknown_silo_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .create_ssh_key(
+                Uuid::new_v4(),
+                ssh_key_req("orphan", "ssh-ed25519 AAAA"),
+                "SHA256:x".to_string(),
+            )
+            .await
+            .expect_err("unknown silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     #[tokio::test]

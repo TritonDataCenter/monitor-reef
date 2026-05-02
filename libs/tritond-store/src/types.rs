@@ -379,6 +379,44 @@ impl From<ApiKey> for ApiKeyView {
     }
 }
 
+/// User-supplied SSH public key, registered in a silo's catalog so
+/// instance launches can pick keys to inject into authorized_keys.
+/// Phase 0 is silo-scoped (any user in the silo can pick from the
+/// pool). A future slice may add per-user ownership; the silo_id
+/// field is forward-compatible with that.
+///
+/// The server validates the openssh wire format at create time and
+/// computes the SHA-256 fingerprint. The raw `public_key` string is
+/// stored verbatim so it can be handed to cloud-init without
+/// reformatting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SshKey {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// OpenSSH-formatted public key — `<algo> <base64> [comment]`.
+    /// Server-validated at create time; rejected with 400 if the
+    /// `ssh-key` crate refuses to parse it.
+    pub public_key: String,
+    /// SHA-256 fingerprint, e.g. `SHA256:abcd...`. Server-computed
+    /// at create time and stored alongside the key for cheap
+    /// display / lookup. Never accepted on the wire.
+    pub fingerprint: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for registering a new SSH key in a silo's catalog.
+/// The server assigns `id`, `fingerprint`, and `created_at`; the
+/// owning silo comes from the URL path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewSshKey {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub public_key: String,
+}
+
 /// Cluster-level system keys. Phase 0 has exactly one
 /// (`SystemKey::JwtSigning`); future entries will include the
 /// transit-engine master key and any per-silo OIDC client secrets.

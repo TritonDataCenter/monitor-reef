@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewProject, NewSilo,
-    NewSubnet, NewVpc, Project, Silo, Subnet, Vpc,
+    NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -125,6 +125,14 @@ pub struct SiloProjectVpcSubnetPath {
     pub project_id: Uuid,
     pub vpc_id: Uuid,
     pub subnet_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single SSH key
+/// inside a silo.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloSshKeyPath {
+    pub silo_id: Uuid,
+    pub ssh_key_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -508,5 +516,55 @@ pub trait TritondApi {
     async fn delete_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectVpcSubnetPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List the SSH keys registered in a silo's catalog.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn list_silo_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+
+    /// Register an SSH key in a silo's catalog. The server parses
+    /// `public_key` as openssh format and computes the SHA-256
+    /// fingerprint. Returns 400 if the key cannot be parsed, 409
+    /// if the name or fingerprint is already in use within the silo.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn create_silo_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
+
+    /// Read a single SSH key. Returns 404 when the key does not
+    /// exist or belongs to a different silo.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}",
+        tags = ["ssh-keys"],
+    }]
+    async fn get_silo_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloSshKeyPath>,
+    ) -> Result<HttpResponseOk<SshKey>, HttpError>;
+
+    /// Delete an SSH key. Returns 404 when the key does not exist
+    /// or belongs to a different silo.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}",
+        tags = ["ssh-keys"],
+    }]
+    async fn delete_silo_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloSshKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 }

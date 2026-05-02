@@ -34,11 +34,11 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, TokenResponse,
-    TritondApi,
+    SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath,
+    TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, NewSubnet, NewVpc, Project,
-        Silo, Subnet, Vpc,
+        ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc,
+        Project, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1172,6 +1172,194 @@ impl TritondApi for TritondServiceImpl {
             .await;
         Ok(HttpResponseDeleted())
     }
+
+    async fn list_silo_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyList,
+            silo_id,
+        )
+        .await?;
+        let keys = ctx
+            .store
+            .list_ssh_keys_in_silo(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(keys))
+    }
+
+    async fn create_silo_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // Server-side parse + fingerprint compute. Bad openssh
+        // payload → 400, never propagated to the store.
+        let fingerprint = match parse_ssh_public_key(&req.public_key) {
+            Ok(fp) => fp,
+            Err(msg) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::SshKeyCreate,
+                        request_id,
+                        None,
+                        AuditOutcome::ClientError {
+                            code: 400,
+                            message: msg.clone(),
+                        },
+                        serde_json::json!({ "silo_id": silo_id }),
+                    )
+                    .await;
+                return Err(HttpError::for_bad_request(
+                    Some("BadRequest".to_string()),
+                    msg,
+                ));
+            }
+        };
+
+        match ctx.store.create_ssh_key(silo_id, req, fingerprint).await {
+            Ok(key) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::SshKeyCreate,
+                        request_id,
+                        Some(format!("SshKey::\"{}\"", key.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("SshKey::\"{}\"", key.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "name": key.name,
+                            "fingerprint": key.fingerprint,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(key))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::SshKeyCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_silo_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloSshKeyPath>,
+    ) -> Result<HttpResponseOk<SshKey>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloSshKeyPath {
+            silo_id,
+            ssh_key_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyGet,
+            silo_id,
+        )
+        .await?;
+        let key = ctx
+            .store
+            .get_ssh_key(ssh_key_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if key.silo_id != silo_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(key))
+    }
+
+    async fn delete_silo_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloSshKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloSshKeyPath {
+            silo_id,
+            ssh_key_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let key = ctx
+            .store
+            .get_ssh_key(ssh_key_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if key.silo_id != silo_id {
+            return Err(not_found());
+        }
+        ctx.store
+            .delete_ssh_key(ssh_key_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::SshKeyDelete,
+                request_id,
+                Some(format!("SshKey::\"{ssh_key_id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("SshKey::\"{ssh_key_id}\"")),
+                },
+                serde_json::json!({ "silo_id": silo_id }),
+            )
+            .await;
+        Ok(HttpResponseDeleted())
+    }
+}
+
+/// Parse an inbound openssh public-key string and return its
+/// canonical SHA-256 fingerprint. Returns `Err` with a user-facing
+/// message on parse failure (mapped to 400 by callers).
+fn parse_ssh_public_key(public_key: &str) -> Result<String, String> {
+    let parsed = ssh_key::PublicKey::from_openssh(public_key.trim())
+        .map_err(|e| format!("invalid openssh public key: {e}"))?;
+    Ok(parsed.fingerprint(ssh_key::HashAlg::Sha256).to_string())
 }
 
 /// Generic 404 "not found" used by the defence-in-depth path checks.

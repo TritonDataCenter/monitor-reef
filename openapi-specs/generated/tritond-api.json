@@ -1184,6 +1184,182 @@
           }
         }
       }
+    },
+    "/v2/silos/{silo_id}/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "List the SSH keys registered in a silo's catalog.",
+        "operationId": "list_silo_ssh_keys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_SshKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SshKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Register an SSH key in a silo's catalog. The server parses",
+        "description": "`public_key` as openssh format and computes the SHA-256 fingerprint. Returns 400 if the key cannot be parsed, 409 if the name or fingerprint is already in use within the silo.",
+        "operationId": "create_silo_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSshKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Read a single SSH key. Returns 404 when the key does not",
+        "description": "exist or belongs to a different silo.",
+        "operationId": "get_silo_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ssh_key_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Delete an SSH key. Returns 404 when the key does not exist",
+        "description": "or belongs to a different silo.",
+        "operationId": "delete_silo_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ssh_key_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1616,6 +1792,27 @@
           "name"
         ]
       },
+      "NewSshKey": {
+        "description": "Request body for registering a new SSH key in a silo's catalog. The server assigns `id`, `fingerprint`, and `created_at`; the owning silo comes from the URL path.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "public_key"
+        ]
+      },
       "NewSubnet": {
         "description": "Request body for creating a subnet. The owning silo, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
         "type": "object",
@@ -1841,6 +2038,47 @@
           "name"
         ]
       },
+      "SshKey": {
+        "description": "User-supplied SSH public key, registered in a silo's catalog so instance launches can pick keys to inject into authorized_keys. Phase 0 is silo-scoped (any user in the silo can pick from the pool). A future slice may add per-user ownership; the silo_id field is forward-compatible with that.\n\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "SHA-256 fingerprint, e.g. `SHA256:abcd...`. Server-computed at create time and stored alongside the key for cheap display / lookup. Never accepted on the wire.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_key": {
+            "description": "OpenSSH-formatted public key — `<algo> <base64> [comment]`. Server-validated at create time; rejected with 400 if the `ssh-key` crate refuses to parse it.",
+            "type": "string"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "fingerprint",
+          "id",
+          "name",
+          "public_key",
+          "silo_id"
+        ]
+      },
       "Subnet": {
         "description": "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`, `ipv6_block ⊆ vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet).",
         "type": "object",
@@ -2052,6 +2290,9 @@
     },
     {
       "name": "silos"
+    },
+    {
+      "name": "ssh-keys"
     },
     {
       "name": "subnets"

@@ -36,6 +36,7 @@ schemars = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+ssh-key = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -56,6 +57,7 @@ progenitor-client = { workspace = true }
 reqwest = { workspace = true }
 rsa = { workspace = true }
 serde_json = { workspace = true }
+ssh-key = { workspace = true }
 tritond-audit = { workspace = true }
 tritond-auth = { workspace = true }
 tritond-client = { workspace = true }

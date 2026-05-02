@@ -93,7 +93,11 @@ permit(
         Action::"subnet_list",
         Action::"subnet_create",
         Action::"subnet_get",
-        Action::"subnet_delete"
+        Action::"subnet_delete",
+        Action::"ssh_key_list",
+        Action::"ssh_key_create",
+        Action::"ssh_key_get",
+        Action::"ssh_key_delete"
     ],
     resource
 ) when {
@@ -209,6 +213,10 @@ pub enum Action {
     SubnetCreate,
     SubnetGet,
     SubnetDelete,
+    SshKeyList,
+    SshKeyCreate,
+    SshKeyGet,
+    SshKeyDelete,
 }
 
 impl Action {
@@ -244,6 +252,10 @@ impl Action {
             Action::SubnetCreate => "subnet_create",
             Action::SubnetGet => "subnet_get",
             Action::SubnetDelete => "subnet_delete",
+            Action::SshKeyList => "ssh_key_list",
+            Action::SshKeyCreate => "ssh_key_create",
+            Action::SshKeyGet => "ssh_key_get",
+            Action::SshKeyDelete => "ssh_key_delete",
         }
     }
 
