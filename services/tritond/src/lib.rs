@@ -2121,6 +2121,23 @@ impl TritondApi for TritondServiceImpl {
                         }),
                     )
                     .await;
+                // Best-effort agent cleanup of the SmartOS zone.
+                // Failure here is logged but doesn't fail the
+                // operator-visible delete — the tritond record
+                // is already gone.
+                if let Err(e) = ctx
+                    .store
+                    .enqueue_job(NewJob {
+                        kind: JobKind::Delete { instance_id },
+                    })
+                    .await
+                {
+                    tracing::warn!(
+                        %instance_id,
+                        error = %e,
+                        "instance delete record cleared, but enqueue of Delete job failed; zone may leak on the host",
+                    );
+                }
                 Ok(HttpResponseDeleted())
             }
             Err(e) => {
@@ -2970,32 +2987,38 @@ async fn drive_lifecycle_for_complete(
     job: &ProvisioningJob,
     outcome: &JobOutcome,
 ) {
+    // Delete jobs run *after* the tritond record is gone, so
+    // there is no lifecycle to transition. Skip cleanly to
+    // avoid a noisy "instance not found" warning that would
+    // fire on every successful zone teardown.
+    if matches!(job.kind, JobKind::Delete { .. }) {
+        return;
+    }
     let instance_id = job.kind.instance_id();
-    let (expected_from, target): (&[LifecycleStateKind], LifecycleState) = match (&job.kind, outcome)
-    {
-        (JobKind::Provision { .. }, JobOutcome::Completed) => (
-            &[LifecycleStateKind::Provisioning],
-            LifecycleState::Running,
-        ),
-        (JobKind::Stop { .. }, JobOutcome::Completed) => {
-            (&[LifecycleStateKind::Stopping], LifecycleState::Stopped)
-        }
-        (JobKind::Restart { .. }, JobOutcome::Completed) => {
-            (&[LifecycleStateKind::Stopping], LifecycleState::Running)
-        }
-        (_, JobOutcome::Failed { reason }) => (
-            &[
-                LifecycleStateKind::Pending,
-                LifecycleStateKind::Provisioning,
-                LifecycleStateKind::Stopping,
-                LifecycleStateKind::Running,
-            ],
-            LifecycleState::Failed {
-                reason: reason.clone(),
-            },
-        ),
-        _ => return,
-    };
+    let (expected_from, target): (&[LifecycleStateKind], LifecycleState) =
+        match (&job.kind, outcome) {
+            (JobKind::Provision { .. }, JobOutcome::Completed) => {
+                (&[LifecycleStateKind::Provisioning], LifecycleState::Running)
+            }
+            (JobKind::Stop { .. }, JobOutcome::Completed) => {
+                (&[LifecycleStateKind::Stopping], LifecycleState::Stopped)
+            }
+            (JobKind::Restart { .. }, JobOutcome::Completed) => {
+                (&[LifecycleStateKind::Stopping], LifecycleState::Running)
+            }
+            (_, JobOutcome::Failed { reason }) => (
+                &[
+                    LifecycleStateKind::Pending,
+                    LifecycleStateKind::Provisioning,
+                    LifecycleStateKind::Stopping,
+                    LifecycleStateKind::Running,
+                ],
+                LifecycleState::Failed {
+                    reason: reason.clone(),
+                },
+            ),
+            _ => return,
+        };
     if let Err(e) = store
         .transition_instance_lifecycle(instance_id, expected_from, target.clone())
         .await
@@ -3034,6 +3057,13 @@ async fn build_blueprint(
     // Stop / Restart only need the instance id; skip the full
     // resolve so a vanished image or NIC doesn't block the
     // agent from acting on a still-existing zone.
+    // Provision needs the full resolve (image, NICs, disks,
+    // ssh keys) so the agent can build a vmadm payload.
+    // Stop / Restart / Delete only need the instance id, which
+    // is on `job.kind`, so we short-circuit and let the agent
+    // act on the kind alone. Delete in particular runs *after*
+    // the tritond record is gone, so the instance lookup
+    // intentionally returns `instance: None`.
     let needs_full_resolve = matches!(job.kind, JobKind::Provision { .. });
     if !needs_full_resolve {
         return Ok(ProvisioningBlueprint {

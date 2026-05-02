@@ -187,8 +187,8 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
             size_bytes: 1_000_000_000,
             sha256: "0".repeat(64),
             source_url: Some("mantafs://images/ubuntu".to_string()),
-        id: None,
-    })
+            id: None,
+        })
         .send()
         .await
         .unwrap()
@@ -490,8 +490,8 @@ async fn cross_silo_image_returns_404() {
             size_bytes: 1,
             sha256: "0".repeat(64),
             source_url: None,
-        id: None,
-    })
+            id: None,
+        })
         .send()
         .await
         .unwrap()

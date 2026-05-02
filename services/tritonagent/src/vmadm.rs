@@ -126,6 +126,39 @@ pub async fn reboot_zone(instance_id: Uuid) -> Result<()> {
     run_simple(&["reboot", &instance_id.to_string()]).await
 }
 
+/// Run `vmadm delete <uuid>`. Used for `JobKind::Delete` jobs.
+///
+/// Idempotent on the "zone never existed" case: a non-zero exit
+/// whose stderr matches vmadm's not-found marker is treated as
+/// success. The control plane has already cleared the tritond
+/// record by the time this runs; the agent's job is to make
+/// the SmartOS side match. If the zone is gone for any reason
+/// (this agent's predecessor deleted it, host reset, …) the
+/// goal is met.
+pub async fn delete_zone(instance_id: Uuid) -> Result<()> {
+    let id = instance_id.to_string();
+    let output = Command::new("vmadm")
+        .arg("delete")
+        .arg(&id)
+        .output()
+        .await
+        .with_context(|| format!("spawn vmadm delete {id}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    // vmadm prints the not-found marker on stderr. Match by
+    // substring rather than exact text so a future vmadm
+    // wording tweak doesn't silently regress idempotency.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("vm-not-found") || stderr.contains("Unable to find") {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "vmadm delete {id} failed (exit {}): {stderr}",
+        output.status,
+    ))
+}
+
 async fn run_simple(args: &[&str]) -> Result<()> {
     let output = Command::new("vmadm")
         .args(args)

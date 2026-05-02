@@ -225,6 +225,13 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
         JobKind::Restart(instance_id) => {
             vmadm::reboot_zone(*instance_id).await?;
         }
+        JobKind::Delete(instance_id) => {
+            // The blueprint won't have an `instance` for Delete
+            // jobs (tritond's record is already cleared); the
+            // agent acts on the kind alone. `delete_zone` is
+            // idempotent against zone-not-found.
+            vmadm::delete_zone(*instance_id).await?;
+        }
     }
 
     Ok(())

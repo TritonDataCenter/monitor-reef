@@ -729,6 +729,17 @@ pub enum JobKind {
     /// Provisioning → Running. The agent is responsible for the
     /// whole cycle; the operator never sees Pending in between.
     Restart { instance_id: Uuid },
+    /// Best-effort `vmadm delete` follow-up, enqueued by the
+    /// `instance_delete` handler *after* the tritond record is
+    /// already cleared. The agent's vmadm-delete must be
+    /// idempotent — on a host where the zone never existed
+    /// (e.g. agent crashed before its prior Provision), the
+    /// agent reports `Completed` rather than `Failed`. v0
+    /// trade-off: if the agent is unreachable, the zone leaks
+    /// until an operator runs `vmadm delete` manually. A future
+    /// slice promotes this to a Deleting → Deleted lifecycle
+    /// gated on agent ack.
+    Delete { instance_id: Uuid },
 }
 
 impl JobKind {
@@ -739,7 +750,8 @@ impl JobKind {
         match self {
             JobKind::Provision { instance_id }
             | JobKind::Stop { instance_id }
-            | JobKind::Restart { instance_id } => *instance_id,
+            | JobKind::Restart { instance_id }
+            | JobKind::Delete { instance_id } => *instance_id,
         }
     }
 }

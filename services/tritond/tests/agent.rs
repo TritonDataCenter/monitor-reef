@@ -494,6 +494,183 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
     test.close().await;
 }
 
+/// Instance delete enqueues a `JobKind::Delete` job *in
+/// addition to* clearing the tritond record. The agent then
+/// gets to claim it and drive vmadm-delete on its own host.
+#[tokio::test]
+async fn instance_delete_enqueues_delete_job_for_agent() {
+    let test = TestServer::start().await;
+    let silo = test
+        .store
+        .create_silo(tritond_store::NewSilo {
+            name: "agent-delete".to_string(),
+            description: None,
+        })
+        .await
+        .unwrap();
+    let project = test
+        .store
+        .create_project(
+            silo.id,
+            tritond_store::NewProject {
+                name: "p1".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+    let image = test
+        .store
+        .create_image(
+            silo.id,
+            tritond_store::NewImage {
+                name: "img".to_string(),
+                description: None,
+                os: "smartos".to_string(),
+                version: "test".to_string(),
+                size_bytes: 1_000_000,
+                sha256: "0".repeat(64),
+                source_url: None,
+                id: None,
+            },
+        )
+        .await
+        .unwrap();
+    let vpc = test
+        .store
+        .create_vpc(
+            silo.id,
+            project.id,
+            tritond_store::NewVpc {
+                name: "v1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/24".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let subnet = test
+        .store
+        .create_subnet(
+            silo.id,
+            project.id,
+            vpc.id,
+            tritond_store::NewSubnet {
+                name: "s1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/29".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let created = test
+        .store
+        .create_instance(
+            silo.id,
+            project.id,
+            tritond_store::NewInstance {
+                name: "to-delete".to_string(),
+                description: None,
+                image_id: image.id,
+                primary_subnet_id: subnet.id,
+                ssh_key_ids: Vec::new(),
+                cpu: 1,
+                memory_bytes: 256 * 1024 * 1024,
+            },
+        )
+        .await
+        .unwrap();
+    let instance_id = created.instance.id;
+    // The store-side delete only accepts terminal states. Drive
+    // the test instance to Stopped directly so we can exercise
+    // the delete + Delete-job path without going through the
+    // full Provision → Running → Stop dance.
+    test.store
+        .transition_instance_lifecycle(
+            instance_id,
+            &[LifecycleStateKind::Pending],
+            LifecycleState::Stopped,
+        )
+        .await
+        .unwrap();
+
+    // Authenticated DELETE through the normal operator surface.
+    let anon = test.anonymous_client();
+    let token = anon
+        .login()
+        .body(LoginRequest {
+            username: "root".to_string(),
+            password: ROOT_PASSWORD.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let session = test.bearer_client(&token.access_token);
+    session
+        .delete_project_instance()
+        .silo_id(silo.id)
+        .project_id(project.id)
+        .instance_id(instance_id)
+        .send()
+        .await
+        .expect("delete should succeed");
+
+    // tritond's instance record is gone …
+    assert!(matches!(
+        test.store.get_instance(instance_id).await,
+        Err(tritond_store::StoreError::NotFound),
+    ));
+
+    // … and a Delete job is now waiting for an agent to claim.
+    let secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let agent = test.bearer_client(&secret);
+    let claimed = agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: "delete-agent".to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("queue should hold the Delete job we just enqueued");
+    match claimed.kind {
+        tritond_client::types::JobKind::Delete(target) => assert_eq!(target, instance_id),
+        other => panic!("expected Delete, got {other:?}"),
+    }
+
+    // The blueprint for a Delete job carries kind + None for
+    // everything else (the tritond record is gone).
+    let bp = agent
+        .agent_job_blueprint()
+        .job_id(claimed.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(bp.instance.is_none());
+    assert!(bp.image.is_none());
+    assert!(bp.nics.is_empty());
+
+    // Reporting Completed for a Delete is a clean exit (no
+    // lifecycle to advance — the instance is gone).
+    let _ = agent
+        .agent_complete_job()
+        .job_id(claimed.id)
+        .body(CompleteJobRequest {
+            outcome: JobOutcome::Completed,
+        })
+        .send()
+        .await
+        .unwrap();
+
+    test.close().await;
+}
+
 /// On `JobOutcome::Failed`, the lifecycle must land in
 /// `Failed { reason }` carrying the agent's reason verbatim.
 /// Tests the wildcard `expected_from` arm of the complete-side

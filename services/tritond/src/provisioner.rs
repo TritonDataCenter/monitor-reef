@@ -97,6 +97,11 @@ async fn process(job: &ProvisioningJob, store: &Arc<dyn Store>) -> JobOutcome {
         JobKind::Provision { instance_id } => provision(*instance_id, store).await,
         JobKind::Stop { instance_id } => stop(*instance_id, store).await,
         JobKind::Restart { instance_id } => restart(*instance_id, store).await,
+        // The stub has no SmartOS to talk to, so a Delete job is
+        // a no-op success — tritond's record is already gone by
+        // the time the job is enqueued, and there is no zone to
+        // destroy under the stub.
+        JobKind::Delete { .. } => Ok(()),
         // `JobKind` is `#[non_exhaustive]`; future variants will need
         // their own arms before the queue can usefully process them.
         _ => Err(format!("unsupported job kind: {:?}", job.kind)),
