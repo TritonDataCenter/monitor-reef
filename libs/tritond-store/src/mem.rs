@@ -18,6 +18,8 @@ use rand::Rng;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+#[cfg(test)]
+use crate::ApiKeyScope;
 use crate::{
     AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
     FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
@@ -1463,6 +1465,7 @@ mod tests {
             description: "ci".to_string(),
             lookup_id: "AAAAAAAAAAAA".to_string(),
             hash: "$hashA".to_string(),
+            scope: ApiKeyScope::Full,
             created_at: Utc::now(),
         };
         let key_b = ApiKey {
@@ -1471,6 +1474,7 @@ mod tests {
             description: "tf".to_string(),
             lookup_id: "BBBBBBBBBBBB".to_string(),
             hash: "$hashB".to_string(),
+            scope: ApiKeyScope::Full,
             created_at: Utc::now(),
         };
         store.create_api_key(key_a.clone()).await.unwrap();
@@ -1717,6 +1721,7 @@ mod tests {
             description: "dup".to_string(),
             lookup_id: "AAAAAAAAAAAA".to_string(),
             hash: "$hash".to_string(),
+            scope: ApiKeyScope::Full,
             created_at: Utc::now(),
         };
         store.create_api_key(make(Uuid::new_v4())).await.unwrap();

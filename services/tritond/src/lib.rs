@@ -362,6 +362,7 @@ impl TritondApi for TritondServiceImpl {
             description: req.description,
             lookup_id: material.lookup_id,
             hash: material.hash,
+            scope: req.scope,
             created_at: chrono::Utc::now(),
         };
         let saved = ctx
@@ -381,6 +382,7 @@ impl TritondApi for TritondServiceImpl {
                 serde_json::json!({
                     "description": saved.description,
                     "lookup_id": saved.lookup_id,
+                    "scope": saved.scope,
                 }),
             )
             .await;

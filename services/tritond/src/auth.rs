@@ -43,7 +43,7 @@ use tritond_auth::{
     JwtKey, OidcConfig, OidcVerifier, TokenKind, parse_api_key, peek_issuer, verify,
     verify_api_key_secret,
 };
-use tritond_store::{Federation, Store, StoreError, User};
+use tritond_store::{ApiKeyScope, Federation, Store, StoreError, User};
 use uuid::Uuid;
 
 use crate::audit::AuditService;
@@ -138,11 +138,16 @@ pub enum Principal {
     /// Authenticated operator or federated user. `is_root` is true
     /// for the bootstrap operator and any other cluster-wide
     /// account; `silo_id` is `Some(...)` for federated users (and,
-    /// in future, for silo-scoped admin operators).
+    /// in future, for silo-scoped admin operators). `scope` is
+    /// `Some(...)` only when the request authenticated via an API
+    /// key that carries an explicit permission scope; password-auth
+    /// (JWT) and OIDC paths set this to `None`, meaning "no
+    /// extra restriction beyond what Cedar already enforces."
     Operator {
         user_id: Uuid,
         is_root: bool,
         silo_id: Option<Uuid>,
+        scope: Option<ApiKeyScope>,
     },
     /// No valid credential was presented (or the presented one was
     /// invalid). Cedar will allow this principal only on
@@ -407,6 +412,9 @@ impl AuthService {
                     user_id: user.id,
                     is_root: user.is_root,
                     silo_id: user.silo_id,
+                    // JWT-authenticated principals carry the user's
+                    // full permissions; scope only applies to API keys.
+                    scope: None,
                 }),
                 Err(StoreError::NotFound) => Ok(Principal::Anonymous),
                 Err(e) => {
@@ -509,6 +517,9 @@ impl AuthService {
             user_id: user.id,
             is_root: user.is_root,
             silo_id: user.silo_id,
+            // OIDC-authenticated principals carry the user's full
+            // permissions; scope only applies to API keys.
+            scope: None,
         })
     }
 
@@ -543,6 +554,11 @@ impl AuthService {
                 user_id: user.id,
                 is_root: user.is_root,
                 silo_id: user.silo_id,
+                // The API key's scope rides along on the principal so
+                // [`AuthService::authorize`] can gate per-action without
+                // a second store round-trip. `Full` falls through as
+                // "no extra restriction" — see [`scope_allows_action`].
+                scope: Some(record.scope),
             }),
             Err(StoreError::NotFound) => Ok(Principal::Anonymous),
             Err(e) => {
@@ -555,7 +571,16 @@ impl AuthService {
     /// Evaluate the embedded Cedar policy against `System::"global"`.
     /// Returns `Ok(())` on permit, `Err(403)` on deny. Used for
     /// fleet-scoped actions (no silo in the URL path).
+    ///
+    /// API-key scope is checked *before* Cedar so a scoped key that
+    /// can never authorise the requested action is rejected without
+    /// loading the resource graph. The error shape matches Cedar
+    /// deny for the same action so callers can't distinguish
+    /// scope-deny from policy-deny via timing or status code.
     pub fn authorize(&self, principal: &Principal, action: Action) -> Result<(), HttpError> {
+        if !principal_scope_allows(principal, action) {
+            return Err(forbidden_for(action));
+        }
         let resource_uid = EntityUid::from_str("System::\"global\"")
             .map_err(|e| HttpError::for_internal_error(format!("resource uid: {e}")))?;
         let resource_entity = Entity::new(resource_uid.clone(), HashMap::new(), HashSet::new())
@@ -572,12 +597,19 @@ impl AuthService {
     /// Not Found** rather than 403 — a federated user from silo A
     /// hitting silo B's resources should not be able to learn that
     /// silo B exists.
+    ///
+    /// API-key scope is checked first; scope-deny on a silo-scoped
+    /// action returns 404 (matching cross-tenant deny) so a scoped
+    /// key can't be used to enumerate silos by attempting actions.
     pub fn authorize_in_silo(
         &self,
         principal: &Principal,
         action: Action,
         silo_id: Uuid,
     ) -> Result<(), HttpError> {
+        if !principal_scope_allows(principal, action) {
+            return Err(not_found_in_silo());
+        }
         let resource_uid = EntityUid::from_str(&format!("Silo::\"{silo_id}\""))
             .map_err(|e| HttpError::for_internal_error(format!("silo resource uid: {e}")))?;
         let mut attrs = HashMap::new();
@@ -623,6 +655,111 @@ impl AuthService {
             .authorizer
             .is_authorized(&request, &self.policy_set, &entities);
         Ok(response.decision())
+    }
+}
+
+/// `true` if the principal's API-key scope (if any) permits this
+/// action. Anonymous principals and JWT/OIDC operators (no scope)
+/// always pass — the rest of the gate falls to Cedar.
+fn principal_scope_allows(principal: &Principal, action: Action) -> bool {
+    match principal {
+        Principal::Operator {
+            scope: Some(scope), ..
+        } => scope_allows_action(*scope, action),
+        Principal::Operator { scope: None, .. } | Principal::Anonymous => true,
+    }
+}
+
+/// Map an [`ApiKeyScope`] to the set of actions it permits.
+///
+/// The match on `Action` is deliberately exhaustive (no `_` arm)
+/// so adding a new action elsewhere in the codebase is a compile
+/// error here until someone classifies it as read or write. That
+/// fail-loud behaviour is the point: a scoped key must never
+/// silently inherit permissions for a freshly-added action.
+///
+/// `ApiKeyScope` itself is `#[non_exhaustive]` (defined in the
+/// `tritond-store` crate), so we fall through with `_ => false` —
+/// any scope variant we haven't classified here denies all actions
+/// until it's explicitly handled. Fail-safe by default.
+fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
+    match scope {
+        ApiKeyScope::Full => true,
+        ApiKeyScope::ReadOnly => is_read_action(action),
+        ApiKeyScope::AuditOnly => matches!(
+            action,
+            Action::Health
+                | Action::Login
+                | Action::Refresh
+                | Action::AuditList
+                | Action::AuditFetch
+                | Action::AuditVerify
+        ),
+        _ => false,
+    }
+}
+
+/// Classify an [`Action`] as read or write. Read = list/get +
+/// the audit chain reads + the public-flow actions (login,
+/// refresh, health). Anything else is a write.
+fn is_read_action(action: Action) -> bool {
+    match action {
+        // Public / always-allowed at auth layer.
+        Action::Health | Action::Login | Action::Refresh => true,
+        // Read-only fleet & per-silo metadata.
+        Action::GetSilo
+        | Action::ListApiKeys
+        | Action::AuditList
+        | Action::AuditFetch
+        | Action::AuditVerify
+        | Action::SiloIdpGet => true,
+        // Read-only project & workload resources.
+        Action::ProjectList
+        | Action::ProjectGet
+        | Action::VpcList
+        | Action::VpcGet
+        | Action::SubnetList
+        | Action::SubnetGet
+        | Action::SshKeyList
+        | Action::SshKeyGet
+        | Action::ImageList
+        | Action::ImageGet
+        | Action::QuotaGet
+        | Action::InstanceList
+        | Action::InstanceGet
+        | Action::NicList
+        | Action::NicGet
+        | Action::DiskList
+        | Action::DiskGet
+        | Action::FloatingIpList
+        | Action::FloatingIpGet => true,
+        // Writes / state changes / admin: explicitly denied.
+        Action::CreateSilo
+        | Action::CreateApiKey
+        | Action::DeleteApiKey
+        | Action::SiloIdpSet
+        | Action::SiloIdpDelete
+        | Action::ProjectCreate
+        | Action::ProjectDelete
+        | Action::VpcCreate
+        | Action::VpcDelete
+        | Action::SubnetCreate
+        | Action::SubnetDelete
+        | Action::SshKeyCreate
+        | Action::SshKeyDelete
+        | Action::ImageCreate
+        | Action::ImageDelete
+        | Action::QuotaSet
+        | Action::QuotaDelete
+        | Action::InstanceCreate
+        | Action::InstanceDelete
+        | Action::InstanceStart
+        | Action::InstanceStop
+        | Action::InstanceRestart
+        | Action::FloatingIpCreate
+        | Action::FloatingIpDelete
+        | Action::FloatingIpAttach
+        | Action::FloatingIpDetach => false,
     }
 }
 
@@ -783,6 +920,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: true,
             silo_id: None,
+            scope: None,
         };
         for action in [
             Action::CreateSilo,
@@ -802,11 +940,54 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             silo_id: None,
+            scope: None,
         };
         assert!(auth.authorize(&p, Action::Health).is_ok());
         let err = auth
             .authorize(&p, Action::CreateSilo)
             .expect_err("non-root should be denied");
+        assert_eq!(err.status_code.as_status().as_u16(), 403);
+    }
+
+    #[tokio::test]
+    async fn read_only_scope_blocks_writes_even_for_root() {
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: true,
+            silo_id: None,
+            scope: Some(ApiKeyScope::ReadOnly),
+        };
+        // Reads pass.
+        assert!(auth.authorize(&p, Action::ListApiKeys).is_ok());
+        assert!(auth.authorize(&p, Action::GetSilo).is_ok());
+        // Writes are denied even though the underlying user is root.
+        let err = auth
+            .authorize(&p, Action::CreateSilo)
+            .expect_err("read-only scope must deny CreateSilo");
+        assert_eq!(err.status_code.as_status().as_u16(), 403);
+        let err = auth
+            .authorize(&p, Action::CreateApiKey)
+            .expect_err("read-only scope must deny CreateApiKey");
+        assert_eq!(err.status_code.as_status().as_u16(), 403);
+    }
+
+    #[tokio::test]
+    async fn audit_only_scope_permits_only_audit_reads() {
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: true,
+            silo_id: None,
+            scope: Some(ApiKeyScope::AuditOnly),
+        };
+        for action in [Action::AuditList, Action::AuditFetch, Action::AuditVerify] {
+            assert!(auth.authorize(&p, action).is_ok(), "denied {action:?}");
+        }
+        // Even read-only on resources is denied for an audit-only key.
+        let err = auth
+            .authorize(&p, Action::ListApiKeys)
+            .expect_err("audit-only scope must deny ListApiKeys");
         assert_eq!(err.status_code.as_status().as_u16(), 403);
     }
 

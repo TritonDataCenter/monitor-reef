@@ -2762,6 +2762,9 @@
             "type": "string",
             "format": "uuid"
           },
+          "scope": {
+            "$ref": "#/components/schemas/ApiKeyScope"
+          },
           "secret": {
             "type": "string"
           },
@@ -2774,8 +2777,35 @@
           "created_at",
           "description",
           "id",
+          "scope",
           "secret",
           "user_id"
+        ]
+      },
+      "ApiKeyScope": {
+        "description": "Permission scope attached to an [`ApiKey`]. Determines which Cedar actions the key may authorise *beyond* what its owning user could do natively. The scope check runs at the auth layer, before Cedar — see `services/tritond/src/auth.rs`. Mapping from scope to allowed actions is exhaustive there so the compiler flags any new [`crate::types`] action that hasn't been classified.\n\nRecords persisted before this field existed deserialise as [`ApiKeyScope::Full`] thanks to `#[serde(default)]` on [`ApiKey::scope`]; this preserves the pre-scope behaviour where every minted key had the full permissions of the owning user.",
+        "oneOf": [
+          {
+            "description": "Full access — equivalent to authenticating as the owning user. Default when no scope is specified.",
+            "type": "string",
+            "enum": [
+              "full"
+            ]
+          },
+          {
+            "description": "List/get on every resource, plus audit chain reads. Cannot mutate state, mint or delete API keys, or change IdP config. Useful for monitoring agents and read replicas.",
+            "type": "string",
+            "enum": [
+              "read_only"
+            ]
+          },
+          {
+            "description": "Audit chain reads only (`audit_list`, `audit_fetch`, `audit_verify`). Useful for compliance pipelines that should see \"who did what when\" but never the resources themselves.",
+            "type": "string",
+            "enum": [
+              "audit_only"
+            ]
+          }
         ]
       },
       "ApiKeyView": {
@@ -2793,6 +2823,9 @@
             "type": "string",
             "format": "uuid"
           },
+          "scope": {
+            "$ref": "#/components/schemas/ApiKeyScope"
+          },
           "user_id": {
             "type": "string",
             "format": "uuid"
@@ -2802,6 +2835,7 @@
           "created_at",
           "description",
           "id",
+          "scope",
           "user_id"
         ]
       },
@@ -3428,11 +3462,19 @@
         ]
       },
       "NewApiKey": {
-        "description": "Request body for `POST /v2/auth/api-keys`.",
+        "description": "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time.",
         "type": "object",
         "properties": {
           "description": {
             "type": "string"
+          },
+          "scope": {
+            "default": "full",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ApiKeyScope"
+              }
+            ]
           }
         },
         "required": [

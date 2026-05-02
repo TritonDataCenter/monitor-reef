@@ -28,9 +28,9 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, FloatingIp, IdpConfigView,
-    Image, Instance, NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota, NewSilo,
-    NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
+    ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, FloatingIp,
+    IdpConfigView, Image, Instance, NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota,
+    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -79,9 +79,18 @@ pub struct TokenResponse {
 }
 
 /// Request body for `POST /v2/auth/api-keys`.
+///
+/// `scope` defaults to [`ApiKeyScope::Full`] when omitted on the
+/// wire — preserves the pre-scope behaviour where every minted
+/// key has the full permissions of the owning user. Operators
+/// who want a least-privilege key (e.g. for a CI pipeline that
+/// only reads audit logs) pass `scope: "read_only"` or
+/// `scope: "audit_only"` at create time.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct NewApiKey {
     pub description: String,
+    #[serde(default)]
+    pub scope: ApiKeyScope,
 }
 
 /// Response body for `POST /v2/auth/api-keys`.

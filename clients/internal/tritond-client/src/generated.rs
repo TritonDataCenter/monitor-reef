@@ -243,6 +243,7 @@ pub mod types {
     #[doc = "    \"created_at\","]
     #[doc = "    \"description\","]
     #[doc = "    \"id\","]
+    #[doc = "    \"scope\","]
     #[doc = "    \"secret\","]
     #[doc = "    \"user_id\""]
     #[doc = "  ],"]
@@ -257,6 +258,9 @@ pub mod types {
     #[doc = "    \"id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ApiKeyScope\""]
     #[doc = "    },"]
     #[doc = "    \"secret\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -276,6 +280,7 @@ pub mod types {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
+        pub scope: ApiKeyScope,
         pub secret: ::std::string::String,
         pub user_id: ::uuid::Uuid,
     }
@@ -283,6 +288,111 @@ pub mod types {
     impl ApiKeyCreated {
         pub fn builder() -> builder::ApiKeyCreated {
             Default::default()
+        }
+    }
+
+    #[doc = "Permission scope attached to an [`ApiKey`]. Determines which Cedar actions the key may authorise *beyond* what its owning user could do natively. The scope check runs at the auth layer, before Cedar — see `services/tritond/src/auth.rs`. Mapping from scope to allowed actions is exhaustive there so the compiler flags any new [`crate::types`] action that hasn't been classified.\n\nRecords persisted before this field existed deserialise as [`ApiKeyScope::Full`] thanks to `#[serde(default)]` on [`ApiKey::scope`]; this preserves the pre-scope behaviour where every minted key had the full permissions of the owning user."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Permission scope attached to an [`ApiKey`]. Determines which Cedar actions the key may authorise *beyond* what its owning user could do natively. The scope check runs at the auth layer, before Cedar — see `services/tritond/src/auth.rs`. Mapping from scope to allowed actions is exhaustive there so the compiler flags any new [`crate::types`] action that hasn't been classified.\\n\\nRecords persisted before this field existed deserialise as [`ApiKeyScope::Full`] thanks to `#[serde(default)]` on [`ApiKey::scope`]; this preserves the pre-scope behaviour where every minted key had the full permissions of the owning user.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Full access — equivalent to authenticating as the owning user. Default when no scope is specified.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"full\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"List/get on every resource, plus audit chain reads. Cannot mutate state, mint or delete API keys, or change IdP config. Useful for monitoring agents and read replicas.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"read_only\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Audit chain reads only (`audit_list`, `audit_fetch`, `audit_verify`). Useful for compliance pipelines that should see \\\"who did what when\\\" but never the resources themselves.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"audit_only\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum ApiKeyScope {
+        #[doc = "Full access — equivalent to authenticating as the owning user. Default when no scope is specified."]
+        #[serde(rename = "full")]
+        Full,
+        #[doc = "List/get on every resource, plus audit chain reads. Cannot mutate state, mint or delete API keys, or change IdP config. Useful for monitoring agents and read replicas."]
+        #[serde(rename = "read_only")]
+        ReadOnly,
+        #[doc = "Audit chain reads only (`audit_list`, `audit_fetch`, `audit_verify`). Useful for compliance pipelines that should see \"who did what when\" but never the resources themselves."]
+        #[serde(rename = "audit_only")]
+        AuditOnly,
+    }
+
+    impl ::std::fmt::Display for ApiKeyScope {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Full => f.write_str("full"),
+                Self::ReadOnly => f.write_str("read_only"),
+                Self::AuditOnly => f.write_str("audit_only"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for ApiKeyScope {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "full" => Ok(Self::Full),
+                "read_only" => Ok(Self::ReadOnly),
+                "audit_only" => Ok(Self::AuditOnly),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for ApiKeyScope {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for ApiKeyScope {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for ApiKeyScope {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -298,6 +408,7 @@ pub mod types {
     #[doc = "    \"created_at\","]
     #[doc = "    \"description\","]
     #[doc = "    \"id\","]
+    #[doc = "    \"scope\","]
     #[doc = "    \"user_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -311,6 +422,9 @@ pub mod types {
     #[doc = "    \"id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/ApiKeyScope\""]
     #[doc = "    },"]
     #[doc = "    \"user_id\": {"]
     #[doc = "      \"type\": \"string\","]
@@ -327,6 +441,7 @@ pub mod types {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
+        pub scope: ApiKeyScope,
         pub user_id: ::uuid::Uuid,
     }
 
@@ -1528,13 +1643,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/auth/api-keys`."]
+    #[doc = "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/auth/api-keys`.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v2/auth/api-keys`.\\n\\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \\\"read_only\\\"` or `scope: \\\"audit_only\\\"` at create time.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"description\""]
@@ -1542,6 +1657,14 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"default\": \"full\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ApiKeyScope\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1552,6 +1675,8 @@ pub mod types {
     )]
     pub struct NewApiKey {
         pub description: ::std::string::String,
+        #[serde(default = "defaults::new_api_key_scope")]
+        pub scope: ApiKeyScope,
     }
 
     impl NewApiKey {
@@ -2933,6 +3058,7 @@ pub mod types {
             >,
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            scope: ::std::result::Result<super::ApiKeyScope, ::std::string::String>,
             secret: ::std::result::Result<::std::string::String, ::std::string::String>,
             user_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
@@ -2943,6 +3069,7 @@ pub mod types {
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
                     secret: Err("no value supplied for secret".to_string()),
                     user_id: Err("no value supplied for user_id".to_string()),
                 }
@@ -2980,6 +3107,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
                 self
             }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ApiKeyScope>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
             pub fn secret<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -3011,6 +3148,7 @@ pub mod types {
                     created_at: value.created_at?,
                     description: value.description?,
                     id: value.id?,
+                    scope: value.scope?,
                     secret: value.secret?,
                     user_id: value.user_id?,
                 })
@@ -3023,6 +3161,7 @@ pub mod types {
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
                     id: Ok(value.id),
+                    scope: Ok(value.scope),
                     secret: Ok(value.secret),
                     user_id: Ok(value.user_id),
                 }
@@ -3037,6 +3176,7 @@ pub mod types {
             >,
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            scope: ::std::result::Result<super::ApiKeyScope, ::std::string::String>,
             user_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
@@ -3046,6 +3186,7 @@ pub mod types {
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
                     user_id: Err("no value supplied for user_id".to_string()),
                 }
             }
@@ -3082,6 +3223,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for id: {e}"));
                 self
             }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ApiKeyScope>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
             pub fn user_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -3103,6 +3254,7 @@ pub mod types {
                     created_at: value.created_at?,
                     description: value.description?,
                     id: value.id?,
+                    scope: value.scope?,
                     user_id: value.user_id?,
                 })
             }
@@ -3114,6 +3266,7 @@ pub mod types {
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
                     id: Ok(value.id),
+                    scope: Ok(value.scope),
                     user_id: Ok(value.user_id),
                 }
             }
@@ -4625,12 +4778,14 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct NewApiKey {
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            scope: ::std::result::Result<super::ApiKeyScope, ::std::string::String>,
         }
 
         impl ::std::default::Default for NewApiKey {
             fn default() -> Self {
                 Self {
                     description: Err("no value supplied for description".to_string()),
+                    scope: Ok(super::defaults::new_api_key_scope()),
                 }
             }
         }
@@ -4646,6 +4801,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for description: {e}"));
                 self
             }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ApiKeyScope>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<NewApiKey> for super::NewApiKey {
@@ -4655,6 +4820,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     description: value.description?,
+                    scope: value.scope?,
                 })
             }
         }
@@ -4663,6 +4829,7 @@ pub mod types {
             fn from(value: super::NewApiKey) -> Self {
                 Self {
                     description: Ok(value.description),
+                    scope: Ok(value.scope),
                 }
             }
         }
@@ -6694,6 +6861,13 @@ pub mod types {
                     vni: Ok(value.vni),
                 }
             }
+        }
+    }
+
+    #[doc = r" Generation of default values for serde."]
+    pub mod defaults {
+        pub(super) fn new_api_key_scope() -> super::ApiKeyScope {
+            super::ApiKeyScope::Full
         }
     }
 }

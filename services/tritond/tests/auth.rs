@@ -248,6 +248,7 @@ async fn api_key_create_then_use_round_trip() {
         .create_api_key()
         .body(NewApiKey {
             description: "ci-pipeline".to_string(),
+            scope: tritond_client::types::ApiKeyScope::Full,
         })
         .send()
         .await
@@ -255,6 +256,7 @@ async fn api_key_create_then_use_round_trip() {
         .into_inner();
     assert!(created.secret.starts_with("tcadm_"));
     assert_eq!(created.description, "ci-pipeline");
+    assert_eq!(created.scope, tritond_client::types::ApiKeyScope::Full);
 
     // List confirms the key is there but the response shape carries
     // no secret material.

@@ -343,6 +343,35 @@ impl From<User> for UserView {
     }
 }
 
+/// Permission scope attached to an [`ApiKey`]. Determines which
+/// Cedar actions the key may authorise *beyond* what its owning
+/// user could do natively. The scope check runs at the auth layer,
+/// before Cedar — see `services/tritond/src/auth.rs`. Mapping from
+/// scope to allowed actions is exhaustive there so the compiler
+/// flags any new [`crate::types`] action that hasn't been classified.
+///
+/// Records persisted before this field existed deserialise as
+/// [`ApiKeyScope::Full`] thanks to `#[serde(default)]` on
+/// [`ApiKey::scope`]; this preserves the pre-scope behaviour where
+/// every minted key had the full permissions of the owning user.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ApiKeyScope {
+    /// Full access — equivalent to authenticating as the owning user.
+    /// Default when no scope is specified.
+    #[default]
+    Full,
+    /// List/get on every resource, plus audit chain reads. Cannot
+    /// mutate state, mint or delete API keys, or change IdP config.
+    /// Useful for monitoring agents and read replicas.
+    ReadOnly,
+    /// Audit chain reads only (`audit_list`, `audit_fetch`,
+    /// `audit_verify`). Useful for compliance pipelines that should
+    /// see "who did what when" but never the resources themselves.
+    AuditOnly,
+}
+
 /// API key record. Storage carries the bcrypt hash of the secret
 /// segment plus the non-secret `lookup_id` used to find the record
 /// in O(1). Plaintext is shown to the operator exactly once at
@@ -359,6 +388,10 @@ pub struct ApiKey {
     pub lookup_id: String,
     /// Bcrypt hash of the secret segment of the wire-form key.
     pub hash: String,
+    /// Permission scope. Records written before this field existed
+    /// deserialise as [`ApiKeyScope::Full`].
+    #[serde(default)]
+    pub scope: ApiKeyScope,
     pub created_at: DateTime<Utc>,
 }
 
@@ -368,6 +401,7 @@ pub struct ApiKeyView {
     pub id: Uuid,
     pub user_id: Uuid,
     pub description: String,
+    pub scope: ApiKeyScope,
     pub created_at: DateTime<Utc>,
 }
 
@@ -377,6 +411,7 @@ impl From<ApiKey> for ApiKeyView {
             id: key.id,
             user_id: key.user_id,
             description: key.description,
+            scope: key.scope,
             created_at: key.created_at,
         }
     }

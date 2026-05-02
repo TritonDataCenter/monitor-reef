@@ -8,7 +8,18 @@
 
 use anyhow::{Context, Result};
 use tritond_client::Client;
-use tritond_client::types::{LoginRequest, NewApiKey, TokenResponse};
+use tritond_client::types::{ApiKeyScope, LoginRequest, NewApiKey, TokenResponse};
+
+/// Wire-format label for an API-key scope. Matches the JSON
+/// serialisation (`full`, `read_only`, `audit_only`) so operators
+/// see the same string they'd type into a JSON request body.
+fn scope_label(scope: &ApiKeyScope) -> &'static str {
+    match scope {
+        ApiKeyScope::Full => "full",
+        ApiKeyScope::ReadOnly => "read_only",
+        ApiKeyScope::AuditOnly => "audit_only",
+    }
+}
 use uuid::Uuid;
 
 use crate::config::{Config, Tokens};
@@ -143,13 +154,14 @@ pub async fn api_key_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
     description: String,
+    scope: ApiKeyScope,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let response = client
         .create_api_key()
-        .body(NewApiKey { description })
+        .body(NewApiKey { description, scope })
         .send()
         .await
         .context("create api key")?
@@ -161,6 +173,7 @@ pub async fn api_key_create(
         println!("API key created.");
         println!("  id:          {}", response.id);
         println!("  description: {}", response.description);
+        println!("  scope:       {}", scope_label(&response.scope));
         println!("  created:     {}", response.created_at);
         println!();
         println!("  secret: {}", response.secret);
@@ -194,7 +207,13 @@ pub async fn api_key_list(
         return Ok(());
     }
     for key in keys {
-        println!("{}  {}  {}", key.id, key.created_at, key.description);
+        println!(
+            "{}  {}  scope={}  {}",
+            key.id,
+            key.created_at,
+            scope_label(&key.scope),
+            key.description,
+        );
     }
     Ok(())
 }

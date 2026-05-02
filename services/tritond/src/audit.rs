@@ -197,6 +197,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             silo_id: None,
+            scope: None,
         };
         let emitted = svc
             .record_decision(&principal, Action::CreateSilo, None, Decision::Deny)

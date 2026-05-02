@@ -31,12 +31,12 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    AddressFamily, ApiKey, ApiKeyView, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
-    Federation, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView, Image, Instance,
-    InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
-    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
-    Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, Disk, DiskKind, FLOATING_IP_V4_POOL,
+    FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView,
+    Image, Instance, InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind,
+    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
+    NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
+    SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;

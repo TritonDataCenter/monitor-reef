@@ -632,6 +632,11 @@ enum ApiKeyCommand {
         /// Free-text label, e.g. `ci-pipeline`.
         #[arg(long)]
         description: String,
+        /// Permission scope. `full` (default) acts as the owning
+        /// user; `read-only` restricts to list/get + audit reads;
+        /// `audit-only` restricts to audit-chain reads only.
+        #[arg(long, value_enum, default_value_t = ApiKeyScopeArg::Full)]
+        scope: ApiKeyScopeArg,
         /// Emit JSON instead of the human-readable form.
         #[arg(long)]
         json: bool,
@@ -643,6 +648,27 @@ enum ApiKeyCommand {
     },
     /// Delete one of the calling user's API keys by id.
     Delete { api_key_id: Uuid },
+}
+
+/// CLI mirror of [`tritond_client::types::ApiKeyScope`]. Kept
+/// separate so the clap-derived value-name (`read-only`,
+/// `audit-only`) can use kebab-case while the wire format stays
+/// snake_case.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum ApiKeyScopeArg {
+    Full,
+    ReadOnly,
+    AuditOnly,
+}
+
+impl From<ApiKeyScopeArg> for tritond_client::types::ApiKeyScope {
+    fn from(arg: ApiKeyScopeArg) -> Self {
+        match arg {
+            ApiKeyScopeArg::Full => tritond_client::types::ApiKeyScope::Full,
+            ApiKeyScopeArg::ReadOnly => tritond_client::types::ApiKeyScope::ReadOnly,
+            ApiKeyScopeArg::AuditOnly => tritond_client::types::ApiKeyScope::AuditOnly,
+        }
+    }
 }
 
 #[tokio::main]
@@ -691,8 +717,13 @@ async fn main() -> Result<()> {
         Commands::Logout => commands::logout(),
         Commands::Env => commands::env(cli.endpoint, cli.api_key).await,
         Commands::ApiKey { command } => match command {
-            ApiKeyCommand::Create { description, json } => {
-                commands::api_key_create(cli.endpoint, cli.api_key, description, json).await
+            ApiKeyCommand::Create {
+                description,
+                scope,
+                json,
+            } => {
+                commands::api_key_create(cli.endpoint, cli.api_key, description, scope.into(), json)
+                    .await
             }
             ApiKeyCommand::List { json } => {
                 commands::api_key_list(cli.endpoint, cli.api_key, json).await
