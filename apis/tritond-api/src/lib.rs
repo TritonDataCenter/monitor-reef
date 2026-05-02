@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewProject, NewSilo,
-    NewVpc, Project, Silo, Vpc,
+    NewSubnet, NewVpc, Project, Silo, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -115,6 +115,16 @@ pub struct SiloProjectVpcPath {
     pub silo_id: Uuid,
     pub project_id: Uuid,
     pub vpc_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single subnet
+/// inside a VPC inside a project inside a silo.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectVpcSubnetPath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub subnet_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -434,7 +444,9 @@ pub trait TritondApi {
     ) -> Result<HttpResponseOk<Vpc>, HttpError>;
 
     /// Delete a VPC. Returns 404 when the VPC does not exist or
-    /// belongs to a different silo or project.
+    /// belongs to a different silo or project. Returns 409 if the
+    /// VPC still has subnets attached — operators must clear subnets
+    /// before deleting the parent VPC (Phase 0 has no cascade).
     #[endpoint {
         method = DELETE,
         path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}",
@@ -443,5 +455,58 @@ pub trait TritondApi {
     async fn delete_project_vpc(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectVpcPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List the subnets inside a VPC. Returns 404 when the silo,
+    /// project, or VPC does not exist (or is in the wrong parent).
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
+        tags = ["subnets"],
+    }]
+    async fn list_vpc_subnets(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError>;
+
+    /// Create a subnet in a VPC. Returns 400 if neither
+    /// `ipv4_block` nor `ipv6_block` is provided. Returns 409 if a
+    /// subnet with the same name already exists in the VPC, if a
+    /// CIDR is not contained in the parent VPC's matching-family
+    /// CIDR, or if a CIDR overlaps an existing subnet's CIDR. The
+    /// server assigns `id` and `created_at`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
+        tags = ["subnets"],
+    }]
+    async fn create_vpc_subnet(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+        body: TypedBody<NewSubnet>,
+    ) -> Result<HttpResponseCreated<Subnet>, HttpError>;
+
+    /// Read a single subnet. Returns 404 when the subnet does not
+    /// exist or belongs to a different silo, project, or VPC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
+        tags = ["subnets"],
+    }]
+    async fn get_vpc_subnet(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcSubnetPath>,
+    ) -> Result<HttpResponseOk<Subnet>, HttpError>;
+
+    /// Delete a subnet. Returns 404 when the subnet does not exist
+    /// or belongs to a different silo, project, or VPC.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
+        tags = ["subnets"],
+    }]
+    async fn delete_vpc_subnet(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 }

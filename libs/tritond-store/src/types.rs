@@ -196,6 +196,120 @@ pub struct NewVpc {
     pub ipv6_block: Option<Ipv6Network>,
 }
 
+/// Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its
+/// parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist
+/// per VPC; their CIDRs must not overlap. NIC attach points to a
+/// specific subnet at instance-launch time.
+///
+/// Invariants enforced at create time:
+/// * Every present subnet CIDR must be a strict subnet of the parent
+///   VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`,
+///   `ipv6_block ⊆ vpc.ipv6_block`).
+/// * No subnet CIDR (in either family) may overlap an existing
+///   subnet CIDR in the same VPC.
+/// * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and
+///   each present family must also be present on the parent VPC
+///   (an IPv4-only VPC cannot host an IPv6 subnet).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Subnet {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// IPv4 CIDR for this subnet. Must be a subnet of the parent
+    /// VPC's `ipv4_block`, and must not overlap any other subnet's
+    /// IPv4 CIDR in the same VPC.
+    #[schemars(with = "Option<String>")]
+    pub ipv4_block: Option<Ipv4Network>,
+    /// IPv6 CIDR for this subnet. Must be a subnet of the parent
+    /// VPC's `ipv6_block`, and must not overlap any other subnet's
+    /// IPv6 CIDR in the same VPC.
+    #[schemars(with = "Option<String>")]
+    pub ipv6_block: Option<Ipv6Network>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating a subnet. The owning silo, project, and
+/// VPC come from the URL path. The server assigns `id` and
+/// `created_at`. At least one of `ipv4_block` / `ipv6_block` must be
+/// `Some`; the API rejects requests with both `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewSubnet {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub ipv4_block: Option<Ipv4Network>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub ipv6_block: Option<Ipv6Network>,
+}
+
+/// Validate a candidate subnet's CIDRs against its parent VPC and the
+/// peer subnets already in the same VPC. Shared by both store
+/// backends (`MemStore` and `FdbStore`) so the invariants stay in
+/// lockstep.
+///
+/// Returns the conflict-message string on violation. The caller is
+/// expected to have already validated that at least one of
+/// `ipv4_block` / `ipv6_block` is `Some` — that's an API-edge concern,
+/// not a per-backend one.
+pub(crate) fn validate_subnet_cidrs(
+    vpc: &Vpc,
+    ipv4_block: Option<Ipv4Network>,
+    ipv6_block: Option<Ipv6Network>,
+    peers: &[Subnet],
+) -> Result<(), String> {
+    if let Some(v4) = ipv4_block {
+        let parent = vpc.ipv4_block.ok_or_else(|| {
+            format!(
+                "subnet has ipv4_block but parent vpc {} has no IPv4 plan",
+                vpc.id
+            )
+        })?;
+        if !v4.is_subnet_of(parent) {
+            return Err(format!(
+                "subnet ipv4_block {v4} is not contained in vpc ipv4_block {parent}"
+            ));
+        }
+    }
+    if let Some(v6) = ipv6_block {
+        let parent = vpc.ipv6_block.ok_or_else(|| {
+            format!(
+                "subnet has ipv6_block but parent vpc {} has no IPv6 plan",
+                vpc.id
+            )
+        })?;
+        if !v6.is_subnet_of(parent) {
+            return Err(format!(
+                "subnet ipv6_block {v6} is not contained in vpc ipv6_block {parent}"
+            ));
+        }
+    }
+    for peer in peers {
+        if let (Some(v4), Some(peer_v4)) = (ipv4_block, peer.ipv4_block)
+            && v4.overlaps(peer_v4)
+        {
+            return Err(format!(
+                "subnet ipv4_block {v4} overlaps existing subnet {} ipv4_block {peer_v4}",
+                peer.id
+            ));
+        }
+        if let (Some(v6), Some(peer_v6)) = (ipv6_block, peer.ipv6_block)
+            && v6.overlaps(peer_v6)
+        {
+            return Err(format!(
+                "subnet ipv6_block {v6} overlaps existing subnet {} ipv6_block {peer_v6}",
+                peer.id
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl From<IdpConfig> for IdpConfigView {
     fn from(config: IdpConfig) -> Self {
         IdpConfigView {

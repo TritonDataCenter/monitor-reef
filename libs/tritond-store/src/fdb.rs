@@ -40,6 +40,9 @@
 //! vpc/by_project/<proj>/<name>      -> uuid hyphenated bytes
 //! vpc/in_project/<proj>/<vpc>       -> empty (membership index)
 //! vpc/by_vni/<vni-hex8>             -> uuid hyphenated bytes
+//! subnet/by_id/<uuid>               -> JSON-encoded Subnet
+//! subnet/by_vpc/<vpc>/<name>        -> uuid hyphenated bytes
+//! subnet/in_vpc/<vpc>/<subnet>      -> empty (membership index)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -55,8 +58,8 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, NewVpc, Project, Silo, Store, StoreError, SystemKey,
-    User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, NewProject, NewSilo, NewSubnet, NewVpc, Project, Silo, Store, StoreError,
+    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -198,6 +201,22 @@ impl FdbStore {
 
     fn vpc_by_vni_key(vni: u32) -> Vec<u8> {
         format!("vpc/by_vni/{vni:08x}").into_bytes()
+    }
+
+    fn subnet_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("subnet/by_id/{id}").into_bytes()
+    }
+
+    fn subnet_by_vpc_name_key(vpc_id: Uuid, name: &str) -> Vec<u8> {
+        format!("subnet/by_vpc/{vpc_id}/{name}").into_bytes()
+    }
+
+    fn subnet_in_vpc_key(vpc_id: Uuid, subnet_id: Uuid) -> Vec<u8> {
+        format!("subnet/in_vpc/{vpc_id}/{subnet_id}").into_bytes()
+    }
+
+    fn subnet_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
+        format!("subnet/in_vpc/{vpc_id}/").into_bytes()
     }
 }
 
@@ -988,10 +1007,13 @@ impl Store for FdbStore {
         let by_name_key = Self::vpc_by_project_name_key(vpc.project_id, &vpc.name);
         let in_project_key = Self::vpc_in_project_key(vpc.project_id, vpc.id);
         let by_vni_key = Self::vpc_by_vni_key(vpc.vni);
+        let subnet_prefix = Self::subnet_in_vpc_prefix(vpc_id);
+        let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
 
         enum DelOut {
             Deleted,
             Vanished,
+            HasSubnets,
         }
         let outcome: Result<DelOut, FdbBindingError> = self
             .db
@@ -1000,9 +1022,24 @@ impl Store for FdbStore {
                 let by_name_key = by_name_key.clone();
                 let in_project_key = in_project_key.clone();
                 let by_vni_key = by_vni_key.clone();
+                let subnet_begin = subnet_begin.clone();
+                let subnet_end = subnet_end.clone();
                 async move {
                     if tr.get(&by_id_key, false).await?.is_none() {
                         return Ok(DelOut::Vanished);
+                    }
+                    // Refuse the delete if any subnet still references
+                    // this VPC. Operator must drop subnets first; no
+                    // cascade in Phase 0.
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(subnet_begin),
+                        end: KeySelector::first_greater_or_equal(subnet_end),
+                        limit: Some(1),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    if kvs.iter().next().is_some() {
+                        return Ok(DelOut::HasSubnets);
                     }
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
@@ -1016,9 +1053,257 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Ok(DelOut::HasSubnets) => Err(StoreError::Conflict(format!(
+                "vpc {vpc_id} still has subnets attached; delete subnets first"
+            ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
+
+    async fn create_subnet(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewSubnet,
+    ) -> Result<Subnet, StoreError> {
+        let vpc_check_key = Self::vpc_by_id_key(vpc_id);
+        let subnet_prefix = Self::subnet_in_vpc_prefix(vpc_id);
+        let (peer_begin, peer_end) = prefix_range(&subnet_prefix);
+
+        // The candidate is finalized inside the transaction so
+        // `created_at` and the new uuid are stable across the run.
+        let candidate_id = Uuid::new_v4();
+        let by_id_key = Self::subnet_by_id_key(candidate_id);
+        let by_name_key = Self::subnet_by_vpc_name_key(vpc_id, &req.name);
+        let in_vpc_key = Self::subnet_in_vpc_key(vpc_id, candidate_id);
+        let id_str = candidate_id.to_string();
+
+        enum Outcome {
+            Created(Subnet),
+            VpcMissingOrWrongParent,
+            CidrViolation(String),
+            NameTaken,
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let vpc_check_key = vpc_check_key.clone();
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_vpc_key = in_vpc_key.clone();
+                let peer_begin = peer_begin.clone();
+                let peer_end = peer_end.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    // VPC parent: must exist + silo + project match.
+                    let vpc_bytes = match tr.get(&vpc_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::VpcMissingOrWrongParent),
+                    };
+                    let vpc: Vpc = match serde_json::from_slice(&vpc_bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::VpcMissingOrWrongParent),
+                    };
+                    if vpc.silo_id != silo_id || vpc.project_id != project_id {
+                        return Ok(Outcome::VpcMissingOrWrongParent);
+                    }
+
+                    // Name uniqueness within VPC.
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+
+                    // Read peer subnets for CIDR overlap validation.
+                    // Two passes: first the in_vpc index, then each
+                    // by_id record (the index value carries no CIDR).
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(peer_begin),
+                        end: KeySelector::first_greater_or_equal(peer_end),
+                        ..RangeOption::default()
+                    };
+                    let peer_index = tr.get_range(&opt, 1, false).await?;
+                    // Collect peer ids first so the FDB iterator
+                    // (which holds non-Send raw pointers) doesn't
+                    // straddle the per-peer `tr.get` await below.
+                    let suffix_start = subnet_prefix_len(vpc_id);
+                    let mut peer_ids: Vec<Uuid> = Vec::new();
+                    for kv in peer_index.iter() {
+                        let suffix = &kv.key()[suffix_start..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(id) = Uuid::parse_str(s)
+                        {
+                            peer_ids.push(id);
+                        }
+                    }
+                    drop(peer_index);
+                    let mut peers: Vec<Subnet> = Vec::with_capacity(peer_ids.len());
+                    for peer_id in peer_ids {
+                        let peer_key = format!("subnet/by_id/{peer_id}").into_bytes();
+                        let peer_bytes = match tr.get(&peer_key, false).await? {
+                            Some(b) => b,
+                            None => continue,
+                        };
+                        if let Ok(peer) = serde_json::from_slice::<Subnet>(&peer_bytes) {
+                            peers.push(peer);
+                        }
+                    }
+                    if let Err(msg) = crate::types::validate_subnet_cidrs(
+                        &vpc,
+                        req.ipv4_block,
+                        req.ipv6_block,
+                        &peers,
+                    ) {
+                        return Ok(Outcome::CidrViolation(msg));
+                    }
+
+                    let candidate = Subnet {
+                        id: candidate_id,
+                        silo_id,
+                        project_id,
+                        vpc_id,
+                        name: req.name.clone(),
+                        description: req.description.unwrap_or_default(),
+                        ipv4_block: req.ipv4_block,
+                        ipv6_block: req.ipv6_block,
+                        created_at: Utc::now(),
+                    };
+                    let value = match serde_json::to_vec(&candidate) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            // Treat serialize failure as a generic
+                            // backend error; bubble up via the
+                            // FdbBindingError channel by returning a
+                            // synthetic conflict outcome would be
+                            // wrong. We can't easily produce an
+                            // FdbBindingError here, so this branch
+                            // falls back to the conflict path with a
+                            // distinct message.
+                            return Ok(Outcome::CidrViolation(
+                                "internal serialize error".to_string(),
+                            ));
+                        }
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_vpc_key, b"");
+                    Ok(Outcome::Created(candidate))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(s)) => Ok(s),
+            Ok(Outcome::VpcMissingOrWrongParent) => Err(StoreError::NotFound),
+            Ok(Outcome::CidrViolation(msg)) => Err(StoreError::Conflict(msg)),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "subnet with name {:?} already exists in vpc {vpc_id}",
+                req.name
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_subnet(&self, subnet_id: Uuid) -> Result<Subnet, StoreError> {
+        let key = Self::subnet_by_id_key(subnet_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize subnet: {e}")))
+    }
+
+    async fn list_subnets_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<Subnet>, StoreError> {
+        let prefix = Self::subnet_in_vpc_prefix(vpc_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("subnet index uuid: {e}")))?;
+            let by_id_key = Self::subnet_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let subnet: Subnet = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize subnet: {e}")))?;
+                out.push(subnet);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::subnet_by_id_key(subnet_id);
+        let bytes = match self.read_bytes(&by_id_key).await? {
+            Some(b) => b,
+            None => return Err(StoreError::NotFound),
+        };
+        let subnet: Subnet = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize subnet: {e}")))?;
+        let by_name_key = Self::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
+        let in_vpc_key = Self::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
+
+        enum DelOut {
+            Deleted,
+            Vanished,
+        }
+        let outcome: Result<DelOut, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_vpc_key = in_vpc_key.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Ok(DelOut::Vanished);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_vpc_key);
+                    Ok(DelOut::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DelOut::Deleted) => Ok(()),
+            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+}
+
+/// Length of the `subnet/in_vpc/<vpc_id>/` prefix bytes for a given
+/// VPC id. Used inside the transaction to slice peer-id suffixes
+/// without recomputing the prefix on every iteration.
+fn subnet_prefix_len(vpc_id: Uuid) -> usize {
+    format!("subnet/in_vpc/{vpc_id}/").len()
 }
 
 impl FdbStore {

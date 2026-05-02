@@ -18,8 +18,8 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, NewVpc, Project, Silo, Store, StoreError, SystemKey,
-    User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, NewProject, NewSilo, NewSubnet, NewVpc, Project, Silo, Store, StoreError,
+    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -51,6 +51,10 @@ struct Inner {
     /// Rack-wide set of VNIs currently in use. Drawn from
     /// `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`.
     vnis_in_use: HashSet<u32>,
+    subnets_by_id: HashMap<Uuid, Subnet>,
+    /// `(vpc_id, name)` → subnet_id index for within-vpc name
+    /// uniqueness.
+    subnet_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
 }
 
 /// In-process [`Store`] implementation.
@@ -416,6 +420,17 @@ impl Store for MemStore {
 
     async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
+        // VPC must exist.
+        if !guard.vpcs_by_id.contains_key(&vpc_id) {
+            return Err(StoreError::NotFound);
+        }
+        // Block delete if any subnet still references this VPC.
+        let has_subnets = guard.subnets_by_id.values().any(|s| s.vpc_id == vpc_id);
+        if has_subnets {
+            return Err(StoreError::Conflict(format!(
+                "vpc {vpc_id} still has subnets attached; delete subnets first"
+            )));
+        }
         let vpc = guard
             .vpcs_by_id
             .remove(&vpc_id)
@@ -424,6 +439,91 @@ impl Store for MemStore {
             .vpc_id_by_project_name
             .remove(&(vpc.project_id, vpc.name));
         guard.vnis_in_use.remove(&vpc.vni);
+        Ok(())
+    }
+
+    async fn create_subnet(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewSubnet,
+    ) -> Result<Subnet, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        // VPC must exist and live under the right silo+project. Any
+        // mismatch surfaces as NotFound (cross-tenant probe story).
+        let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
+        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+            return Err(StoreError::NotFound);
+        }
+        let vpc = vpc.clone();
+
+        // CIDR family + containment + overlap checks. We collect
+        // peers into a Vec so the validator can take a slice; the
+        // borrow on `guard` would otherwise prevent the subsequent
+        // mutation below.
+        let peers: Vec<Subnet> = guard
+            .subnets_by_id
+            .values()
+            .filter(|s| s.vpc_id == vpc_id)
+            .cloned()
+            .collect();
+        crate::types::validate_subnet_cidrs(&vpc, req.ipv4_block, req.ipv6_block, &peers)
+            .map_err(StoreError::Conflict)?;
+
+        let name_key = (vpc_id, req.name.clone());
+        if guard.subnet_id_by_vpc_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "subnet with name {:?} already exists in vpc {vpc_id}",
+                req.name
+            )));
+        }
+
+        let subnet = Subnet {
+            id: Uuid::new_v4(),
+            silo_id,
+            project_id,
+            vpc_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            ipv4_block: req.ipv4_block,
+            ipv6_block: req.ipv6_block,
+            created_at: Utc::now(),
+        };
+        guard.subnet_id_by_vpc_name.insert(name_key, subnet.id);
+        guard.subnets_by_id.insert(subnet.id, subnet.clone());
+        Ok(subnet)
+    }
+
+    async fn get_subnet(&self, subnet_id: Uuid) -> Result<Subnet, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .subnets_by_id
+            .get(&subnet_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_subnets_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<Subnet>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .subnets_by_id
+            .values()
+            .filter(|s| s.vpc_id == vpc_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let subnet = guard
+            .subnets_by_id
+            .remove(&subnet_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .subnet_id_by_vpc_name
+            .remove(&(subnet.vpc_id, subnet.name));
         Ok(())
     }
 }
@@ -1096,6 +1196,279 @@ mod tests {
             .await
             .expect_err("project-in-wrong-silo should be not-found");
         assert!(matches!(err, StoreError::NotFound));
+    }
+
+    async fn make_silo_project_vpc(store: &MemStore) -> (Uuid, Uuid, Vpc) {
+        let (silo_id, project_id) = make_silo_and_project(store).await;
+        let vpc = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "vpc1".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/16")),
+                    ipv6_block: Some(ipv6_cidr("fd00::/48")),
+                },
+            )
+            .await
+            .unwrap();
+        (silo_id, project_id, vpc)
+    }
+
+    #[tokio::test]
+    async fn subnet_round_trip_within_vpc() {
+        let store = MemStore::new();
+        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        let subnet = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "web".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: Some(ipv6_cidr("fd00:0:0:1::/64")),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(subnet.silo_id, silo_id);
+        assert_eq!(subnet.project_id, project_id);
+        assert_eq!(subnet.vpc_id, vpc.id);
+
+        let fetched = store.get_subnet(subnet.id).await.unwrap();
+        assert_eq!(fetched, subnet);
+
+        let listed = store.list_subnets_in_vpc(vpc.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, subnet.id);
+
+        store.delete_subnet(subnet.id).await.unwrap();
+        let err = store
+            .get_subnet(subnet.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn subnet_cidr_must_be_contained_in_vpc() {
+        let store = MemStore::new();
+        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        // 10.1.0.0/24 is NOT inside the vpc's 10.0.0.0/16.
+        let err = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "out".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.1.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("subnet outside vpc cidr should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn subnet_ipv4_in_ipv6_only_vpc_is_conflict() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        // IPv6-only VPC (no ipv4_block).
+        let vpc = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "v6only".to_string(),
+                    description: None,
+                    ipv4_block: None,
+                    ipv6_block: Some(ipv6_cidr("fd00::/48")),
+                },
+            )
+            .await
+            .unwrap();
+
+        let err = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "wrong-family".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("ipv4 subnet in ipv6-only vpc should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn subnet_overlap_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "first".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // 10.0.0.128/25 overlaps the existing 10.0.0.0/24.
+        let err = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "overlap".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.128/25")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("overlapping subnet should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn subnet_name_unique_within_vpc() {
+        let store = MemStore::new();
+        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "alpha".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "alpha".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.2.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("duplicate subnet name within vpc should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn create_subnet_in_unknown_vpc_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let err = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                Uuid::new_v4(),
+                NewSubnet {
+                    name: "ghost".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("unknown vpc should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn create_subnet_under_vpc_in_wrong_project_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, project_id_a, vpc) = make_silo_project_vpc(&store).await;
+        let project_b = store
+            .create_project(
+                silo_id,
+                NewProject {
+                    name: "other".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let _ = project_id_a;
+
+        // Caller claims project_b but the vpc lives in project_a.
+        let err = store
+            .create_subnet(
+                silo_id,
+                project_b.id,
+                vpc.id,
+                NewSubnet {
+                    name: "wrong".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .expect_err("vpc-in-wrong-project should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn delete_vpc_with_subnets_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let subnet = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "occupant".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let err = store
+            .delete_vpc(vpc.id)
+            .await
+            .expect_err("delete vpc with subnets should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        // Clear the subnet, then delete succeeds.
+        store.delete_subnet(subnet.id).await.unwrap();
+        store.delete_vpc(vpc.id).await.unwrap();
     }
 
     #[tokio::test]

@@ -644,6 +644,169 @@ pub async fn silo_project_vpc_delete(
     Ok(())
 }
 
+/// List the subnets in a VPC.
+pub async fn silo_project_vpc_subnet_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let subnets = client
+        .list_vpc_subnets()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("list subnets")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&subnets)?);
+        return Ok(());
+    }
+    if subnets.is_empty() {
+        println!("(no subnets)");
+        return Ok(());
+    }
+    for s in subnets {
+        println!(
+            "{}  v4={}  v6={}  {}",
+            s.id,
+            fmt_opt_cidr(s.ipv4_block.as_ref()),
+            fmt_opt_cidr(s.ipv6_block.as_ref()),
+            s.name
+        );
+    }
+    Ok(())
+}
+
+/// Create a new subnet in a VPC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_vpc_subnet_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    name: String,
+    description: String,
+    ipv4_block: Option<String>,
+    ipv6_block: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    if ipv4_block.is_none() && ipv6_block.is_none() {
+        anyhow::bail!("at least one of --ipv4-block or --ipv6-block is required");
+    }
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let subnet = client
+        .create_vpc_subnet()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .body(tritond_client::types::NewSubnet {
+            name,
+            description: Some(description),
+            ipv4_block,
+            ipv6_block,
+        })
+        .send()
+        .await
+        .context("create subnet")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&subnet)?);
+    } else {
+        println!("Created subnet {} in vpc {vpc_id}", subnet.id);
+        println!("  name:        {}", subnet.name);
+        println!("  description: {}", subnet.description);
+        println!(
+            "  ipv4_block:  {}",
+            fmt_opt_cidr(subnet.ipv4_block.as_ref())
+        );
+        println!(
+            "  ipv6_block:  {}",
+            fmt_opt_cidr(subnet.ipv6_block.as_ref())
+        );
+        println!("  created:     {}", subnet.created_at);
+    }
+    Ok(())
+}
+
+/// Read a single subnet.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_vpc_subnet_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    subnet_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let subnet = client
+        .get_vpc_subnet()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .subnet_id(subnet_id)
+        .send()
+        .await
+        .context("get subnet")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&subnet)?);
+    } else {
+        println!("Subnet {} in vpc {vpc_id}", subnet.id);
+        println!("  name:        {}", subnet.name);
+        println!("  description: {}", subnet.description);
+        println!(
+            "  ipv4_block:  {}",
+            fmt_opt_cidr(subnet.ipv4_block.as_ref())
+        );
+        println!(
+            "  ipv6_block:  {}",
+            fmt_opt_cidr(subnet.ipv6_block.as_ref())
+        );
+        println!("  created:     {}", subnet.created_at);
+    }
+    Ok(())
+}
+
+/// Delete a subnet.
+pub async fn silo_project_vpc_subnet_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    subnet_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_subnet()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .subnet_id(subnet_id)
+        .send()
+        .await
+        .context("delete subnet")?;
+    println!("Deleted subnet {subnet_id} from vpc {vpc_id}");
+    Ok(())
+}
+
 /// Walk the chain and recompute hashes.
 pub async fn audit_verify(
     endpoint_override: Option<String>,

@@ -31,8 +31,9 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, NewVpc, Project,
-    Silo, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, NewSubnet,
+    NewVpc, Project, Silo, Subnet, SystemKey, User, UserView, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -236,7 +237,55 @@ pub trait Store: Send + Sync + 'static {
     /// a project-existence read the caller has already done.
     async fn list_vpcs_in_project(&self, project_id: Uuid) -> Result<Vec<Vpc>, StoreError>;
 
-    /// Delete a VPC by id. Returns [`StoreError::NotFound`] if the id
-    /// does not exist.
+    /// Delete a VPC by id. Returns [`StoreError::NotFound`] if the
+    /// id does not exist. Returns [`StoreError::Conflict`] if the
+    /// VPC still has subnets attached — the operator must clear
+    /// subnets before deleting the VPC. (No cascade in Phase 0;
+    /// preserves the "don't accidentally lose tenant data" stance.)
     async fn delete_vpc(&self, vpc_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Subnets (vpc-scoped)
+    // ------------------------------------------------------------------
+
+    /// Create a subnet inside a VPC.
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * The VPC must exist *and* `vpc.silo_id == silo_id` *and*
+    ///   `vpc.project_id == project_id`. Any mismatch returns
+    ///   [`StoreError::NotFound`] — the caller cannot tell whether
+    ///   the VPC is in a different parent or doesn't exist at all,
+    ///   which is the cross-tenant probe story we want.
+    /// * At least one of `req.ipv4_block` / `req.ipv6_block` must
+    ///   be `Some`. The API layer enforces this before calling the
+    ///   store; the store does not re-validate.
+    /// * Each present family CIDR must be a subnet of the parent
+    ///   VPC's same-family CIDR. Each present family must also be
+    ///   present on the VPC. Violations return
+    ///   [`StoreError::Conflict`] (with a message naming the
+    ///   broken invariant).
+    /// * No present family CIDR may overlap an existing subnet's
+    ///   CIDR in the same VPC. Overlap → [`StoreError::Conflict`].
+    /// * `name` must not collide with an existing subnet in the
+    ///   same VPC.
+    async fn create_subnet(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewSubnet,
+    ) -> Result<Subnet, StoreError>;
+
+    /// Look up a subnet by id. Returns [`StoreError::NotFound`] when
+    /// no such subnet exists. Handlers add silo_id + project_id +
+    /// vpc_id rechecks on top.
+    async fn get_subnet(&self, subnet_id: Uuid) -> Result<Subnet, StoreError>;
+
+    /// List every subnet in a VPC. Order is unspecified.
+    async fn list_subnets_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<Subnet>, StoreError>;
+
+    /// Delete a subnet by id. Returns [`StoreError::NotFound`] if the
+    /// id does not exist.
+    async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError>;
 }

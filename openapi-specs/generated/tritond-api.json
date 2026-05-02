@@ -892,7 +892,7 @@
           "vpcs"
         ],
         "summary": "Delete a VPC. Returns 404 when the VPC does not exist or",
-        "description": "belongs to a different silo or project.",
+        "description": "belongs to a different silo or project. Returns 409 if the VPC still has subnets attached — operators must clear subnets before deleting the parent VPC (Phase 0 has no cascade).",
         "operationId": "delete_project_vpc",
         "parameters": [
           {
@@ -907,6 +907,255 @@
           {
             "in": "path",
             "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
+      "get": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "List the subnets inside a VPC. Returns 404 when the silo,",
+        "description": "project, or VPC does not exist (or is in the wrong parent).",
+        "operationId": "list_vpc_subnets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Subnet",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Subnet"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "Create a subnet in a VPC. Returns 400 if neither",
+        "description": "`ipv4_block` nor `ipv6_block` is provided. Returns 409 if a subnet with the same name already exists in the VPC, if a CIDR is not contained in the parent VPC's matching-family CIDR, or if a CIDR overlaps an existing subnet's CIDR. The server assigns `id` and `created_at`.",
+        "operationId": "create_vpc_subnet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSubnet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subnet"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}": {
+      "get": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "Read a single subnet. Returns 404 when the subnet does not",
+        "description": "exist or belongs to a different silo, project, or VPC.",
+        "operationId": "get_vpc_subnet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subnet_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subnet"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "Delete a subnet. Returns 404 when the subnet does not exist",
+        "description": "or belongs to a different silo, project, or VPC.",
+        "operationId": "delete_vpc_subnet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subnet_id",
             "required": true,
             "schema": {
               "type": "string",
@@ -1367,6 +1616,33 @@
           "name"
         ]
       },
+      "NewSubnet": {
+        "description": "Request body for creating a subnet. The owning silo, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv4_block": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv6_block": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "NewVpc": {
         "description": "Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
         "type": "object",
@@ -1565,6 +1841,57 @@
           "name"
         ]
       },
+      "Subnet": {
+        "description": "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`, `ipv6_block ⊆ vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet).",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ipv4_block": {
+            "nullable": true,
+            "description": "IPv4 CIDR for this subnet. Must be a subnet of the parent VPC's `ipv4_block`, and must not overlap any other subnet's IPv4 CIDR in the same VPC.",
+            "type": "string"
+          },
+          "ipv6_block": {
+            "nullable": true,
+            "description": "IPv6 CIDR for this subnet. Must be a subnet of the parent VPC's `ipv6_block`, and must not overlap any other subnet's IPv6 CIDR in the same VPC.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "name",
+          "project_id",
+          "silo_id",
+          "vpc_id"
+        ]
+      },
       "TokenResponse": {
         "description": "Response body for both login and refresh.",
         "type": "object",
@@ -1725,6 +2052,9 @@
     },
     {
       "name": "silos"
+    },
+    {
+      "name": "subnets"
     },
     {
       "name": "system"

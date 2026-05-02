@@ -89,7 +89,11 @@ permit(
         Action::"vpc_list",
         Action::"vpc_create",
         Action::"vpc_get",
-        Action::"vpc_delete"
+        Action::"vpc_delete",
+        Action::"subnet_list",
+        Action::"subnet_create",
+        Action::"subnet_get",
+        Action::"subnet_delete"
     ],
     resource
 ) when {
@@ -201,6 +205,10 @@ pub enum Action {
     VpcCreate,
     VpcGet,
     VpcDelete,
+    SubnetList,
+    SubnetCreate,
+    SubnetGet,
+    SubnetDelete,
 }
 
 impl Action {
@@ -232,6 +240,10 @@ impl Action {
             Action::VpcCreate => "vpc_create",
             Action::VpcGet => "vpc_get",
             Action::VpcDelete => "vpc_delete",
+            Action::SubnetList => "subnet_list",
+            Action::SubnetCreate => "subnet_create",
+            Action::SubnetGet => "subnet_get",
+            Action::SubnetDelete => "subnet_delete",
         }
     }
 

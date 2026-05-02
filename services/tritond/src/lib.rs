@@ -34,9 +34,11 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloPath, SiloProjectPath, SiloProjectVpcPath, TokenResponse, TritondApi,
+    SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, TokenResponse,
+    TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, NewVpc, Project, Silo, Vpc,
+        ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, NewSubnet, NewVpc, Project,
+        Silo, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -919,22 +921,252 @@ impl TritondApi for TritondServiceImpl {
         if vpc.silo_id != silo_id || vpc.project_id != project_id {
             return Err(not_found());
         }
+        match ctx.store.delete_vpc(vpc_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::VpcDelete,
+                        request_id,
+                        Some(format!("Vpc::\"{vpc_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Vpc::\"{vpc_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::VpcDelete,
+                        request_id,
+                        Some(format!("Vpc::\"{vpc_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_vpc_subnets(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectVpcPath {
+            silo_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SubnetList,
+            silo_id,
+        )
+        .await?;
+
+        // Verify the parent VPC actually lives under the path's
+        // silo+project. Cross-silo or cross-project list paths must
+        // 404 — the cross-tenant enumeration invariant extends to
+        // VPCs the way it does for projects in `list_project_vpcs`.
+        let vpc = ctx
+            .store
+            .get_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+            return Err(not_found());
+        }
+        let subnets = ctx
+            .store
+            .list_subnets_in_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(subnets))
+    }
+
+    async fn create_vpc_subnet(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcPath>,
+        body: TypedBody<NewSubnet>,
+    ) -> Result<HttpResponseCreated<Subnet>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectVpcPath {
+            silo_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SubnetCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // At least one IP family is required, mirroring the VPC
+        // create-time invariant. Same OPTE rationale: an `IpCfg`
+        // must be Ipv4, Ipv6, or DualStack.
+        if req.ipv4_block.is_none() && req.ipv6_block.is_none() {
+            let outcome = AuditOutcome::ClientError {
+                code: 400,
+                message: "subnet must specify ipv4_block, ipv6_block, or both".to_string(),
+            };
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::SubnetCreate,
+                    request_id,
+                    None,
+                    outcome,
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                    }),
+                )
+                .await;
+            return Err(HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                "subnet must specify ipv4_block, ipv6_block, or both".to_string(),
+            ));
+        }
+
+        match ctx
+            .store
+            .create_subnet(silo_id, project_id, vpc_id, req)
+            .await
+        {
+            Ok(subnet) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::SubnetCreate,
+                        request_id,
+                        Some(format!("Subnet::\"{}\"", subnet.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Subnet::\"{}\"", subnet.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "name": subnet.name,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(subnet))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::SubnetCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_vpc_subnet(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcSubnetPath>,
+    ) -> Result<HttpResponseOk<Subnet>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectVpcSubnetPath {
+            silo_id,
+            project_id,
+            vpc_id,
+            subnet_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SubnetGet,
+            silo_id,
+        )
+        .await?;
+        let subnet = ctx
+            .store
+            .get_subnet(subnet_id)
+            .await
+            .map_err(store_error_to_http)?;
+        // Defence-in-depth: subnet must live in path silo + project + vpc.
+        if subnet.silo_id != silo_id || subnet.project_id != project_id || subnet.vpc_id != vpc_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(subnet))
+    }
+
+    async fn delete_vpc_subnet(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectVpcSubnetPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectVpcSubnetPath {
+            silo_id,
+            project_id,
+            vpc_id,
+            subnet_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SubnetDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let subnet = ctx
+            .store
+            .get_subnet(subnet_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if subnet.silo_id != silo_id || subnet.project_id != project_id || subnet.vpc_id != vpc_id {
+            return Err(not_found());
+        }
         ctx.store
-            .delete_vpc(vpc_id)
+            .delete_subnet(subnet_id)
             .await
             .map_err(store_error_to_http)?;
         ctx.audit
             .record_mutation(
                 &principal,
-                Action::VpcDelete,
+                Action::SubnetDelete,
                 request_id,
-                Some(format!("Vpc::\"{vpc_id}\"")),
+                Some(format!("Subnet::\"{subnet_id}\"")),
                 AuditOutcome::Success {
-                    resource: Some(format!("Vpc::\"{vpc_id}\"")),
+                    resource: Some(format!("Subnet::\"{subnet_id}\"")),
                 },
                 serde_json::json!({
                     "silo_id": silo_id,
                     "project_id": project_id,
+                    "vpc_id": vpc_id,
                 }),
             )
             .await;

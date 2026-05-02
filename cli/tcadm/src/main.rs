@@ -194,6 +194,60 @@ enum SiloProjectVpcCommand {
         project_id: Uuid,
         vpc_id: Uuid,
     },
+    /// Manage subnets inside a VPC.
+    Subnet {
+        #[command(subcommand)]
+        command: SiloProjectVpcSubnetCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectVpcSubnetCommand {
+    /// List subnets in a VPC.
+    List {
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new subnet in a VPC. At least one of `--ipv4-block`
+    /// and `--ipv6-block` must be provided. Each block must be
+    /// contained in the parent VPC's same-family CIDR and must not
+    /// overlap an existing subnet.
+    Create {
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// IPv4 CIDR carved out of the parent VPC's ipv4_block.
+        #[arg(long)]
+        ipv4_block: Option<String>,
+        /// IPv6 CIDR carved out of the parent VPC's ipv6_block.
+        #[arg(long)]
+        ipv6_block: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single subnet.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        subnet_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a subnet.
+    Delete {
+        silo_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        subnet_id: Uuid,
+    },
 }
 
 #[derive(Subcommand)]
@@ -476,6 +530,82 @@ async fn main() -> Result<()> {
                         )
                         .await
                     }
+                    SiloProjectVpcCommand::Subnet { command } => match command {
+                        SiloProjectVpcSubnetCommand::List {
+                            silo_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        } => {
+                            commands::silo_project_vpc_subnet_list(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                vpc_id,
+                                json,
+                            )
+                            .await
+                        }
+                        SiloProjectVpcSubnetCommand::Create {
+                            silo_id,
+                            project_id,
+                            vpc_id,
+                            name,
+                            description,
+                            ipv4_block,
+                            ipv6_block,
+                            json,
+                        } => {
+                            commands::silo_project_vpc_subnet_create(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                vpc_id,
+                                name,
+                                description,
+                                ipv4_block,
+                                ipv6_block,
+                                json,
+                            )
+                            .await
+                        }
+                        SiloProjectVpcSubnetCommand::Get {
+                            silo_id,
+                            project_id,
+                            vpc_id,
+                            subnet_id,
+                            json,
+                        } => {
+                            commands::silo_project_vpc_subnet_get(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                vpc_id,
+                                subnet_id,
+                                json,
+                            )
+                            .await
+                        }
+                        SiloProjectVpcSubnetCommand::Delete {
+                            silo_id,
+                            project_id,
+                            vpc_id,
+                            subnet_id,
+                        } => {
+                            commands::silo_project_vpc_subnet_delete(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                vpc_id,
+                                subnet_id,
+                            )
+                            .await
+                        }
+                    },
                 },
             },
         },
