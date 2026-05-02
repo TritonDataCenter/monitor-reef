@@ -477,6 +477,101 @@ pub async fn silo_project_get(
     Ok(())
 }
 
+/// Set (or replace) a project's quota.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_quota_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    cpu_limit: u32,
+    memory_bytes: u64,
+    disk_bytes: u64,
+    instance_limit: u32,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let quota = client
+        .put_project_quota()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .body(tritond_client::types::NewQuota {
+            cpu_limit,
+            memory_bytes,
+            disk_bytes,
+            instance_limit,
+        })
+        .send()
+        .await
+        .context("set project quota")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&quota)?);
+    } else {
+        println!("Set quota on project {project_id}");
+        println!("  cpu_limit:      {}", quota.cpu_limit);
+        println!("  memory_bytes:   {}", quota.memory_bytes);
+        println!("  disk_bytes:     {}", quota.disk_bytes);
+        println!("  instance_limit: {}", quota.instance_limit);
+        println!("  updated:        {}", quota.updated_at);
+    }
+    Ok(())
+}
+
+/// Read a project's quota.
+pub async fn silo_project_quota_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let quota = client
+        .get_project_quota()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("get project quota")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&quota)?);
+    } else {
+        println!("Quota on project {project_id}");
+        println!("  cpu_limit:      {}", quota.cpu_limit);
+        println!("  memory_bytes:   {}", quota.memory_bytes);
+        println!("  disk_bytes:     {}", quota.disk_bytes);
+        println!("  instance_limit: {}", quota.instance_limit);
+        println!("  updated:        {}", quota.updated_at);
+    }
+    Ok(())
+}
+
+/// Remove a project's quota.
+pub async fn silo_project_quota_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_project_quota()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("delete project quota")?;
+    println!("Removed quota from project {project_id} (now unlimited)");
+    Ok(())
+}
+
 /// Delete a project.
 pub async fn silo_project_delete(
     endpoint_override: Option<String>,

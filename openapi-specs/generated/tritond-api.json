@@ -899,6 +899,149 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/projects/{project_id}/quota": {
+      "get": {
+        "tags": [
+          "quotas"
+        ],
+        "summary": "Read a project's quota. Returns 404 when the project does",
+        "description": "not exist, lives in a different silo, or has no quota set (no record means \"unlimited\").",
+        "operationId": "get_project_quota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quota"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "quotas"
+        ],
+        "summary": "Set (or replace) the resource quota on a project. Returns",
+        "description": "404 when the project does not exist or belongs to a different silo. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.",
+        "operationId": "put_project_quota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewQuota"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quota"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "quotas"
+        ],
+        "summary": "Remove a project's quota (project becomes unlimited).",
+        "description": "Returns 404 when the project does not exist, lives in a different silo, or had no quota set.",
+        "operationId": "delete_project_quota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/projects/{project_id}/vpcs": {
       "get": {
         "tags": [
@@ -2049,6 +2192,38 @@
           "name"
         ]
       },
+      "NewQuota": {
+        "description": "Request body for setting a project's quota. The owning silo and project come from the URL path. The server assigns `updated_at`.",
+        "type": "object",
+        "properties": {
+          "cpu_limit": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "disk_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "instance_limit": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "cpu_limit",
+          "disk_bytes",
+          "instance_limit",
+          "memory_bytes"
+        ]
+      },
       "NewSilo": {
         "description": "Request body for creating a silo.\n\nDistinct from [`Silo`] because the server assigns `id` and `created_at`. `description` is optional on the wire and stored as an empty string when omitted.",
         "type": "object",
@@ -2272,6 +2447,57 @@
           "id",
           "name",
           "silo_id"
+        ]
+      },
+      "Quota": {
+        "description": "Per-project resource quota. Singleton: each project has at most one quota record. Set with PUT, read with GET, remove with DELETE (project becomes \"unlimited\" — no record means no enforcement).\n\nEnforcement is *not* shipped in Phase 0 — these limits are stored and readable but no instance-create flow consults them yet. The shape is fixed now so the enforcement layer (Tier 3) has a stable contract to build against.\n\nLimits are absolute caps, not reservations: `cpu_limit = 8` means \"this project may have up to 8 vCPUs across all running instances.\" Storage and memory are bytes; cpu and instance counts are simple `u32`.",
+        "type": "object",
+        "properties": {
+          "cpu_limit": {
+            "description": "Maximum total vCPUs across all instances in the project.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "disk_bytes": {
+            "description": "Maximum total disk across all instances + volumes in the project, in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "instance_limit": {
+            "description": "Maximum number of running instances in the project.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "description": "Maximum total memory across all instances in the project, in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "cpu_limit",
+          "disk_bytes",
+          "instance_limit",
+          "memory_bytes",
+          "project_id",
+          "silo_id",
+          "updated_at"
         ]
       },
       "RefreshRequest": {
@@ -2564,6 +2790,9 @@
     },
     {
       "name": "projects"
+    },
+    {
+      "name": "quotas"
     },
     {
       "name": "silos"

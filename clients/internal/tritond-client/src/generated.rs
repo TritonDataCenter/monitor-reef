@@ -1043,6 +1043,61 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for setting a project's quota. The owning silo and project come from the URL path. The server assigns `updated_at`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for setting a project's quota. The owning silo and project come from the URL path. The server assigns `updated_at`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cpu_limit\","]
+    #[doc = "    \"disk_bytes\","]
+    #[doc = "    \"instance_limit\","]
+    #[doc = "    \"memory_bytes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cpu_limit\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"disk_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"instance_limit\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"memory_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewQuota {
+        pub cpu_limit: u32,
+        pub disk_bytes: u64,
+        pub instance_limit: u32,
+        pub memory_bytes: u64,
+    }
+
+    impl NewQuota {
+        pub fn builder() -> builder::NewQuota {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for creating a silo.\n\nDistinct from [`Silo`] because the server assigns `id` and `created_at`. `description` is optional on the wire and stored as an empty string when omitted."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1429,6 +1484,87 @@ pub mod types {
 
     impl Project {
         pub fn builder() -> builder::Project {
+            Default::default()
+        }
+    }
+
+    #[doc = "Per-project resource quota. Singleton: each project has at most one quota record. Set with PUT, read with GET, remove with DELETE (project becomes \"unlimited\" — no record means no enforcement).\n\nEnforcement is *not* shipped in Phase 0 — these limits are stored and readable but no instance-create flow consults them yet. The shape is fixed now so the enforcement layer (Tier 3) has a stable contract to build against.\n\nLimits are absolute caps, not reservations: `cpu_limit = 8` means \"this project may have up to 8 vCPUs across all running instances.\" Storage and memory are bytes; cpu and instance counts are simple `u32`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-project resource quota. Singleton: each project has at most one quota record. Set with PUT, read with GET, remove with DELETE (project becomes \\\"unlimited\\\" — no record means no enforcement).\\n\\nEnforcement is *not* shipped in Phase 0 — these limits are stored and readable but no instance-create flow consults them yet. The shape is fixed now so the enforcement layer (Tier 3) has a stable contract to build against.\\n\\nLimits are absolute caps, not reservations: `cpu_limit = 8` means \\\"this project may have up to 8 vCPUs across all running instances.\\\" Storage and memory are bytes; cpu and instance counts are simple `u32`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"cpu_limit\","]
+    #[doc = "    \"disk_bytes\","]
+    #[doc = "    \"instance_limit\","]
+    #[doc = "    \"memory_bytes\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"silo_id\","]
+    #[doc = "    \"updated_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"cpu_limit\": {"]
+    #[doc = "      \"description\": \"Maximum total vCPUs across all instances in the project.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"disk_bytes\": {"]
+    #[doc = "      \"description\": \"Maximum total disk across all instances + volumes in the project, in bytes.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"instance_limit\": {"]
+    #[doc = "      \"description\": \"Maximum number of running instances in the project.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"memory_bytes\": {"]
+    #[doc = "      \"description\": \"Maximum total memory across all instances in the project, in bytes.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Quota {
+        #[doc = "Maximum total vCPUs across all instances in the project."]
+        pub cpu_limit: u32,
+        #[doc = "Maximum total disk across all instances + volumes in the project, in bytes."]
+        pub disk_bytes: u64,
+        #[doc = "Maximum number of running instances in the project."]
+        pub instance_limit: u32,
+        #[doc = "Maximum total memory across all instances in the project, in bytes."]
+        pub memory_bytes: u64,
+        pub project_id: ::uuid::Uuid,
+        pub silo_id: ::uuid::Uuid,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl Quota {
+        pub fn builder() -> builder::Quota {
             Default::default()
         }
     }
@@ -3236,6 +3372,93 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NewQuota {
+            cpu_limit: ::std::result::Result<u32, ::std::string::String>,
+            disk_bytes: ::std::result::Result<u64, ::std::string::String>,
+            instance_limit: ::std::result::Result<u32, ::std::string::String>,
+            memory_bytes: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewQuota {
+            fn default() -> Self {
+                Self {
+                    cpu_limit: Err("no value supplied for cpu_limit".to_string()),
+                    disk_bytes: Err("no value supplied for disk_bytes".to_string()),
+                    instance_limit: Err("no value supplied for instance_limit".to_string()),
+                    memory_bytes: Err("no value supplied for memory_bytes".to_string()),
+                }
+            }
+        }
+
+        impl NewQuota {
+            pub fn cpu_limit<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_limit = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cpu_limit: {e}"));
+                self
+            }
+            pub fn disk_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disk_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disk_bytes: {e}"));
+                self
+            }
+            pub fn instance_limit<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_limit = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for instance_limit: {e}")
+                });
+                self
+            }
+            pub fn memory_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.memory_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for memory_bytes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewQuota> for super::NewQuota {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewQuota,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    cpu_limit: value.cpu_limit?,
+                    disk_bytes: value.disk_bytes?,
+                    instance_limit: value.instance_limit?,
+                    memory_bytes: value.memory_bytes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewQuota> for NewQuota {
+            fn from(value: super::NewQuota) -> Self {
+                Self {
+                    cpu_limit: Ok(value.cpu_limit),
+                    disk_bytes: Ok(value.disk_bytes),
+                    instance_limit: Ok(value.instance_limit),
+                    memory_bytes: Ok(value.memory_bytes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewSilo {
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -3665,6 +3888,138 @@ pub mod types {
                     id: Ok(value.id),
                     name: Ok(value.name),
                     silo_id: Ok(value.silo_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct Quota {
+            cpu_limit: ::std::result::Result<u32, ::std::string::String>,
+            disk_bytes: ::std::result::Result<u64, ::std::string::String>,
+            instance_limit: ::std::result::Result<u32, ::std::string::String>,
+            memory_bytes: ::std::result::Result<u64, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for Quota {
+            fn default() -> Self {
+                Self {
+                    cpu_limit: Err("no value supplied for cpu_limit".to_string()),
+                    disk_bytes: Err("no value supplied for disk_bytes".to_string()),
+                    instance_limit: Err("no value supplied for instance_limit".to_string()),
+                    memory_bytes: Err("no value supplied for memory_bytes".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                }
+            }
+        }
+
+        impl Quota {
+            pub fn cpu_limit<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_limit = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cpu_limit: {e}"));
+                self
+            }
+            pub fn disk_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disk_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disk_bytes: {e}"));
+                self
+            }
+            pub fn instance_limit<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_limit = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for instance_limit: {e}")
+                });
+                self
+            }
+            pub fn memory_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.memory_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for memory_bytes: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Quota> for super::Quota {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Quota,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    cpu_limit: value.cpu_limit?,
+                    disk_bytes: value.disk_bytes?,
+                    instance_limit: value.instance_limit?,
+                    memory_bytes: value.memory_bytes?,
+                    project_id: value.project_id?,
+                    silo_id: value.silo_id?,
+                    updated_at: value.updated_at?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Quota> for Quota {
+            fn from(value: super::Quota) -> Self {
+                Self {
+                    cpu_limit: Ok(value.cpu_limit),
+                    disk_bytes: Ok(value.disk_bytes),
+                    instance_limit: Ok(value.instance_limit),
+                    memory_bytes: Ok(value.memory_bytes),
+                    project_id: Ok(value.project_id),
+                    silo_id: Ok(value.silo_id),
+                    updated_at: Ok(value.updated_at),
                 }
             }
         }
@@ -4527,6 +4882,21 @@ impl Client {
     #[doc = "Delete a project. Returns 404 when the project does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}`\n\n```ignore\nlet response = client.delete_silo_project()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_project(&self) -> builder::DeleteSiloProject<'_> {
         builder::DeleteSiloProject::new(self)
+    }
+
+    #[doc = "Read a project's quota. Returns 404 when the project does\n\nnot exist, lives in a different silo, or has no quota set (no record means \"unlimited\").\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.get_project_quota()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_quota(&self) -> builder::GetProjectQuota<'_> {
+        builder::GetProjectQuota::new(self)
+    }
+
+    #[doc = "Set (or replace) the resource quota on a project. Returns\n\n404 when the project does not exist or belongs to a different silo. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.\n\nSends a `PUT` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.put_project_quota()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_project_quota(&self) -> builder::PutProjectQuota<'_> {
+        builder::PutProjectQuota::new(self)
+    }
+
+    #[doc = "Remove a project's quota (project becomes unlimited)\n\nReturns 404 when the project does not exist, lives in a different silo, or had no quota set.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.delete_project_quota()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_quota(&self) -> builder::DeleteProjectQuota<'_> {
+        builder::DeleteProjectQuota::new(self)
     }
 
     #[doc = "List the VPCs inside a project. Returns 404 when the silo or\n\nproject does not exist (or the project belongs to a different silo).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
@@ -6312,6 +6682,294 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_project",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_quota`]\n\n[`Client::get_project_quota`]: super::Client::get_project_quota"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectQuota<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectQuota<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/quota",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_quota",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::put_project_quota`]\n\n[`Client::put_project_quota`]: super::Client::put_project_quota"]
+    #[derive(Debug, Clone)]
+    pub struct PutProjectQuota<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewQuota, String>,
+    }
+
+    impl<'a> PutProjectQuota<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewQuota>,
+            <V as std::convert::TryInto<types::NewQuota>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewQuota` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewQuota) -> types::builder::NewQuota,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewQuota::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/quota",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_project_quota",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_quota`]\n\n[`Client::delete_project_quota`]: super::Client::delete_project_quota"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectQuota<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteProjectQuota<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/quota",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_quota",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

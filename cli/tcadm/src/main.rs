@@ -239,6 +239,39 @@ enum SiloProjectCommand {
         #[command(subcommand)]
         command: SiloProjectVpcCommand,
     },
+    /// Manage the project's resource quota.
+    Quota {
+        #[command(subcommand)]
+        command: SiloProjectQuotaCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectQuotaCommand {
+    /// Set (or replace) the project's quota.
+    Set {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        cpu_limit: u32,
+        #[arg(long)]
+        memory_bytes: u64,
+        #[arg(long)]
+        disk_bytes: u64,
+        #[arg(long)]
+        instance_limit: u32,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read the project's quota.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove the project's quota (project becomes unlimited).
+    Delete { silo_id: Uuid, project_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -551,6 +584,56 @@ async fn main() -> Result<()> {
                     commands::silo_project_delete(cli.endpoint, cli.api_key, silo_id, project_id)
                         .await
                 }
+                SiloProjectCommand::Quota { command } => match command {
+                    SiloProjectQuotaCommand::Set {
+                        silo_id,
+                        project_id,
+                        cpu_limit,
+                        memory_bytes,
+                        disk_bytes,
+                        instance_limit,
+                        json,
+                    } => {
+                        commands::silo_project_quota_set(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            cpu_limit,
+                            memory_bytes,
+                            disk_bytes,
+                            instance_limit,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectQuotaCommand::Get {
+                        silo_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::silo_project_quota_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectQuotaCommand::Delete {
+                        silo_id,
+                        project_id,
+                    } => {
+                        commands::silo_project_quota_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                        )
+                        .await
+                    }
+                },
                 SiloProjectCommand::Vpc { command } => match command {
                     SiloProjectVpcCommand::List {
                         silo_id,

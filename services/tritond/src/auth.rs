@@ -101,7 +101,10 @@ permit(
         Action::"image_list",
         Action::"image_create",
         Action::"image_get",
-        Action::"image_delete"
+        Action::"image_delete",
+        Action::"quota_set",
+        Action::"quota_get",
+        Action::"quota_delete"
     ],
     resource
 ) when {
@@ -225,6 +228,9 @@ pub enum Action {
     ImageCreate,
     ImageGet,
     ImageDelete,
+    QuotaSet,
+    QuotaGet,
+    QuotaDelete,
 }
 
 impl Action {
@@ -268,6 +274,9 @@ impl Action {
             Action::ImageCreate => "image_create",
             Action::ImageGet => "image_get",
             Action::ImageDelete => "image_delete",
+            Action::QuotaSet => "quota_set",
+            Action::QuotaGet => "quota_get",
+            Action::QuotaDelete => "quota_delete",
         }
     }
 

@@ -31,9 +31,9 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, NewImage, NewProject, NewSilo,
-    NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, SystemKey, User, UserView,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, NewImage, NewProject,
+    NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey, Subnet,
+    SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -358,4 +358,28 @@ pub trait Store: Send + Sync + 'static {
 
     /// Delete an image by id.
     async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Project quotas (singleton per project)
+    // ------------------------------------------------------------------
+
+    /// Set (or replace) a project's quota record. Returns
+    /// [`StoreError::NotFound`] if the project does not exist or
+    /// does not live in the supplied silo (cross-tenant probe
+    /// invariant).
+    async fn put_quota(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewQuota,
+    ) -> Result<Quota, StoreError>;
+
+    /// Read a project's quota. Returns [`StoreError::NotFound`] if
+    /// the project does not exist, lives in a different silo, or
+    /// has no quota set.
+    async fn get_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError>;
+
+    /// Remove a project's quota (project becomes unlimited). Returns
+    /// [`StoreError::NotFound`] if no quota was set.
+    async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError>;
 }

@@ -37,8 +37,8 @@ use tritond_api::{
     SiloImagePath, SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
     SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, Image, NewImage, NewProject, NewSilo, NewSshKey,
-        NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, Vpc,
+        ApiKeyView, AuditEvent, IdpConfigView, Image, NewImage, NewProject, NewQuota, NewSilo,
+        NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1540,6 +1540,148 @@ impl TritondApi for TritondServiceImpl {
             )
             .await;
         Ok(HttpResponseDeleted())
+    }
+
+    async fn put_project_quota(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewQuota>,
+    ) -> Result<HttpResponseOk<Quota>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::QuotaSet,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        match ctx.store.put_quota(silo_id, project_id, req).await {
+            Ok(quota) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::QuotaSet,
+                        request_id,
+                        Some(format!("Quota::\"{project_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Quota::\"{project_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                            "cpu_limit": quota.cpu_limit,
+                            "memory_bytes": quota.memory_bytes,
+                            "disk_bytes": quota.disk_bytes,
+                            "instance_limit": quota.instance_limit,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseOk(quota))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::QuotaSet,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_project_quota(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Quota>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::QuotaGet,
+            silo_id,
+        )
+        .await?;
+        let quota = ctx
+            .store
+            .get_quota(silo_id, project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(quota))
+    }
+
+    async fn delete_project_quota(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::QuotaDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        match ctx.store.delete_quota(silo_id, project_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::QuotaDelete,
+                        request_id,
+                        Some(format!("Quota::\"{project_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Quota::\"{project_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::QuotaDelete,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 }
 

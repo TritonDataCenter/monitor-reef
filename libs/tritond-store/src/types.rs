@@ -468,6 +468,46 @@ pub struct NewImage {
     pub source_url: Option<String>,
 }
 
+/// Per-project resource quota. Singleton: each project has at most
+/// one quota record. Set with PUT, read with GET, remove with DELETE
+/// (project becomes "unlimited" — no record means no enforcement).
+///
+/// Enforcement is *not* shipped in Phase 0 — these limits are
+/// stored and readable but no instance-create flow consults them
+/// yet. The shape is fixed now so the enforcement layer (Tier 3)
+/// has a stable contract to build against.
+///
+/// Limits are absolute caps, not reservations: `cpu_limit = 8`
+/// means "this project may have up to 8 vCPUs across all running
+/// instances." Storage and memory are bytes; cpu and instance
+/// counts are simple `u32`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Quota {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    /// Maximum total vCPUs across all instances in the project.
+    pub cpu_limit: u32,
+    /// Maximum total memory across all instances in the project,
+    /// in bytes.
+    pub memory_bytes: u64,
+    /// Maximum total disk across all instances + volumes in the
+    /// project, in bytes.
+    pub disk_bytes: u64,
+    /// Maximum number of running instances in the project.
+    pub instance_limit: u32,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for setting a project's quota. The owning silo and
+/// project come from the URL path. The server assigns `updated_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewQuota {
+    pub cpu_limit: u32,
+    pub memory_bytes: u64,
+    pub disk_bytes: u64,
+    pub instance_limit: u32,
+}
+
 /// Cluster-level system keys. Phase 0 has exactly one
 /// (`SystemKey::JwtSigning`); future entries will include the
 /// transit-engine master key and any per-silo OIDC client secrets.

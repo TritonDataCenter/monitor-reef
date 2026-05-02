@@ -29,7 +29,8 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, Image, NewImage,
-    NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, Vpc,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey,
+    Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -624,5 +625,47 @@ pub trait TritondApi {
     async fn delete_silo_image(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloImagePath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Set (or replace) the resource quota on a project. Returns
+    /// 404 when the project does not exist or belongs to a
+    /// different silo. The server assigns `updated_at`. Quotas
+    /// are not enforced in Phase 0; the record is stored for the
+    /// eventual instance-create flow to consult.
+    #[endpoint {
+        method = PUT,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/quota",
+        tags = ["quotas"],
+    }]
+    async fn put_project_quota(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewQuota>,
+    ) -> Result<HttpResponseOk<Quota>, HttpError>;
+
+    /// Read a project's quota. Returns 404 when the project does
+    /// not exist, lives in a different silo, or has no quota set
+    /// (no record means "unlimited").
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/quota",
+        tags = ["quotas"],
+    }]
+    async fn get_project_quota(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Quota>, HttpError>;
+
+    /// Remove a project's quota (project becomes unlimited).
+    /// Returns 404 when the project does not exist, lives in a
+    /// different silo, or had no quota set.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/quota",
+        tags = ["quotas"],
+    }]
+    async fn delete_project_quota(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 }

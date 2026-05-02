@@ -51,6 +51,7 @@
 //! image/by_id/<uuid>                -> JSON-encoded Image
 //! image/by_silo/<silo>/<name>       -> uuid hyphenated bytes
 //! image/in_silo/<silo>/<image>      -> empty (membership index)
+//! quota/by_project/<project>        -> JSON-encoded Quota
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -66,8 +67,8 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project,
-    Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    ApiKey, IdpConfig, Image, NewImage, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewVpc, Project, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
@@ -262,6 +263,10 @@ impl FdbStore {
 
     fn image_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
         format!("image/in_silo/{silo_id}/").into_bytes()
+    }
+
+    fn quota_by_project_key(project_id: Uuid) -> Vec<u8> {
+        format!("quota/by_project/{project_id}").into_bytes()
     }
 }
 
@@ -1660,6 +1665,158 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn put_quota(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewQuota,
+    ) -> Result<Quota, StoreError> {
+        let project_check_key = Self::project_by_id_key(project_id);
+        let quota_key = Self::quota_by_project_key(project_id);
+        let quota = Quota {
+            silo_id,
+            project_id,
+            cpu_limit: req.cpu_limit,
+            memory_bytes: req.memory_bytes,
+            disk_bytes: req.disk_bytes,
+            instance_limit: req.instance_limit,
+            updated_at: Utc::now(),
+        };
+        let value = serde_json::to_vec(&quota)
+            .map_err(|e| StoreError::Backend(format!("serialize quota: {e}")))?;
+
+        enum Outcome {
+            Stored,
+            ProjectMissingOrWrongSilo,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let project_check_key = project_check_key.clone();
+                let quota_key = quota_key.clone();
+                let value = value.clone();
+                async move {
+                    let project_bytes = match tr.get(&project_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    let project: Project = match serde_json::from_slice(&project_bytes) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    if project.silo_id != silo_id {
+                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    }
+                    tr.set(&quota_key, &value);
+                    Ok(Outcome::Stored)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Stored) => Ok(quota),
+            Ok(Outcome::ProjectMissingOrWrongSilo) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
+        // Read project + quota inside a single transaction so the
+        // silo check is consistent with the read.
+        let project_check_key = Self::project_by_id_key(project_id);
+        let quota_key = Self::quota_by_project_key(project_id);
+
+        enum Outcome {
+            Found(Quota),
+            ProjectMissingOrWrongSilo,
+            QuotaUnset,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let project_check_key = project_check_key.clone();
+                let quota_key = quota_key.clone();
+                async move {
+                    let project_bytes = match tr.get(&project_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    let project: Project = match serde_json::from_slice(&project_bytes) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    if project.silo_id != silo_id {
+                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    }
+                    let quota_bytes = match tr.get(&quota_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::QuotaUnset),
+                    };
+                    let quota: Quota = match serde_json::from_slice(&quota_bytes) {
+                        Ok(q) => q,
+                        Err(_) => return Ok(Outcome::QuotaUnset),
+                    };
+                    Ok(Outcome::Found(quota))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Found(q)) => Ok(q),
+            Ok(Outcome::ProjectMissingOrWrongSilo) | Ok(Outcome::QuotaUnset) => {
+                Err(StoreError::NotFound)
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
+        let project_check_key = Self::project_by_id_key(project_id);
+        let quota_key = Self::quota_by_project_key(project_id);
+
+        enum Outcome {
+            Deleted,
+            ProjectMissingOrWrongSilo,
+            QuotaUnset,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let project_check_key = project_check_key.clone();
+                let quota_key = quota_key.clone();
+                async move {
+                    let project_bytes = match tr.get(&project_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    let project: Project = match serde_json::from_slice(&project_bytes) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    if project.silo_id != silo_id {
+                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    }
+                    if tr.get(&quota_key, false).await?.is_none() {
+                        return Ok(Outcome::QuotaUnset);
+                    }
+                    tr.clear(&quota_key);
+                    Ok(Outcome::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Deleted) => Ok(()),
+            Ok(Outcome::ProjectMissingOrWrongSilo) | Ok(Outcome::QuotaUnset) => {
+                Err(StoreError::NotFound)
+            }
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }

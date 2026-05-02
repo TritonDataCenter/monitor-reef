@@ -18,8 +18,8 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project,
-    Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    ApiKey, IdpConfig, Image, NewImage, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewVpc, Project, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
@@ -67,6 +67,8 @@ struct Inner {
     /// `(silo_id, name)` → image_id index for within-silo name
     /// uniqueness.
     image_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
+    /// `project_id` → quota record. Singleton per project.
+    quotas_by_project: HashMap<Uuid, Quota>,
 }
 
 /// In-process [`Store`] implementation.
@@ -669,6 +671,65 @@ impl Store for MemStore {
             .image_id_by_silo_name
             .remove(&(image.silo_id, image.name));
         Ok(())
+    }
+
+    async fn put_quota(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewQuota,
+    ) -> Result<Quota, StoreError> {
+        let mut guard = self.inner.write().await;
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        if project.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+        let quota = Quota {
+            silo_id,
+            project_id,
+            cpu_limit: req.cpu_limit,
+            memory_bytes: req.memory_bytes,
+            disk_bytes: req.disk_bytes,
+            instance_limit: req.instance_limit,
+            updated_at: Utc::now(),
+        };
+        guard.quotas_by_project.insert(project_id, quota.clone());
+        Ok(quota)
+    }
+
+    async fn get_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
+        let guard = self.inner.read().await;
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        if project.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+        guard
+            .quotas_by_project
+            .get(&project_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        if project.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+        guard
+            .quotas_by_project
+            .remove(&project_id)
+            .map(|_| ())
+            .ok_or(StoreError::NotFound)
     }
 }
 
@@ -1882,6 +1943,97 @@ mod tests {
             .create_image(Uuid::new_v4(), image_req("orphan"))
             .await
             .expect_err("unknown silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    fn quota_req() -> NewQuota {
+        NewQuota {
+            cpu_limit: 16,
+            memory_bytes: 32 * 1024 * 1024 * 1024,
+            disk_bytes: 1024 * 1024 * 1024 * 1024,
+            instance_limit: 8,
+        }
+    }
+
+    #[tokio::test]
+    async fn quota_round_trip_within_project() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+
+        // No quota set initially.
+        let err = store
+            .get_quota(silo_id, project_id)
+            .await
+            .expect_err("unset quota is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+
+        let quota = store
+            .put_quota(silo_id, project_id, quota_req())
+            .await
+            .unwrap();
+        assert_eq!(quota.cpu_limit, 16);
+
+        let read = store.get_quota(silo_id, project_id).await.unwrap();
+        assert_eq!(read.cpu_limit, 16);
+
+        // Re-PUT replaces.
+        let mut req = quota_req();
+        req.cpu_limit = 32;
+        let updated = store.put_quota(silo_id, project_id, req).await.unwrap();
+        assert_eq!(updated.cpu_limit, 32);
+
+        store.delete_quota(silo_id, project_id).await.unwrap();
+        let err = store
+            .get_quota(silo_id, project_id)
+            .await
+            .expect_err("post-delete is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn quota_in_unknown_project_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, _) = make_silo_and_project(&store).await;
+        let err = store
+            .put_quota(silo_id, Uuid::new_v4(), quota_req())
+            .await
+            .expect_err("unknown project should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn quota_with_project_in_wrong_silo_is_not_found() {
+        let store = MemStore::new();
+        let silo_a = store
+            .create_silo(NewSilo {
+                name: "a".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let silo_b = store
+            .create_silo(NewSilo {
+                name: "b".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let project = store
+            .create_project(
+                silo_a.id,
+                NewProject {
+                    name: "p".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Caller claims silo_b but project lives in silo_a.
+        let err = store
+            .put_quota(silo_b.id, project.id, quota_req())
+            .await
+            .expect_err("project-in-wrong-silo should be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 
