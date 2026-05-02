@@ -1110,6 +1110,133 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics": {
+      "get": {
+        "tags": [
+          "nics"
+        ],
+        "summary": "List the NICs attached to an instance. Phase 0 produces",
+        "description": "exactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.",
+        "operationId": "list_instance_nics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Nic",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Nic"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}": {
+      "get": {
+        "tags": [
+          "nics"
+        ],
+        "summary": "Read a single NIC. Returns 404 if the NIC does not exist or",
+        "description": "belongs to a different silo, project, or instance.",
+        "operationId": "get_instance_nic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nic_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nic"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart": {
       "post": {
         "tags": [
@@ -2924,6 +3051,70 @@
           "name"
         ]
       },
+      "Nic": {
+        "description": "Per-instance network interface. Auto-created at instance create time with a single \"primary\" NIC; multi-NIC attach/detach is a future slice. Mirrors what the dataplane (OPTE per-NIC config) will eventually consume — guest MAC, primary IPv4/IPv6 in the subnet's CIDR.\n\nPhase 0 stores only the per-NIC fields the agent needs to open the overlay attachment for an instance:\n\n* `mac` — guest MAC address. Locally-administered (`02:` prefix) + 5 random bytes; uniqueness is rack-wide. * `primary_ipv4` / `primary_ipv6` — addresses allocated from the parent subnet's CIDR. Each family is `Some` only if the subnet has a CIDR for that family.\n\nExternal IPs, attached_subnets (other-subnet routing), and firewall rules are *not* on the NIC record — they live on future External-IP / Route / FirewallRule resources.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mac": {
+            "description": "Guest MAC, formatted as 6 lowercase hex bytes separated by colons (e.g. `02:1a:b3:cd:ef:42`).",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "primary_ipv4": {
+            "nullable": true,
+            "description": "Primary IPv4 from `subnet.ipv4_block`. `None` if the parent subnet is IPv6-only.",
+            "type": "string",
+            "format": "ipv4"
+          },
+          "primary_ipv6": {
+            "nullable": true,
+            "description": "Primary IPv6 from `subnet.ipv6_block`. `None` if the parent subnet is IPv4-only.",
+            "type": "string",
+            "format": "ipv6"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subnet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "id",
+          "instance_id",
+          "mac",
+          "name",
+          "project_id",
+          "silo_id",
+          "subnet_id",
+          "vpc_id"
+        ]
+      },
       "Outcome": {
         "description": "Outcome of the action after the handler finished.",
         "oneOf": [
@@ -3398,6 +3589,9 @@
     },
     {
       "name": "instances"
+    },
+    {
+      "name": "nics"
     },
     {
       "name": "projects"

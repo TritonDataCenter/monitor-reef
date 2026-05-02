@@ -1614,6 +1614,109 @@ pub mod types {
         }
     }
 
+    #[doc = "Per-instance network interface. Auto-created at instance create time with a single \"primary\" NIC; multi-NIC attach/detach is a future slice. Mirrors what the dataplane (OPTE per-NIC config) will eventually consume — guest MAC, primary IPv4/IPv6 in the subnet's CIDR.\n\nPhase 0 stores only the per-NIC fields the agent needs to open the overlay attachment for an instance:\n\n* `mac` — guest MAC address. Locally-administered (`02:` prefix) + 5 random bytes; uniqueness is rack-wide. * `primary_ipv4` / `primary_ipv6` — addresses allocated from the parent subnet's CIDR. Each family is `Some` only if the subnet has a CIDR for that family.\n\nExternal IPs, attached_subnets (other-subnet routing), and firewall rules are *not* on the NIC record — they live on future External-IP / Route / FirewallRule resources."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-instance network interface. Auto-created at instance create time with a single \\\"primary\\\" NIC; multi-NIC attach/detach is a future slice. Mirrors what the dataplane (OPTE per-NIC config) will eventually consume — guest MAC, primary IPv4/IPv6 in the subnet's CIDR.\\n\\nPhase 0 stores only the per-NIC fields the agent needs to open the overlay attachment for an instance:\\n\\n* `mac` — guest MAC address. Locally-administered (`02:` prefix) + 5 random bytes; uniqueness is rack-wide. * `primary_ipv4` / `primary_ipv6` — addresses allocated from the parent subnet's CIDR. Each family is `Some` only if the subnet has a CIDR for that family.\\n\\nExternal IPs, attached_subnets (other-subnet routing), and firewall rules are *not* on the NIC record — they live on future External-IP / Route / FirewallRule resources.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"mac\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"silo_id\","]
+    #[doc = "    \"subnet_id\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"mac\": {"]
+    #[doc = "      \"description\": \"Guest MAC, formatted as 6 lowercase hex bytes separated by colons (e.g. `02:1a:b3:cd:ef:42`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"primary_ipv4\": {"]
+    #[doc = "      \"description\": \"Primary IPv4 from `subnet.ipv4_block`. `None` if the parent subnet is IPv6-only.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"primary_ipv6\": {"]
+    #[doc = "      \"description\": \"Primary IPv6 from `subnet.ipv6_block`. `None` if the parent subnet is IPv4-only.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv6\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"subnet_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Nic {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub id: ::uuid::Uuid,
+        pub instance_id: ::uuid::Uuid,
+        #[doc = "Guest MAC, formatted as 6 lowercase hex bytes separated by colons (e.g. `02:1a:b3:cd:ef:42`)."]
+        pub mac: ::std::string::String,
+        pub name: ::std::string::String,
+        #[doc = "Primary IPv4 from `subnet.ipv4_block`. `None` if the parent subnet is IPv6-only."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub primary_ipv4: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[doc = "Primary IPv6 from `subnet.ipv6_block`. `None` if the parent subnet is IPv4-only."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub primary_ipv6: ::std::option::Option<::std::net::Ipv6Addr>,
+        pub project_id: ::uuid::Uuid,
+        pub silo_id: ::uuid::Uuid,
+        pub subnet_id: ::uuid::Uuid,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl Nic {
+        pub fn builder() -> builder::Nic {
+            Default::default()
+        }
+    }
+
     #[doc = "Outcome of the action after the handler finished."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4461,6 +4564,198 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct Nic {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            mac: ::std::result::Result<::std::string::String, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            primary_ipv4: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            primary_ipv6: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv6Addr>,
+                ::std::string::String,
+            >,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            subnet_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Nic {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    mac: Err("no value supplied for mac".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    primary_ipv4: Ok(Default::default()),
+                    primary_ipv6: Ok(Default::default()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    subnet_id: Err("no value supplied for subnet_id".to_string()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl Nic {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mac: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn primary_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.primary_ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for primary_ipv4: {e}"));
+                self
+            }
+            pub fn primary_ipv6<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv6Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.primary_ipv6 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for primary_ipv6: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+            pub fn subnet_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.subnet_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for subnet_id: {e}"));
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Nic> for super::Nic {
+            type Error = super::error::ConversionError;
+            fn try_from(value: Nic) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    id: value.id?,
+                    instance_id: value.instance_id?,
+                    mac: value.mac?,
+                    name: value.name?,
+                    primary_ipv4: value.primary_ipv4?,
+                    primary_ipv6: value.primary_ipv6?,
+                    project_id: value.project_id?,
+                    silo_id: value.silo_id?,
+                    subnet_id: value.subnet_id?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Nic> for Nic {
+            fn from(value: super::Nic) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    id: Ok(value.id),
+                    instance_id: Ok(value.instance_id),
+                    mac: Ok(value.mac),
+                    name: Ok(value.name),
+                    primary_ipv4: Ok(value.primary_ipv4),
+                    primary_ipv6: Ok(value.primary_ipv6),
+                    project_id: Ok(value.project_id),
+                    silo_id: Ok(value.silo_id),
+                    subnet_id: Ok(value.subnet_id),
+                    vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Project {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -5574,6 +5869,16 @@ impl Client {
     #[doc = "Delete an instance. Returns 409 if the instance is not in\n\na deletable state (must be Stopped or Failed). Returns 404 if the instance does not exist or belongs to a different silo or project.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.delete_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn delete_project_instance(&self) -> builder::DeleteProjectInstance<'_> {
         builder::DeleteProjectInstance::new(self)
+    }
+
+    #[doc = "List the NICs attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`\n\n```ignore\nlet response = client.list_instance_nics()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn list_instance_nics(&self) -> builder::ListInstanceNics<'_> {
+        builder::ListInstanceNics::new(self)
+    }
+
+    #[doc = "Read a single NIC. Returns 404 if the NIC does not exist or\n\nbelongs to a different silo, project, or instance.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}`\n\n```ignore\nlet response = client.get_instance_nic()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .nic_id(nic_id)\n    .send()\n    .await;\n```"]
+    pub fn get_instance_nic(&self) -> builder::GetInstanceNic<'_> {
+        builder::GetInstanceNic::new(self)
     }
 
     #[doc = "Restart a running instance. Returns 409 if the instance is\n\nnot in `Running` state.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart`\n\n```ignore\nlet response = client.restart_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
@@ -7803,6 +8108,227 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_instance_nics`]\n\n[`Client::list_instance_nics`]: super::Client::list_instance_nics"]
+    #[derive(Debug, Clone)]
+    pub struct ListInstanceNics<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListInstanceNics<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Nic>>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                instance_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/instances/{}/nics",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_instance_nics",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_instance_nic`]\n\n[`Client::get_instance_nic`]: super::Client::get_instance_nic"]
+    #[derive(Debug, Clone)]
+    pub struct GetInstanceNic<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        nic_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetInstanceNic<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                nic_id: Err("nic_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn nic_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.nic_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for nic_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Nic>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                instance_id,
+                nic_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let nic_id = nic_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/instances/{}/nics/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+                encode_path(&nic_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_instance_nic",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

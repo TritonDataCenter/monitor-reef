@@ -628,6 +628,98 @@ pub async fn silo_project_instance_delete(
     Ok(())
 }
 
+/// List the NICs attached to an instance.
+pub async fn silo_project_instance_nic_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let nics = client
+        .list_instance_nics()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("list nics")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&nics)?);
+        return Ok(());
+    }
+    if nics.is_empty() {
+        println!("(no nics)");
+        return Ok(());
+    }
+    for n in nics {
+        let v4 = n
+            .primary_ipv4
+            .map(|ip| ip.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let v6 = n
+            .primary_ipv6
+            .map(|ip| ip.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        println!("{}  {}  v4={v4}  v6={v6}  {}", n.id, n.mac, n.name);
+    }
+    Ok(())
+}
+
+/// Read a single NIC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_instance_nic_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    nic_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let nic = client
+        .get_instance_nic()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .instance_id(instance_id)
+        .nic_id(nic_id)
+        .send()
+        .await
+        .context("get nic")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&nic)?);
+    } else {
+        println!("Nic {} on instance {}", nic.id, nic.instance_id);
+        println!("  name:         {}", nic.name);
+        println!("  mac:          {}", nic.mac);
+        println!(
+            "  primary_ipv4: {}",
+            nic.primary_ipv4
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "(none)".to_string())
+        );
+        println!(
+            "  primary_ipv6: {}",
+            nic.primary_ipv6
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "(none)".to_string())
+        );
+        println!("  vpc:          {}", nic.vpc_id);
+        println!("  subnet:       {}", nic.subnet_id);
+        println!("  created:      {}", nic.created_at);
+    }
+    Ok(())
+}
+
 /// Drive a lifecycle transition (start/stop/restart). Single function
 /// for all three so the dispatch table in main.rs stays terse.
 pub async fn silo_project_instance_lifecycle(

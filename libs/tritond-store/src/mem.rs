@@ -10,6 +10,7 @@
 //! don't need durable state.
 
 use std::collections::{HashMap, HashSet};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -20,8 +21,8 @@ use uuid::Uuid;
 use crate::{
     ApiKey, IdpConfig, Image, Instance, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet,
-    SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError,
+    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -79,6 +80,12 @@ struct Inner {
     /// FIFO consumption picks the smallest `seq` with status
     /// `Pending`.
     next_job_seq: u64,
+    nics_by_id: HashMap<Uuid, Nic>,
+    /// Per-subnet IPv4 allocations. NIC delete frees the address
+    /// back to the pool, so re-creating an instance reuses the
+    /// lowest-numbered free address.
+    allocated_ipv4_by_subnet: HashMap<Uuid, HashSet<Ipv4Addr>>,
+    allocated_ipv6_by_subnet: HashMap<Uuid, HashSet<Ipv6Addr>>,
 }
 
 /// In-process [`Store`] implementation.
@@ -731,7 +738,7 @@ impl Store for MemStore {
         silo_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
-    ) -> Result<Instance, StoreError> {
+    ) -> Result<(Instance, Nic), StoreError> {
         let mut guard = self.inner.write().await;
 
         // Project must exist and be in the named silo.
@@ -760,6 +767,7 @@ impl Store for MemStore {
         if subnet.silo_id != silo_id || subnet.project_id != project_id {
             return Err(StoreError::NotFound);
         }
+        let subnet = subnet.clone();
 
         // Each ssh-key id must exist and live in the same silo.
         for key_id in &req.ssh_key_ids {
@@ -780,9 +788,49 @@ impl Store for MemStore {
             )));
         }
 
+        // Allocate the primary NIC's addresses. Each family is
+        // allocated only when the parent subnet has it.
+        let allocated_v4 = guard.allocated_ipv4_by_subnet.entry(subnet.id).or_default();
+        let primary_ipv4 = match subnet.ipv4_block {
+            Some(cidr) => {
+                let ip = crate::types::allocate_ipv4(cidr, allocated_v4).ok_or_else(|| {
+                    StoreError::Backend(format!("subnet {} ipv4 pool exhausted", subnet.id))
+                })?;
+                allocated_v4.insert(ip);
+                Some(ip)
+            }
+            None => None,
+        };
+        let allocated_v6 = guard.allocated_ipv6_by_subnet.entry(subnet.id).or_default();
+        let primary_ipv6 = match subnet.ipv6_block {
+            Some(cidr) => {
+                let ip = crate::types::allocate_ipv6(cidr, allocated_v6).ok_or_else(|| {
+                    StoreError::Backend(format!("subnet {} ipv6 pool exhausted", subnet.id))
+                })?;
+                allocated_v6.insert(ip);
+                Some(ip)
+            }
+            None => None,
+        };
+
         let now = Utc::now();
-        let instance = Instance {
+        let instance_id = Uuid::new_v4();
+        let mut rng = rand::rng();
+        let nic = Nic {
             id: Uuid::new_v4(),
+            silo_id,
+            project_id,
+            instance_id,
+            vpc_id: subnet.vpc_id,
+            subnet_id: subnet.id,
+            name: "primary".to_string(),
+            mac: crate::types::generate_mac(&mut rng),
+            primary_ipv4,
+            primary_ipv6,
+            created_at: now,
+        };
+        let instance = Instance {
+            id: instance_id,
             silo_id,
             project_id,
             name: req.name.clone(),
@@ -800,7 +848,8 @@ impl Store for MemStore {
             .instance_id_by_project_name
             .insert(name_key, instance.id);
         guard.instances_by_id.insert(instance.id, instance.clone());
-        Ok(instance)
+        guard.nics_by_id.insert(nic.id, nic.clone());
+        Ok((instance, nic))
     }
 
     async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError> {
@@ -849,6 +898,30 @@ impl Store for MemStore {
                 "instance {instance_id} is not deletable in state {lifecycle_kind:?}; stop it first"
             )));
         }
+
+        // Cascade: collect NIC ids, then drop each NIC + free its
+        // IP allocations.
+        let nic_ids: Vec<Uuid> = guard
+            .nics_by_id
+            .values()
+            .filter(|n| n.instance_id == instance_id)
+            .map(|n| n.id)
+            .collect();
+        for nic_id in nic_ids {
+            if let Some(nic) = guard.nics_by_id.remove(&nic_id) {
+                if let Some(ip) = nic.primary_ipv4
+                    && let Some(set) = guard.allocated_ipv4_by_subnet.get_mut(&nic.subnet_id)
+                {
+                    set.remove(&ip);
+                }
+                if let Some(ip) = nic.primary_ipv6
+                    && let Some(set) = guard.allocated_ipv6_by_subnet.get_mut(&nic.subnet_id)
+                {
+                    set.remove(&ip);
+                }
+            }
+        }
+
         guard.instances_by_id.remove(&instance_id);
         guard
             .instance_id_by_project_name
@@ -876,6 +949,25 @@ impl Store for MemStore {
         instance.lifecycle = to;
         instance.updated_at = Utc::now();
         Ok(instance.clone())
+    }
+
+    async fn get_nic(&self, nic_id: Uuid) -> Result<Nic, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .nics_by_id
+            .get(&nic_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .nics_by_id
+            .values()
+            .filter(|n| n.instance_id == instance_id)
+            .cloned()
+            .collect())
     }
 
     async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
@@ -2337,7 +2429,7 @@ mod tests {
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
 
-        let instance = store
+        let (instance, _nic) = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2465,7 +2557,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let instance = store
+        let (instance, _nic) = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2493,7 +2585,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let instance = store
+        let (instance, _nic) = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2518,7 +2610,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let instance = store
+        let (instance, _nic) = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2555,7 +2647,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let instance = store
+        let (instance, _nic) = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2595,7 +2687,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let instance = store
+        let (instance, _nic) = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2617,6 +2709,142 @@ mod tests {
             .delete_instance(instance.id)
             .await
             .expect("Failed instance is deletable");
+    }
+
+    #[tokio::test]
+    async fn instance_create_returns_primary_nic_with_ip_and_mac() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let (instance, nic) = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        assert_eq!(nic.instance_id, instance.id);
+        assert_eq!(nic.subnet_id, subnet_id);
+        assert_eq!(nic.name, "primary");
+        // The fixture's subnet has ipv4 only.
+        let ip = nic.primary_ipv4.expect("primary_ipv4 should be set");
+        // Subnet is 10.0.1.0/24; .0 = network, .1 = gateway, so first
+        // available is .2.
+        assert_eq!(ip.octets(), [10, 0, 1, 2]);
+        assert!(nic.primary_ipv6.is_none(), "ipv6-less subnet -> no v6");
+        // MAC starts with "02:" (locally administered, unicast).
+        assert!(
+            nic.mac.starts_with("02:"),
+            "mac should be locally-administered, got {}",
+            nic.mac
+        );
+        assert_eq!(nic.mac.matches(':').count(), 5);
+
+        // list_nics_for_instance returns the primary.
+        let listed = store.list_nics_for_instance(instance.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, nic.id);
+    }
+
+    #[tokio::test]
+    async fn delete_instance_cascades_to_nic_and_frees_ip() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let (instance, nic) = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let original_ip = nic.primary_ipv4.unwrap();
+        // Drive Pending → Stopped so delete is allowed.
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Stopped,
+            )
+            .await
+            .unwrap();
+        store.delete_instance(instance.id).await.unwrap();
+
+        // NIC record is gone.
+        let err = store
+            .get_nic(nic.id)
+            .await
+            .expect_err("NIC should be cascade-deleted");
+        assert!(matches!(err, StoreError::NotFound));
+
+        // Re-creating an instance under the same subnet picks up the
+        // freed IP (lowest free is the one we just released).
+        let (_, new_nic) = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web2", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        assert_eq!(new_nic.primary_ipv4, Some(original_ip));
+    }
+
+    #[tokio::test]
+    async fn dual_stack_subnet_allocates_v4_and_v6() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = store
+            .create_vpc(
+                silo_id,
+                project_id,
+                NewVpc {
+                    name: "vpc1".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.0.0/16")),
+                    ipv6_block: Some(ipv6_cidr("fd00::/48")),
+                },
+            )
+            .await
+            .unwrap();
+        let subnet = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "primary".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: Some(ipv6_cidr("fd00:0:0:1::/64")),
+                },
+            )
+            .await
+            .unwrap();
+        let image = store
+            .create_image(silo_id, image_req("dual"))
+            .await
+            .unwrap();
+        let key = store
+            .create_ssh_key(
+                silo_id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA"),
+                "SHA256:dual".to_string(),
+            )
+            .await
+            .unwrap();
+        let (_, nic) = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image.id, subnet.id, key.id),
+            )
+            .await
+            .unwrap();
+        assert!(nic.primary_ipv4.is_some());
+        assert!(nic.primary_ipv6.is_some());
     }
 
     use crate::JobKind;

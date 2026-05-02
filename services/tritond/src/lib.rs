@@ -35,12 +35,12 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloImagePath, SiloPath, SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath,
-    SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
+    SiloImagePath, SiloPath, SiloProjectInstanceNicPath, SiloProjectInstancePath, SiloProjectPath,
+    SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, IdpConfigView, Image, Instance, JobKind, LifecycleState,
         LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo,
-        NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey, Subnet, Vpc,
+        NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1768,22 +1768,23 @@ impl TritondApi for TritondServiceImpl {
             .await);
         }
 
-        let instance = match ctx.store.create_instance(silo_id, project_id, req).await {
-            Ok(i) => i,
-            Err(e) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::InstanceCreate,
-                        request_id,
-                        None,
-                        store_error_to_audit_outcome(&e),
-                        serde_json::Value::Null,
-                    )
-                    .await;
-                return Err(store_error_to_http(e));
-            }
-        };
+        let (instance, _primary_nic) =
+            match ctx.store.create_instance(silo_id, project_id, req).await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::InstanceCreate,
+                            request_id,
+                            None,
+                            store_error_to_audit_outcome(&e),
+                            serde_json::Value::Null,
+                        )
+                        .await;
+                    return Err(store_error_to_http(e));
+                }
+            };
 
         // Enqueue the provisioning job. The stub provisioner (or
         // a real per-CN agent in the future) will pick it up and
@@ -1980,6 +1981,75 @@ impl TritondApi for TritondServiceImpl {
             Some(JobKindTemplate::Restart),
         )
         .await
+    }
+
+    async fn list_instance_nics(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectInstancePath {
+            silo_id,
+            project_id,
+            instance_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NicList,
+            silo_id,
+        )
+        .await?;
+        // Defence-in-depth: instance must live in path's silo+project.
+        let instance = ctx
+            .store
+            .get_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if instance.silo_id != silo_id || instance.project_id != project_id {
+            return Err(not_found());
+        }
+        let nics = ctx
+            .store
+            .list_nics_for_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(nics))
+    }
+
+    async fn get_instance_nic(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstanceNicPath>,
+    ) -> Result<HttpResponseOk<Nic>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectInstanceNicPath {
+            silo_id,
+            project_id,
+            instance_id,
+            nic_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NicGet,
+            silo_id,
+        )
+        .await?;
+        let nic = ctx
+            .store
+            .get_nic(nic_id)
+            .await
+            .map_err(store_error_to_http)?;
+        // Defence-in-depth: NIC must live under all three path levels.
+        if nic.silo_id != silo_id || nic.project_id != project_id || nic.instance_id != instance_id
+        {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(nic))
     }
 }
 

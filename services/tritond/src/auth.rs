@@ -111,7 +111,9 @@ permit(
         Action::"instance_delete",
         Action::"instance_start",
         Action::"instance_stop",
-        Action::"instance_restart"
+        Action::"instance_restart",
+        Action::"nic_list",
+        Action::"nic_get"
     ],
     resource
 ) when {
@@ -245,6 +247,8 @@ pub enum Action {
     InstanceStart,
     InstanceStop,
     InstanceRestart,
+    NicList,
+    NicGet,
 }
 
 impl Action {
@@ -298,6 +302,8 @@ impl Action {
             Action::InstanceStart => "instance_start",
             Action::InstanceStop => "instance_stop",
             Action::InstanceRestart => "instance_restart",
+            Action::NicList => "nic_list",
+            Action::NicGet => "nic_get",
         }
     }
 

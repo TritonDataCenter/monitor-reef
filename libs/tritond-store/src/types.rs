@@ -6,6 +6,9 @@
 
 //! Domain types shared between the storage layer and the wire surface.
 
+use std::collections::HashSet;
+use std::net::{Ipv4Addr, Ipv6Addr};
+
 use chrono::{DateTime, Utc};
 use ipnetwork::{Ipv4Network, Ipv6Network};
 use schemars::JsonSchema;
@@ -773,6 +776,123 @@ pub struct NewJob {
 pub enum JobOutcome {
     Completed,
     Failed { reason: String },
+}
+
+/// Per-instance network interface. Auto-created at instance create
+/// time with a single "primary" NIC; multi-NIC attach/detach is a
+/// future slice. Mirrors what the dataplane (OPTE per-NIC config)
+/// will eventually consume — guest MAC, primary IPv4/IPv6 in the
+/// subnet's CIDR.
+///
+/// Phase 0 stores only the per-NIC fields the agent needs to open
+/// the overlay attachment for an instance:
+///
+/// * `mac` — guest MAC address. Locally-administered (`02:` prefix)
+///   + 5 random bytes; uniqueness is rack-wide.
+/// * `primary_ipv4` / `primary_ipv6` — addresses allocated from the
+///   parent subnet's CIDR. Each family is `Some` only if the subnet
+///   has a CIDR for that family.
+///
+/// External IPs, attached_subnets (other-subnet routing), and
+/// firewall rules are *not* on the NIC record — they live on
+/// future External-IP / Route / FirewallRule resources.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Nic {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub instance_id: Uuid,
+    pub vpc_id: Uuid,
+    pub subnet_id: Uuid,
+    pub name: String,
+    /// Guest MAC, formatted as 6 lowercase hex bytes separated by
+    /// colons (e.g. `02:1a:b3:cd:ef:42`).
+    pub mac: String,
+    /// Primary IPv4 from `subnet.ipv4_block`. `None` if the parent
+    /// subnet is IPv6-only.
+    pub primary_ipv4: Option<Ipv4Addr>,
+    /// Primary IPv6 from `subnet.ipv6_block`. `None` if the parent
+    /// subnet is IPv4-only.
+    pub primary_ipv6: Option<Ipv6Addr>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Allocate the lowest unused IPv4 address inside `cidr`, given the
+/// set of `already_allocated` addresses. Skips:
+///
+/// * the network address (`cidr.network()`),
+/// * the gateway (network + 1, conventionally `.1`),
+/// * the broadcast address (`cidr.broadcast()`).
+///
+/// Returns `None` if the subnet is exhausted.
+#[must_use]
+pub fn allocate_ipv4(cidr: Ipv4Network, already_allocated: &HashSet<Ipv4Addr>) -> Option<Ipv4Addr> {
+    let network = cidr.network();
+    let broadcast = cidr.broadcast();
+    let gateway = next_ipv4(network)?;
+    for candidate in cidr.iter() {
+        if candidate == network || candidate == gateway || candidate == broadcast {
+            continue;
+        }
+        if !already_allocated.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Allocate the lowest unused IPv6 address inside `cidr`, skipping
+/// the network address and the gateway (`network + 1`,
+/// conventionally `::1` in `fdXX::/N` subnets).
+///
+/// Returns `None` if the subnet is exhausted (operationally
+/// unreachable for v0 with /48 or /64 subnets and a few NICs).
+#[must_use]
+pub fn allocate_ipv6(cidr: Ipv6Network, already_allocated: &HashSet<Ipv6Addr>) -> Option<Ipv6Addr> {
+    let network = cidr.network();
+    let gateway = next_ipv6(network)?;
+    // For IPv6 we don't iterate the full address space; we walk
+    // from `gateway + 1` outward and stop on the first free
+    // address. /64 has 2^64 addresses; we won't realistically hit
+    // the end. The cidr.contains() check guards a wraparound.
+    let mut candidate = next_ipv6(gateway)?;
+    loop {
+        if !cidr.contains(candidate) {
+            return None;
+        }
+        if !already_allocated.contains(&candidate) {
+            return Some(candidate);
+        }
+        candidate = next_ipv6(candidate)?;
+    }
+}
+
+fn next_ipv4(ip: Ipv4Addr) -> Option<Ipv4Addr> {
+    let bits = u32::from(ip);
+    bits.checked_add(1).map(Ipv4Addr::from)
+}
+
+fn next_ipv6(ip: Ipv6Addr) -> Option<Ipv6Addr> {
+    let bits = u128::from(ip);
+    bits.checked_add(1).map(Ipv6Addr::from)
+}
+
+/// Generate a random locally-administered MAC address.
+///
+/// Formats as 6 lowercase hex bytes separated by colons. The first
+/// byte is set to `0x02` (locally-administered, unicast — the
+/// universal vendor-free prefix); the remaining 5 bytes are drawn
+/// from `rng.random()` so the MAC is rack-unique with vanishing
+/// collision probability for any realistic deployment.
+#[must_use]
+pub fn generate_mac<R: rand::Rng>(rng: &mut R) -> String {
+    let mut bytes = [0u8; 6];
+    rng.fill(&mut bytes[..]);
+    bytes[0] = 0x02; // locally-administered, unicast
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]
+    )
 }
 
 /// Cluster-level system keys. Phase 0 has exactly one

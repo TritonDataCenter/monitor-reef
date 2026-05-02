@@ -29,8 +29,8 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, Image, Instance,
-    NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project,
-    Quota, Silo, SshKey, Subnet, Vpc,
+    NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
+    Project, Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -151,6 +151,16 @@ pub struct SiloProjectInstancePath {
     pub silo_id: Uuid,
     pub project_id: Uuid,
     pub instance_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single NIC
+/// belonging to an instance.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectInstanceNicPath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub instance_id: Uuid,
+    pub nic_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -773,4 +783,29 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// List the NICs attached to an instance. Phase 0 produces
+    /// exactly one (the auto-created `"primary"`); a future slice
+    /// adds NIC attach/detach.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics",
+        tags = ["nics"],
+    }]
+    async fn list_instance_nics(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError>;
+
+    /// Read a single NIC. Returns 404 if the NIC does not exist or
+    /// belongs to a different silo, project, or instance.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}",
+        tags = ["nics"],
+    }]
+    async fn get_instance_nic(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstanceNicPath>,
+    ) -> Result<HttpResponseOk<Nic>, HttpError>;
 }

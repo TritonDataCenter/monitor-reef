@@ -33,8 +33,9 @@ pub use mem::MemStore;
 pub use types::{
     ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, Instance, JobKind, JobOutcome,
     JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, ProvisioningJob, Quota,
-    Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING,
+    Vpc,
 };
 
 use async_trait::async_trait;
@@ -388,7 +389,7 @@ pub trait Store: Send + Sync + 'static {
     // Instances (project-scoped, with lifecycle state machine)
     // ------------------------------------------------------------------
 
-    /// Create an instance.
+    /// Create an instance, atomically creating its primary NIC.
     ///
     /// The store enforces structural invariants:
     ///
@@ -405,21 +406,23 @@ pub trait Store: Send + Sync + 'static {
     /// * `name` is unique within the project. Collision →
     ///   [`StoreError::Conflict`].
     ///
-    /// The caller is expected to have validated `cpu > 0` and
-    /// `memory_bytes > 0` at the API edge; the store does not
-    /// re-validate.
+    /// On success the instance is created with `lifecycle =
+    /// Pending` and a primary NIC named `"primary"` is allocated:
+    /// MAC is randomly generated; primary IPv4 / IPv6 are allocated
+    /// from the parent subnet's CIDR (each family allocated only
+    /// when the subnet has that family). NIC creation is atomic
+    /// with instance creation — both records exist or neither
+    /// does. If subnet IP pool exhaustion occurs, returns
+    /// [`StoreError::Backend`] (operationally unreachable for v0).
     ///
-    /// Initial `lifecycle` is [`LifecycleState::Pending`]. The
-    /// caller is responsible for driving the state machine forward
-    /// (in Phase 0 the create handler synchronously transitions
-    /// Pending → Running; a future slice replaces that with an
-    /// async intent queue).
+    /// The caller is expected to have validated `cpu > 0` and
+    /// `memory_bytes > 0` at the API edge.
     async fn create_instance(
         &self,
         silo_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
-    ) -> Result<Instance, StoreError>;
+    ) -> Result<(Instance, Nic), StoreError>;
 
     /// Look up an instance by id.
     async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError>;
@@ -435,6 +438,10 @@ pub trait Store: Send + Sync + 'static {
     /// (see [`LifecycleState::is_deletable`]) — operators must
     /// stop a Running instance before deletion. Returns
     /// [`StoreError::NotFound`] if the id does not exist.
+    ///
+    /// Cascades to the instance's NICs: each NIC record is
+    /// removed and its IPv4 / IPv6 allocations are freed back to
+    /// the parent subnet's pool, all in the same transaction.
     async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError>;
 
     /// Atomic compare-and-set on an instance's lifecycle. Reads the
@@ -455,6 +462,20 @@ pub trait Store: Send + Sync + 'static {
         expected_from: &[LifecycleStateKind],
         to: LifecycleState,
     ) -> Result<Instance, StoreError>;
+
+    // ------------------------------------------------------------------
+    // NICs (instance-scoped, auto-created at instance create)
+    // ------------------------------------------------------------------
+
+    /// Look up a NIC by id. Returns [`StoreError::NotFound`] when
+    /// no such NIC exists. Handlers add silo + project + instance
+    /// id rechecks on top.
+    async fn get_nic(&self, nic_id: Uuid) -> Result<Nic, StoreError>;
+
+    /// List the NICs attached to a single instance. Order is
+    /// unspecified; Phase 0 produces exactly one NIC per instance
+    /// (the auto-created `"primary"`).
+    async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError>;
 
     // ------------------------------------------------------------------
     // Provisioning jobs (FIFO queue consumed by an agent)

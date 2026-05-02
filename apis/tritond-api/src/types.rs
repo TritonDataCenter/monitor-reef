@@ -20,5 +20,5 @@ pub use tritond_audit::{
 pub use tritond_store::{
     ApiKeyView, IdpConfigView, Image, Instance, JobKind, JobStatus, LifecycleState,
     LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, UserView, Vpc,
+    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, UserView, Vpc,
 };

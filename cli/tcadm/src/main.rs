@@ -320,6 +320,33 @@ enum SiloProjectInstanceCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Inspect NICs attached to an instance.
+    Nic {
+        #[command(subcommand)]
+        command: SiloProjectInstanceNicCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectInstanceNicCommand {
+    /// List the NICs attached to an instance (Phase 0 ships exactly
+    /// one — the auto-created `primary` NIC).
+    List {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single NIC.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        nic_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -784,6 +811,42 @@ async fn main() -> Result<()> {
                         )
                         .await
                     }
+                    SiloProjectInstanceCommand::Nic { command } => match command {
+                        SiloProjectInstanceNicCommand::List {
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        } => {
+                            commands::silo_project_instance_nic_list(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                instance_id,
+                                json,
+                            )
+                            .await
+                        }
+                        SiloProjectInstanceNicCommand::Get {
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            nic_id,
+                            json,
+                        } => {
+                            commands::silo_project_instance_nic_get(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                instance_id,
+                                nic_id,
+                                json,
+                            )
+                            .await
+                        }
+                    },
                 },
                 SiloProjectCommand::Quota { command } => match command {
                     SiloProjectQuotaCommand::Set {

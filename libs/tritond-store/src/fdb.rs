@@ -55,6 +55,10 @@
 //! instance/by_id/<uuid>             -> JSON-encoded Instance
 //! instance/by_project/<proj>/<name> -> uuid hyphenated bytes
 //! instance/in_project/<proj>/<inst> -> empty (membership index)
+//! nic/by_id/<uuid>                  -> JSON-encoded Nic
+//! nic/in_instance/<inst>/<nic>      -> empty (membership index)
+//! nic/ip_alloc/<subnet>/v4/<addr>   -> empty (allocation index, v4)
+//! nic/ip_alloc/<subnet>/v6/<addr>   -> empty (allocation index, v6)
 //! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
 //! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
 //! job/seq/counter                   -> next seq, big-endian u64
@@ -75,8 +79,8 @@ use uuid::Uuid;
 use crate::{
     ApiKey, IdpConfig, Image, Instance, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet,
-    SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError,
+    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -290,6 +294,34 @@ impl FdbStore {
 
     fn instance_in_project_prefix(project_id: Uuid) -> Vec<u8> {
         format!("instance/in_project/{project_id}/").into_bytes()
+    }
+
+    fn nic_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("nic/by_id/{id}").into_bytes()
+    }
+
+    fn nic_in_instance_key(instance_id: Uuid, nic_id: Uuid) -> Vec<u8> {
+        format!("nic/in_instance/{instance_id}/{nic_id}").into_bytes()
+    }
+
+    fn nic_in_instance_prefix(instance_id: Uuid) -> Vec<u8> {
+        format!("nic/in_instance/{instance_id}/").into_bytes()
+    }
+
+    fn nic_ip_alloc_v4_key(subnet_id: Uuid, ip: std::net::Ipv4Addr) -> Vec<u8> {
+        format!("nic/ip_alloc/{subnet_id}/v4/{ip}").into_bytes()
+    }
+
+    fn nic_ip_alloc_v6_key(subnet_id: Uuid, ip: std::net::Ipv6Addr) -> Vec<u8> {
+        format!("nic/ip_alloc/{subnet_id}/v6/{ip}").into_bytes()
+    }
+
+    fn nic_ip_alloc_v4_prefix(subnet_id: Uuid) -> Vec<u8> {
+        format!("nic/ip_alloc/{subnet_id}/v4/").into_bytes()
+    }
+
+    fn nic_ip_alloc_v6_prefix(subnet_id: Uuid) -> Vec<u8> {
+        format!("nic/ip_alloc/{subnet_id}/v6/").into_bytes()
     }
 
     fn job_by_id_key(id: Uuid) -> Vec<u8> {
@@ -1868,11 +1900,13 @@ impl Store for FdbStore {
         silo_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
-    ) -> Result<Instance, StoreError> {
-        // Cross-resource validation reads (project, image, subnet,
-        // each ssh-key) all happen inside the transaction so the
-        // create can't race a concurrent delete of any referenced
-        // resource.
+    ) -> Result<(Instance, Nic), StoreError> {
+        // All cross-resource reads + the IP allocation set scan +
+        // the instance write + the NIC write + the IP-alloc index
+        // writes happen in a single transaction. A concurrent
+        // delete of any referenced resource aborts cleanly; a
+        // concurrent NIC create that would race for the same IP
+        // is serialized by FDB's optimistic concurrency.
         let project_check_key = Self::project_by_id_key(project_id);
         let image_check_key = Self::image_by_id_key(req.image_id);
         let subnet_check_key = Self::subnet_by_id_key(req.primary_subnet_id);
@@ -1882,19 +1916,29 @@ impl Store for FdbStore {
             .map(|id| (*id, Self::ssh_key_by_id_key(*id)))
             .collect();
         let by_name_key = Self::instance_by_project_name_key(project_id, &req.name);
+        let alloc_v4_prefix = Self::nic_ip_alloc_v4_prefix(req.primary_subnet_id);
+        let alloc_v6_prefix = Self::nic_ip_alloc_v6_prefix(req.primary_subnet_id);
+        let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
+        let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
+        let v4_prefix_len = alloc_v4_prefix.len();
+        let v6_prefix_len = alloc_v6_prefix.len();
 
-        let candidate_id = Uuid::new_v4();
-        let by_id_key = Self::instance_by_id_key(candidate_id);
-        let in_project_key = Self::instance_in_project_key(project_id, candidate_id);
-        let id_str = candidate_id.to_string();
+        let instance_id = Uuid::new_v4();
+        let nic_id = Uuid::new_v4();
+        let by_id_key = Self::instance_by_id_key(instance_id);
+        let in_project_key = Self::instance_in_project_key(project_id, instance_id);
+        let nic_by_id_key = Self::nic_by_id_key(nic_id);
+        let nic_in_instance_key = Self::nic_in_instance_key(instance_id, nic_id);
+        let instance_id_str = instance_id.to_string();
 
         enum Outcome {
-            Created(Box<Instance>),
+            Created(Box<(Instance, Nic)>),
             ProjectMissingOrWrongSilo,
             ImageMissingOrWrongSilo,
             SubnetMissingOrWrongParent,
             SshKeyMissingOrWrongSilo,
             NameTaken,
+            IpPoolExhausted,
         }
 
         let req_for_txn = req.clone();
@@ -1908,7 +1952,13 @@ impl Store for FdbStore {
                 let by_id_key = by_id_key.clone();
                 let by_name_key = by_name_key.clone();
                 let in_project_key = in_project_key.clone();
-                let id_bytes = id_str.as_bytes().to_vec();
+                let nic_by_id_key = nic_by_id_key.clone();
+                let nic_in_instance_key = nic_in_instance_key.clone();
+                let v4_begin = v4_begin.clone();
+                let v4_end = v4_end.clone();
+                let v6_begin = v6_begin.clone();
+                let v6_end = v6_end.clone();
+                let id_bytes = instance_id_str.as_bytes().to_vec();
                 let req = req_for_txn.clone();
                 async move {
                     // Project
@@ -1965,10 +2015,78 @@ impl Store for FdbStore {
                     if tr.get(&by_name_key, false).await?.is_some() {
                         return Ok(Outcome::NameTaken);
                     }
-                    // Build + write
+
+                    // Read existing IP allocations for this subnet to
+                    // feed into the in-memory allocator.
+                    let mut allocated_v4: std::collections::HashSet<std::net::Ipv4Addr> =
+                        std::collections::HashSet::new();
+                    {
+                        let opt = RangeOption {
+                            begin: KeySelector::first_greater_or_equal(v4_begin),
+                            end: KeySelector::first_greater_or_equal(v4_end),
+                            ..RangeOption::default()
+                        };
+                        let kvs = tr.get_range(&opt, 1, false).await?;
+                        for kv in kvs.iter() {
+                            let suffix = &kv.key()[v4_prefix_len..];
+                            if let Ok(s) = std::str::from_utf8(suffix)
+                                && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                            {
+                                allocated_v4.insert(ip);
+                            }
+                        }
+                    }
+                    let mut allocated_v6: std::collections::HashSet<std::net::Ipv6Addr> =
+                        std::collections::HashSet::new();
+                    {
+                        let opt = RangeOption {
+                            begin: KeySelector::first_greater_or_equal(v6_begin),
+                            end: KeySelector::first_greater_or_equal(v6_end),
+                            ..RangeOption::default()
+                        };
+                        let kvs = tr.get_range(&opt, 1, false).await?;
+                        for kv in kvs.iter() {
+                            let suffix = &kv.key()[v6_prefix_len..];
+                            if let Ok(s) = std::str::from_utf8(suffix)
+                                && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                            {
+                                allocated_v6.insert(ip);
+                            }
+                        }
+                    }
+
+                    let primary_ipv4 = match subnet.ipv4_block {
+                        Some(cidr) => match crate::types::allocate_ipv4(cidr, &allocated_v4) {
+                            Some(ip) => Some(ip),
+                            None => return Ok(Outcome::IpPoolExhausted),
+                        },
+                        None => None,
+                    };
+                    let primary_ipv6 = match subnet.ipv6_block {
+                        Some(cidr) => match crate::types::allocate_ipv6(cidr, &allocated_v6) {
+                            Some(ip) => Some(ip),
+                            None => return Ok(Outcome::IpPoolExhausted),
+                        },
+                        None => None,
+                    };
+
                     let now = Utc::now();
+                    let mut rng = rand::rng();
+                    let nic = Nic {
+                        id: nic_id,
+                        silo_id,
+                        project_id,
+                        instance_id,
+                        vpc_id: subnet.vpc_id,
+                        subnet_id: subnet.id,
+                        name: "primary".to_string(),
+                        mac: crate::types::generate_mac(&mut rng),
+                        primary_ipv4,
+                        primary_ipv6,
+                        created_at: now,
+                    };
                     let instance = Instance {
-                        id: candidate_id,
+                        id: instance_id,
                         silo_id,
                         project_id,
                         name: req.name.clone(),
@@ -1982,20 +2100,34 @@ impl Store for FdbStore {
                         created_at: now,
                         updated_at: now,
                     };
-                    let value = match serde_json::to_vec(&instance) {
+                    let instance_value = match serde_json::to_vec(&instance) {
                         Ok(v) => v,
-                        Err(_) => return Ok(Outcome::NameTaken), // surrogate; treated as backend
+                        Err(_) => return Ok(Outcome::NameTaken),
                     };
-                    tr.set(&by_id_key, &value);
+                    let nic_value = match serde_json::to_vec(&nic) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::NameTaken),
+                    };
+                    tr.set(&by_id_key, &instance_value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_project_key, b"");
-                    Ok(Outcome::Created(Box::new(instance)))
+                    tr.set(&nic_by_id_key, &nic_value);
+                    tr.set(&nic_in_instance_key, b"");
+                    if let Some(ip) = primary_ipv4 {
+                        let alloc_key = Self::nic_ip_alloc_v4_key(subnet.id, ip);
+                        tr.set(&alloc_key, b"");
+                    }
+                    if let Some(ip) = primary_ipv6 {
+                        let alloc_key = Self::nic_ip_alloc_v6_key(subnet.id, ip);
+                        tr.set(&alloc_key, b"");
+                    }
+                    Ok(Outcome::Created(Box::new((instance, nic))))
                 }
             })
             .await;
 
         match outcome {
-            Ok(Outcome::Created(i)) => Ok(*i),
+            Ok(Outcome::Created(both)) => Ok(*both),
             Ok(Outcome::ProjectMissingOrWrongSilo)
             | Ok(Outcome::ImageMissingOrWrongSilo)
             | Ok(Outcome::SubnetMissingOrWrongParent)
@@ -2003,6 +2135,10 @@ impl Store for FdbStore {
             Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
                 "instance with name {:?} already exists in project {project_id}",
                 req.name
+            ))),
+            Ok(Outcome::IpPoolExhausted) => Err(StoreError::Backend(format!(
+                "subnet {} ip pool exhausted",
+                req.primary_subnet_id
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
@@ -2064,6 +2200,9 @@ impl Store for FdbStore {
 
     async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = Self::instance_by_id_key(instance_id);
+        let nic_prefix = Self::nic_in_instance_prefix(instance_id);
+        let (nic_begin, nic_end) = prefix_range(&nic_prefix);
+        let nic_prefix_len = nic_prefix.len();
 
         enum Outcome {
             Deleted,
@@ -2074,6 +2213,8 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
+                let nic_begin = nic_begin.clone();
+                let nic_end = nic_end.clone();
                 async move {
                     let bytes = match tr.get(&by_id_key, false).await? {
                         Some(b) => b,
@@ -2096,6 +2237,60 @@ impl Store for FdbStore {
                         instance.project_id, instance.id
                     )
                     .into_bytes();
+
+                    // Cascade: discover NIC ids via the in-instance
+                    // index, then read each NIC record to free its
+                    // IP allocations.
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(nic_begin),
+                        end: KeySelector::first_greater_or_equal(nic_end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut nic_ids: Vec<Uuid> = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[nic_prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(id) = Uuid::parse_str(s)
+                        {
+                            nic_ids.push(id);
+                        }
+                    }
+                    drop(kvs);
+
+                    for nic_id in nic_ids {
+                        let nic_key = format!("nic/by_id/{nic_id}").into_bytes();
+                        let nic_in_instance_key =
+                            format!("nic/in_instance/{instance_id}/{nic_id}").into_bytes();
+                        let nic_bytes = match tr.get(&nic_key, false).await? {
+                            Some(b) => b,
+                            None => {
+                                // Membership index is the source of
+                                // truth for what to clean up; if the
+                                // record is gone, just clear the
+                                // index entry and move on.
+                                tr.clear(&nic_in_instance_key);
+                                continue;
+                            }
+                        };
+                        let nic: Nic = match serde_json::from_slice(&nic_bytes) {
+                            Ok(n) => n,
+                            Err(_) => {
+                                tr.clear(&nic_key);
+                                tr.clear(&nic_in_instance_key);
+                                continue;
+                            }
+                        };
+                        if let Some(ip) = nic.primary_ipv4 {
+                            tr.clear(&Self::nic_ip_alloc_v4_key(nic.subnet_id, ip));
+                        }
+                        if let Some(ip) = nic.primary_ipv6 {
+                            tr.clear(&Self::nic_ip_alloc_v6_key(nic.subnet_id, ip));
+                        }
+                        tr.clear(&nic_key);
+                        tr.clear(&nic_in_instance_key);
+                    }
+
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
@@ -2167,6 +2362,57 @@ impl Store for FdbStore {
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
+    }
+
+    async fn get_nic(&self, nic_id: Uuid) -> Result<Nic, StoreError> {
+        let key = Self::nic_by_id_key(nic_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))
+    }
+
+    async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError> {
+        let prefix = Self::nic_in_instance_prefix(instance_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("nic index uuid: {e}")))?;
+            let by_id_key = Self::nic_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let nic: Nic = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))?;
+                out.push(nic);
+            }
+        }
+        Ok(out)
     }
 
     async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError> {
