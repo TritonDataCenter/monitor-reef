@@ -270,6 +270,72 @@ async fn read_only_scope_cannot_reach_agent_surface() {
 }
 
 #[tokio::test]
+async fn blueprint_returns_kind_and_instance_when_present() {
+    let test = TestServer::start().await;
+    let secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let client = test.bearer_client(&secret);
+
+    // Enqueue a Provision job pointing at a synthetic instance id.
+    // The instance itself doesn't exist in this test (we're not
+    // exercising the full instance create path); the blueprint
+    // must still resolve cleanly with `instance: None`.
+    let phantom_instance = Uuid::new_v4();
+    let job = test
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: phantom_instance,
+            },
+        })
+        .await
+        .unwrap();
+
+    let bp = client
+        .agent_job_blueprint()
+        .job_id(job.id)
+        .send()
+        .await
+        .expect("Agent scope must be able to fetch its blueprint")
+        .into_inner();
+    assert_eq!(bp.job_id, job.id);
+    assert!(bp.instance.is_none(), "phantom instance → instance: None");
+    assert!(bp.image.is_none());
+    assert!(bp.nics.is_empty());
+    assert!(bp.disks.is_empty());
+    assert!(bp.ssh_public_keys.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn blueprint_denied_to_read_only_scope() {
+    let test = TestServer::start().await;
+    let phantom_instance = Uuid::new_v4();
+    let job = test
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: phantom_instance,
+            },
+        })
+        .await
+        .unwrap();
+    let secret = mint_key(&test, ApiKeyScope::ReadOnly).await;
+    let client = test.bearer_client(&secret);
+    let err = client
+        .agent_job_blueprint()
+        .job_id(job.id)
+        .send()
+        .await
+        .expect_err("ReadOnly scope must not authorise blueprint reads");
+    let progenitor_client::Error::ErrorResponse(resp) = err else {
+        panic!("expected ErrorResponse, got {err:?}");
+    };
+    assert_eq!(resp.status().as_u16(), 403);
+    test.close().await;
+}
+
+#[tokio::test]
 async fn anonymous_cannot_reach_agent_surface() {
     let test = TestServer::start().await;
     let anon = test.anonymous_client();

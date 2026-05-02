@@ -37,7 +37,7 @@ use tritond_api::{
     AgentJobPath, ApiKeyCreated, ApiKeyPath, AttachFloatingIpRequest, AuditEventList,
     AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest,
     ClaimJobResponse, CompleteJobRequest, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig,
-    RefreshRequest, SiloImagePath, SiloPath, SiloProjectFloatingIpPath,
+    ProvisioningBlueprint, RefreshRequest, SiloImagePath, SiloPath, SiloProjectFloatingIpPath,
     SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath, SiloProjectInstancePath,
     SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse,
     TritondApi,
@@ -574,6 +574,29 @@ impl TritondApi for TritondServiceImpl {
                 .await;
         }
         Ok(HttpResponseOk(ClaimJobResponse { job }))
+    }
+
+    async fn agent_job_blueprint(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AgentJobPath>,
+    ) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentBlueprint,
+        )
+        .await?;
+        let job_id = path.into_inner().job_id;
+        let job = ctx
+            .store
+            .get_job(job_id)
+            .await
+            .map_err(store_error_to_http)?;
+        let blueprint = build_blueprint(ctx.store.as_ref(), &job).await?;
+        Ok(HttpResponseOk(blueprint))
     }
 
     async fn agent_complete_job(
@@ -2881,6 +2904,90 @@ fn too_many_requests(retry_after: std::time::Duration) -> HttpError {
     }
     err.headers = Some(Box::new(headers));
     err
+}
+
+/// Materialise the agent-side blueprint for a job. Resolves
+/// instance + image + nics + disks + ssh public keys for a
+/// `Provision`; returns just the instance (when still extant)
+/// for `Stop` / `Restart`.
+///
+/// Errors from the store path bubble up as HTTP errors via
+/// [`store_error_to_http`]. A concurrent operator delete that
+/// removes the instance after the job was claimed surfaces as
+/// `instance: None` rather than a 404; the agent then reports
+/// `JobOutcome::Failed { reason: "instance gone" }`.
+async fn build_blueprint(
+    store: &dyn Store,
+    job: &ProvisioningJob,
+) -> Result<ProvisioningBlueprint, HttpError> {
+    let instance_id = job.kind.instance_id();
+    let instance = match store.get_instance(instance_id).await {
+        Ok(i) => Some(i),
+        Err(StoreError::NotFound) => None,
+        Err(e) => return Err(store_error_to_http(e)),
+    };
+
+    // Stop / Restart only need the instance id; skip the full
+    // resolve so a vanished image or NIC doesn't block the
+    // agent from acting on a still-existing zone.
+    let needs_full_resolve = matches!(job.kind, JobKind::Provision { .. });
+    if !needs_full_resolve {
+        return Ok(ProvisioningBlueprint {
+            job_id: job.id,
+            kind: job.kind.clone(),
+            instance,
+            image: None,
+            nics: Vec::new(),
+            disks: Vec::new(),
+            ssh_public_keys: Vec::new(),
+        });
+    }
+
+    let Some(instance) = instance else {
+        return Ok(ProvisioningBlueprint {
+            job_id: job.id,
+            kind: job.kind.clone(),
+            instance: None,
+            image: None,
+            nics: Vec::new(),
+            disks: Vec::new(),
+            ssh_public_keys: Vec::new(),
+        });
+    };
+
+    let image = match store.get_image(instance.image_id).await {
+        Ok(img) => Some(img),
+        Err(StoreError::NotFound) => None,
+        Err(e) => return Err(store_error_to_http(e)),
+    };
+    let nics = store
+        .list_nics_for_instance(instance.id)
+        .await
+        .map_err(store_error_to_http)?;
+    let disks = store
+        .list_disks_for_instance(instance.id)
+        .await
+        .map_err(store_error_to_http)?;
+
+    let mut ssh_public_keys = Vec::with_capacity(instance.ssh_key_ids.len());
+    for key_id in &instance.ssh_key_ids {
+        // A key that vanished between instance create and job
+        // claim is a transient inconsistency the agent shouldn't
+        // crash on — skip and keep going.
+        if let Ok(k) = store.get_ssh_key(*key_id).await {
+            ssh_public_keys.push(k.public_key);
+        }
+    }
+
+    Ok(ProvisioningBlueprint {
+        job_id: job.id,
+        kind: job.kind.clone(),
+        instance: Some(instance),
+        image,
+        nics,
+        disks,
+        ssh_public_keys,
+    })
 }
 
 /// Map a [`StoreError`] to the appropriate HTTP response.

@@ -5469,6 +5469,8 @@ dependencies = [
  "dropshot",
  "hostname 0.4.2",
  "reqwest 0.13.2",
+ "rustls 0.23.38",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -5478,6 +5480,7 @@ dependencies = [
  "tritond-client",
  "tritond-store",
  "uuid",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]

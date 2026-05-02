@@ -31,12 +31,16 @@
 //! [`ApiKeyScope::Agent`]: tritond_client::types::ApiKeyScope::Agent
 //! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
 
+pub mod vmadm;
+
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use tritond_client::Client;
-use tritond_client::types::{ClaimJobRequest, CompleteJobRequest, JobOutcome, ProvisioningJob};
+use tritond_client::types::{
+    ClaimJobRequest, CompleteJobRequest, JobKind, JobOutcome, ProvisioningJob,
+};
 
 /// Configuration for an [`Agent`] run.
 #[derive(Debug, Clone)]
@@ -51,24 +55,39 @@ pub struct AgentConfig {
     pub agent_id: String,
     /// Sleep between empty-queue polls.
     pub poll_interval: Duration,
-    /// Phase 0 stub: simulate work for this duration before
-    /// reporting `Completed`. Set near zero for tests; default
-    /// 50ms keeps the agent visible in logs without slowing the
-    /// queue.
-    pub stub_work_duration: Duration,
+    /// When `true`, the agent fetches the blueprint and logs it
+    /// but does NOT call `vmadm`; every job reports `Completed`
+    /// regardless. Used for transport-only smoke testing on hosts
+    /// without SmartOS (e.g. the dev laptop). Defaults to `false`
+    /// so the production path is the obvious default.
+    pub dry_run: bool,
 }
 
 impl AgentConfig {
     /// Build a [`Client`] with a default `Authorization: Bearer …`
     /// header set from the API key. Returns an error if `endpoint`
     /// or `api_key` is malformed.
+    ///
+    /// We pre-configure rustls with the bundled `webpki_roots`
+    /// trust store rather than letting reqwest call the platform
+    /// verifier — SmartOS global zones have no system CA bundle,
+    /// and the agent is expected to ship as a self-contained
+    /// binary regardless of the host's OpenSSL/NSS layout.
     pub fn build_client(&self) -> Result<Client> {
         let mut headers = reqwest::header::HeaderMap::new();
         let value = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", self.api_key))
             .context("api_key contains characters that are invalid in an HTTP header")?;
         headers.insert(reqwest::header::AUTHORIZATION, value);
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let tls = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
         let http = reqwest::Client::builder()
             .default_headers(headers)
+            .use_preconfigured_tls(tls)
             .build()
             .context("build reqwest client")?;
         Ok(Client::new_with_client(&self.endpoint, http))
@@ -82,7 +101,8 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         agent_id = %cfg.agent_id,
         endpoint = %cfg.endpoint,
         poll_interval_ms = cfg.poll_interval.as_millis(),
-        "tritonagent stub starting; will mark every claimed job Completed",
+        dry_run = cfg.dry_run,
+        "tritonagent starting",
     );
 
     loop {
@@ -105,7 +125,9 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
 }
 
 /// Run one claim+complete cycle. Returns `Ok(true)` if a job was
-/// processed, `Ok(false)` if the queue was empty.
+/// processed (regardless of whether the work succeeded — failures
+/// are reported via `JobOutcome::Failed`), `Ok(false)` if the
+/// queue was empty.
 async fn poll_once(client: &Client, cfg: &AgentConfig) -> Result<bool> {
     let claimed = client
         .agent_claim_job()
@@ -121,31 +143,23 @@ async fn poll_once(client: &Client, cfg: &AgentConfig) -> Result<bool> {
         return Ok(false);
     };
 
-    handle_job(client, cfg, &job).await?;
-    Ok(true)
-}
+    let outcome = match drive_job(client, cfg, &job).await {
+        Ok(()) => JobOutcome::Completed,
+        Err(reason) => {
+            // Agent-side failures are reported back to tritond so
+            // the operator sees the cause in `tcadm jobs get` (a
+            // future slice) and the audit chain. The agent does
+            // not retry — operators retry by issuing the
+            // originating action again.
+            error!(job_id = %job.id, error = %reason, "job failed; reporting to tritond");
+            JobOutcome::Failed(reason.to_string())
+        }
+    };
 
-/// Phase 0 stub: log the claim, simulate brief work, report
-/// success. The signature matches the eventual real handler so a
-/// future slice that adds `vmadm`/`imgadm` integration only
-/// substitutes the body.
-async fn handle_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) -> Result<()> {
-    info!(
-        job_id = %job.id,
-        kind = ?job.kind,
-        seq = job.seq,
-        agent_id = %cfg.agent_id,
-        "claimed job (stub: marking Completed without acting)",
-    );
-    if !cfg.stub_work_duration.is_zero() {
-        tokio::time::sleep(cfg.stub_work_duration).await;
-    }
     let updated = client
         .agent_complete_job()
         .job_id(job.id)
-        .body(CompleteJobRequest {
-            outcome: JobOutcome::Completed,
-        })
+        .body(CompleteJobRequest { outcome })
         .send()
         .await
         .context("agent_complete_job")?
@@ -155,5 +169,63 @@ async fn handle_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) -
         status = ?updated.status,
         "completed job",
     );
+    Ok(true)
+}
+
+/// Drive a single claimed job to a terminal state. Returns
+/// `Ok(())` for success (caller reports `Completed`), `Err` for
+/// agent-side failure (caller reports `Failed { reason }`).
+async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) -> Result<()> {
+    info!(
+        job_id = %job.id,
+        kind = ?job.kind,
+        seq = job.seq,
+        agent_id = %cfg.agent_id,
+        "claimed job",
+    );
+
+    let blueprint = client
+        .agent_job_blueprint()
+        .job_id(job.id)
+        .send()
+        .await
+        .context("agent_job_blueprint")?
+        .into_inner();
+
+    if cfg.dry_run {
+        info!(
+            job_id = %job.id,
+            "dry-run mode: skipping vmadm; reporting Completed",
+        );
+        return Ok(());
+    }
+
+    // The match is intentionally exhaustive (no `_` arm). The
+    // tritond-store `JobKind` is `#[non_exhaustive]` but
+    // Progenitor strips that on the client side, so when a future
+    // tritond slice adds a new variant the regenerated client
+    // will force this match to grow — which is the right place
+    // for the agent author to make the "do I support this yet?"
+    // call. A runtime "unsupported" surprise here would be
+    // strictly worse.
+    match &job.kind {
+        JobKind::Provision(instance_id) => {
+            // The instance must still exist — a concurrent operator
+            // delete races to None.
+            if blueprint.instance.is_none() {
+                anyhow::bail!(
+                    "instance {instance_id} no longer exists; refusing to provision a phantom"
+                );
+            }
+            vmadm::create_zone(&blueprint).await?;
+        }
+        JobKind::Stop(instance_id) => {
+            vmadm::stop_zone(*instance_id).await?;
+        }
+        JobKind::Restart(instance_id) => {
+            vmadm::reboot_zone(*instance_id).await?;
+        }
+    }
+
     Ok(())
 }

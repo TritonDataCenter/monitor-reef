@@ -49,10 +49,12 @@ struct Cli {
     #[arg(long, env = "TRITONAGENT_POLL_INTERVAL_SECS", default_value_t = 5)]
     poll_interval_secs: u64,
 
-    /// Stub-mode work simulation. Tests set this to 0; the
-    /// default 50ms keeps the agent's lifecycle visible.
-    #[arg(long, env = "TRITONAGENT_STUB_WORK_MS", default_value_t = 50)]
-    stub_work_ms: u64,
+    /// When set, skip `vmadm` entirely and mark every claimed
+    /// job `Completed`. Useful for transport-only smoke testing
+    /// on hosts without SmartOS. Off by default — the production
+    /// path is the obvious one.
+    #[arg(long, env = "TRITONAGENT_DRY_RUN", default_value_t = false)]
+    dry_run: bool,
 }
 
 #[tokio::main]
@@ -77,7 +79,7 @@ async fn main() -> Result<()> {
         api_key: cli.api_key,
         agent_id,
         poll_interval: Duration::from_secs(cli.poll_interval_secs),
-        stub_work_duration: Duration::from_millis(cli.stub_work_ms),
+        dry_run: cli.dry_run,
     };
     tritonagent::run(cfg).await
 }

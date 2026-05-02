@@ -29,9 +29,9 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, FloatingIp,
-    IdpConfigView, Image, Instance, JobOutcome, NewFloatingIp, NewImage, NewInstance, NewProject,
-    NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
-    SshKey, Subnet, Vpc,
+    IdpConfigView, Image, Instance, JobKind, JobOutcome, NewFloatingIp, NewImage, NewInstance,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -138,6 +138,60 @@ pub struct ClaimJobResponse {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CompleteJobRequest {
     pub outcome: JobOutcome,
+}
+
+/// Materialised view of everything the agent needs to act on a
+/// claimed [`ProvisioningJob`]. Returned by
+/// `GET /v2/agent/jobs/{job_id}/blueprint`.
+///
+/// The shape is intentionally a flat bundle: instance + image +
+/// nics + disks + ssh public keys, all in one response. That lets
+/// the agent issue exactly one round-trip per claimed job, and
+/// keeps the queue payload itself opaque to the agent's needs (a
+/// Provision job will eventually want different fields than a
+/// hypothetical Migrate or Resize, and embedding everything in
+/// the [`ProvisioningJob`] would force lockstep schema migration).
+///
+/// Tritond's `Instance::id` is the canonical identity reused
+/// downstream: the agent passes it as the SmartOS zone UUID at
+/// `vmadm create`, so subsequent Stop/Restart jobs can address
+/// the zone by the same id without a separate mapping table.
+///
+/// Optional fields reflect the per-`JobKind` shape:
+///
+/// * `Provision` — `instance`, `image`, `nics`, `disks`, and
+///   any `ssh_public_keys` are populated. The agent has
+///   everything it needs to call `vmadm create`.
+/// * `Stop` / `Restart` — `instance` populated, others may be
+///   empty. The agent only needs `instance.id` to call
+///   `vmadm stop` / `vmadm reboot`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ProvisioningBlueprint {
+    pub job_id: Uuid,
+    pub kind: JobKind,
+    /// `Some(...)` when the underlying instance still exists;
+    /// `None` if a concurrent operator delete raced the agent's
+    /// claim. The agent must report `Failed` for this case
+    /// rather than acting on a phantom instance.
+    #[serde(default)]
+    pub instance: Option<Instance>,
+    /// Boot image record. Populated for Provision jobs; absent
+    /// for Stop/Restart.
+    #[serde(default)]
+    pub image: Option<Image>,
+    /// All NICs attached to the instance. Empty for non-Provision
+    /// jobs.
+    #[serde(default)]
+    pub nics: Vec<Nic>,
+    /// All disks attached to the instance. Empty for non-Provision
+    /// jobs.
+    #[serde(default)]
+    pub disks: Vec<Disk>,
+    /// Raw openssh-form public keys to inject via the SmartOS
+    /// `root_authorized_keys` metadata at zone-create time.
+    /// Resolved from `Instance::ssh_key_ids`.
+    #[serde(default)]
+    pub ssh_public_keys: Vec<String>,
 }
 
 /// Path parameters for endpoints that operate on a single audit event.
@@ -455,6 +509,21 @@ pub trait TritondApi {
         path: Path<AgentJobPath>,
         body: TypedBody<CompleteJobRequest>,
     ) -> Result<HttpResponseOk<ProvisioningJob>, HttpError>;
+
+    /// Materialise the full blueprint the agent needs to act on
+    /// a claimed job — instance + image + NICs + disks +
+    /// authorised SSH public keys, all in one response. Auth:
+    /// requires an API key with
+    /// [`tritond_store::ApiKeyScope::Agent`].
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/jobs/{job_id}/blueprint",
+        tags = ["agent"],
+    }]
+    async fn agent_job_blueprint(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AgentJobPath>,
+    ) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError>;
 
     /// Configure the OIDC identity provider for a silo. Returns 502
     /// if the discovery document cannot be fetched, 404 if the silo

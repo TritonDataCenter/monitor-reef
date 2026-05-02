@@ -2871,6 +2871,113 @@ pub mod types {
         }
     }
 
+    #[doc = "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\\n\\nThe shape is intentionally a flat bundle: instance + image + nics + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\\n\\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\\n\\nOptional fields reflect the per-`JobKind` shape:\\n\\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"job_id\","]
+    #[doc = "    \"kind\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"disks\": {"]
+    #[doc = "      \"description\": \"All disks attached to the instance. Empty for non-Provision jobs.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/Disk\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"image\": {"]
+    #[doc = "      \"description\": \"Boot image record. Populated for Provision jobs; absent for Stop/Restart.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Image\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"instance\": {"]
+    #[doc = "      \"description\": \"`Some(...)` when the underlying instance still exists; `None` if a concurrent operator delete raced the agent's claim. The agent must report `Failed` for this case rather than acting on a phantom instance.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Instance\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"job_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/JobKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"nics\": {"]
+    #[doc = "      \"description\": \"All NICs attached to the instance. Empty for non-Provision jobs.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/Nic\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"ssh_public_keys\": {"]
+    #[doc = "      \"description\": \"Raw openssh-form public keys to inject via the SmartOS `root_authorized_keys` metadata at zone-create time. Resolved from `Instance::ssh_key_ids`.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ProvisioningBlueprint {
+        #[doc = "All disks attached to the instance. Empty for non-Provision jobs."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub disks: ::std::vec::Vec<Disk>,
+        #[doc = "Boot image record. Populated for Provision jobs; absent for Stop/Restart."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub image: ::std::option::Option<Image>,
+        #[doc = "`Some(...)` when the underlying instance still exists; `None` if a concurrent operator delete raced the agent's claim. The agent must report `Failed` for this case rather than acting on a phantom instance."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub instance: ::std::option::Option<Instance>,
+        pub job_id: ::uuid::Uuid,
+        pub kind: JobKind,
+        #[doc = "All NICs attached to the instance. Empty for non-Provision jobs."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub nics: ::std::vec::Vec<Nic>,
+        #[doc = "Raw openssh-form public keys to inject via the SmartOS `root_authorized_keys` metadata at zone-create time. Resolved from `Instance::ssh_key_ids`."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub ssh_public_keys: ::std::vec::Vec<::std::string::String>,
+    }
+
+    impl ProvisioningBlueprint {
+        pub fn builder() -> builder::ProvisioningBlueprint {
+            Default::default()
+        }
+    }
+
     #[doc = "A unit of work for a provisioning agent. Created by the tritond instance handlers; consumed by an agent (the in-process stub today; a real `tritonagent` per CN in the future).\n\nThe wire shape is stable across Phase 0 and the eventual real agent — the only thing that changes is *who* claims and completes jobs."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6623,6 +6730,142 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ProvisioningBlueprint {
+            disks: ::std::result::Result<::std::vec::Vec<super::Disk>, ::std::string::String>,
+            image:
+                ::std::result::Result<::std::option::Option<super::Image>, ::std::string::String>,
+            instance: ::std::result::Result<
+                ::std::option::Option<super::Instance>,
+                ::std::string::String,
+            >,
+            job_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<super::JobKind, ::std::string::String>,
+            nics: ::std::result::Result<::std::vec::Vec<super::Nic>, ::std::string::String>,
+            ssh_public_keys: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for ProvisioningBlueprint {
+            fn default() -> Self {
+                Self {
+                    disks: Ok(Default::default()),
+                    image: Ok(Default::default()),
+                    instance: Ok(Default::default()),
+                    job_id: Err("no value supplied for job_id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    nics: Ok(Default::default()),
+                    ssh_public_keys: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl ProvisioningBlueprint {
+            pub fn disks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::Disk>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disks: {e}"));
+                self
+            }
+            pub fn image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::Image>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.image = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for image: {e}"));
+                self
+            }
+            pub fn instance<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::Instance>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance: {e}"));
+                self
+            }
+            pub fn job_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.job_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for job_id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::JobKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn nics<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::Nic>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nics = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nics: {e}"));
+                self
+            }
+            pub fn ssh_public_keys<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ssh_public_keys = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for ssh_public_keys: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ProvisioningBlueprint> for super::ProvisioningBlueprint {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ProvisioningBlueprint,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    disks: value.disks?,
+                    image: value.image?,
+                    instance: value.instance?,
+                    job_id: value.job_id?,
+                    kind: value.kind?,
+                    nics: value.nics?,
+                    ssh_public_keys: value.ssh_public_keys?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ProvisioningBlueprint> for ProvisioningBlueprint {
+            fn from(value: super::ProvisioningBlueprint) -> Self {
+                Self {
+                    disks: Ok(value.disks),
+                    image: Ok(value.image),
+                    instance: Ok(value.instance),
+                    job_id: Ok(value.job_id),
+                    kind: Ok(value.kind),
+                    nics: Ok(value.nics),
+                    ssh_public_keys: Ok(value.ssh_public_keys),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ProvisioningJob {
             claimed_at: ::std::result::Result<
                 ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
@@ -7675,6 +7918,11 @@ impl Client {
         builder::AgentClaimJob::new(self)
     }
 
+    #[doc = "Materialise the full blueprint the agent needs to act on\n\na claimed job — instance + image + NICs + disks + authorised SSH public keys, all in one response. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `GET` request to `/v2/agent/jobs/{job_id}/blueprint`\n\n```ignore\nlet response = client.agent_job_blueprint()\n    .job_id(job_id)\n    .send()\n    .await;\n```"]
+    pub fn agent_job_blueprint(&self) -> builder::AgentJobBlueprint<'_> {
+        builder::AgentJobBlueprint::new(self)
+    }
+
     #[doc = "Mark a previously-claimed provisioning job terminal\n\n`outcome` is `Completed` for success or `Failed { reason }` for an agent-side abort. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `POST` request to `/v2/agent/jobs/{job_id}/complete`\n\n```ignore\nlet response = client.agent_complete_job()\n    .job_id(job_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_complete_job(&self) -> builder::AgentCompleteJob<'_> {
         builder::AgentCompleteJob::new(self)
@@ -8022,6 +8270,77 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_claim_job",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_job_blueprint`]\n\n[`Client::agent_job_blueprint`]: super::Client::agent_job_blueprint"]
+    #[derive(Debug, Clone)]
+    pub struct AgentJobBlueprint<'a> {
+        client: &'a super::Client,
+        job_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> AgentJobBlueprint<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                job_id: Err("job_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn job_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.job_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for job_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/agent/jobs/{job_id}/blueprint`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ProvisioningBlueprint>, Error<types::Error>> {
+            let Self { client, job_id } = self;
+            let job_id = job_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/agent/jobs/{}/blueprint",
+                client.baseurl,
+                encode_path(&job_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_job_blueprint",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

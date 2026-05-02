@@ -279,6 +279,11 @@ pub enum Action {
     /// Cedar gates the action; the store layer verifies the
     /// outcome's transitions are legal.
     AgentComplete,
+    /// Read the materialised blueprint for a claimed job —
+    /// instance + image + NICs + disks + ssh public keys, in one
+    /// response. The Agent scope is the *only* path to this
+    /// data: it does not require silo-scoped tenant reads.
+    AgentBlueprint,
 }
 
 impl Action {
@@ -344,6 +349,7 @@ impl Action {
             Action::FloatingIpDetach => "floating_ip_detach",
             Action::AgentClaim => "agent_claim",
             Action::AgentComplete => "agent_complete",
+            Action::AgentBlueprint => "agent_blueprint",
         }
     }
 
@@ -708,7 +714,7 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
         ),
         ApiKeyScope::Agent => matches!(
             action,
-            Action::Health | Action::AgentClaim | Action::AgentComplete
+            Action::Health | Action::AgentClaim | Action::AgentComplete | Action::AgentBlueprint
         ),
         _ => false,
     }
@@ -775,12 +781,13 @@ fn is_read_action(action: Action) -> bool {
         | Action::FloatingIpDelete
         | Action::FloatingIpAttach
         | Action::FloatingIpDetach
-        // Agent actions are queue mutations; classified as writes
-        // so a ReadOnly key can't peek at jobs and a write-classified
-        // key can't accidentally claim. The Agent scope is the only
+        // Agent actions are queue mutations or agent-only data
+        // reads; classified as writes so a ReadOnly key can't
+        // peek at jobs/blueprints. The Agent scope is the only
         // way to authorise them — see `scope_allows_action`.
         | Action::AgentClaim
-        | Action::AgentComplete => false,
+        | Action::AgentComplete
+        | Action::AgentBlueprint => false,
     }
 }
 
