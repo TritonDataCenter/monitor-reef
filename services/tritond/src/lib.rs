@@ -34,11 +34,12 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloImagePath, SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
-    SiloSshKeyPath, TokenResponse, TritondApi,
+    SiloImagePath, SiloPath, SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath,
+    SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, Image, NewImage, NewProject, NewQuota, NewSilo,
-        NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey, Subnet, Vpc,
+        ApiKeyView, AuditEvent, IdpConfigView, Image, Instance, LifecycleState, LifecycleStateKind,
+        NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc,
+        Project, Quota, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1683,6 +1684,397 @@ impl TritondApi for TritondServiceImpl {
             }
         }
     }
+
+    async fn list_project_instances(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceList,
+            silo_id,
+        )
+        .await?;
+        // Project must exist + be in this silo (matches the
+        // list_project_vpcs / list_vpc_subnets pattern).
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.silo_id != silo_id {
+            return Err(not_found());
+        }
+        let instances = ctx
+            .store
+            .list_instances_in_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(instances))
+    }
+
+    async fn create_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewInstance>,
+    ) -> Result<HttpResponseCreated<Instance>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // API-edge size invariants (the store doesn't re-validate).
+        if req.cpu == 0 {
+            return Err(reject_audit(
+                ctx,
+                &principal,
+                Action::InstanceCreate,
+                request_id,
+                "cpu must be greater than zero",
+                serde_json::json!({ "silo_id": silo_id, "project_id": project_id }),
+            )
+            .await);
+        }
+        if req.memory_bytes == 0 {
+            return Err(reject_audit(
+                ctx,
+                &principal,
+                Action::InstanceCreate,
+                request_id,
+                "memory_bytes must be greater than zero",
+                serde_json::json!({ "silo_id": silo_id, "project_id": project_id }),
+            )
+            .await);
+        }
+
+        let instance = match ctx.store.create_instance(silo_id, project_id, req).await {
+            Ok(i) => i,
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::InstanceCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                return Err(store_error_to_http(e));
+            }
+        };
+
+        // Phase 0 fake-executor: drive Pending → Running synchronously
+        // before responding. When the real provisioning queue lands
+        // (slice 2 of Tier 3), this synchronous transition is replaced
+        // by an async one driven by the stub agent. The store CAS will
+        // catch any concurrent operator-initiated transition.
+        let final_instance = match ctx
+            .store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Running,
+            )
+            .await
+        {
+            Ok(i) => i,
+            Err(e) => {
+                // Rare: another caller already transitioned us. Fall
+                // back to whatever the store says is current.
+                ctx.store
+                    .get_instance(instance.id)
+                    .await
+                    .map_err(store_error_to_http)?;
+                return Err(store_error_to_http(e));
+            }
+        };
+
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::InstanceCreate,
+                request_id,
+                Some(format!("Instance::\"{}\"", final_instance.id)),
+                AuditOutcome::Success {
+                    resource: Some(format!("Instance::\"{}\"", final_instance.id)),
+                },
+                serde_json::json!({
+                    "silo_id": silo_id,
+                    "project_id": project_id,
+                    "name": final_instance.name,
+                    "image_id": final_instance.image_id,
+                    "primary_subnet_id": final_instance.primary_subnet_id,
+                }),
+            )
+            .await;
+        Ok(HttpResponseCreated(final_instance))
+    }
+
+    async fn get_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectInstancePath {
+            silo_id,
+            project_id,
+            instance_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceGet,
+            silo_id,
+        )
+        .await?;
+        let instance = ctx
+            .store
+            .get_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if instance.silo_id != silo_id || instance.project_id != project_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(instance))
+    }
+
+    async fn delete_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectInstancePath {
+            silo_id,
+            project_id,
+            instance_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let instance = ctx
+            .store
+            .get_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if instance.silo_id != silo_id || instance.project_id != project_id {
+            return Err(not_found());
+        }
+        match ctx.store.delete_instance(instance_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::InstanceDelete,
+                        request_id,
+                        Some(format!("Instance::\"{instance_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Instance::\"{instance_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::InstanceDelete,
+                        request_id,
+                        Some(format!("Instance::\"{instance_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn start_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        instance_lifecycle_transition(
+            rqctx,
+            path,
+            Action::InstanceStart,
+            // Stopped → Running. Phase 0 collapses the agent path
+            // (Stopped → Pending → Provisioning → Running) the same
+            // way create does.
+            &[LifecycleStateKind::Stopped],
+            LifecycleState::Running,
+        )
+        .await
+    }
+
+    async fn stop_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        instance_lifecycle_transition(
+            rqctx,
+            path,
+            Action::InstanceStop,
+            // Running → Stopped. Phase 0 skips the Stopping
+            // intermediate; the queue slice will introduce it.
+            &[LifecycleStateKind::Running],
+            LifecycleState::Stopped,
+        )
+        .await
+    }
+
+    async fn restart_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        instance_lifecycle_transition(
+            rqctx,
+            path,
+            Action::InstanceRestart,
+            // Restart from Running. The Phase 0 collapse means the
+            // result state is still Running; the queue slice will
+            // model an actual Stopping → Pending → Running cycle.
+            &[LifecycleStateKind::Running],
+            LifecycleState::Running,
+        )
+        .await
+    }
+}
+
+/// Shared helper for the three lifecycle-transition handlers. Does
+/// auth, the path-recheck, the store CAS, and the audit emission so
+/// each handler stays a one-liner.
+async fn instance_lifecycle_transition(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<SiloProjectInstancePath>,
+    action: Action,
+    expected_from: &[LifecycleStateKind],
+    to: LifecycleState,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
+    let SiloProjectInstancePath {
+        silo_id,
+        project_id,
+        instance_id,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx, &ctx.auth, &ctx.audit, &ctx.store, action, silo_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    // Defence-in-depth on silo+project before we try to transition.
+    // get_instance + path check is the same shape used by
+    // get_project_instance / delete_project_instance.
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if instance.silo_id != silo_id || instance.project_id != project_id {
+        return Err(not_found());
+    }
+
+    match ctx
+        .store
+        .transition_instance_lifecycle(instance_id, expected_from, to.clone())
+        .await
+    {
+        Ok(updated) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    action,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Instance::\"{instance_id}\"")),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "project_id": project_id,
+                        "to_state": format!("{:?}", to.kind()),
+                    }),
+                )
+                .await;
+            Ok(HttpResponseOk(updated))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    action,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+/// Audit + return a 400 in one shot. Used by `create_project_instance`
+/// for cpu/memory size validation; can't easily live as a free
+/// function because it borrows `ctx` and `principal`.
+async fn reject_audit(
+    ctx: &ApiContext,
+    principal: &auth::Principal,
+    action: Action,
+    request_id: Option<Uuid>,
+    message: &str,
+    context: serde_json::Value,
+) -> HttpError {
+    ctx.audit
+        .record_mutation(
+            principal,
+            action,
+            request_id,
+            None,
+            AuditOutcome::ClientError {
+                code: 400,
+                message: message.to_string(),
+            },
+            context,
+        )
+        .await;
+    HttpError::for_bad_request(Some("BadRequest".to_string()), message.to_string())
 }
 
 /// Parse an inbound openssh public-key string and return its

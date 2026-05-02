@@ -508,6 +508,151 @@ pub struct NewQuota {
     pub instance_limit: u32,
 }
 
+/// Lifecycle state of a tenant instance. The state machine:
+///
+/// ```text
+///   create
+///      ↓
+///   Pending ──→ Provisioning ──┬→ Running ←──┬── Stopped
+///                              │             │      ↑
+///                              │             │      │
+///                              ↓             ↓      │
+///                            Failed        Stopping─┘
+/// ```
+///
+/// Phase 0 collapses Pending → Provisioning → Running into a
+/// synchronous transition inside the create handler (there is no
+/// agent yet). The full async path lands when the provisioning
+/// intent queue + stub executor slice ships.
+///
+/// Operator-driven transitions: start (Stopped → Pending), stop
+/// (Running → Stopping), restart (Running → Stopping → Pending).
+/// Agent-driven transitions: Pending → Provisioning → Running,
+/// Provisioning → Failed, Stopping → Stopped.
+///
+/// Delete is allowed only from Stopped or Failed; deleting a
+/// Running instance returns 409.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum LifecycleState {
+    /// Newly created; not yet picked up by an agent.
+    Pending,
+    /// An agent has claimed the provisioning job and is working.
+    Provisioning,
+    /// Up and running.
+    Running,
+    /// Stop requested; agent is winding down.
+    Stopping,
+    /// Fully stopped; safe to delete or restart.
+    Stopped,
+    /// Unrecoverable error. Inspect `reason`; the instance must be
+    /// deleted (no in-place recovery in Phase 0).
+    Failed { reason: String },
+}
+
+impl LifecycleState {
+    /// True if a `delete` request should be accepted from this
+    /// state. Phase 0 requires the instance to be fully terminal
+    /// (Stopped or Failed); a future slice may add a force-delete
+    /// path that drives Running → Stopping → Stopped → deleted in
+    /// one operator-visible step.
+    #[must_use]
+    pub fn is_deletable(&self) -> bool {
+        matches!(
+            self,
+            LifecycleState::Stopped | LifecycleState::Failed { .. }
+        )
+    }
+
+    /// Discriminant-only view of the state; useful for CAS
+    /// transitions where the caller doesn't want to construct a
+    /// fake `Failed { reason: "" }` just to match.
+    #[must_use]
+    pub fn kind(&self) -> LifecycleStateKind {
+        match self {
+            LifecycleState::Pending => LifecycleStateKind::Pending,
+            LifecycleState::Provisioning => LifecycleStateKind::Provisioning,
+            LifecycleState::Running => LifecycleStateKind::Running,
+            LifecycleState::Stopping => LifecycleStateKind::Stopping,
+            LifecycleState::Stopped => LifecycleStateKind::Stopped,
+            LifecycleState::Failed { .. } => LifecycleStateKind::Failed,
+        }
+    }
+}
+
+/// Discriminant-only companion to [`LifecycleState`]. Used by
+/// [`crate::Store::transition_instance_lifecycle`]'s
+/// `expected_from` parameter so callers can name "any Failed state"
+/// without committing to a specific `reason` string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LifecycleStateKind {
+    Pending,
+    Provisioning,
+    Running,
+    Stopping,
+    Stopped,
+    Failed,
+}
+
+/// Tenant compute instance. Project-scoped; references one image
+/// (boot media), one subnet (network attach point), and zero-or-more
+/// SSH keys (injected into authorized_keys at provisioning time).
+///
+/// Phase 0 ships only the metadata + lifecycle state machine. The
+/// actual provisioning is faked synchronously inside the create
+/// handler; a future slice introduces the intent queue and stub
+/// executor that will become the swap-out point for a real
+/// `tritonagent`.
+///
+/// Several fields that real cloud instances carry are deliberately
+/// omitted in v0: cloud-init userdata, tags/labels, brand
+/// (zone/hvm/lx/bhyve), affinity rules, console URL, migration
+/// history. Each will land as the consuming use case ships.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Instance {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// Boot image; must be in the same silo as the instance.
+    pub image_id: Uuid,
+    /// Subnet the instance's primary NIC attaches to. Phase 0
+    /// auto-creates a NIC at provisioning time; a future slice
+    /// adds explicit NIC records that operators can manage
+    /// separately. Subnet must live in a VPC inside this project.
+    pub primary_subnet_id: Uuid,
+    /// SSH keys to inject into the instance's authorized_keys at
+    /// first boot. Each key id must live in the same silo as the
+    /// instance. May be empty (no key injection).
+    pub ssh_key_ids: Vec<Uuid>,
+    /// Number of vCPUs.
+    pub cpu: u32,
+    /// Memory budget in bytes.
+    pub memory_bytes: u64,
+    pub lifecycle: LifecycleState,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for creating an instance. The owning silo +
+/// project come from the URL path. The server assigns `id`,
+/// initial `lifecycle`, `created_at`, and `updated_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewInstance {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub image_id: Uuid,
+    pub primary_subnet_id: Uuid,
+    #[serde(default)]
+    pub ssh_key_ids: Vec<Uuid>,
+    pub cpu: u32,
+    pub memory_bytes: u64,
+}
+
 /// Cluster-level system keys. Phase 0 has exactly one
 /// (`SystemKey::JwtSigning`); future entries will include the
 /// transit-engine master key and any per-silo OIDC client secrets.

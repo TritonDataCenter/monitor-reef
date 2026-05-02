@@ -239,10 +239,86 @@ enum SiloProjectCommand {
         #[command(subcommand)]
         command: SiloProjectVpcCommand,
     },
+    /// Manage instances inside a project.
+    Instance {
+        #[command(subcommand)]
+        command: SiloProjectInstanceCommand,
+    },
     /// Manage the project's resource quota.
     Quota {
         #[command(subcommand)]
         command: SiloProjectQuotaCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectInstanceCommand {
+    /// List instances in the project.
+    List {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new instance.
+    Create {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        image_id: Uuid,
+        #[arg(long)]
+        primary_subnet_id: Uuid,
+        /// Repeatable: SSH keys to inject at first boot.
+        #[arg(long = "ssh-key-id")]
+        ssh_key_ids: Vec<Uuid>,
+        #[arg(long)]
+        cpu: u32,
+        #[arg(long)]
+        memory_bytes: u64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single instance.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an instance (must be Stopped or Failed).
+    Delete {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+    },
+    /// Start a Stopped instance.
+    Start {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Stop a Running instance.
+    Stop {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Restart a Running instance.
+    Restart {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -584,6 +660,131 @@ async fn main() -> Result<()> {
                     commands::silo_project_delete(cli.endpoint, cli.api_key, silo_id, project_id)
                         .await
                 }
+                SiloProjectCommand::Instance { command } => match command {
+                    SiloProjectInstanceCommand::List {
+                        silo_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::silo_project_instance_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectInstanceCommand::Create {
+                        silo_id,
+                        project_id,
+                        name,
+                        description,
+                        image_id,
+                        primary_subnet_id,
+                        ssh_key_ids,
+                        cpu,
+                        memory_bytes,
+                        json,
+                    } => {
+                        commands::silo_project_instance_create(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            name,
+                            description,
+                            image_id,
+                            primary_subnet_id,
+                            ssh_key_ids,
+                            cpu,
+                            memory_bytes,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectInstanceCommand::Get {
+                        silo_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::silo_project_instance_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectInstanceCommand::Delete {
+                        silo_id,
+                        project_id,
+                        instance_id,
+                    } => {
+                        commands::silo_project_instance_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            instance_id,
+                        )
+                        .await
+                    }
+                    SiloProjectInstanceCommand::Start {
+                        silo_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::silo_project_instance_lifecycle(
+                            cli.endpoint,
+                            cli.api_key,
+                            "start",
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectInstanceCommand::Stop {
+                        silo_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::silo_project_instance_lifecycle(
+                            cli.endpoint,
+                            cli.api_key,
+                            "stop",
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectInstanceCommand::Restart {
+                        silo_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::silo_project_instance_lifecycle(
+                            cli.endpoint,
+                            cli.api_key,
+                            "restart",
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                },
                 SiloProjectCommand::Quota { command } => match command {
                     SiloProjectQuotaCommand::Set {
                         silo_id,

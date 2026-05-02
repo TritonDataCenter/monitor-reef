@@ -28,9 +28,9 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, Image, NewImage,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey,
-    Subnet, Vpc,
+    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, Image, Instance,
+    NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project,
+    Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -142,6 +142,15 @@ pub struct SiloSshKeyPath {
 pub struct SiloImagePath {
     pub silo_id: Uuid,
     pub image_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single instance
+/// inside a project inside a silo.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectInstancePath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub instance_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -668,4 +677,100 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List instances in a project.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances",
+        tags = ["instances"],
+    }]
+    async fn list_project_instances(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
+
+    /// Create an instance in a project.
+    ///
+    /// Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404
+    /// if any referenced resource (image, subnet, ssh-keys) does
+    /// not exist or lives outside this silo/project. Returns 409
+    /// if the instance name is already taken in the project.
+    ///
+    /// Phase 0 ships synchronous lifecycle: the create handler
+    /// transitions the new instance through Pending → Running
+    /// before responding. A future slice introduces an async
+    /// provisioning queue + stub executor; the API surface stays
+    /// the same but tests will observe Pending-then-Running
+    /// transitions instead of an instant Running.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances",
+        tags = ["instances"],
+    }]
+    async fn create_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewInstance>,
+    ) -> Result<HttpResponseCreated<Instance>, HttpError>;
+
+    /// Read a single instance.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}",
+        tags = ["instances"],
+    }]
+    async fn get_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// Delete an instance. Returns 409 if the instance is not in
+    /// a deletable state (must be Stopped or Failed). Returns 404
+    /// if the instance does not exist or belongs to a different
+    /// silo or project.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}",
+        tags = ["instances"],
+    }]
+    async fn delete_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Start a stopped instance. Returns 409 if the instance is
+    /// not in `Stopped` state.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/start",
+        tags = ["instances"],
+    }]
+    async fn start_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// Stop a running instance. Returns 409 if the instance is
+    /// not in `Running` state.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/stop",
+        tags = ["instances"],
+    }]
+    async fn stop_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// Restart a running instance. Returns 409 if the instance is
+    /// not in `Running` state.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart",
+        tags = ["instances"],
+    }]
+    async fn restart_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
 }

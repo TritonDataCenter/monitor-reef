@@ -477,6 +477,208 @@ pub async fn silo_project_get(
     Ok(())
 }
 
+fn print_instance(i: &tritond_client::types::Instance) {
+    println!("Instance {} in project {}", i.id, i.project_id);
+    println!("  name:        {}", i.name);
+    println!("  description: {}", i.description);
+    println!("  lifecycle:   {:?}", i.lifecycle);
+    println!("  image:       {}", i.image_id);
+    println!("  subnet:      {}", i.primary_subnet_id);
+    println!("  cpu:         {}", i.cpu);
+    println!("  memory:      {}", i.memory_bytes);
+    if !i.ssh_key_ids.is_empty() {
+        println!("  ssh-keys:    {} key(s)", i.ssh_key_ids.len());
+    }
+    println!("  created:     {}", i.created_at);
+    println!("  updated:     {}", i.updated_at);
+}
+
+/// List instances in a project.
+pub async fn silo_project_instance_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let instances = client
+        .list_project_instances()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("list instances")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&instances)?);
+        return Ok(());
+    }
+    if instances.is_empty() {
+        println!("(no instances)");
+        return Ok(());
+    }
+    for i in instances {
+        println!(
+            "{}  {:?}  cpu={} mem={}MB  {}",
+            i.id,
+            i.lifecycle,
+            i.cpu,
+            i.memory_bytes / 1_048_576,
+            i.name
+        );
+    }
+    Ok(())
+}
+
+/// Create an instance.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_instance_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    name: String,
+    description: String,
+    image_id: Uuid,
+    primary_subnet_id: Uuid,
+    ssh_key_ids: Vec<Uuid>,
+    cpu: u32,
+    memory_bytes: u64,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let instance = client
+        .create_project_instance()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .body(tritond_client::types::NewInstance {
+            name,
+            description: Some(description),
+            image_id,
+            primary_subnet_id,
+            ssh_key_ids,
+            cpu,
+            memory_bytes,
+        })
+        .send()
+        .await
+        .context("create instance")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&instance)?);
+    } else {
+        println!("Created instance {} in project {project_id}", instance.id);
+        print_instance(&instance);
+    }
+    Ok(())
+}
+
+/// Read a single instance.
+pub async fn silo_project_instance_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let instance = client
+        .get_project_instance()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("get instance")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&instance)?);
+    } else {
+        print_instance(&instance);
+    }
+    Ok(())
+}
+
+/// Delete an instance.
+pub async fn silo_project_instance_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_project_instance()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("delete instance")?;
+    println!("Deleted instance {instance_id} from project {project_id}");
+    Ok(())
+}
+
+/// Drive a lifecycle transition (start/stop/restart). Single function
+/// for all three so the dispatch table in main.rs stays terse.
+pub async fn silo_project_instance_lifecycle(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    transition: &str,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let instance = match transition {
+        "start" => client
+            .start_project_instance()
+            .silo_id(silo_id)
+            .project_id(project_id)
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("start instance")?
+            .into_inner(),
+        "stop" => client
+            .stop_project_instance()
+            .silo_id(silo_id)
+            .project_id(project_id)
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("stop instance")?
+            .into_inner(),
+        "restart" => client
+            .restart_project_instance()
+            .silo_id(silo_id)
+            .project_id(project_id)
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("restart instance")?
+            .into_inner(),
+        other => anyhow::bail!("unknown lifecycle transition: {other}"),
+    };
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&instance)?);
+    } else {
+        println!("Instance {} now {:?}", instance.id, instance.lifecycle);
+    }
+    Ok(())
+}
+
 /// Set (or replace) a project's quota.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds

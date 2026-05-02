@@ -1,0 +1,530 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+//! End-to-end tests for the
+//! `/v2/silos/{silo_id}/projects/{project_id}/instances` surface,
+//! including the lifecycle state machine.
+//!
+//! Phase 0 collapses Pending → Provisioning → Running into a
+//! synchronous transition inside the create handler, so these tests
+//! observe `Running` immediately after a successful create. The
+//! intent-queue slice will introduce the intermediate states; tests
+//! that care about transitions will be updated then.
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use chrono::Utc;
+use rsa::rand_core::OsRng;
+use ssh_key::{Algorithm, PrivateKey};
+use tritond::audit::AuditService;
+use tritond::auth::AuthService;
+use tritond::{ApiContext, start_server_with_context};
+use tritond_audit::MemChain;
+use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
+use tritond_client::types::{
+    LifecycleState, NewImage, NewInstance, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc,
+};
+use tritond_store::{MemStore, Store, User};
+use uuid::Uuid;
+
+const ROOT_PASSWORD: &str = "instances-test";
+
+// ---------- test fixture ----------
+
+struct TestServer {
+    server: dropshot::HttpServer<ApiContext>,
+    root_bearer: String,
+}
+
+impl TestServer {
+    async fn start() -> Self {
+        let store: Arc<dyn Store> = Arc::new(MemStore::new());
+        let user_id = Uuid::new_v4();
+        let user = User {
+            id: user_id,
+            username: "root".to_string(),
+            password_hash: hash_password(&RedactedString::from(ROOT_PASSWORD))
+                .await
+                .unwrap(),
+            is_root: true,
+            created_at: Utc::now(),
+            silo_id: None,
+            federation: None,
+        };
+        store.create_user(user).await.unwrap();
+        let jwt_key = JwtKey::generate();
+        let (token, _) = mint_access(&jwt_key, user_id).unwrap();
+        let auth = Arc::new(AuthService::new(jwt_key).unwrap());
+        let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
+        let context = ApiContext::new(store, auth, audit);
+        let server = start_server_with_context("127.0.0.1:0", context)
+            .await
+            .unwrap();
+        Self {
+            server,
+            root_bearer: token,
+        }
+    }
+
+    fn bind(&self) -> SocketAddr {
+        self.server.local_addr()
+    }
+
+    fn root_client(&self) -> tritond_client::Client {
+        self.bearer_client(&self.root_bearer)
+    }
+
+    fn anonymous_client(&self) -> tritond_client::Client {
+        tritond_client::Client::new(&format!("http://{}", self.bind()))
+    }
+
+    fn bearer_client(&self, token: &str) -> tritond_client::Client {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        let reqwest = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .unwrap();
+        tritond_client::Client::new_with_client(&format!("http://{}", self.bind()), reqwest)
+    }
+
+    async fn close(self) {
+        self.server.close().await.unwrap();
+    }
+}
+
+fn assert_status(err: progenitor_client::Error<tritond_client::types::Error>, want: u16) {
+    let progenitor_client::Error::ErrorResponse(response) = err else {
+        panic!("expected ErrorResponse, got {err:?}");
+    };
+    assert_eq!(response.status().as_u16(), want);
+}
+
+fn fresh_pubkey() -> String {
+    let priv_key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+    priv_key.public_key().to_openssh().unwrap()
+}
+
+/// Bring up a full fixture: silo + project + vpc + subnet + image
+/// + ssh key. Returns ids for use in instance-create tests.
+struct Fixture {
+    silo_id: Uuid,
+    project_id: Uuid,
+    image_id: Uuid,
+    subnet_id: Uuid,
+    ssh_key_id: Uuid,
+}
+
+async fn build_fixture(root: &tritond_client::Client) -> Fixture {
+    let silo = root
+        .create_silo()
+        .body(NewSilo {
+            name: format!("silo-{}", Uuid::new_v4()),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let project = root
+        .create_silo_project()
+        .silo_id(silo.id)
+        .body(NewProject {
+            name: "p".to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let vpc = root
+        .create_project_vpc()
+        .silo_id(silo.id)
+        .project_id(project.id)
+        .body(NewVpc {
+            name: "v".to_string(),
+            description: None,
+            ipv4_block: Some("10.0.0.0/16".to_string()),
+            ipv6_block: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let subnet = root
+        .create_vpc_subnet()
+        .silo_id(silo.id)
+        .project_id(project.id)
+        .vpc_id(vpc.id)
+        .body(NewSubnet {
+            name: "primary".to_string(),
+            description: None,
+            ipv4_block: Some("10.0.1.0/24".to_string()),
+            ipv6_block: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let image = root
+        .create_silo_image()
+        .silo_id(silo.id)
+        .body(NewImage {
+            name: "ubuntu-base".to_string(),
+            description: None,
+            os: "linux".to_string(),
+            version: "ubuntu-22.04".to_string(),
+            size_bytes: 1_000_000_000,
+            sha256: "0".repeat(64),
+            source_url: Some("mantafs://images/ubuntu".to_string()),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let ssh_key = root
+        .create_silo_ssh_key()
+        .silo_id(silo.id)
+        .body(NewSshKey {
+            name: "ci".to_string(),
+            description: None,
+            public_key: fresh_pubkey(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    Fixture {
+        silo_id: silo.id,
+        project_id: project.id,
+        image_id: image.id,
+        subnet_id: subnet.id,
+        ssh_key_id: ssh_key.id,
+    }
+}
+
+fn instance_req(fx: &Fixture, name: &str) -> NewInstance {
+    NewInstance {
+        name: name.to_string(),
+        description: None,
+        image_id: fx.image_id,
+        primary_subnet_id: fx.subnet_id,
+        ssh_key_ids: vec![fx.ssh_key_id],
+        cpu: 2,
+        memory_bytes: 2 * 1024 * 1024 * 1024,
+    }
+}
+
+fn lifecycle_state(state: &LifecycleState) -> &'static str {
+    // Progenitor flattens the server's externally-tagged enum:
+    // unit variants for the data-less states + Failed(String) for
+    // the one variant that carries a reason.
+    match state {
+        LifecycleState::Pending => "Pending",
+        LifecycleState::Provisioning => "Provisioning",
+        LifecycleState::Running => "Running",
+        LifecycleState::Stopping => "Stopping",
+        LifecycleState::Stopped => "Stopped",
+        LifecycleState::Failed(_) => "Failed",
+    }
+}
+
+// ---------- tests ----------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn instance_create_runs_through_lifecycle_to_running() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+
+    let inst = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(instance_req(&fx, "web"))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    // Phase 0 fake-executor synchronously transitions Pending →
+    // Running before responding.
+    assert_eq!(lifecycle_state(&inst.lifecycle), "Running");
+    assert_eq!(inst.silo_id, fx.silo_id);
+    assert_eq!(inst.project_id, fx.project_id);
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn instance_lifecycle_start_stop_restart() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+    let inst = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(instance_req(&fx, "web"))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Running → Stopped
+    let stopped = root
+        .stop_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(lifecycle_state(&stopped.lifecycle), "Stopped");
+
+    // Stop while already stopped → 409
+    let err = root
+        .stop_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .expect_err("stop a stopped instance must 409");
+    assert_status(err, 409);
+
+    // Stopped → Running
+    let started = root
+        .start_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(lifecycle_state(&started.lifecycle), "Running");
+
+    // Restart → still Running (Phase 0 collapse)
+    let restarted = root
+        .restart_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(lifecycle_state(&restarted.lifecycle), "Running");
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delete_running_instance_returns_409() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+    let inst = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(instance_req(&fx, "web"))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    let err = root
+        .delete_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .expect_err("delete while running must 409");
+    assert_status(err, 409);
+
+    // Stop, then delete works.
+    root.stop_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .unwrap();
+    root.delete_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .unwrap();
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn zero_cpu_or_memory_returns_400() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+
+    let mut req = instance_req(&fx, "zero-cpu");
+    req.cpu = 0;
+    let err = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(req)
+        .send()
+        .await
+        .expect_err("zero cpu must 400");
+    assert_status(err, 400);
+
+    let mut req = instance_req(&fx, "zero-mem");
+    req.memory_bytes = 0;
+    let err = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(req)
+        .send()
+        .await
+        .expect_err("zero memory must 400");
+    assert_status(err, 400);
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_silo_image_returns_404() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+
+    // Image from a *different* silo.
+    let other_silo = root
+        .create_silo()
+        .body(NewSilo {
+            name: "other".to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let foreign_image = root
+        .create_silo_image()
+        .silo_id(other_silo.id)
+        .body(NewImage {
+            name: "foreign".to_string(),
+            description: None,
+            os: "linux".to_string(),
+            version: "1".to_string(),
+            size_bytes: 1,
+            sha256: "0".repeat(64),
+            source_url: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    let mut req = instance_req(&fx, "x");
+    req.image_id = foreign_image.id;
+    let err = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(req)
+        .send()
+        .await
+        .expect_err("cross-silo image must 404");
+    assert_status(err, 404);
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_silo_get_returns_404() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx_a = build_fixture(&root).await;
+    let fx_b = build_fixture(&root).await;
+    let inst = root
+        .create_project_instance()
+        .silo_id(fx_a.silo_id)
+        .project_id(fx_a.project_id)
+        .body(instance_req(&fx_a, "web"))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Same instance id, but path silo+project belong to fx_b →
+    // defence-in-depth 404.
+    let err = root
+        .get_project_instance()
+        .silo_id(fx_b.silo_id)
+        .project_id(fx_b.project_id)
+        .instance_id(inst.id)
+        .send()
+        .await
+        .expect_err("cross-silo get must 404");
+    assert_status(err, 404);
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn duplicate_instance_name_within_project_returns_409() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+    root.create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(instance_req(&fx, "web"))
+        .send()
+        .await
+        .unwrap();
+    let err = root
+        .create_project_instance()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .body(instance_req(&fx, "web"))
+        .send()
+        .await
+        .expect_err("duplicate name must 409");
+    assert_status(err, 409);
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn anonymous_cannot_reach_instance_endpoints() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+    let anon = test.anonymous_client();
+    let err = anon
+        .list_project_instances()
+        .silo_id(fx.silo_id)
+        .project_id(fx.project_id)
+        .send()
+        .await
+        .expect_err("anonymous list must be denied");
+    assert_status(err, 404);
+
+    test.close().await;
+}

@@ -18,9 +18,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, NewImage, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewVpc, Project, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, Image, Instance, LifecycleState, LifecycleStateKind, NewImage, NewInstance,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey,
+    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -69,6 +69,10 @@ struct Inner {
     image_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
     /// `project_id` → quota record. Singleton per project.
     quotas_by_project: HashMap<Uuid, Quota>,
+    instances_by_id: HashMap<Uuid, Instance>,
+    /// `(project_id, name)` → instance_id index for within-project
+    /// name uniqueness.
+    instance_id_by_project_name: HashMap<(Uuid, String), Uuid>,
 }
 
 /// In-process [`Store`] implementation.
@@ -714,6 +718,158 @@ impl Store for MemStore {
             .get(&project_id)
             .cloned()
             .ok_or(StoreError::NotFound)
+    }
+
+    async fn create_instance(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewInstance,
+    ) -> Result<Instance, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        // Project must exist and be in the named silo.
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        if project.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+
+        // Image must exist and be in the same silo.
+        let image = guard
+            .images_by_id
+            .get(&req.image_id)
+            .ok_or(StoreError::NotFound)?;
+        if image.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+
+        // Subnet must exist and live under this same silo+project.
+        let subnet = guard
+            .subnets_by_id
+            .get(&req.primary_subnet_id)
+            .ok_or(StoreError::NotFound)?;
+        if subnet.silo_id != silo_id || subnet.project_id != project_id {
+            return Err(StoreError::NotFound);
+        }
+
+        // Each ssh-key id must exist and live in the same silo.
+        for key_id in &req.ssh_key_ids {
+            let key = guard
+                .ssh_keys_by_id
+                .get(key_id)
+                .ok_or(StoreError::NotFound)?;
+            if key.silo_id != silo_id {
+                return Err(StoreError::NotFound);
+            }
+        }
+
+        let name_key = (project_id, req.name.clone());
+        if guard.instance_id_by_project_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "instance with name {:?} already exists in project {project_id}",
+                req.name
+            )));
+        }
+
+        let now = Utc::now();
+        let instance = Instance {
+            id: Uuid::new_v4(),
+            silo_id,
+            project_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            image_id: req.image_id,
+            primary_subnet_id: req.primary_subnet_id,
+            ssh_key_ids: req.ssh_key_ids,
+            cpu: req.cpu,
+            memory_bytes: req.memory_bytes,
+            lifecycle: LifecycleState::Pending,
+            created_at: now,
+            updated_at: now,
+        };
+        guard
+            .instance_id_by_project_name
+            .insert(name_key, instance.id);
+        guard.instances_by_id.insert(instance.id, instance.clone());
+        Ok(instance)
+    }
+
+    async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .instances_by_id
+            .get(&instance_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_instances_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Instance>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .instances_by_id
+            .values()
+            .filter(|i| i.project_id == project_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        // Snapshot just the data we need so the lifecycle check
+        // doesn't hold a borrow over the subsequent `remove`.
+        let (lifecycle_kind, project_id, name) = {
+            let instance = guard
+                .instances_by_id
+                .get(&instance_id)
+                .ok_or(StoreError::NotFound)?;
+            (
+                instance.lifecycle.kind(),
+                instance.project_id,
+                instance.name.clone(),
+            )
+        };
+        let deletable = matches!(
+            lifecycle_kind,
+            LifecycleStateKind::Stopped | LifecycleStateKind::Failed
+        );
+        if !deletable {
+            return Err(StoreError::Conflict(format!(
+                "instance {instance_id} is not deletable in state {lifecycle_kind:?}; stop it first"
+            )));
+        }
+        guard.instances_by_id.remove(&instance_id);
+        guard
+            .instance_id_by_project_name
+            .remove(&(project_id, name));
+        Ok(())
+    }
+
+    async fn transition_instance_lifecycle(
+        &self,
+        instance_id: Uuid,
+        expected_from: &[LifecycleStateKind],
+        to: LifecycleState,
+    ) -> Result<Instance, StoreError> {
+        let mut guard = self.inner.write().await;
+        let instance = guard
+            .instances_by_id
+            .get_mut(&instance_id)
+            .ok_or(StoreError::NotFound)?;
+        let current_kind = instance.lifecycle.kind();
+        if !expected_from.contains(&current_kind) {
+            return Err(StoreError::Conflict(format!(
+                "instance {instance_id} is in {current_kind:?}; expected one of {expected_from:?}"
+            )));
+        }
+        instance.lifecycle = to;
+        instance.updated_at = Utc::now();
+        Ok(instance.clone())
     }
 
     async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
@@ -2035,6 +2191,340 @@ mod tests {
             .await
             .expect_err("project-in-wrong-silo should be not-found");
         assert!(matches!(err, StoreError::NotFound));
+    }
+
+    /// Build a full silo+project+vpc+subnet+image+ssh-key tree
+    /// suitable for instance-create tests. Returns
+    /// `(silo_id, project_id, image_id, subnet_id, ssh_key_id)`.
+    async fn make_instance_fixture(store: &MemStore) -> (Uuid, Uuid, Uuid, Uuid, Uuid) {
+        let (silo_id, project_id, vpc) = make_silo_project_vpc(store).await;
+        let subnet = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "primary".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let image = store
+            .create_image(silo_id, image_req("ubuntu-base"))
+            .await
+            .unwrap();
+        let ssh_key = store
+            .create_ssh_key(
+                silo_id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA"),
+                "SHA256:fixture".to_string(),
+            )
+            .await
+            .unwrap();
+        (silo_id, project_id, image.id, subnet.id, ssh_key.id)
+    }
+
+    fn instance_req(name: &str, image_id: Uuid, subnet_id: Uuid, ssh_key_id: Uuid) -> NewInstance {
+        NewInstance {
+            name: name.to_string(),
+            description: None,
+            image_id,
+            primary_subnet_id: subnet_id,
+            ssh_key_ids: vec![ssh_key_id],
+            cpu: 2,
+            memory_bytes: 2 * 1024 * 1024 * 1024,
+        }
+    }
+
+    #[tokio::test]
+    async fn instance_round_trip_within_project() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+
+        let instance = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        assert_eq!(instance.silo_id, silo_id);
+        assert_eq!(instance.project_id, project_id);
+        assert_eq!(instance.lifecycle, LifecycleState::Pending);
+
+        let fetched = store.get_instance(instance.id).await.unwrap();
+        assert_eq!(fetched, instance);
+
+        let listed = store.list_instances_in_project(project_id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn instance_with_image_in_other_silo_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, project_id, _, subnet_id, ssh_key_id) = make_instance_fixture(&store).await;
+        // Image registered in a *different* silo.
+        let other_silo = store
+            .create_silo(NewSilo {
+                name: "other".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let foreign_image = store
+            .create_image(other_silo.id, image_req("foreign"))
+            .await
+            .unwrap();
+        let err = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("bad", foreign_image.id, subnet_id, ssh_key_id),
+            )
+            .await
+            .expect_err("foreign-silo image should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn instance_with_subnet_in_other_project_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, _, ssh_key_id) = make_instance_fixture(&store).await;
+        // Second project + subnet in same silo.
+        let other_project = store
+            .create_project(
+                silo_id,
+                NewProject {
+                    name: "other".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let other_vpc = store
+            .create_vpc(
+                silo_id,
+                other_project.id,
+                NewVpc {
+                    name: "v".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.5.0.0/16")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let foreign_subnet = store
+            .create_subnet(
+                silo_id,
+                other_project.id,
+                other_vpc.id,
+                NewSubnet {
+                    name: "s".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.5.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("bad", image_id, foreign_subnet.id, ssh_key_id),
+            )
+            .await
+            .expect_err("foreign-project subnet should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn duplicate_instance_name_within_project_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .expect_err("duplicate name within project should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn lifecycle_transition_cas_succeeds_on_match() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let instance = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+
+        // Pending → Running (skipping Provisioning for the
+        // synchronous-transition path).
+        let updated = store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Running,
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.lifecycle, LifecycleState::Running);
+        assert!(updated.updated_at >= instance.created_at);
+    }
+
+    #[tokio::test]
+    async fn lifecycle_transition_cas_conflicts_on_mismatch() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let instance = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        // Currently Pending; ask for Running → conflict.
+        let err = store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Running],
+                LifecycleState::Stopped,
+            )
+            .await
+            .expect_err("CAS with wrong expected_from must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn lifecycle_kind_failed_matches_any_reason() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let instance = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        // Drive Pending → Failed with one reason …
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Failed {
+                    reason: "image vanished".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+        // … and then Failed-with-any-reason → Stopped (i.e. operator
+        // did a manual reset). The discriminant kind matches without
+        // needing the caller to know the exact reason string.
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Failed],
+                LifecycleState::Stopped,
+            )
+            .await
+            .expect("Failed { .. } should match LifecycleStateKind::Failed");
+    }
+
+    #[tokio::test]
+    async fn delete_running_instance_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let instance = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Running,
+            )
+            .await
+            .unwrap();
+
+        let err = store
+            .delete_instance(instance.id)
+            .await
+            .expect_err("delete while running must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        // Drive to Stopped, then delete works.
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Running],
+                LifecycleState::Stopped,
+            )
+            .await
+            .unwrap();
+        store.delete_instance(instance.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_failed_instance_succeeds() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let instance = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Failed {
+                    reason: "boom".to_string(),
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .delete_instance(instance.id)
+            .await
+            .expect("Failed instance is deletable");
     }
 
     #[tokio::test]

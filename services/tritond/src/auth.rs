@@ -104,7 +104,14 @@ permit(
         Action::"image_delete",
         Action::"quota_set",
         Action::"quota_get",
-        Action::"quota_delete"
+        Action::"quota_delete",
+        Action::"instance_list",
+        Action::"instance_create",
+        Action::"instance_get",
+        Action::"instance_delete",
+        Action::"instance_start",
+        Action::"instance_stop",
+        Action::"instance_restart"
     ],
     resource
 ) when {
@@ -231,6 +238,13 @@ pub enum Action {
     QuotaSet,
     QuotaGet,
     QuotaDelete,
+    InstanceList,
+    InstanceCreate,
+    InstanceGet,
+    InstanceDelete,
+    InstanceStart,
+    InstanceStop,
+    InstanceRestart,
 }
 
 impl Action {
@@ -277,6 +291,13 @@ impl Action {
             Action::QuotaSet => "quota_set",
             Action::QuotaGet => "quota_get",
             Action::QuotaDelete => "quota_delete",
+            Action::InstanceList => "instance_list",
+            Action::InstanceCreate => "instance_create",
+            Action::InstanceGet => "instance_get",
+            Action::InstanceDelete => "instance_delete",
+            Action::InstanceStart => "instance_start",
+            Action::InstanceStop => "instance_stop",
+            Action::InstanceRestart => "instance_restart",
         }
     }
 

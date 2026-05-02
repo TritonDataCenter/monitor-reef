@@ -31,9 +31,10 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, NewImage, NewProject,
-    NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey, Subnet,
-    SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, Instance, LifecycleState,
+    LifecycleStateKind, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewVpc, Project, Quota, Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -382,4 +383,76 @@ pub trait Store: Send + Sync + 'static {
     /// Remove a project's quota (project becomes unlimited). Returns
     /// [`StoreError::NotFound`] if no quota was set.
     async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Instances (project-scoped, with lifecycle state machine)
+    // ------------------------------------------------------------------
+
+    /// Create an instance.
+    ///
+    /// The store enforces structural invariants:
+    ///
+    /// * Project exists and `project.silo_id == silo_id`. Mismatch
+    ///   surfaces as [`StoreError::NotFound`] (cross-tenant probe
+    ///   story).
+    /// * Image exists and `image.silo_id == silo_id`. A missing or
+    ///   wrong-silo image is [`StoreError::NotFound`].
+    /// * Subnet exists and lives in this project (i.e.
+    ///   `subnet.silo_id == silo_id` and `subnet.project_id ==
+    ///   project_id`). Otherwise [`StoreError::NotFound`].
+    /// * Each `ssh_key_id` exists and `silo_id` matches. Otherwise
+    ///   [`StoreError::NotFound`].
+    /// * `name` is unique within the project. Collision →
+    ///   [`StoreError::Conflict`].
+    ///
+    /// The caller is expected to have validated `cpu > 0` and
+    /// `memory_bytes > 0` at the API edge; the store does not
+    /// re-validate.
+    ///
+    /// Initial `lifecycle` is [`LifecycleState::Pending`]. The
+    /// caller is responsible for driving the state machine forward
+    /// (in Phase 0 the create handler synchronously transitions
+    /// Pending → Running; a future slice replaces that with an
+    /// async intent queue).
+    async fn create_instance(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewInstance,
+    ) -> Result<Instance, StoreError>;
+
+    /// Look up an instance by id.
+    async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError>;
+
+    /// List every instance in a project.
+    async fn list_instances_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Instance>, StoreError>;
+
+    /// Delete an instance. Returns [`StoreError::Conflict`] if the
+    /// current lifecycle is not deletable
+    /// (see [`LifecycleState::is_deletable`]) — operators must
+    /// stop a Running instance before deletion. Returns
+    /// [`StoreError::NotFound`] if the id does not exist.
+    async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError>;
+
+    /// Atomic compare-and-set on an instance's lifecycle. Reads the
+    /// current state; if its discriminant is in `expected_from`,
+    /// transitions to `to` and bumps `updated_at`. Otherwise
+    /// returns [`StoreError::Conflict`] naming the observed state.
+    ///
+    /// `expected_from` takes [`LifecycleStateKind`] (discriminants
+    /// only) so callers can name "any Failed state" without
+    /// committing to a specific `reason`.
+    ///
+    /// This is the building block all start/stop/restart and the
+    /// (future) agent-driven Pending → Provisioning → Running
+    /// transitions are written on top of.
+    async fn transition_instance_lifecycle(
+        &self,
+        instance_id: Uuid,
+        expected_from: &[LifecycleStateKind],
+        to: LifecycleState,
+    ) -> Result<Instance, StoreError>;
 }

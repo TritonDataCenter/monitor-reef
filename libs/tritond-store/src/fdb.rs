@@ -52,6 +52,9 @@
 //! image/by_silo/<silo>/<name>       -> uuid hyphenated bytes
 //! image/in_silo/<silo>/<image>      -> empty (membership index)
 //! quota/by_project/<project>        -> JSON-encoded Quota
+//! instance/by_id/<uuid>             -> JSON-encoded Instance
+//! instance/by_project/<proj>/<name> -> uuid hyphenated bytes
+//! instance/in_project/<proj>/<inst> -> empty (membership index)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -67,9 +70,9 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, NewImage, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewVpc, Project, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, Image, Instance, LifecycleState, LifecycleStateKind, NewImage, NewInstance,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Quota, Silo, SshKey,
+    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -267,6 +270,22 @@ impl FdbStore {
 
     fn quota_by_project_key(project_id: Uuid) -> Vec<u8> {
         format!("quota/by_project/{project_id}").into_bytes()
+    }
+
+    fn instance_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("instance/by_id/{id}").into_bytes()
+    }
+
+    fn instance_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
+        format!("instance/by_project/{project_id}/{name}").into_bytes()
+    }
+
+    fn instance_in_project_key(project_id: Uuid, instance_id: Uuid) -> Vec<u8> {
+        format!("instance/in_project/{project_id}/{instance_id}").into_bytes()
+    }
+
+    fn instance_in_project_prefix(project_id: Uuid) -> Vec<u8> {
+        format!("instance/in_project/{project_id}/").into_bytes()
     }
 }
 
@@ -1817,6 +1836,312 @@ impl Store for FdbStore {
             Ok(Outcome::ProjectMissingOrWrongSilo) | Ok(Outcome::QuotaUnset) => {
                 Err(StoreError::NotFound)
             }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_instance(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewInstance,
+    ) -> Result<Instance, StoreError> {
+        // Cross-resource validation reads (project, image, subnet,
+        // each ssh-key) all happen inside the transaction so the
+        // create can't race a concurrent delete of any referenced
+        // resource.
+        let project_check_key = Self::project_by_id_key(project_id);
+        let image_check_key = Self::image_by_id_key(req.image_id);
+        let subnet_check_key = Self::subnet_by_id_key(req.primary_subnet_id);
+        let ssh_key_check_keys: Vec<(Uuid, Vec<u8>)> = req
+            .ssh_key_ids
+            .iter()
+            .map(|id| (*id, Self::ssh_key_by_id_key(*id)))
+            .collect();
+        let by_name_key = Self::instance_by_project_name_key(project_id, &req.name);
+
+        let candidate_id = Uuid::new_v4();
+        let by_id_key = Self::instance_by_id_key(candidate_id);
+        let in_project_key = Self::instance_in_project_key(project_id, candidate_id);
+        let id_str = candidate_id.to_string();
+
+        enum Outcome {
+            Created(Box<Instance>),
+            ProjectMissingOrWrongSilo,
+            ImageMissingOrWrongSilo,
+            SubnetMissingOrWrongParent,
+            SshKeyMissingOrWrongSilo,
+            NameTaken,
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let project_check_key = project_check_key.clone();
+                let image_check_key = image_check_key.clone();
+                let subnet_check_key = subnet_check_key.clone();
+                let ssh_key_check_keys = ssh_key_check_keys.clone();
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_project_key = in_project_key.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    // Project
+                    let project_bytes = match tr.get(&project_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    let project: Project = match serde_json::from_slice(&project_bytes) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    if project.silo_id != silo_id {
+                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    }
+                    // Image
+                    let image_bytes = match tr.get(&image_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::ImageMissingOrWrongSilo),
+                    };
+                    let image: Image = match serde_json::from_slice(&image_bytes) {
+                        Ok(i) => i,
+                        Err(_) => return Ok(Outcome::ImageMissingOrWrongSilo),
+                    };
+                    if image.silo_id != silo_id {
+                        return Ok(Outcome::ImageMissingOrWrongSilo);
+                    }
+                    // Subnet
+                    let subnet_bytes = match tr.get(&subnet_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::SubnetMissingOrWrongParent),
+                    };
+                    let subnet: Subnet = match serde_json::from_slice(&subnet_bytes) {
+                        Ok(s) => s,
+                        Err(_) => return Ok(Outcome::SubnetMissingOrWrongParent),
+                    };
+                    if subnet.silo_id != silo_id || subnet.project_id != project_id {
+                        return Ok(Outcome::SubnetMissingOrWrongParent);
+                    }
+                    // SSH keys
+                    for (_key_id, key_check_key) in &ssh_key_check_keys {
+                        let key_bytes = match tr.get(key_check_key, false).await? {
+                            Some(b) => b,
+                            None => return Ok(Outcome::SshKeyMissingOrWrongSilo),
+                        };
+                        let key: SshKey = match serde_json::from_slice(&key_bytes) {
+                            Ok(k) => k,
+                            Err(_) => return Ok(Outcome::SshKeyMissingOrWrongSilo),
+                        };
+                        if key.silo_id != silo_id {
+                            return Ok(Outcome::SshKeyMissingOrWrongSilo);
+                        }
+                    }
+                    // Name uniqueness
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    // Build + write
+                    let now = Utc::now();
+                    let instance = Instance {
+                        id: candidate_id,
+                        silo_id,
+                        project_id,
+                        name: req.name.clone(),
+                        description: req.description.unwrap_or_default(),
+                        image_id: req.image_id,
+                        primary_subnet_id: req.primary_subnet_id,
+                        ssh_key_ids: req.ssh_key_ids,
+                        cpu: req.cpu,
+                        memory_bytes: req.memory_bytes,
+                        lifecycle: LifecycleState::Pending,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    let value = match serde_json::to_vec(&instance) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::NameTaken), // surrogate; treated as backend
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_project_key, b"");
+                    Ok(Outcome::Created(Box::new(instance)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(i)) => Ok(*i),
+            Ok(Outcome::ProjectMissingOrWrongSilo)
+            | Ok(Outcome::ImageMissingOrWrongSilo)
+            | Ok(Outcome::SubnetMissingOrWrongParent)
+            | Ok(Outcome::SshKeyMissingOrWrongSilo) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "instance with name {:?} already exists in project {project_id}",
+                req.name
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError> {
+        let key = Self::instance_by_id_key(instance_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))
+    }
+
+    async fn list_instances_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Instance>, StoreError> {
+        let prefix = Self::instance_in_project_prefix(project_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("instance index uuid: {e}")))?;
+            let by_id_key = Self::instance_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let instance: Instance = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))?;
+                out.push(instance);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::instance_by_id_key(instance_id);
+
+        enum Outcome {
+            Deleted,
+            Vanished,
+            NotDeletable(LifecycleStateKind),
+        }
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::Vanished),
+                    };
+                    let instance: Instance = match serde_json::from_slice(&bytes) {
+                        Ok(i) => i,
+                        Err(_) => return Ok(Outcome::Vanished),
+                    };
+                    if !instance.lifecycle.is_deletable() {
+                        return Ok(Outcome::NotDeletable(instance.lifecycle.kind()));
+                    }
+                    let by_name_key = format!(
+                        "instance/by_project/{}/{}",
+                        instance.project_id, instance.name
+                    )
+                    .into_bytes();
+                    let in_project_key = format!(
+                        "instance/in_project/{}/{}",
+                        instance.project_id, instance.id
+                    )
+                    .into_bytes();
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_project_key);
+                    Ok(Outcome::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Deleted) => Ok(()),
+            Ok(Outcome::Vanished) => Err(StoreError::NotFound),
+            Ok(Outcome::NotDeletable(kind)) => Err(StoreError::Conflict(format!(
+                "instance {instance_id} is not deletable in state {kind:?}; stop it first"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn transition_instance_lifecycle(
+        &self,
+        instance_id: Uuid,
+        expected_from: &[LifecycleStateKind],
+        to: LifecycleState,
+    ) -> Result<Instance, StoreError> {
+        let by_id_key = Self::instance_by_id_key(instance_id);
+        let expected_from_owned = expected_from.to_vec();
+
+        enum Outcome {
+            Updated(Box<Instance>),
+            Vanished,
+            WrongState(LifecycleStateKind),
+        }
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let expected_from = expected_from_owned.clone();
+                let to = to.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::Vanished),
+                    };
+                    let mut instance: Instance = match serde_json::from_slice(&bytes) {
+                        Ok(i) => i,
+                        Err(_) => return Ok(Outcome::Vanished),
+                    };
+                    let current = instance.lifecycle.kind();
+                    if !expected_from.contains(&current) {
+                        return Ok(Outcome::WrongState(current));
+                    }
+                    instance.lifecycle = to;
+                    instance.updated_at = Utc::now();
+                    let value = match serde_json::to_vec(&instance) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::Vanished),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Outcome::Updated(Box::new(instance)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated(i)) => Ok(*i),
+            Ok(Outcome::Vanished) => Err(StoreError::NotFound),
+            Ok(Outcome::WrongState(kind)) => Err(StoreError::Conflict(format!(
+                "instance {instance_id} is in {kind:?}; expected one of {expected_from:?}"
+            ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }

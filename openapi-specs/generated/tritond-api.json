@@ -899,6 +899,388 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances": {
+      "get": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "List instances in a project.",
+        "operationId": "list_project_instances",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Instance",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Instance"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Create an instance in a project.",
+        "description": "Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404 if any referenced resource (image, subnet, ssh-keys) does not exist or lives outside this silo/project. Returns 409 if the instance name is already taken in the project.\n\nPhase 0 ships synchronous lifecycle: the create handler transitions the new instance through Pending → Running before responding. A future slice introduces an async provisioning queue + stub executor; the API surface stays the same but tests will observe Pending-then-Running transitions instead of an instant Running.",
+        "operationId": "create_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewInstance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}": {
+      "get": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Read a single instance.",
+        "operationId": "get_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Delete an instance. Returns 409 if the instance is not in",
+        "description": "a deletable state (must be Stopped or Failed). Returns 404 if the instance does not exist or belongs to a different silo or project.",
+        "operationId": "delete_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart": {
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Restart a running instance. Returns 409 if the instance is",
+        "description": "not in `Running` state.",
+        "operationId": "restart_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/start": {
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Start a stopped instance. Returns 409 if the instance is",
+        "description": "not in `Stopped` state.",
+        "operationId": "start_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/stop": {
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Stop a running instance. Returns 409 if the instance is",
+        "description": "not in `Running` state.",
+        "operationId": "stop_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/projects/{project_id}/quota": {
       "get": {
         "tags": [
@@ -2081,6 +2463,185 @@
           "version"
         ]
       },
+      "Instance": {
+        "description": "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships.",
+        "type": "object",
+        "properties": {
+          "cpu": {
+            "description": "Number of vCPUs.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "image_id": {
+            "description": "Boot image; must be in the same silo as the instance.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/LifecycleState"
+          },
+          "memory_bytes": {
+            "description": "Memory budget in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "primary_subnet_id": {
+            "description": "Subnet the instance's primary NIC attaches to. Phase 0 auto-creates a NIC at provisioning time; a future slice adds explicit NIC records that operators can manage separately. Subnet must live in a VPC inside this project.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ssh_key_ids": {
+            "description": "SSH keys to inject into the instance's authorized_keys at first boot. Each key id must live in the same silo as the instance. May be empty (no key injection).",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "cpu",
+          "created_at",
+          "description",
+          "id",
+          "image_id",
+          "lifecycle",
+          "memory_bytes",
+          "name",
+          "primary_subnet_id",
+          "project_id",
+          "silo_id",
+          "ssh_key_ids",
+          "updated_at"
+        ]
+      },
+      "LifecycleState": {
+        "description": "Lifecycle state of a tenant instance. The state machine:\n\n```text create ↓ Pending ──→ Provisioning ──┬→ Running ←──┬── Stopped │             │      ↑ │             │      │ ↓             ↓      │ Failed        Stopping─┘ ```\n\nPhase 0 collapses Pending → Provisioning → Running into a synchronous transition inside the create handler (there is no agent yet). The full async path lands when the provisioning intent queue + stub executor slice ships.\n\nOperator-driven transitions: start (Stopped → Pending), stop (Running → Stopping), restart (Running → Stopping → Pending). Agent-driven transitions: Pending → Provisioning → Running, Provisioning → Failed, Stopping → Stopped.\n\nDelete is allowed only from Stopped or Failed; deleting a Running instance returns 409.",
+        "oneOf": [
+          {
+            "description": "Newly created; not yet picked up by an agent.",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "An agent has claimed the provisioning job and is working.",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "provisioning"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "Up and running.",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "running"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "Stop requested; agent is winding down.",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "stopping"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "Fully stopped; safe to delete or restart.",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "stopped"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "Unrecoverable error. Inspect `reason`; the instance must be deleted (no in-place recovery in Phase 0).",
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "reason",
+              "state"
+            ]
+          }
+        ]
+      },
       "LoginRequest": {
         "description": "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.",
         "type": "object",
@@ -2173,6 +2734,53 @@
           "sha256",
           "size_bytes",
           "version"
+        ]
+      },
+      "NewInstance": {
+        "description": "Request body for creating an instance. The owning silo + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`.",
+        "type": "object",
+        "properties": {
+          "cpu": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "image_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "primary_subnet_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ssh_key_ids": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "cpu",
+          "image_id",
+          "memory_bytes",
+          "name",
+          "primary_subnet_id"
         ]
       },
       "NewProject": {
@@ -2787,6 +3395,9 @@
     },
     {
       "name": "images"
+    },
+    {
+      "name": "instances"
     },
     {
       "name": "projects"
