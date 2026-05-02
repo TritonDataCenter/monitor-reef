@@ -547,6 +547,182 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List the images registered in a silo's catalog.",
+        "operationId": "list_silo_images",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Image",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Register an image in a silo's catalog. Returns 400 if",
+        "description": "`sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use within the silo.",
+        "operationId": "create_silo_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/images/{image_id}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Read a single image. Returns 404 when the image does not",
+        "description": "exist or belongs to a different silo.",
+        "operationId": "get_silo_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Delete an image. Returns 404 when the image does not exist",
+        "description": "or belongs to a different silo.",
+        "operationId": "delete_silo_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/projects": {
       "get": {
         "tags": [
@@ -1704,6 +1880,64 @@
           "issuer_url"
         ]
       },
+      "Image": {
+        "description": "Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\n\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "os": {
+            "description": "OS family identifier (e.g. `linux`, `windows`, `smartos`). Stringly-typed in Phase 0; will tighten to an enum once the instance brand model lands.",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Lowercase hex SHA-256 of the image content. Server-validated for length (64 chars) and charset at create time.",
+            "type": "string"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "size_bytes": {
+            "description": "Total content size, in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "source_url": {
+            "nullable": true,
+            "description": "Optional URL where the image content can be fetched. `None` means the content is registered out-of-band (e.g. already in mantafs at a known path resolved by image_id).",
+            "type": "string"
+          },
+          "version": {
+            "description": "OS version / distro tag (e.g. `ubuntu-22.04`, `windows-server-2022`). Free-form for Phase 0.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "name",
+          "os",
+          "sha256",
+          "silo_id",
+          "size_bytes",
+          "version"
+        ]
+      },
       "LoginRequest": {
         "description": "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops.",
         "type": "object",
@@ -1756,6 +1990,46 @@
           "client_id",
           "client_secret",
           "issuer_url"
+        ]
+      },
+      "NewImage": {
+        "description": "Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "source_url": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "os",
+          "sha256",
+          "size_bytes",
+          "version"
         ]
       },
       "NewProject": {
@@ -2284,6 +2558,9 @@
     },
     {
       "name": "auth"
+    },
+    {
+      "name": "images"
     },
     {
       "name": "projects"

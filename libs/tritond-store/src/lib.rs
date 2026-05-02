@@ -31,9 +31,9 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, NewProject, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, NewImage, NewProject, NewSilo,
+    NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, SystemKey, User, UserView,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -326,4 +326,36 @@ pub trait Store: Send + Sync + 'static {
     /// Delete an SSH key by id. Returns [`StoreError::NotFound`] if
     /// the id does not exist.
     async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Images (silo-scoped catalog)
+    // ------------------------------------------------------------------
+
+    /// Register an image in a silo's catalog.
+    ///
+    /// The store enforces:
+    ///
+    /// * The silo exists. Missing silo → [`StoreError::NotFound`].
+    /// * `name` is unique within the silo. Collision →
+    ///   [`StoreError::Conflict`].
+    /// * `(name, version)` is treated as a single addressable
+    ///   tuple by some operator workflows; uniqueness is on `name`
+    ///   alone for Phase 0 — operators encode versions into the
+    ///   name (e.g. `ubuntu-22.04-base`) until a registry-style
+    ///   model lands.
+    ///
+    /// The caller is expected to have validated `req.sha256`
+    /// (lowercase 64-char hex) at the API edge. The store treats
+    /// it as an opaque string.
+    async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError>;
+
+    /// Look up an image by id. Returns [`StoreError::NotFound`]
+    /// when no such image exists, regardless of silo.
+    async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError>;
+
+    /// List every image in a silo's catalog.
+    async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError>;
+
+    /// Delete an image by id.
+    async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError>;
 }

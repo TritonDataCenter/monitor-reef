@@ -417,6 +417,57 @@ pub struct NewSshKey {
     pub public_key: String,
 }
 
+/// Tenant image catalog entry. Phase 0 ships only the metadata
+/// record — image content lives in mantafs / object storage and is
+/// not modelled here. Operators register images by URL + sha256 and
+/// trust the caller for the content match; an eventual import
+/// pipeline will pre-stage content in storage and verify the digest
+/// before the record is persisted.
+///
+/// Silo-scoped: each silo has its own catalog. A future slice may
+/// add a fleet-shared catalog (operator-owned) that silos can
+/// reference; for now images are tenant-private.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Image {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// OS family identifier (e.g. `linux`, `windows`, `smartos`).
+    /// Stringly-typed in Phase 0; will tighten to an enum once the
+    /// instance brand model lands.
+    pub os: String,
+    /// OS version / distro tag (e.g. `ubuntu-22.04`,
+    /// `windows-server-2022`). Free-form for Phase 0.
+    pub version: String,
+    /// Total content size, in bytes.
+    pub size_bytes: u64,
+    /// Lowercase hex SHA-256 of the image content. Server-validated
+    /// for length (64 chars) and charset at create time.
+    pub sha256: String,
+    /// Optional URL where the image content can be fetched. `None`
+    /// means the content is registered out-of-band (e.g. already in
+    /// mantafs at a known path resolved by image_id).
+    pub source_url: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for registering an image in a silo's catalog. The
+/// owning silo comes from the URL path. The server assigns `id`
+/// and `created_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewImage {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub os: String,
+    pub version: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    #[serde(default)]
+    pub source_url: Option<String>,
+}
+
 /// Cluster-level system keys. Phase 0 has exactly one
 /// (`SystemKey::JwtSigning`); future entries will include the
 /// transit-engine master key and any per-silo OIDC client secrets.

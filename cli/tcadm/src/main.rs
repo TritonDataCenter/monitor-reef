@@ -122,6 +122,53 @@ enum SiloCommand {
         #[command(subcommand)]
         command: SiloSshKeyCommand,
     },
+    /// Manage images registered in the silo's catalog.
+    Image {
+        #[command(subcommand)]
+        command: SiloImageCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloImageCommand {
+    /// List images in the silo's catalog.
+    List {
+        silo_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new image. The server validates `sha256` shape
+    /// and rejects zero-byte content.
+    Add {
+        silo_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        os: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        size_bytes: u64,
+        /// SHA-256 of the image content; must be 64 lowercase hex chars.
+        #[arg(long)]
+        sha256: String,
+        /// Optional URL where the image content lives.
+        #[arg(long)]
+        source_url: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single image.
+    Get {
+        silo_id: Uuid,
+        image_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an image.
+    Delete { silo_id: Uuid, image_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -687,6 +734,48 @@ async fn main() -> Result<()> {
                 } => {
                     commands::silo_ssh_key_delete(cli.endpoint, cli.api_key, silo_id, ssh_key_id)
                         .await
+                }
+            },
+            SiloCommand::Image { command } => match command {
+                SiloImageCommand::List { silo_id, json } => {
+                    commands::silo_image_list(cli.endpoint, cli.api_key, silo_id, json).await
+                }
+                SiloImageCommand::Add {
+                    silo_id,
+                    name,
+                    description,
+                    os,
+                    version,
+                    size_bytes,
+                    sha256,
+                    source_url,
+                    json,
+                } => {
+                    commands::silo_image_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        silo_id,
+                        name,
+                        description,
+                        os,
+                        version,
+                        size_bytes,
+                        sha256,
+                        source_url,
+                        json,
+                    )
+                    .await
+                }
+                SiloImageCommand::Get {
+                    silo_id,
+                    image_id,
+                    json,
+                } => {
+                    commands::silo_image_get(cli.endpoint, cli.api_key, silo_id, image_id, json)
+                        .await
+                }
+                SiloImageCommand::Delete { silo_id, image_id } => {
+                    commands::silo_image_delete(cli.endpoint, cli.api_key, silo_id, image_id).await
                 }
             },
         },

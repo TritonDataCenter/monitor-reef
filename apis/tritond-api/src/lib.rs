@@ -28,8 +28,8 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, NewProject, NewSilo,
-    NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, Vpc,
+    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, Image, NewImage,
+    NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -133,6 +133,14 @@ pub struct SiloProjectVpcSubnetPath {
 pub struct SiloSshKeyPath {
     pub silo_id: Uuid,
     pub ssh_key_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single image
+/// inside a silo.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloImagePath {
+    pub silo_id: Uuid,
+    pub image_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -566,5 +574,55 @@ pub trait TritondApi {
     async fn delete_silo_ssh_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloSshKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List the images registered in a silo's catalog.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/images",
+        tags = ["images"],
+    }]
+    async fn list_silo_images(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
+
+    /// Register an image in a silo's catalog. Returns 400 if
+    /// `sha256` is not 64 lowercase hex chars or if `size_bytes`
+    /// is zero. Returns 409 if the name is already in use within
+    /// the silo.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/images",
+        tags = ["images"],
+    }]
+    async fn create_silo_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// Read a single image. Returns 404 when the image does not
+    /// exist or belongs to a different silo.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/images/{image_id}",
+        tags = ["images"],
+    }]
+    async fn get_silo_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError>;
+
+    /// Delete an image. Returns 404 when the image does not exist
+    /// or belongs to a different silo.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/images/{image_id}",
+        tags = ["images"],
+    }]
+    async fn delete_silo_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloImagePath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 }

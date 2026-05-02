@@ -97,7 +97,11 @@ permit(
         Action::"ssh_key_list",
         Action::"ssh_key_create",
         Action::"ssh_key_get",
-        Action::"ssh_key_delete"
+        Action::"ssh_key_delete",
+        Action::"image_list",
+        Action::"image_create",
+        Action::"image_get",
+        Action::"image_delete"
     ],
     resource
 ) when {
@@ -217,6 +221,10 @@ pub enum Action {
     SshKeyCreate,
     SshKeyGet,
     SshKeyDelete,
+    ImageList,
+    ImageCreate,
+    ImageGet,
+    ImageDelete,
 }
 
 impl Action {
@@ -256,6 +264,10 @@ impl Action {
             Action::SshKeyCreate => "ssh_key_create",
             Action::SshKeyGet => "ssh_key_get",
             Action::SshKeyDelete => "ssh_key_delete",
+            Action::ImageList => "image_list",
+            Action::ImageCreate => "image_create",
+            Action::ImageGet => "image_get",
+            Action::ImageDelete => "image_delete",
         }
     }
 

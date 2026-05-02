@@ -18,6 +18,6 @@ pub use tritond_audit::{
     EventHash as AuditEventHash, Outcome as AuditOutcome, VerifyOutcome as AuditVerifyOutcome,
 };
 pub use tritond_store::{
-    ApiKeyView, IdpConfigView, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo,
-    SshKey, Subnet, UserView, Vpc,
+    ApiKeyView, IdpConfigView, Image, NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc,
+    Project, Silo, SshKey, Subnet, UserView, Vpc,
 };

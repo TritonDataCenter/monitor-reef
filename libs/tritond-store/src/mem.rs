@@ -18,8 +18,9 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey,
-    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, Image, NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project,
+    Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -62,6 +63,10 @@ struct Inner {
     /// `(silo_id, fingerprint)` → key_id index for within-silo
     /// fingerprint uniqueness (no aliased pool entries).
     ssh_key_id_by_silo_fingerprint: HashMap<(Uuid, String), Uuid>,
+    images_by_id: HashMap<Uuid, Image>,
+    /// `(silo_id, name)` → image_id index for within-silo name
+    /// uniqueness.
+    image_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
 }
 
 /// In-process [`Store`] implementation.
@@ -603,6 +608,66 @@ impl Store for MemStore {
         guard
             .ssh_key_id_by_silo_fingerprint
             .remove(&(key.silo_id, key.fingerprint));
+        Ok(())
+    }
+
+    async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.silos_by_id.contains_key(&silo_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (silo_id, req.name.clone());
+        if guard.image_id_by_silo_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "image with name {:?} already exists in silo {silo_id}",
+                req.name
+            )));
+        }
+        let image = Image {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            os: req.os,
+            version: req.version,
+            size_bytes: req.size_bytes,
+            sha256: req.sha256,
+            source_url: req.source_url,
+            created_at: Utc::now(),
+        };
+        guard.image_id_by_silo_name.insert(name_key, image.id);
+        guard.images_by_id.insert(image.id, image.clone());
+        Ok(image)
+    }
+
+    async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .images_by_id
+            .get(&image_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| i.silo_id == silo_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let image = guard
+            .images_by_id
+            .remove(&image_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .image_id_by_silo_name
+            .remove(&(image.silo_id, image.name));
         Ok(())
     }
 }
@@ -1739,6 +1804,82 @@ mod tests {
                 ssh_key_req("orphan", "ssh-ed25519 AAAA"),
                 "SHA256:x".to_string(),
             )
+            .await
+            .expect_err("unknown silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    fn image_req(name: &str) -> NewImage {
+        NewImage {
+            name: name.to_string(),
+            description: None,
+            os: "linux".to_string(),
+            version: "ubuntu-22.04".to_string(),
+            size_bytes: 1_000_000_000,
+            sha256: "0".repeat(64),
+            source_url: Some("mantafs://images/test".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn image_round_trip_within_silo() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "tenants".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+
+        let img = store
+            .create_image(silo.id, image_req("ubuntu-base"))
+            .await
+            .unwrap();
+        assert_eq!(img.silo_id, silo.id);
+        assert_eq!(img.os, "linux");
+        assert_eq!(img.size_bytes, 1_000_000_000);
+
+        let fetched = store.get_image(img.id).await.unwrap();
+        assert_eq!(fetched, img);
+
+        let listed = store.list_images_in_silo(silo.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+
+        store.delete_image(img.id).await.unwrap();
+        let err = store
+            .get_image(img.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn duplicate_image_name_within_silo_conflicts() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "x".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_image(silo.id, image_req("ubuntu-base"))
+            .await
+            .unwrap();
+        let err = store
+            .create_image(silo.id, image_req("ubuntu-base"))
+            .await
+            .expect_err("duplicate name within silo conflicts");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn create_image_in_unknown_silo_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .create_image(Uuid::new_v4(), image_req("orphan"))
             .await
             .expect_err("unknown silo should be not-found");
         assert!(matches!(err, StoreError::NotFound));

@@ -48,6 +48,9 @@
 //! ssh_key/by_fingerprint/<silo>/<sha256-hex>
 //!                                   -> uuid hyphenated bytes
 //! ssh_key/in_silo/<silo>/<key>      -> empty (membership index)
+//! image/by_id/<uuid>                -> JSON-encoded Image
+//! image/by_silo/<silo>/<name>       -> uuid hyphenated bytes
+//! image/in_silo/<silo>/<image>      -> empty (membership index)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -63,8 +66,9 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project, Silo, SshKey,
-    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, IdpConfig, Image, NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, Project,
+    Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -242,6 +246,22 @@ impl FdbStore {
 
     fn ssh_key_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
         format!("ssh_key/in_silo/{silo_id}/").into_bytes()
+    }
+
+    fn image_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("image/by_id/{id}").into_bytes()
+    }
+
+    fn image_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
+        format!("image/by_silo/{silo_id}/{name}").into_bytes()
+    }
+
+    fn image_in_silo_key(silo_id: Uuid, image_id: Uuid) -> Vec<u8> {
+        format!("image/in_silo/{silo_id}/{image_id}").into_bytes()
+    }
+
+    fn image_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
+        format!("image/in_silo/{silo_id}/").into_bytes()
     }
 }
 
@@ -1478,6 +1498,159 @@ impl Store for FdbStore {
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&by_fp_key);
+                    tr.clear(&in_silo_key);
+                    Ok(DelOut::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DelOut::Deleted) => Ok(()),
+            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        let image = Image {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            os: req.os,
+            version: req.version,
+            size_bytes: req.size_bytes,
+            sha256: req.sha256,
+            source_url: req.source_url,
+            created_at: Utc::now(),
+        };
+        let value = serde_json::to_vec(&image)
+            .map_err(|e| StoreError::Backend(format!("serialize image: {e}")))?;
+        let by_id_key = Self::image_by_id_key(image.id);
+        let by_name_key = Self::image_by_silo_name_key(silo_id, &image.name);
+        let in_silo_key = Self::image_in_silo_key(silo_id, image.id);
+        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let id_str = image.id.to_string();
+
+        enum Outcome {
+            Created,
+            SiloMissing,
+            NameTaken,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                let silo_check_key = silo_check_key.clone();
+                let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                async move {
+                    if tr.get(&silo_check_key, false).await?.is_none() {
+                        return Ok(Outcome::SiloMissing);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_silo_key, b"");
+                    Ok(Outcome::Created)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created) => Ok(image),
+            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "image with name {:?} already exists in silo {silo_id}",
+                req.name
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError> {
+        let key = Self::image_by_id_key(image_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))
+    }
+
+    async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let prefix = Self::image_in_silo_prefix(silo_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("image index uuid: {e}")))?;
+            let by_id_key = Self::image_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let image: Image = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
+                out.push(image);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::image_by_id_key(image_id);
+        let bytes = match self.read_bytes(&by_id_key).await? {
+            Some(b) => b,
+            None => return Err(StoreError::NotFound),
+        };
+        let image: Image = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
+        let by_name_key = Self::image_by_silo_name_key(image.silo_id, &image.name);
+        let in_silo_key = Self::image_in_silo_key(image.silo_id, image.id);
+
+        enum DelOut {
+            Deleted,
+            Vanished,
+        }
+        let outcome: Result<DelOut, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Ok(DelOut::Vanished);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
                     tr.clear(&in_silo_key);
                     Ok(DelOut::Deleted)
                 }

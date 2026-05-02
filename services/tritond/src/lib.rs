@@ -34,11 +34,11 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath,
-    TokenResponse, TritondApi,
+    SiloImagePath, SiloPath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
+    SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc,
-        Project, Silo, SshKey, Subnet, Vpc,
+        ApiKeyView, AuditEvent, IdpConfigView, Image, NewImage, NewProject, NewSilo, NewSshKey,
+        NewSubnet, NewVpc, Project, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1351,6 +1351,196 @@ impl TritondApi for TritondServiceImpl {
             .await;
         Ok(HttpResponseDeleted())
     }
+
+    async fn list_silo_images(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageList,
+            silo_id,
+        )
+        .await?;
+        let images = ctx
+            .store
+            .list_images_in_silo(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(images))
+    }
+
+    async fn create_silo_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // Format checks at the API edge so the store stays opaque to
+        // hex/byte-size invariants.
+        if let Err(msg) = validate_sha256(&req.sha256) {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::ImageCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 400,
+                        message: msg.clone(),
+                    },
+                    serde_json::json!({ "silo_id": silo_id }),
+                )
+                .await;
+            return Err(HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                msg,
+            ));
+        }
+        if req.size_bytes == 0 {
+            let msg = "size_bytes must be greater than zero".to_string();
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::ImageCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 400,
+                        message: msg.clone(),
+                    },
+                    serde_json::json!({ "silo_id": silo_id }),
+                )
+                .await;
+            return Err(HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                msg,
+            ));
+        }
+
+        match ctx.store.create_image(silo_id, req).await {
+            Ok(image) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::ImageCreate,
+                        request_id,
+                        Some(format!("Image::\"{}\"", image.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Image::\"{}\"", image.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "name": image.name,
+                            "sha256": image.sha256,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(image))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::ImageCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_silo_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloImagePath { silo_id, image_id } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageGet,
+            silo_id,
+        )
+        .await?;
+        let image = ctx
+            .store
+            .get_image(image_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if image.silo_id != silo_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(image))
+    }
+
+    async fn delete_silo_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloImagePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloImagePath { silo_id, image_id } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let image = ctx
+            .store
+            .get_image(image_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if image.silo_id != silo_id {
+            return Err(not_found());
+        }
+        ctx.store
+            .delete_image(image_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::ImageDelete,
+                request_id,
+                Some(format!("Image::\"{image_id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("Image::\"{image_id}\"")),
+                },
+                serde_json::json!({ "silo_id": silo_id }),
+            )
+            .await;
+        Ok(HttpResponseDeleted())
+    }
 }
 
 /// Parse an inbound openssh public-key string and return its
@@ -1360,6 +1550,21 @@ fn parse_ssh_public_key(public_key: &str) -> Result<String, String> {
     let parsed = ssh_key::PublicKey::from_openssh(public_key.trim())
         .map_err(|e| format!("invalid openssh public key: {e}"))?;
     Ok(parsed.fingerprint(ssh_key::HashAlg::Sha256).to_string())
+}
+
+/// Validate an image's `sha256` field — must be exactly 64 lowercase
+/// hex characters.
+fn validate_sha256(s: &str) -> Result<(), String> {
+    if s.len() != 64 {
+        return Err(format!("sha256 must be 64 hex chars (got {})", s.len()));
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+    {
+        return Err("sha256 must be lowercase hex (0-9, a-f)".to_string());
+    }
+    Ok(())
 }
 
 /// Generic 404 "not found" used by the defence-in-depth path checks.

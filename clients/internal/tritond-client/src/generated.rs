@@ -717,6 +717,101 @@ pub mod types {
         }
     }
 
+    #[doc = "Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\n\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\\n\\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"os\","]
+    #[doc = "    \"sha256\","]
+    #[doc = "    \"silo_id\","]
+    #[doc = "    \"size_bytes\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"os\": {"]
+    #[doc = "      \"description\": \"OS family identifier (e.g. `linux`, `windows`, `smartos`). Stringly-typed in Phase 0; will tighten to an enum once the instance brand model lands.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"sha256\": {"]
+    #[doc = "      \"description\": \"Lowercase hex SHA-256 of the image content. Server-validated for length (64 chars) and charset at create time.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"size_bytes\": {"]
+    #[doc = "      \"description\": \"Total content size, in bytes.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"source_url\": {"]
+    #[doc = "      \"description\": \"Optional URL where the image content can be fetched. `None` means the content is registered out-of-band (e.g. already in mantafs at a known path resolved by image_id).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"OS version / distro tag (e.g. `ubuntu-22.04`, `windows-server-2022`). Free-form for Phase 0.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Image {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        #[doc = "OS family identifier (e.g. `linux`, `windows`, `smartos`). Stringly-typed in Phase 0; will tighten to an enum once the instance brand model lands."]
+        pub os: ::std::string::String,
+        #[doc = "Lowercase hex SHA-256 of the image content. Server-validated for length (64 chars) and charset at create time."]
+        pub sha256: ::std::string::String,
+        pub silo_id: ::uuid::Uuid,
+        #[doc = "Total content size, in bytes."]
+        pub size_bytes: u64,
+        #[doc = "Optional URL where the image content can be fetched. `None` means the content is registered out-of-band (e.g. already in mantafs at a known path resolved by image_id)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_url: ::std::option::Option<::std::string::String>,
+        #[doc = "OS version / distro tag (e.g. `ubuntu-22.04`, `windows-server-2022`). Free-form for Phase 0."]
+        pub version: ::std::string::String,
+    }
+
+    impl Image {
+        pub fn builder() -> builder::Image {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST /v2/auth/login`.\n\n`password` is a [`RedactedString`] so a stray `Debug` of this struct does not print the credential and so the in-memory copy is zeroed when the value drops."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -834,6 +929,76 @@ pub mod types {
 
     impl NewIdpConfig {
         pub fn builder() -> builder::NewIdpConfig {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\","]
+    #[doc = "    \"os\","]
+    #[doc = "    \"sha256\","]
+    #[doc = "    \"size_bytes\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"os\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"sha256\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"size_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"source_url\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewImage {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+        pub os: ::std::string::String,
+        pub sha256: ::std::string::String,
+        pub size_bytes: u64,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_url: ::std::option::Option<::std::string::String>,
+        pub version: ::std::string::String,
+    }
+
+    impl NewImage {
+        pub fn builder() -> builder::NewImage {
             Default::default()
         }
     }
@@ -2503,6 +2668,183 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct Image {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            os: ::std::result::Result<::std::string::String, ::std::string::String>,
+            sha256: ::std::result::Result<::std::string::String, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            size_bytes: ::std::result::Result<u64, ::std::string::String>,
+            source_url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Image {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    os: Err("no value supplied for os".to_string()),
+                    sha256: Err("no value supplied for sha256".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    size_bytes: Err("no value supplied for size_bytes".to_string()),
+                    source_url: Ok(Default::default()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl Image {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn os<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.os = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for os: {e}"));
+                self
+            }
+            pub fn sha256<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sha256 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sha256: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+            pub fn size_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size_bytes: {e}"));
+                self
+            }
+            pub fn source_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_url: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Image> for super::Image {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Image,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    name: value.name?,
+                    os: value.os?,
+                    sha256: value.sha256?,
+                    silo_id: value.silo_id?,
+                    size_bytes: value.size_bytes?,
+                    source_url: value.source_url?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Image> for Image {
+            fn from(value: super::Image) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    os: Ok(value.os),
+                    sha256: Ok(value.sha256),
+                    silo_id: Ok(value.silo_id),
+                    size_bytes: Ok(value.size_bytes),
+                    source_url: Ok(value.source_url),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
             username: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -2692,6 +3034,141 @@ pub mod types {
                     client_id: Ok(value.client_id),
                     client_secret: Ok(value.client_secret),
                     issuer_url: Ok(value.issuer_url),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewImage {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            os: ::std::result::Result<::std::string::String, ::std::string::String>,
+            sha256: ::std::result::Result<::std::string::String, ::std::string::String>,
+            size_bytes: ::std::result::Result<u64, ::std::string::String>,
+            source_url: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewImage {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    os: Err("no value supplied for os".to_string()),
+                    sha256: Err("no value supplied for sha256".to_string()),
+                    size_bytes: Err("no value supplied for size_bytes".to_string()),
+                    source_url: Ok(Default::default()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl NewImage {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn os<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.os = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for os: {e}"));
+                self
+            }
+            pub fn sha256<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sha256 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sha256: {e}"));
+                self
+            }
+            pub fn size_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size_bytes: {e}"));
+                self
+            }
+            pub fn source_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_url: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewImage> for super::NewImage {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewImage,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    name: value.name?,
+                    os: value.os?,
+                    sha256: value.sha256?,
+                    size_bytes: value.size_bytes?,
+                    source_url: value.source_url?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewImage> for NewImage {
+            fn from(value: super::NewImage) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    name: Ok(value.name),
+                    os: Ok(value.os),
+                    sha256: Ok(value.sha256),
+                    size_bytes: Ok(value.size_bytes),
+                    source_url: Ok(value.source_url),
+                    version: Ok(value.version),
                 }
             }
         }
@@ -4012,6 +4489,26 @@ impl Client {
         builder::DeleteSiloIdp::new(self)
     }
 
+    #[doc = "List the images registered in a silo's catalog\n\nSends a `GET` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.list_silo_images()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_images(&self) -> builder::ListSiloImages<'_> {
+        builder::ListSiloImages::new(self)
+    }
+
+    #[doc = "Register an image in a silo's catalog. Returns 400 if\n\n`sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use within the silo.\n\nSends a `POST` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.create_silo_image()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_silo_image(&self) -> builder::CreateSiloImage<'_> {
+        builder::CreateSiloImage::new(self)
+    }
+
+    #[doc = "Read a single image. Returns 404 when the image does not\n\nexist or belongs to a different silo.\n\nSends a `GET` request to `/v2/silos/{silo_id}/images/{image_id}`\n\n```ignore\nlet response = client.get_silo_image()\n    .silo_id(silo_id)\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
+    pub fn get_silo_image(&self) -> builder::GetSiloImage<'_> {
+        builder::GetSiloImage::new(self)
+    }
+
+    #[doc = "Delete an image. Returns 404 when the image does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/images/{image_id}`\n\n```ignore\nlet response = client.delete_silo_image()\n    .silo_id(silo_id)\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_silo_image(&self) -> builder::DeleteSiloImage<'_> {
+        builder::DeleteSiloImage::new(self)
+    }
+
     #[doc = "List the projects inside a silo\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects`\n\n```ignore\nlet response = client.list_silo_projects()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_projects(&self) -> builder::ListSiloProjects<'_> {
         builder::ListSiloProjects::new(self)
@@ -5127,6 +5624,350 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_idp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_images`]\n\n[`Client::list_silo_images`]: super::Client::list_silo_images"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloImages<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListSiloImages<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/images`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+            let Self { client, silo_id } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/images",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_images",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_silo_image`]\n\n[`Client::create_silo_image`]: super::Client::create_silo_image"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSiloImage<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewImage, String>,
+    }
+
+    impl<'a> CreateSiloImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImage>,
+            <V as std::convert::TryInto<types::NewImage>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImage` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewImage) -> types::builder::NewImage,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/images`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/images",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_silo_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_silo_image`]\n\n[`Client::get_silo_image`]: super::Client::get_silo_image"]
+    #[derive(Debug, Clone)]
+    pub struct GetSiloImage<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        image_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetSiloImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                image_id: Err("image_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn image_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.image_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for image_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/images/{image_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                image_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let image_id = image_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/images/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&image_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_silo_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_silo_image`]\n\n[`Client::delete_silo_image`]: super::Client::delete_silo_image"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSiloImage<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        image_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSiloImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                image_id: Err("image_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn image_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.image_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for image_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/images/{image_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                image_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let image_id = image_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/images/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&image_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_silo_image",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

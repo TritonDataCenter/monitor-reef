@@ -937,6 +937,152 @@ pub async fn silo_ssh_key_delete(
     Ok(())
 }
 
+/// List images in a silo's catalog.
+pub async fn silo_image_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let images = client
+        .list_silo_images()
+        .silo_id(silo_id)
+        .send()
+        .await
+        .context("list images")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&images)?);
+        return Ok(());
+    }
+    if images.is_empty() {
+        println!("(no images)");
+        return Ok(());
+    }
+    for i in images {
+        println!(
+            "{}  {}/{} {}MB  {}",
+            i.id,
+            i.os,
+            i.version,
+            i.size_bytes / 1_048_576,
+            i.name
+        );
+    }
+    Ok(())
+}
+
+/// Register a new image in a silo's catalog.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_image_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    name: String,
+    description: String,
+    os: String,
+    version: String,
+    size_bytes: u64,
+    sha256: String,
+    source_url: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let image = client
+        .create_silo_image()
+        .silo_id(silo_id)
+        .body(tritond_client::types::NewImage {
+            name,
+            description: Some(description),
+            os,
+            version,
+            size_bytes,
+            sha256,
+            source_url,
+        })
+        .send()
+        .await
+        .context("create image")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&image)?);
+    } else {
+        println!("Registered image {} in silo {silo_id}", image.id);
+        println!("  name:        {}", image.name);
+        println!("  description: {}", image.description);
+        println!("  os/version:  {}/{}", image.os, image.version);
+        println!("  size_bytes:  {}", image.size_bytes);
+        println!("  sha256:      {}", image.sha256);
+        println!(
+            "  source_url:  {}",
+            image.source_url.as_deref().unwrap_or("(none)")
+        );
+        println!("  created:     {}", image.created_at);
+    }
+    Ok(())
+}
+
+/// Read a single image.
+pub async fn silo_image_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    image_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let image = client
+        .get_silo_image()
+        .silo_id(silo_id)
+        .image_id(image_id)
+        .send()
+        .await
+        .context("get image")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&image)?);
+    } else {
+        println!("Image {} in silo {silo_id}", image.id);
+        println!("  name:        {}", image.name);
+        println!("  description: {}", image.description);
+        println!("  os/version:  {}/{}", image.os, image.version);
+        println!("  size_bytes:  {}", image.size_bytes);
+        println!("  sha256:      {}", image.sha256);
+        println!(
+            "  source_url:  {}",
+            image.source_url.as_deref().unwrap_or("(none)")
+        );
+        println!("  created:     {}", image.created_at);
+    }
+    Ok(())
+}
+
+/// Delete an image.
+pub async fn silo_image_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    image_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_silo_image()
+        .silo_id(silo_id)
+        .image_id(image_id)
+        .send()
+        .await
+        .context("delete image")?;
+    println!("Deleted image {image_id} from silo {silo_id}");
+    Ok(())
+}
+
 /// Walk the chain and recompute hashes.
 pub async fn audit_verify(
     endpoint_override: Option<String>,
