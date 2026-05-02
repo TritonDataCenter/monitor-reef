@@ -29,7 +29,9 @@ use tritond_client::types::{
     ApiKeyScope, ClaimJobRequest, CompleteJobRequest, JobOutcome, JobStatus, LoginRequest,
     NewApiKey,
 };
-use tritond_store::{JobKind, MemStore, NewJob, Store, User};
+use tritond_store::{
+    Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, Store, User,
+};
 use uuid::Uuid;
 
 const ROOT_PASSWORD: &str = "correct horse battery staple";
@@ -332,6 +334,299 @@ async fn blueprint_denied_to_read_only_scope() {
         panic!("expected ErrorResponse, got {err:?}");
     };
     assert_eq!(resp.status().as_u16(), 403);
+    test.close().await;
+}
+
+/// End-to-end lifecycle drive: an instance in `Pending` is
+/// observed in `Provisioning` after the agent claims its
+/// Provision job, and in `Running` after the agent reports
+/// `Completed`. Skipping vmadm — we're testing the control
+/// plane's lifecycle invariant, not the agent's vmadm wrapper.
+#[tokio::test]
+async fn provision_job_drives_lifecycle_pending_to_running() {
+    let test = TestServer::start().await;
+
+    // Set up the resource graph the instance create needs:
+    // silo + project + image + vpc + subnet. Creating these via
+    // direct store calls is faster than HTTP and the test isn't
+    // about the create-flow contracts.
+    let silo = test
+        .store
+        .create_silo(tritond_store::NewSilo {
+            name: "agent-lifecycle".to_string(),
+            description: None,
+        })
+        .await
+        .unwrap();
+    let project = test
+        .store
+        .create_project(
+            silo.id,
+            tritond_store::NewProject {
+                name: "p1".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+    let image = test
+        .store
+        .create_image(
+            silo.id,
+            tritond_store::NewImage {
+                name: "test-image".to_string(),
+                description: None,
+                os: "smartos".to_string(),
+                version: "test".to_string(),
+                size_bytes: 1_000_000,
+                sha256: "0".repeat(64),
+                source_url: None,
+                id: None,
+            },
+        )
+        .await
+        .unwrap();
+    let vpc = test
+        .store
+        .create_vpc(
+            silo.id,
+            project.id,
+            tritond_store::NewVpc {
+                name: "v1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/24".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let subnet = test
+        .store
+        .create_subnet(
+            silo.id,
+            project.id,
+            vpc.id,
+            tritond_store::NewSubnet {
+                name: "s1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/29".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let created = test
+        .store
+        .create_instance(
+            silo.id,
+            project.id,
+            tritond_store::NewInstance {
+                name: "lifecycle-test".to_string(),
+                description: None,
+                image_id: image.id,
+                primary_subnet_id: subnet.id,
+                ssh_key_ids: Vec::new(),
+                cpu: 1,
+                memory_bytes: 256 * 1024 * 1024,
+            },
+        )
+        .await
+        .unwrap();
+    let instance: Instance = created.instance;
+    assert!(matches!(instance.lifecycle, LifecycleState::Pending));
+    // The HTTP `instance_create` handler enqueues the Provision
+    // job; calling the store directly skips that, so we enqueue
+    // it explicitly.
+    test.store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: instance.id,
+            },
+        })
+        .await
+        .unwrap();
+
+    // Mint an Agent key and use it to claim the job tritond
+    // enqueued during create_instance.
+    let secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let client = test.bearer_client(&secret);
+    let claimed = client
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: "lifecycle-agent".to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("queue had the Provision job we just enqueued");
+    assert!(matches!(
+        claimed.kind,
+        tritond_client::types::JobKind::Provision(_),
+    ));
+
+    // The claim handler should have advanced Pending → Provisioning.
+    let after_claim = test.store.get_instance(instance.id).await.unwrap();
+    assert!(
+        matches!(after_claim.lifecycle, LifecycleState::Provisioning),
+        "expected Provisioning after claim, got {:?}",
+        after_claim.lifecycle,
+    );
+
+    // Report Completed: lifecycle should land at Running.
+    let _ = client
+        .agent_complete_job()
+        .job_id(claimed.id)
+        .body(CompleteJobRequest {
+            outcome: JobOutcome::Completed,
+        })
+        .send()
+        .await
+        .unwrap();
+    let after_complete = test.store.get_instance(instance.id).await.unwrap();
+    assert!(
+        matches!(after_complete.lifecycle, LifecycleState::Running),
+        "expected Running after complete, got {:?}",
+        after_complete.lifecycle,
+    );
+
+    test.close().await;
+}
+
+/// On `JobOutcome::Failed`, the lifecycle must land in
+/// `Failed { reason }` carrying the agent's reason verbatim.
+/// Tests the wildcard `expected_from` arm of the complete-side
+/// CAS: we're going from `Provisioning` (claim-time advance)
+/// straight to Failed.
+#[tokio::test]
+async fn provision_job_failed_outcome_lands_in_failed_state() {
+    let test = TestServer::start().await;
+    let silo = test
+        .store
+        .create_silo(tritond_store::NewSilo {
+            name: "agent-failed".to_string(),
+            description: None,
+        })
+        .await
+        .unwrap();
+    let project = test
+        .store
+        .create_project(
+            silo.id,
+            tritond_store::NewProject {
+                name: "p1".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+    let image = test
+        .store
+        .create_image(
+            silo.id,
+            tritond_store::NewImage {
+                name: "test-image".to_string(),
+                description: None,
+                os: "smartos".to_string(),
+                version: "test".to_string(),
+                size_bytes: 1_000_000,
+                sha256: "0".repeat(64),
+                source_url: None,
+                id: None,
+            },
+        )
+        .await
+        .unwrap();
+    let vpc = test
+        .store
+        .create_vpc(
+            silo.id,
+            project.id,
+            tritond_store::NewVpc {
+                name: "v1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/24".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let subnet = test
+        .store
+        .create_subnet(
+            silo.id,
+            project.id,
+            vpc.id,
+            tritond_store::NewSubnet {
+                name: "s1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/29".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let created = test
+        .store
+        .create_instance(
+            silo.id,
+            project.id,
+            tritond_store::NewInstance {
+                name: "fails".to_string(),
+                description: None,
+                image_id: image.id,
+                primary_subnet_id: subnet.id,
+                ssh_key_ids: Vec::new(),
+                cpu: 1,
+                memory_bytes: 256 * 1024 * 1024,
+            },
+        )
+        .await
+        .unwrap();
+    test.store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: created.instance.id,
+            },
+        })
+        .await
+        .unwrap();
+
+    let secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let client = test.bearer_client(&secret);
+    let claimed = client
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: "fail-agent".to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .unwrap();
+    let _ = client
+        .agent_complete_job()
+        .job_id(claimed.id)
+        .body(CompleteJobRequest {
+            outcome: JobOutcome::Failed("image not on host".to_string()),
+        })
+        .send()
+        .await
+        .unwrap();
+    let after = test.store.get_instance(created.instance.id).await.unwrap();
+    match after.lifecycle {
+        LifecycleState::Failed { reason } => {
+            assert_eq!(reason, "image not on host");
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    // Sanity: LifecycleStateKind machinery still includes Failed
+    // among its discriminants (compile-time guard against
+    // someone removing it).
+    let _: LifecycleStateKind = LifecycleStateKind::Failed;
+
     test.close().await;
 }
 

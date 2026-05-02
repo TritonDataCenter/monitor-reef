@@ -572,6 +572,16 @@ impl TritondApi for TritondServiceImpl {
                     }),
                 )
                 .await;
+            // Drive the instance lifecycle forward. For a Provision
+            // job this advances Pending → Provisioning so operators
+            // see the in-flight state. Stop / Restart already moved
+            // the instance to Stopping in the operator-facing
+            // handler, so claim has nothing to advance there. CAS
+            // failures (instance gone, lifecycle drift) are logged
+            // but don't fail the claim — the agent has the job and
+            // will fail at vmadm time if the instance really is
+            // gone, surfacing a clean Failed back to the operator.
+            drive_lifecycle_for_claim(ctx.store.as_ref(), j).await;
         }
         Ok(HttpResponseOk(ClaimJobResponse { job }))
     }
@@ -638,6 +648,14 @@ impl TritondApi for TritondServiceImpl {
                         }),
                     )
                     .await;
+                // Drive the instance lifecycle to its terminal
+                // state for this job. Provisioning → Running on
+                // success; Stopping → Stopped (or Running for
+                // Restart); any → Failed{reason} on failure. The
+                // job is already terminal regardless of whether
+                // the lifecycle CAS succeeds, so a stale or
+                // missing instance just gets logged.
+                drive_lifecycle_for_complete(ctx.store.as_ref(), &updated, &req.outcome).await;
                 Ok(HttpResponseOk(updated))
             }
             Err(e) => {
@@ -2904,6 +2922,92 @@ fn too_many_requests(retry_after: std::time::Duration) -> HttpError {
     }
     err.headers = Some(Box::new(headers));
     err
+}
+
+/// Drive the instance lifecycle forward in response to an agent
+/// claiming a job. For Provision: Pending → Provisioning. Stop /
+/// Restart already entered Stopping in the operator-facing
+/// `instance_*` handler before the job was enqueued, so claim
+/// has nothing to advance. CAS failures are logged but do not
+/// propagate — the job is already in InProgress regardless.
+async fn drive_lifecycle_for_claim(store: &dyn Store, job: &ProvisioningJob) {
+    if matches!(job.kind, JobKind::Provision { .. }) {
+        let instance_id = job.kind.instance_id();
+        if let Err(e) = store
+            .transition_instance_lifecycle(
+                instance_id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Provisioning,
+            )
+            .await
+        {
+            tracing::warn!(
+                %instance_id,
+                error = %e,
+                "Pending → Provisioning lifecycle CAS failed at claim",
+            );
+        }
+    }
+}
+
+/// Drive the instance lifecycle to its terminal state in
+/// response to an agent reporting a job's outcome. Mapping:
+///
+/// | JobKind / Outcome      | Lifecycle target                 |
+/// |------------------------|----------------------------------|
+/// | Provision / Completed  | Provisioning → Running           |
+/// | Stop / Completed       | Stopping → Stopped               |
+/// | Restart / Completed    | Stopping → Running               |
+/// | (any) / Failed{reason} | (current) → Failed{reason}       |
+///
+/// For Failed outcomes the CAS accepts any of the in-flight
+/// states (Pending, Provisioning, Stopping) so a job that
+/// failed before its claim-time advance still lands in Failed
+/// rather than getting stuck. CAS failures (instance deleted
+/// out from under the job, lifecycle drift) are logged.
+async fn drive_lifecycle_for_complete(
+    store: &dyn Store,
+    job: &ProvisioningJob,
+    outcome: &JobOutcome,
+) {
+    let instance_id = job.kind.instance_id();
+    let (expected_from, target): (&[LifecycleStateKind], LifecycleState) = match (&job.kind, outcome)
+    {
+        (JobKind::Provision { .. }, JobOutcome::Completed) => (
+            &[LifecycleStateKind::Provisioning],
+            LifecycleState::Running,
+        ),
+        (JobKind::Stop { .. }, JobOutcome::Completed) => {
+            (&[LifecycleStateKind::Stopping], LifecycleState::Stopped)
+        }
+        (JobKind::Restart { .. }, JobOutcome::Completed) => {
+            (&[LifecycleStateKind::Stopping], LifecycleState::Running)
+        }
+        (_, JobOutcome::Failed { reason }) => (
+            &[
+                LifecycleStateKind::Pending,
+                LifecycleStateKind::Provisioning,
+                LifecycleStateKind::Stopping,
+                LifecycleStateKind::Running,
+            ],
+            LifecycleState::Failed {
+                reason: reason.clone(),
+            },
+        ),
+        _ => return,
+    };
+    if let Err(e) = store
+        .transition_instance_lifecycle(instance_id, expected_from, target.clone())
+        .await
+    {
+        tracing::warn!(
+            %instance_id,
+            kind = ?job.kind,
+            ?target,
+            error = %e,
+            "lifecycle CAS failed at job complete",
+        );
+    }
 }
 
 /// Materialise the agent-side blueprint for a job. Resolves
