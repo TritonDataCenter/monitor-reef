@@ -115,7 +115,13 @@ permit(
         Action::"nic_list",
         Action::"nic_get",
         Action::"disk_list",
-        Action::"disk_get"
+        Action::"disk_get",
+        Action::"floating_ip_list",
+        Action::"floating_ip_create",
+        Action::"floating_ip_get",
+        Action::"floating_ip_delete",
+        Action::"floating_ip_attach",
+        Action::"floating_ip_detach"
     ],
     resource
 ) when {
@@ -253,6 +259,12 @@ pub enum Action {
     NicGet,
     DiskList,
     DiskGet,
+    FloatingIpList,
+    FloatingIpCreate,
+    FloatingIpGet,
+    FloatingIpDelete,
+    FloatingIpAttach,
+    FloatingIpDetach,
 }
 
 impl Action {
@@ -310,6 +322,12 @@ impl Action {
             Action::NicGet => "nic_get",
             Action::DiskList => "disk_list",
             Action::DiskGet => "disk_get",
+            Action::FloatingIpList => "floating_ip_list",
+            Action::FloatingIpCreate => "floating_ip_create",
+            Action::FloatingIpGet => "floating_ip_get",
+            Action::FloatingIpDelete => "floating_ip_delete",
+            Action::FloatingIpAttach => "floating_ip_attach",
+            Action::FloatingIpDetach => "floating_ip_detach",
         }
     }
 

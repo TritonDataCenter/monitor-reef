@@ -7,7 +7,7 @@
 //! Domain types shared between the storage layer and the wire surface.
 
 use std::collections::HashSet;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use chrono::{DateTime, Utc};
 use ipnetwork::{Ipv4Network, Ipv6Network};
@@ -955,6 +955,105 @@ pub struct Disk {
     #[serde(default)]
     pub source_image_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
+}
+
+/// Hardcoded Phase 0 IPv4 floating-IP pool. Drawn from
+/// **TEST-NET-3** (`203.0.113.0/24`, RFC 5737), the canonical
+/// "documentation" range — explicitly chosen so the pool addresses
+/// look obviously fake on the wire, won't collide with anyone's
+/// real RFC1918 / public space, and surface immediately if a
+/// future Phase ships these without replacing the constant.
+///
+/// A future slice promotes this to an operator-managed `IpPool`
+/// resource so silos / projects can BYO public ranges.
+pub const FLOATING_IP_V4_POOL: Ipv4Network =
+    match Ipv4Network::new_checked(Ipv4Addr::new(203, 0, 113, 0), 24) {
+        Some(net) => net,
+        None => panic!("FLOATING_IP_V4_POOL is a compile-time constant CIDR"),
+    };
+
+/// Hardcoded Phase 0 IPv6 floating-IP pool. Drawn from the
+/// **documentation prefix** `2001:db8::/48` (RFC 3849).
+pub const FLOATING_IP_V6_POOL: Ipv6Network =
+    match Ipv6Network::new_checked(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0), 48) {
+        Some(net) => net,
+        None => panic!("FLOATING_IP_V6_POOL is a compile-time constant CIDR"),
+    };
+
+/// Address family selector used by [`NewFloatingIp`] to ask the
+/// server to allocate from one or the other Phase 0 pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AddressFamily {
+    V4,
+    V6,
+}
+
+/// Where a [`FloatingIp`] is currently attached. `None` (i.e. the
+/// `FloatingIp::attached_to` field is `None`) means the IP is
+/// allocated to the project but not bound to any NIC — it persists
+/// across attach/detach cycles and across instance deletes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FloatingIpAttachment {
+    pub instance_id: Uuid,
+    pub nic_id: Uuid,
+    pub attached_at: DateTime<Utc>,
+}
+
+/// Tenant-managed external IP, allocated from a fleet pool and
+/// attachable to any NIC in the same project. Persists independent
+/// of any single instance: when the attached instance is deleted,
+/// the `attached_to` field clears but the FloatingIp itself stays
+/// owned by the project and reusable.
+///
+/// Each FloatingIp represents *one* address — the wire shape does
+/// not bifurcate IPv4 and IPv6. The address family is implicit in
+/// the `address` bits.
+///
+/// Phase 0 invariants vs other clouds:
+///
+/// * **Project-owned, not instance-owned.** Instance delete →
+///   auto-detach, never auto-release. (AWS detaches but leaves the
+///   IP at the account level, which loses the project-scoping
+///   story; we keep the project envelope.)
+/// * **Symmetric IPv4 + IPv6.** No "v6 floating IPs are a separate
+///   type" wart.
+/// * **Atomic attach replaces.** A second attach with a different
+///   NIC swaps the binding in one transaction; no detach-then-attach
+///   window in the control plane.
+/// * **Delete is explicit.** Detaching does not auto-release; the
+///   FloatingIp persists and is visible in `tcadm` listings until
+///   the operator deletes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FloatingIp {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// The actual external address. Allocated at create time from
+    /// the requested family's pool. Immutable for the life of the
+    /// record.
+    pub address: IpAddr,
+    /// Currently-bound NIC, or `None` if floating. Replaced
+    /// atomically by `attach`; cleared by `detach` and by the
+    /// instance-delete cascade.
+    #[serde(default)]
+    pub attached_to: Option<FloatingIpAttachment>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for allocating a new FloatingIp. The server picks
+/// the actual address from the family-specific Phase 0 pool; the
+/// caller asks for `V4` or `V6` and gets the lowest free address.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewFloatingIp {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub family: AddressFamily,
 }
 
 /// Cluster-level system keys. Phase 0 has exactly one

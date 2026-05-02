@@ -61,6 +61,11 @@
 //! nic/ip_alloc/<subnet>/v6/<addr>   -> empty (allocation index, v6)
 //! disk/by_id/<uuid>                 -> JSON-encoded Disk
 //! disk/in_instance/<inst>/<disk>    -> empty (membership index)
+//! floating_ip/by_id/<uuid>          -> JSON-encoded FloatingIp
+//! floating_ip/by_project/<p>/<name> -> uuid hyphenated bytes
+//! floating_ip/in_project/<p>/<fip>  -> empty (membership index)
+//! floating_ip/alloc/v4/<addr>       -> empty (pool allocation, v4)
+//! floating_ip/alloc/v6/<addr>       -> empty (pool allocation, v6)
 //! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
 //! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
 //! job/seq/counter                   -> next seq, big-endian u64
@@ -79,10 +84,11 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, Disk, DiskKind, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome,
-    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
+    FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
+    JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
+    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
+    ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
@@ -337,6 +343,38 @@ impl FdbStore {
 
     fn disk_in_instance_prefix(instance_id: Uuid) -> Vec<u8> {
         format!("disk/in_instance/{instance_id}/").into_bytes()
+    }
+
+    fn floating_ip_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("floating_ip/by_id/{id}").into_bytes()
+    }
+
+    fn floating_ip_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
+        format!("floating_ip/by_project/{project_id}/{name}").into_bytes()
+    }
+
+    fn floating_ip_in_project_key(project_id: Uuid, fip_id: Uuid) -> Vec<u8> {
+        format!("floating_ip/in_project/{project_id}/{fip_id}").into_bytes()
+    }
+
+    fn floating_ip_in_project_prefix(project_id: Uuid) -> Vec<u8> {
+        format!("floating_ip/in_project/{project_id}/").into_bytes()
+    }
+
+    fn floating_ip_alloc_v4_key(ip: std::net::Ipv4Addr) -> Vec<u8> {
+        format!("floating_ip/alloc/v4/{ip}").into_bytes()
+    }
+
+    fn floating_ip_alloc_v6_key(ip: std::net::Ipv6Addr) -> Vec<u8> {
+        format!("floating_ip/alloc/v6/{ip}").into_bytes()
+    }
+
+    fn floating_ip_alloc_v4_prefix() -> &'static [u8] {
+        b"floating_ip/alloc/v4/"
+    }
+
+    fn floating_ip_alloc_v6_prefix() -> &'static [u8] {
+        b"floating_ip/alloc/v6/"
     }
 
     fn job_by_id_key(id: Uuid) -> Vec<u8> {
@@ -2363,6 +2401,56 @@ impl Store for FdbStore {
                         tr.clear(&dki);
                     }
 
+                    // Auto-detach (do NOT release) any FloatingIps
+                    // attached to this instance. The IP stays in the
+                    // project's pool, ready to re-attach. We discover
+                    // the candidates by scanning the project's
+                    // floating-ip membership index and matching on
+                    // attached_to.instance_id.
+                    let fip_prefix =
+                        format!("floating_ip/in_project/{}/", instance.project_id).into_bytes();
+                    let (fip_begin, fip_end) = prefix_range(&fip_prefix);
+                    let fip_prefix_len = fip_prefix.len();
+                    let fip_opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(fip_begin),
+                        end: KeySelector::first_greater_or_equal(fip_end),
+                        ..RangeOption::default()
+                    };
+                    let fip_kvs = tr.get_range(&fip_opt, 1, false).await?;
+                    let mut fip_ids: Vec<Uuid> = Vec::new();
+                    for kv in fip_kvs.iter() {
+                        let suffix = &kv.key()[fip_prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(id) = Uuid::parse_str(s)
+                        {
+                            fip_ids.push(id);
+                        }
+                    }
+                    drop(fip_kvs);
+                    let now = Utc::now();
+                    for fip_id in fip_ids {
+                        let fk = format!("floating_ip/by_id/{fip_id}").into_bytes();
+                        let Some(fb) = tr.get(&fk, false).await? else {
+                            continue;
+                        };
+                        let Ok(mut fip) = serde_json::from_slice::<FloatingIp>(&fb) else {
+                            continue;
+                        };
+                        let attached_here = fip
+                            .attached_to
+                            .as_ref()
+                            .map(|a| a.instance_id == instance_id)
+                            .unwrap_or(false);
+                        if !attached_here {
+                            continue;
+                        }
+                        fip.attached_to = None;
+                        fip.updated_at = now;
+                        if let Ok(value) = serde_json::to_vec(&fip) {
+                            tr.set(&fk, &value);
+                        }
+                    }
+
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
@@ -2536,6 +2624,369 @@ impl Store for FdbStore {
             }
         }
         Ok(out)
+    }
+
+    async fn create_floating_ip(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewFloatingIp,
+    ) -> Result<FloatingIp, StoreError> {
+        let project_check_key = Self::project_by_id_key(project_id);
+        let by_name_key = Self::floating_ip_by_project_name_key(project_id, &req.name);
+        let alloc_v4_prefix = Self::floating_ip_alloc_v4_prefix().to_vec();
+        let alloc_v6_prefix = Self::floating_ip_alloc_v6_prefix().to_vec();
+        let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
+        let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
+        let v4_prefix_len = alloc_v4_prefix.len();
+        let v6_prefix_len = alloc_v6_prefix.len();
+
+        let fip_id = Uuid::new_v4();
+        let by_id_key = Self::floating_ip_by_id_key(fip_id);
+        let in_project_key = Self::floating_ip_in_project_key(project_id, fip_id);
+        let id_str = fip_id.to_string();
+
+        enum Outcome {
+            Created(Box<FloatingIp>),
+            ProjectMissingOrWrongSilo,
+            NameTaken,
+            PoolExhausted,
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let project_check_key = project_check_key.clone();
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_project_key = in_project_key.clone();
+                let v4_begin = v4_begin.clone();
+                let v4_end = v4_end.clone();
+                let v6_begin = v6_begin.clone();
+                let v6_end = v6_end.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    // Project + same-silo check.
+                    let project_bytes = match tr.get(&project_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    let project: Project = match serde_json::from_slice(&project_bytes) {
+                        Ok(p) => p,
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                    };
+                    if project.silo_id != silo_id {
+                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    }
+                    // Name uniqueness.
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    // Allocate from the appropriate pool.
+                    let address: std::net::IpAddr = match req.family {
+                        AddressFamily::V4 => {
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(v4_begin),
+                                end: KeySelector::first_greater_or_equal(v4_end),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            let mut allocated: std::collections::HashSet<std::net::Ipv4Addr> =
+                                std::collections::HashSet::new();
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[v4_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                                {
+                                    allocated.insert(ip);
+                                }
+                            }
+                            drop(kvs);
+                            match crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated) {
+                                Some(ip) => ip.into(),
+                                None => return Ok(Outcome::PoolExhausted),
+                            }
+                        }
+                        AddressFamily::V6 => {
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(v6_begin),
+                                end: KeySelector::first_greater_or_equal(v6_end),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            let mut allocated: std::collections::HashSet<std::net::Ipv6Addr> =
+                                std::collections::HashSet::new();
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[v6_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                                {
+                                    allocated.insert(ip);
+                                }
+                            }
+                            drop(kvs);
+                            match crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated) {
+                                Some(ip) => ip.into(),
+                                None => return Ok(Outcome::PoolExhausted),
+                            }
+                        }
+                    };
+                    let now = Utc::now();
+                    let fip = FloatingIp {
+                        id: fip_id,
+                        silo_id,
+                        project_id,
+                        name: req.name.clone(),
+                        description: req.description.unwrap_or_default(),
+                        address,
+                        attached_to: None,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    let value = match serde_json::to_vec(&fip) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::PoolExhausted), // surrogate; treated as backend
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_project_key, b"");
+                    match address {
+                        std::net::IpAddr::V4(v4) => {
+                            tr.set(&Self::floating_ip_alloc_v4_key(v4), b"");
+                        }
+                        std::net::IpAddr::V6(v6) => {
+                            tr.set(&Self::floating_ip_alloc_v6_key(v6), b"");
+                        }
+                    }
+                    Ok(Outcome::Created(Box::new(fip)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(fip)) => Ok(*fip),
+            Ok(Outcome::ProjectMissingOrWrongSilo) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "floating ip with name {:?} already exists in project {project_id}",
+                req.name
+            ))),
+            Ok(Outcome::PoolExhausted) => Err(StoreError::Backend(
+                "floating ip pool exhausted".to_string(),
+            )),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
+        let key = Self::floating_ip_by_id_key(fip_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize floating ip: {e}")))
+    }
+
+    async fn list_floating_ips_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<FloatingIp>, StoreError> {
+        let prefix = Self::floating_ip_in_project_prefix(project_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("floating ip index uuid: {e}")))?;
+            let by_id_key = Self::floating_ip_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let fip: FloatingIp = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize floating ip: {e}")))?;
+                out.push(fip);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_floating_ip(&self, fip_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::floating_ip_by_id_key(fip_id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Attached,
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let fip: FloatingIp = match serde_json::from_slice(&bytes) {
+                        Ok(f) => f,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    if fip.attached_to.is_some() {
+                        return Ok(Out::Attached);
+                    }
+                    let by_name_key =
+                        format!("floating_ip/by_project/{}/{}", fip.project_id, fip.name)
+                            .into_bytes();
+                    let in_project_key =
+                        format!("floating_ip/in_project/{}/{}", fip.project_id, fip.id)
+                            .into_bytes();
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_project_key);
+                    match fip.address {
+                        std::net::IpAddr::V4(v4) => {
+                            tr.clear(&Self::floating_ip_alloc_v4_key(v4));
+                        }
+                        std::net::IpAddr::V6(v6) => {
+                            tr.clear(&Self::floating_ip_alloc_v6_key(v6));
+                        }
+                    }
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Attached) => Err(StoreError::Conflict(format!(
+                "floating ip {fip_id} is currently attached; detach first"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn attach_floating_ip(
+        &self,
+        fip_id: Uuid,
+        target_nic_id: Uuid,
+    ) -> Result<FloatingIp, StoreError> {
+        let by_id_key = Self::floating_ip_by_id_key(fip_id);
+        let nic_check_key = Self::nic_by_id_key(target_nic_id);
+
+        enum Out {
+            Attached(Box<FloatingIp>),
+            FipMissing,
+            NicMissingOrWrongParent,
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let nic_check_key = nic_check_key.clone();
+                async move {
+                    let fip_bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::FipMissing),
+                    };
+                    let mut fip: FloatingIp = match serde_json::from_slice(&fip_bytes) {
+                        Ok(f) => f,
+                        Err(_) => return Ok(Out::FipMissing),
+                    };
+                    let nic_bytes = match tr.get(&nic_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::NicMissingOrWrongParent),
+                    };
+                    let nic: Nic = match serde_json::from_slice(&nic_bytes) {
+                        Ok(n) => n,
+                        Err(_) => return Ok(Out::NicMissingOrWrongParent),
+                    };
+                    if nic.silo_id != fip.silo_id || nic.project_id != fip.project_id {
+                        return Ok(Out::NicMissingOrWrongParent);
+                    }
+                    fip.attached_to = Some(FloatingIpAttachment {
+                        instance_id: nic.instance_id,
+                        nic_id: target_nic_id,
+                        attached_at: Utc::now(),
+                    });
+                    fip.updated_at = Utc::now();
+                    let value = match serde_json::to_vec(&fip) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Out::FipMissing),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Attached(Box::new(fip)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Attached(fip)) => Ok(*fip),
+            Ok(Out::FipMissing) | Ok(Out::NicMissingOrWrongParent) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
+        let by_id_key = Self::floating_ip_by_id_key(fip_id);
+
+        enum Out {
+            Detached(Box<FloatingIp>),
+            Vanished,
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let mut fip: FloatingIp = match serde_json::from_slice(&bytes) {
+                        Ok(f) => f,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    fip.attached_to = None;
+                    fip.updated_at = Utc::now();
+                    let value = match serde_json::to_vec(&fip) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Detached(Box::new(fip)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Detached(fip)) => Ok(*fip),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 
     async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError> {

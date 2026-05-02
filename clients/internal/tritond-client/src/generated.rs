@@ -151,6 +151,86 @@ pub mod types {
         System,
     }
 
+    #[doc = "Address family selector used by [`NewFloatingIp`] to ask the server to allocate from one or the other Phase 0 pool."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Address family selector used by [`NewFloatingIp`] to ask the server to allocate from one or the other Phase 0 pool.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"v4\","]
+    #[doc = "    \"v6\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum AddressFamily {
+        #[serde(rename = "v4")]
+        V4,
+        #[serde(rename = "v6")]
+        V6,
+    }
+
+    impl ::std::fmt::Display for AddressFamily {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::V4 => f.write_str("v4"),
+                Self::V6 => f.write_str("v6"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for AddressFamily {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "v4" => Ok(Self::V4),
+                "v6" => Ok(Self::V6),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for AddressFamily {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for AddressFamily {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for AddressFamily {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -252,6 +332,39 @@ pub mod types {
 
     impl ApiKeyView {
         pub fn builder() -> builder::ApiKeyView {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body for `POST /attach`. Names the target NIC the FloatingIp should swap onto. The server resolves silo + project + instance from the NIC; cross-tenant targets surface as 404."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body for `POST /attach`. Names the target NIC the FloatingIp should swap onto. The server resolves silo + project + instance from the NIC; cross-tenant targets surface as 404.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"nic_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"nic_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AttachFloatingIpRequest {
+        pub nic_id: ::uuid::Uuid,
+    }
+
+    impl AttachFloatingIpRequest {
+        pub fn builder() -> builder::AttachFloatingIpRequest {
             Default::default()
         }
     }
@@ -820,6 +933,144 @@ pub mod types {
         }
     }
 
+    #[doc = "Tenant-managed external IP, allocated from a fleet pool and attachable to any NIC in the same project. Persists independent of any single instance: when the attached instance is deleted, the `attached_to` field clears but the FloatingIp itself stays owned by the project and reusable.\n\nEach FloatingIp represents *one* address — the wire shape does not bifurcate IPv4 and IPv6. The address family is implicit in the `address` bits.\n\nPhase 0 invariants vs other clouds:\n\n* **Project-owned, not instance-owned.** Instance delete → auto-detach, never auto-release. (AWS detaches but leaves the IP at the account level, which loses the project-scoping story; we keep the project envelope.) * **Symmetric IPv4 + IPv6.** No \"v6 floating IPs are a separate type\" wart. * **Atomic attach replaces.** A second attach with a different NIC swaps the binding in one transaction; no detach-then-attach window in the control plane. * **Delete is explicit.** Detaching does not auto-release; the FloatingIp persists and is visible in `tcadm` listings until the operator deletes it."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Tenant-managed external IP, allocated from a fleet pool and attachable to any NIC in the same project. Persists independent of any single instance: when the attached instance is deleted, the `attached_to` field clears but the FloatingIp itself stays owned by the project and reusable.\\n\\nEach FloatingIp represents *one* address — the wire shape does not bifurcate IPv4 and IPv6. The address family is implicit in the `address` bits.\\n\\nPhase 0 invariants vs other clouds:\\n\\n* **Project-owned, not instance-owned.** Instance delete → auto-detach, never auto-release. (AWS detaches but leaves the IP at the account level, which loses the project-scoping story; we keep the project envelope.) * **Symmetric IPv4 + IPv6.** No \\\"v6 floating IPs are a separate type\\\" wart. * **Atomic attach replaces.** A second attach with a different NIC swaps the binding in one transaction; no detach-then-attach window in the control plane. * **Delete is explicit.** Detaching does not auto-release; the FloatingIp persists and is visible in `tcadm` listings until the operator deletes it.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"address\","]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"silo_id\","]
+    #[doc = "    \"updated_at\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"address\": {"]
+    #[doc = "      \"description\": \"The actual external address. Allocated at create time from the requested family's pool. Immutable for the life of the record.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"ip\""]
+    #[doc = "    },"]
+    #[doc = "    \"attached_to\": {"]
+    #[doc = "      \"description\": \"Currently-bound NIC, or `None` if floating. Replaced atomically by `attach`; cleared by `detach` and by the instance-delete cascade.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FloatingIpAttachment\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct FloatingIp {
+        #[doc = "The actual external address. Allocated at create time from the requested family's pool. Immutable for the life of the record."]
+        pub address: ::std::net::IpAddr,
+        #[doc = "Currently-bound NIC, or `None` if floating. Replaced atomically by `attach`; cleared by `detach` and by the instance-delete cascade."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub attached_to: ::std::option::Option<FloatingIpAttachment>,
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        pub silo_id: ::uuid::Uuid,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl FloatingIp {
+        pub fn builder() -> builder::FloatingIp {
+            Default::default()
+        }
+    }
+
+    #[doc = "Where a [`FloatingIp`] is currently attached. `None` (i.e. the `FloatingIp::attached_to` field is `None`) means the IP is allocated to the project but not bound to any NIC — it persists across attach/detach cycles and across instance deletes."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Where a [`FloatingIp`] is currently attached. `None` (i.e. the `FloatingIp::attached_to` field is `None`) means the IP is allocated to the project but not bound to any NIC — it persists across attach/detach cycles and across instance deletes.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"attached_at\","]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"nic_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"attached_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"nic_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct FloatingIpAttachment {
+        pub attached_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub instance_id: ::uuid::Uuid,
+        pub nic_id: ::uuid::Uuid,
+    }
+
+    impl FloatingIpAttachment {
+        pub fn builder() -> builder::FloatingIpAttachment {
+            Default::default()
+        }
+    }
+
     #[doc = "Liveness response."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1305,6 +1556,51 @@ pub mod types {
 
     impl NewApiKey {
         pub fn builder() -> builder::NewApiKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"family\","]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"family\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/AddressFamily\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewFloatingIp {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub family: AddressFamily,
+        pub name: ::std::string::String,
+    }
+
+    impl NewFloatingIp {
+        pub fn builder() -> builder::NewFloatingIp {
             Default::default()
         }
     }
@@ -2824,6 +3120,51 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct AttachFloatingIpRequest {
+            nic_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AttachFloatingIpRequest {
+            fn default() -> Self {
+                Self {
+                    nic_id: Err("no value supplied for nic_id".to_string()),
+                }
+            }
+        }
+
+        impl AttachFloatingIpRequest {
+            pub fn nic_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AttachFloatingIpRequest> for super::AttachFloatingIpRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AttachFloatingIpRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    nic_id: value.nic_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AttachFloatingIpRequest> for AttachFloatingIpRequest {
+            fn from(value: super::AttachFloatingIpRequest) -> Self {
+                Self {
+                    nic_id: Ok(value.nic_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct AuditEvent {
             action: ::std::result::Result<::std::string::String, ::std::string::String>,
             actor: ::std::result::Result<super::Actor, ::std::string::String>,
@@ -3444,6 +3785,248 @@ pub mod types {
                     error_code: Ok(value.error_code),
                     message: Ok(value.message),
                     request_id: Ok(value.request_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct FloatingIp {
+            address: ::std::result::Result<::std::net::IpAddr, ::std::string::String>,
+            attached_to: ::std::result::Result<
+                ::std::option::Option<super::FloatingIpAttachment>,
+                ::std::string::String,
+            >,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for FloatingIp {
+            fn default() -> Self {
+                Self {
+                    address: Err("no value supplied for address".to_string()),
+                    attached_to: Ok(Default::default()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                }
+            }
+        }
+
+        impl FloatingIp {
+            pub fn address<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::net::IpAddr>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.address = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for address: {e}"));
+                self
+            }
+            pub fn attached_to<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FloatingIpAttachment>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.attached_to = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for attached_to: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<FloatingIp> for super::FloatingIp {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FloatingIp,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    address: value.address?,
+                    attached_to: value.attached_to?,
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    silo_id: value.silo_id?,
+                    updated_at: value.updated_at?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::FloatingIp> for FloatingIp {
+            fn from(value: super::FloatingIp) -> Self {
+                Self {
+                    address: Ok(value.address),
+                    attached_to: Ok(value.attached_to),
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    silo_id: Ok(value.silo_id),
+                    updated_at: Ok(value.updated_at),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct FloatingIpAttachment {
+            attached_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            nic_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for FloatingIpAttachment {
+            fn default() -> Self {
+                Self {
+                    attached_at: Err("no value supplied for attached_at".to_string()),
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    nic_id: Err("no value supplied for nic_id".to_string()),
+                }
+            }
+        }
+
+        impl FloatingIpAttachment {
+            pub fn attached_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.attached_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for attached_at: {e}"));
+                self
+            }
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn nic_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<FloatingIpAttachment> for super::FloatingIpAttachment {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FloatingIpAttachment,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    attached_at: value.attached_at?,
+                    instance_id: value.instance_id?,
+                    nic_id: value.nic_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::FloatingIpAttachment> for FloatingIpAttachment {
+            fn from(value: super::FloatingIpAttachment) -> Self {
+                Self {
+                    attached_at: Ok(value.attached_at),
+                    instance_id: Ok(value.instance_id),
+                    nic_id: Ok(value.nic_id),
                 }
             }
         }
@@ -4080,6 +4663,82 @@ pub mod types {
             fn from(value: super::NewApiKey) -> Self {
                 Self {
                     description: Ok(value.description),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewFloatingIp {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            family: ::std::result::Result<super::AddressFamily, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewFloatingIp {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    family: Err("no value supplied for family".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NewFloatingIp {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn family<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::AddressFamily>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.family = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for family: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewFloatingIp> for super::NewFloatingIp {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewFloatingIp,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    family: value.family?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewFloatingIp> for NewFloatingIp {
+            fn from(value: super::NewFloatingIp) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    family: Ok(value.family),
+                    name: Ok(value.name),
                 }
             }
         }
@@ -6209,6 +6868,36 @@ impl Client {
         builder::DeleteSiloProject::new(self)
     }
 
+    #[doc = "List FloatingIps owned by a project\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.list_project_floating_ips()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_floating_ips(&self) -> builder::ListProjectFloatingIps<'_> {
+        builder::ListProjectFloatingIps::new(self)
+    }
+
+    #[doc = "Allocate a FloatingIp from the requested family's pool\n\nReturns 409 if the name is already in use within the project. Returns 404 if the project does not exist or belongs to a different silo. The returned FloatingIp starts unattached.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.create_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_floating_ip(&self) -> builder::CreateProjectFloatingIp<'_> {
+        builder::CreateProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Read a single FloatingIp. Returns 404 if the FloatingIp\n\ndoes not exist or belongs to a different silo or project.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.get_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_floating_ip(&self) -> builder::GetProjectFloatingIp<'_> {
+        builder::GetProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Release a FloatingIp back to its pool. Returns 409 if the\n\nFloatingIp is currently attached (operator must detach first).\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.delete_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_floating_ip(&self) -> builder::DeleteProjectFloatingIp<'_> {
+        builder::DeleteProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Atomically attach a FloatingIp to a NIC, replacing any\n\nexisting attachment. The target NIC must live in the same silo + project as the FloatingIp; mismatch surfaces as 404.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`\n\n```ignore\nlet response = client.attach_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn attach_project_floating_ip(&self) -> builder::AttachProjectFloatingIp<'_> {
+        builder::AttachProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Detach a FloatingIp from its current NIC. Idempotent — a\n\ndetach on an already-detached FloatingIp is a no-op that returns the current record.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`\n\n```ignore\nlet response = client.detach_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    pub fn detach_project_floating_ip(&self) -> builder::DetachProjectFloatingIp<'_> {
+        builder::DetachProjectFloatingIp::new(self)
+    }
+
     #[doc = "List instances in a project\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances`\n\n```ignore\nlet response = client.list_project_instances()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn list_project_instances(&self) -> builder::ListProjectInstances<'_> {
         builder::ListProjectInstances::new(self)
@@ -8069,6 +8758,651 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_project_floating_ips`]\n\n[`Client::list_project_floating_ips`]: super::Client::list_project_floating_ips"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectFloatingIps<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectFloatingIps<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::FloatingIp>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/floating-ips",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_floating_ips",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_floating_ip`]\n\n[`Client::create_project_floating_ip`]: super::Client::create_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewFloatingIp, String>,
+    }
+
+    impl<'a> CreateProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewFloatingIp>,
+            <V as std::convert::TryInto<types::NewFloatingIp>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewFloatingIp` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewFloatingIp) -> types::builder::NewFloatingIp,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewFloatingIp::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/floating-ips",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_floating_ip`]\n\n[`Client::get_project_floating_ip`]: super::Client::get_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                floating_ip_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/floating-ips/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_floating_ip`]\n\n[`Client::delete_project_floating_ip`]: super::Client::delete_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                floating_ip_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/floating-ips/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::attach_project_floating_ip`]\n\n[`Client::attach_project_floating_ip`]: super::Client::attach_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct AttachProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::AttachFloatingIpRequest, String>,
+    }
+
+    impl<'a> AttachProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::AttachFloatingIpRequest>,
+            <V as std::convert::TryInto<types::AttachFloatingIpRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `AttachFloatingIpRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::AttachFloatingIpRequest,
+                ) -> types::builder::AttachFloatingIpRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                floating_ip_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::AttachFloatingIpRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/floating-ips/{}/attach",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "attach_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::detach_project_floating_ip`]\n\n[`Client::detach_project_floating_ip`]: super::Client::detach_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct DetachProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DetachProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                floating_ip_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/floating-ips/{}/detach",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "detach_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

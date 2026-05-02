@@ -33,15 +33,17 @@ use dropshot::{
     HttpServerStarter, Path, Query, RequestContext, TypedBody,
 };
 use tritond_api::{
-    ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
-    AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloImagePath, SiloPath, SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath,
-    SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
-    SiloSshKeyPath, TokenResponse, TritondApi,
+    ApiKeyCreated, ApiKeyPath, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
+    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey,
+    NewIdpConfig, RefreshRequest, SiloImagePath, SiloPath, SiloProjectFloatingIpPath,
+    SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath, SiloProjectInstancePath,
+    SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse,
+    TritondApi,
     types::{
-        ApiKeyView, AuditEvent, Disk, IdpConfigView, Image, Instance, JobKind, LifecycleState,
-        LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo,
-        NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
+        ApiKeyView, AuditEvent, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind,
+        LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob,
+        NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo,
+        SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -2121,6 +2123,332 @@ impl TritondApi for TritondServiceImpl {
             return Err(not_found());
         }
         Ok(HttpResponseOk(disk))
+    }
+
+    async fn list_project_floating_ips(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<FloatingIp>>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FloatingIpList,
+            silo_id,
+        )
+        .await?;
+        // Defence-in-depth: project must live in path's silo.
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.silo_id != silo_id {
+            return Err(not_found());
+        }
+        let fips = ctx
+            .store
+            .list_floating_ips_in_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(fips))
+    }
+
+    async fn create_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewFloatingIp>,
+    ) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectPath {
+            silo_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FloatingIpCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        match ctx.store.create_floating_ip(silo_id, project_id, req).await {
+            Ok(fip) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpCreate,
+                        request_id,
+                        Some(format!("FloatingIp::\"{}\"", fip.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("FloatingIp::\"{}\"", fip.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                            "name": fip.name,
+                            "address": fip.address.to_string(),
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(fip))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectFloatingIpPath {
+            silo_id,
+            project_id,
+            floating_ip_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FloatingIpGet,
+            silo_id,
+        )
+        .await?;
+        let fip = ctx
+            .store
+            .get_floating_ip(floating_ip_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if fip.silo_id != silo_id || fip.project_id != project_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(fip))
+    }
+
+    async fn delete_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectFloatingIpPath {
+            silo_id,
+            project_id,
+            floating_ip_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FloatingIpDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        // Defence-in-depth: confirm the FloatingIp lives under
+        // path's silo+project before invoking delete.
+        let fip = ctx
+            .store
+            .get_floating_ip(floating_ip_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if fip.silo_id != silo_id || fip.project_id != project_id {
+            return Err(not_found());
+        }
+        match ctx.store.delete_floating_ip(floating_ip_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpDelete,
+                        request_id,
+                        Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpDelete,
+                        request_id,
+                        Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn attach_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+        body: TypedBody<AttachFloatingIpRequest>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectFloatingIpPath {
+            silo_id,
+            project_id,
+            floating_ip_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FloatingIpAttach,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // Defence-in-depth on the FloatingIp itself.
+        let fip = ctx
+            .store
+            .get_floating_ip(floating_ip_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if fip.silo_id != silo_id || fip.project_id != project_id {
+            return Err(not_found());
+        }
+        match ctx
+            .store
+            .attach_floating_ip(floating_ip_id, req.nic_id)
+            .await
+        {
+            Ok(updated) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpAttach,
+                        request_id,
+                        Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                            "nic_id": req.nic_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseOk(updated))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpAttach,
+                        request_id,
+                        Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn detach_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectFloatingIpPath {
+            silo_id,
+            project_id,
+            floating_ip_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FloatingIpDetach,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let fip = ctx
+            .store
+            .get_floating_ip(floating_ip_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if fip.silo_id != silo_id || fip.project_id != project_id {
+            return Err(not_found());
+        }
+        match ctx.store.detach_floating_ip(floating_ip_id).await {
+            Ok(updated) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpDetach,
+                        request_id,
+                        Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "project_id": project_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseOk(updated))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FloatingIpDetach,
+                        request_id,
+                        Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 }
 

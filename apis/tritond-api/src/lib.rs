@@ -28,9 +28,9 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, IdpConfigView, Image,
-    Instance, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc,
-    Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
+    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, FloatingIp, IdpConfigView,
+    Image, Instance, NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota, NewSilo,
+    NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -171,6 +171,23 @@ pub struct SiloProjectInstanceDiskPath {
     pub project_id: Uuid,
     pub instance_id: Uuid,
     pub disk_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single
+/// FloatingIp inside a project.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectFloatingIpPath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub floating_ip_id: Uuid,
+}
+
+/// Body for `POST /attach`. Names the target NIC the FloatingIp
+/// should swap onto. The server resolves silo + project + instance
+/// from the NIC; cross-tenant targets surface as 404.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AttachFloatingIpRequest {
+    pub nic_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -843,4 +860,83 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstanceDiskPath>,
     ) -> Result<HttpResponseOk<Disk>, HttpError>;
+
+    /// List FloatingIps owned by a project.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips",
+        tags = ["floating-ips"],
+    }]
+    async fn list_project_floating_ips(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<FloatingIp>>, HttpError>;
+
+    /// Allocate a FloatingIp from the requested family's pool.
+    /// Returns 409 if the name is already in use within the
+    /// project. Returns 404 if the project does not exist or
+    /// belongs to a different silo. The returned FloatingIp
+    /// starts unattached.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips",
+        tags = ["floating-ips"],
+    }]
+    async fn create_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectPath>,
+        body: TypedBody<NewFloatingIp>,
+    ) -> Result<HttpResponseCreated<FloatingIp>, HttpError>;
+
+    /// Read a single FloatingIp. Returns 404 if the FloatingIp
+    /// does not exist or belongs to a different silo or project.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
+        tags = ["floating-ips"],
+    }]
+    async fn get_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
+    /// Release a FloatingIp back to its pool. Returns 409 if the
+    /// FloatingIp is currently attached (operator must detach
+    /// first).
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
+        tags = ["floating-ips"],
+    }]
+    async fn delete_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Atomically attach a FloatingIp to a NIC, replacing any
+    /// existing attachment. The target NIC must live in the same
+    /// silo + project as the FloatingIp; mismatch surfaces as 404.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach",
+        tags = ["floating-ips"],
+    }]
+    async fn attach_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+        body: TypedBody<AttachFloatingIpRequest>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
+    /// Detach a FloatingIp from its current NIC. Idempotent — a
+    /// detach on an already-detached FloatingIp is a no-op that
+    /// returns the current record.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach",
+        tags = ["floating-ips"],
+    }]
+    async fn detach_project_floating_ip(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectFloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
 }

@@ -628,6 +628,216 @@ pub async fn silo_project_instance_delete(
     Ok(())
 }
 
+fn print_floating_ip(f: &tritond_client::types::FloatingIp) {
+    println!("FloatingIp {} in project {}", f.id, f.project_id);
+    println!("  name:        {}", f.name);
+    println!("  description: {}", f.description);
+    println!("  address:     {}", f.address);
+    match &f.attached_to {
+        Some(a) => {
+            println!(
+                "  attached_to: nic={} instance={} (since {})",
+                a.nic_id, a.instance_id, a.attached_at
+            );
+        }
+        None => {
+            println!("  attached_to: (unattached)");
+        }
+    }
+    println!("  created:     {}", f.created_at);
+    println!("  updated:     {}", f.updated_at);
+}
+
+/// List FloatingIps in a project.
+pub async fn silo_project_floating_ip_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let fips = client
+        .list_project_floating_ips()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("list floating ips")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&fips)?);
+        return Ok(());
+    }
+    if fips.is_empty() {
+        println!("(no floating ips)");
+        return Ok(());
+    }
+    for f in fips {
+        let attached = match &f.attached_to {
+            Some(a) => format!("nic={}", a.nic_id),
+            None => "(unattached)".to_string(),
+        };
+        println!("{}  {}  {attached}  {}", f.id, f.address, f.name);
+    }
+    Ok(())
+}
+
+/// Allocate a new FloatingIp.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_floating_ip_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    name: String,
+    description: String,
+    family: String,
+    json_output: bool,
+) -> Result<()> {
+    let family = match family.to_ascii_lowercase().as_str() {
+        "v4" | "ipv4" | "4" => tritond_client::types::AddressFamily::V4,
+        "v6" | "ipv6" | "6" => tritond_client::types::AddressFamily::V6,
+        other => anyhow::bail!("--family must be `v4` or `v6`, got {other:?}"),
+    };
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let fip = client
+        .create_project_floating_ip()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .body(tritond_client::types::NewFloatingIp {
+            name,
+            description: Some(description),
+            family,
+        })
+        .send()
+        .await
+        .context("create floating ip")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&fip)?);
+    } else {
+        println!("Allocated floating ip {} from pool", fip.id);
+        print_floating_ip(&fip);
+    }
+    Ok(())
+}
+
+/// Read a single FloatingIp.
+pub async fn silo_project_floating_ip_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    floating_ip_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let fip = client
+        .get_project_floating_ip()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("get floating ip")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&fip)?);
+    } else {
+        print_floating_ip(&fip);
+    }
+    Ok(())
+}
+
+/// Release a FloatingIp.
+pub async fn silo_project_floating_ip_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    floating_ip_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_project_floating_ip()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("delete floating ip")?;
+    println!("Released floating ip {floating_ip_id} back to pool");
+    Ok(())
+}
+
+/// Attach a FloatingIp to a NIC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_floating_ip_attach(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    floating_ip_id: Uuid,
+    nic_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let fip = client
+        .attach_project_floating_ip()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .floating_ip_id(floating_ip_id)
+        .body(tritond_client::types::AttachFloatingIpRequest { nic_id })
+        .send()
+        .await
+        .context("attach floating ip")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&fip)?);
+    } else {
+        print_floating_ip(&fip);
+    }
+    Ok(())
+}
+
+/// Detach a FloatingIp.
+pub async fn silo_project_floating_ip_detach(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    floating_ip_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let fip = client
+        .detach_project_floating_ip()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("detach floating ip")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&fip)?);
+    } else {
+        print_floating_ip(&fip);
+    }
+    Ok(())
+}
+
 /// List the disks attached to an instance.
 pub async fn silo_project_instance_disk_list(
     endpoint_override: Option<String>,

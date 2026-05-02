@@ -10,7 +10,7 @@
 //! don't need durable state.
 
 use std::collections::{HashMap, HashSet};
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -19,10 +19,11 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, Disk, DiskKind, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome,
-    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
+    FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
+    JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
+    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
+    ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
@@ -88,6 +89,14 @@ struct Inner {
     allocated_ipv4_by_subnet: HashMap<Uuid, HashSet<Ipv4Addr>>,
     allocated_ipv6_by_subnet: HashMap<Uuid, HashSet<Ipv6Addr>>,
     disks_by_id: HashMap<Uuid, Disk>,
+    floating_ips_by_id: HashMap<Uuid, FloatingIp>,
+    /// `(project_id, name)` → fip_id index for within-project name
+    /// uniqueness.
+    floating_ip_id_by_project_name: HashMap<(Uuid, String), Uuid>,
+    /// Pool-wide allocation tracking. The same set covers both
+    /// the v4 and v6 pools (they're disjoint by family).
+    allocated_floating_ipv4: HashSet<Ipv4Addr>,
+    allocated_floating_ipv6: HashSet<Ipv6Addr>,
 }
 
 /// In-process [`Store`] implementation.
@@ -954,6 +963,29 @@ impl Store for MemStore {
             guard.disks_by_id.remove(&disk_id);
         }
 
+        // Auto-detach (do NOT release) any FloatingIps attached
+        // to this instance. The IP stays owned by the project so
+        // the operator can re-attach it elsewhere — the canonical
+        // "instance died, reuse the public IP" workflow.
+        let fip_ids: Vec<Uuid> = guard
+            .floating_ips_by_id
+            .values()
+            .filter(|f| {
+                f.attached_to
+                    .as_ref()
+                    .map(|a| a.instance_id == instance_id)
+                    .unwrap_or(false)
+            })
+            .map(|f| f.id)
+            .collect();
+        let now = Utc::now();
+        for fip_id in fip_ids {
+            if let Some(fip) = guard.floating_ips_by_id.get_mut(&fip_id) {
+                fip.attached_to = None;
+                fip.updated_at = now;
+            }
+        }
+
         guard.instances_by_id.remove(&instance_id);
         guard
             .instance_id_by_project_name
@@ -1019,6 +1051,176 @@ impl Store for MemStore {
             .filter(|d| d.instance_id == instance_id)
             .cloned()
             .collect())
+    }
+
+    async fn create_floating_ip(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewFloatingIp,
+    ) -> Result<FloatingIp, StoreError> {
+        let mut guard = self.inner.write().await;
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?;
+        if project.silo_id != silo_id {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (project_id, req.name.clone());
+        if guard.floating_ip_id_by_project_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "floating ip with name {:?} already exists in project {project_id}",
+                req.name
+            )));
+        }
+        let address: IpAddr = match req.family {
+            AddressFamily::V4 => {
+                crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &guard.allocated_floating_ipv4)
+                    .ok_or_else(|| {
+                        StoreError::Backend("floating ip v4 pool exhausted".to_string())
+                    })?
+                    .into()
+            }
+            AddressFamily::V6 => {
+                crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &guard.allocated_floating_ipv6)
+                    .ok_or_else(|| {
+                        StoreError::Backend("floating ip v6 pool exhausted".to_string())
+                    })?
+                    .into()
+            }
+        };
+        match address {
+            IpAddr::V4(v4) => {
+                guard.allocated_floating_ipv4.insert(v4);
+            }
+            IpAddr::V6(v6) => {
+                guard.allocated_floating_ipv6.insert(v6);
+            }
+        }
+        let now = Utc::now();
+        let fip = FloatingIp {
+            id: Uuid::new_v4(),
+            silo_id,
+            project_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            address,
+            attached_to: None,
+            created_at: now,
+            updated_at: now,
+        };
+        guard
+            .floating_ip_id_by_project_name
+            .insert(name_key, fip.id);
+        guard.floating_ips_by_id.insert(fip.id, fip.clone());
+        Ok(fip)
+    }
+
+    async fn get_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .floating_ips_by_id
+            .get(&fip_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_floating_ips_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<FloatingIp>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .floating_ips_by_id
+            .values()
+            .filter(|f| f.project_id == project_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_floating_ip(&self, fip_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        // Snapshot the fields we need before the mutating remove
+        // so we don't hold an immutable borrow over a mutable op.
+        let (project_id, name, address, attached) = {
+            let fip = guard
+                .floating_ips_by_id
+                .get(&fip_id)
+                .ok_or(StoreError::NotFound)?;
+            (
+                fip.project_id,
+                fip.name.clone(),
+                fip.address,
+                fip.attached_to.is_some(),
+            )
+        };
+        if attached {
+            return Err(StoreError::Conflict(format!(
+                "floating ip {fip_id} is currently attached; detach first"
+            )));
+        }
+        guard.floating_ips_by_id.remove(&fip_id);
+        guard
+            .floating_ip_id_by_project_name
+            .remove(&(project_id, name));
+        match address {
+            IpAddr::V4(v4) => {
+                guard.allocated_floating_ipv4.remove(&v4);
+            }
+            IpAddr::V6(v6) => {
+                guard.allocated_floating_ipv6.remove(&v6);
+            }
+        }
+        Ok(())
+    }
+
+    async fn attach_floating_ip(
+        &self,
+        fip_id: Uuid,
+        target_nic_id: Uuid,
+    ) -> Result<FloatingIp, StoreError> {
+        let mut guard = self.inner.write().await;
+        // Snapshot fip's silo+project so we can validate the NIC.
+        let (fip_silo, fip_project) = {
+            let fip = guard
+                .floating_ips_by_id
+                .get(&fip_id)
+                .ok_or(StoreError::NotFound)?;
+            (fip.silo_id, fip.project_id)
+        };
+        // NIC must exist and live under the same silo+project.
+        let nic = guard
+            .nics_by_id
+            .get(&target_nic_id)
+            .ok_or(StoreError::NotFound)?;
+        if nic.silo_id != fip_silo || nic.project_id != fip_project {
+            return Err(StoreError::NotFound);
+        }
+        let nic_instance_id = nic.instance_id;
+        let new_attachment = FloatingIpAttachment {
+            instance_id: nic_instance_id,
+            nic_id: target_nic_id,
+            attached_at: Utc::now(),
+        };
+        let fip = guard
+            .floating_ips_by_id
+            .get_mut(&fip_id)
+            .ok_or(StoreError::NotFound)?;
+        fip.attached_to = Some(new_attachment);
+        fip.updated_at = Utc::now();
+        Ok(fip.clone())
+    }
+
+    async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError> {
+        let mut guard = self.inner.write().await;
+        let fip = guard
+            .floating_ips_by_id
+            .get_mut(&fip_id)
+            .ok_or(StoreError::NotFound)?;
+        fip.attached_to = None;
+        fip.updated_at = Utc::now();
+        Ok(fip.clone())
     }
 
     async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
@@ -2970,6 +3172,260 @@ mod tests {
             .get_disk(boot_id)
             .await
             .expect_err("boot disk should be cascade-deleted");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    fn fip_req(name: &str, family: AddressFamily) -> NewFloatingIp {
+        NewFloatingIp {
+            name: name.to_string(),
+            description: None,
+            family,
+        }
+    }
+
+    #[tokio::test]
+    async fn floating_ip_v4_allocates_from_pool() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let fip = store
+            .create_floating_ip(silo_id, project_id, fip_req("public", AddressFamily::V4))
+            .await
+            .unwrap();
+        match fip.address {
+            IpAddr::V4(v4) => {
+                // Pool is 203.0.113.0/24; first available is .2
+                // (network .0 + gateway .1 are skipped).
+                assert_eq!(v4.octets(), [203, 0, 113, 2]);
+            }
+            other => panic!("expected v4, got {other:?}"),
+        }
+        assert!(fip.attached_to.is_none());
+    }
+
+    #[tokio::test]
+    async fn floating_ip_v6_allocates_from_pool() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let fip = store
+            .create_floating_ip(silo_id, project_id, fip_req("v6", AddressFamily::V6))
+            .await
+            .unwrap();
+        match fip.address {
+            IpAddr::V6(v6) => {
+                // Pool is 2001:db8::/48; first allocated is
+                // 2001:db8::2 (skip ::0 + ::1).
+                let expected: std::net::Ipv6Addr = "2001:db8::2".parse().unwrap();
+                assert_eq!(v6, expected);
+            }
+            other => panic!("expected v6, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_floating_ip_name_within_project_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        store
+            .create_floating_ip(silo_id, project_id, fip_req("public", AddressFamily::V4))
+            .await
+            .unwrap();
+        let err = store
+            .create_floating_ip(silo_id, project_id, fip_req("public", AddressFamily::V4))
+            .await
+            .expect_err("duplicate name within project must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn attach_replaces_existing_attachment() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        // Two instances, two NICs.
+        let InstanceCreateResult { nics: nics_a, .. } = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("a", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let InstanceCreateResult { nics: nics_b, .. } = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("b", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(silo_id, project_id, fip_req("p", AddressFamily::V4))
+            .await
+            .unwrap();
+
+        let attached_a = store
+            .attach_floating_ip(fip.id, nics_a[0].id)
+            .await
+            .unwrap();
+        let attach = attached_a.attached_to.as_ref().expect("should be attached");
+        assert_eq!(attach.nic_id, nics_a[0].id);
+
+        // Re-attach (no detach) — replace semantics.
+        let attached_b = store
+            .attach_floating_ip(fip.id, nics_b[0].id)
+            .await
+            .unwrap();
+        let attach = attached_b
+            .attached_to
+            .as_ref()
+            .expect("should still be attached");
+        assert_eq!(attach.nic_id, nics_b[0].id);
+        assert_eq!(attach.instance_id, nics_b[0].instance_id);
+    }
+
+    #[tokio::test]
+    async fn delete_attached_floating_ip_conflicts() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult { nics, .. } = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("a", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(silo_id, project_id, fip_req("p", AddressFamily::V4))
+            .await
+            .unwrap();
+        store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
+
+        let err = store
+            .delete_floating_ip(fip.id)
+            .await
+            .expect_err("delete-while-attached must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        // Detach + delete works.
+        store.detach_floating_ip(fip.id).await.unwrap();
+        store.delete_floating_ip(fip.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn instance_delete_detaches_floating_ip_but_does_not_release() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult { instance, nics, .. } = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("a", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let fip = store
+            .create_floating_ip(silo_id, project_id, fip_req("p", AddressFamily::V4))
+            .await
+            .unwrap();
+        store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
+        let original_address = fip.address;
+
+        // Delete the instance (after Stopped).
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Stopped,
+            )
+            .await
+            .unwrap();
+        store.delete_instance(instance.id).await.unwrap();
+
+        // FloatingIp still exists, just detached.
+        let after = store.get_floating_ip(fip.id).await.unwrap();
+        assert!(after.attached_to.is_none(), "should auto-detach");
+        assert_eq!(after.address, original_address, "address preserved");
+        assert_eq!(after.project_id, project_id, "project ownership preserved");
+    }
+
+    #[tokio::test]
+    async fn cross_project_attach_target_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, project_a, image_a, subnet_a, ssh_a) = make_instance_fixture(&store).await;
+        // Second project + its own fixture in the same silo.
+        let project_b = store
+            .create_project(
+                silo_id,
+                NewProject {
+                    name: "other".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let vpc_b = store
+            .create_vpc(
+                silo_id,
+                project_b.id,
+                NewVpc {
+                    name: "v".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.5.0.0/16")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let subnet_b = store
+            .create_subnet(
+                silo_id,
+                project_b.id,
+                vpc_b.id,
+                NewSubnet {
+                    name: "s".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.5.0.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let image_b = store
+            .create_image(silo_id, image_req("ub-b"))
+            .await
+            .unwrap();
+        let key_b = store
+            .create_ssh_key(
+                silo_id,
+                ssh_key_req("ci-b", "ssh-ed25519 BBBB"),
+                "SHA256:b".to_string(),
+            )
+            .await
+            .unwrap();
+        let InstanceCreateResult { nics: nics_b, .. } = store
+            .create_instance(
+                silo_id,
+                project_b.id,
+                instance_req("b", image_b.id, subnet_b.id, key_b.id),
+            )
+            .await
+            .unwrap();
+
+        // Allocate the FloatingIp under project A.
+        let fip = store
+            .create_floating_ip(silo_id, project_a, fip_req("p", AddressFamily::V4))
+            .await
+            .unwrap();
+        let _ = (image_a, subnet_a, ssh_a);
+
+        // Trying to attach to project B's NIC must 404 (cross-project).
+        let err = store
+            .attach_floating_ip(fip.id, nics_b[0].id)
+            .await
+            .expect_err("cross-project attach must be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 

@@ -249,6 +249,71 @@ enum SiloProjectCommand {
         #[command(subcommand)]
         command: SiloProjectQuotaCommand,
     },
+    /// Manage floating IPs (project-scoped, allocated from a fleet
+    /// pool, attachable to any NIC in the project).
+    FloatingIp {
+        #[command(subcommand)]
+        command: SiloProjectFloatingIpCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectFloatingIpCommand {
+    /// List floating IPs in the project.
+    List {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Allocate a new floating IP from the fleet pool.
+    Create {
+        silo_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Address family. Valid values: `v4` or `v6`.
+        #[arg(long, default_value = "v4")]
+        family: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single floating IP.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        floating_ip_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Release a floating IP back to its pool. Returns 409 if
+    /// currently attached.
+    Delete {
+        silo_id: Uuid,
+        project_id: Uuid,
+        floating_ip_id: Uuid,
+    },
+    /// Attach a floating IP to a NIC. Replace semantics — if the
+    /// IP was already attached elsewhere, it swaps atomically.
+    Attach {
+        silo_id: Uuid,
+        project_id: Uuid,
+        floating_ip_id: Uuid,
+        #[arg(long)]
+        nic_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Detach a floating IP. Idempotent.
+    Detach {
+        silo_id: Uuid,
+        project_id: Uuid,
+        floating_ip_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -956,6 +1021,106 @@ async fn main() -> Result<()> {
                             cli.api_key,
                             silo_id,
                             project_id,
+                        )
+                        .await
+                    }
+                },
+                SiloProjectCommand::FloatingIp { command } => match command {
+                    SiloProjectFloatingIpCommand::List {
+                        silo_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::silo_project_floating_ip_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectFloatingIpCommand::Create {
+                        silo_id,
+                        project_id,
+                        name,
+                        description,
+                        family,
+                        json,
+                    } => {
+                        commands::silo_project_floating_ip_create(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            name,
+                            description,
+                            family,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectFloatingIpCommand::Get {
+                        silo_id,
+                        project_id,
+                        floating_ip_id,
+                        json,
+                    } => {
+                        commands::silo_project_floating_ip_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            floating_ip_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectFloatingIpCommand::Delete {
+                        silo_id,
+                        project_id,
+                        floating_ip_id,
+                    } => {
+                        commands::silo_project_floating_ip_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            floating_ip_id,
+                        )
+                        .await
+                    }
+                    SiloProjectFloatingIpCommand::Attach {
+                        silo_id,
+                        project_id,
+                        floating_ip_id,
+                        nic_id,
+                        json,
+                    } => {
+                        commands::silo_project_floating_ip_attach(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            floating_ip_id,
+                            nic_id,
+                            json,
+                        )
+                        .await
+                    }
+                    SiloProjectFloatingIpCommand::Detach {
+                        silo_id,
+                        project_id,
+                        floating_ip_id,
+                        json,
+                    } => {
+                        commands::silo_project_floating_ip_detach(
+                            cli.endpoint,
+                            cli.api_key,
+                            silo_id,
+                            project_id,
+                            floating_ip_id,
+                            json,
                         )
                         .await
                     }

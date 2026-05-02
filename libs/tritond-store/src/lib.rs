@@ -31,11 +31,12 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Disk, DiskKind, Federation, IdpConfig, IdpConfigView, Image, Instance,
+    AddressFamily, ApiKey, ApiKeyView, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
+    Federation, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView, Image, Instance,
     InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey, User,
-    UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
+    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
+    Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -492,6 +493,67 @@ pub trait Store: Send + Sync + 'static {
     /// unspecified; Phase 0 produces exactly one Disk per instance
     /// (the auto-created `"boot"`).
     async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Floating IPs (project-scoped, allocated from a fleet pool)
+    // ------------------------------------------------------------------
+
+    /// Allocate a [`FloatingIp`] from the requested family's
+    /// hardcoded Phase 0 pool.
+    ///
+    /// Invariants:
+    ///
+    /// * The project exists and `project.silo_id == silo_id`.
+    ///   Otherwise [`StoreError::NotFound`].
+    /// * `name` is unique within the project. Collision →
+    ///   [`StoreError::Conflict`].
+    /// * Pool exhaustion (operationally unreachable for v0 with
+    ///   /24 + /48 pools) → [`StoreError::Backend`].
+    ///
+    /// The returned `FloatingIp` starts unattached
+    /// (`attached_to == None`).
+    async fn create_floating_ip(
+        &self,
+        silo_id: Uuid,
+        project_id: Uuid,
+        req: NewFloatingIp,
+    ) -> Result<FloatingIp, StoreError>;
+
+    /// Look up a FloatingIp by id. Handlers add silo + project
+    /// rechecks on top.
+    async fn get_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError>;
+
+    /// List every FloatingIp owned by a project.
+    async fn list_floating_ips_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<FloatingIp>, StoreError>;
+
+    /// Release a FloatingIp back to its pool. Returns
+    /// [`StoreError::Conflict`] if the IP is currently attached
+    /// (operator must detach first); a future force-delete path
+    /// could detach + release in one call.
+    async fn delete_floating_ip(&self, fip_id: Uuid) -> Result<(), StoreError>;
+
+    /// Atomically attach a FloatingIp to a NIC, replacing any
+    /// existing attachment. The target NIC must live in the same
+    /// silo + project as the FloatingIp; mismatch surfaces as
+    /// [`StoreError::NotFound`].
+    ///
+    /// "Replace" semantics: if the FloatingIp was already attached
+    /// to a different NIC, the new attachment swaps in place
+    /// inside one transaction — operators see a single before/
+    /// after state with no detached window.
+    async fn attach_floating_ip(
+        &self,
+        fip_id: Uuid,
+        target_nic_id: Uuid,
+    ) -> Result<FloatingIp, StoreError>;
+
+    /// Clear the FloatingIp's `attached_to`. No-op (returns the
+    /// current record) if already detached. The IP stays owned by
+    /// the project.
+    async fn detach_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError>;
 
     // ------------------------------------------------------------------
     // Provisioning jobs (FIFO queue consumed by an agent)
