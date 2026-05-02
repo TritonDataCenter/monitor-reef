@@ -28,6 +28,7 @@ members = [
     "services/bugview-service",
     "services/jira-stub-server",
     "services/tritond",
+    "services/tritonagent",
     "cli/tcadm",
 
     # To be modernized:
@@ -197,5 +198,6 @@ tritond-audit = { path = "libs/tritond-audit" }
 tritond-auth = { path = "libs/tritond-auth" }
 tritond-client = { path = "clients/internal/tritond-client" }
 tritond-store = { path = "libs/tritond-store" }
+tritonagent = { path = "services/tritonagent" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

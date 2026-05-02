@@ -34,17 +34,18 @@ use dropshot::{
     HttpServerStarter, Path, Query, RequestContext, TypedBody,
 };
 use tritond_api::{
-    ApiKeyCreated, ApiKeyPath, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
-    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey,
-    NewIdpConfig, RefreshRequest, SiloImagePath, SiloPath, SiloProjectFloatingIpPath,
+    AgentJobPath, ApiKeyCreated, ApiKeyPath, AttachFloatingIpRequest, AuditEventList,
+    AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest,
+    ClaimJobResponse, CompleteJobRequest, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig,
+    RefreshRequest, SiloImagePath, SiloPath, SiloProjectFloatingIpPath,
     SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath, SiloProjectInstancePath,
     SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse,
     TritondApi,
     types::{
         ApiKeyView, AuditEvent, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind,
-        LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob,
-        NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo,
-        SshKey, Subnet, Vpc,
+        JobOutcome, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
+        NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
+        ProvisioningJob, Quota, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -77,6 +78,11 @@ pub struct ApiContext {
     /// [`crate::rate_limit`] for the shape of the limiter and why it
     /// only fronts login.
     pub login_rate_limiter: Arc<LoginRateLimiter>,
+    /// When `false`, [`start_server_with_context`] does *not*
+    /// spawn the in-process stub provisioner. The agent integration
+    /// test sets this so a real `tritonagent` (or its test stand-in)
+    /// can claim jobs without racing the stub. Defaults to `true`.
+    pub spawn_in_process_provisioner: bool,
 }
 
 impl ApiContext {
@@ -86,7 +92,18 @@ impl ApiContext {
             auth,
             audit,
             login_rate_limiter: Arc::new(LoginRateLimiter::new()),
+            spawn_in_process_provisioner: true,
         }
+    }
+
+    /// Disable the in-process stub provisioner — the agent
+    /// integration test uses this so a test-side claim doesn't
+    /// race the stub. Production deploys with a real `tritonagent`
+    /// will eventually call this too.
+    #[must_use]
+    pub fn without_in_process_provisioner(mut self) -> Self {
+        self.spawn_in_process_provisioner = false;
+        self
     }
 
     /// Build a context backed by a fresh in-memory store, a fresh
@@ -512,6 +529,111 @@ impl TritondApi for TritondServiceImpl {
         let to = q.to.unwrap_or_else(|| head.as_ref().map_or(0, |h| h.seq));
         let outcome = chain.verify(from, to).await.map_err(audit_error_to_http)?;
         Ok(HttpResponseOk(AuditVerifyResponse { outcome, head }))
+    }
+
+    async fn agent_claim_job(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<ClaimJobRequest>,
+    ) -> Result<HttpResponseOk<ClaimJobResponse>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentClaim,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        // The store returns NotFound when the queue is empty; we
+        // turn that into the wire-level "no work" signal so the
+        // agent can poll on a timer without 404 noise.
+        let job = match ctx.store.claim_next_job(&req.claimed_by).await {
+            Ok(job) => Some(job),
+            Err(StoreError::NotFound) => None,
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+        // Audit only successful claims — empty-queue polls are noise.
+        if let Some(j) = &job {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::AgentClaim,
+                    request_id,
+                    Some(format!("ProvisioningJob::\"{}\"", j.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("ProvisioningJob::\"{}\"", j.id)),
+                    },
+                    serde_json::json!({
+                        "job_id": j.id,
+                        "claimed_by": req.claimed_by,
+                        "kind": j.kind,
+                    }),
+                )
+                .await;
+        }
+        Ok(HttpResponseOk(ClaimJobResponse { job }))
+    }
+
+    async fn agent_complete_job(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AgentJobPath>,
+        body: TypedBody<CompleteJobRequest>,
+    ) -> Result<HttpResponseOk<ProvisioningJob>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentComplete,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let job_id = path.into_inner().job_id;
+        let req = body.into_inner();
+        let outcome_label = match &req.outcome {
+            JobOutcome::Completed => "completed",
+            JobOutcome::Failed { .. } => "failed",
+            _ => "unknown",
+        };
+        match ctx.store.complete_job(job_id, req.outcome.clone()).await {
+            Ok(updated) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::AgentComplete,
+                        request_id,
+                        Some(format!("ProvisioningJob::\"{job_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("ProvisioningJob::\"{job_id}\"")),
+                        },
+                        serde_json::json!({
+                            "job_id": job_id,
+                            "outcome": outcome_label,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseOk(updated))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::AgentComplete,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::json!({
+                            "job_id": job_id,
+                            "outcome": outcome_label,
+                        }),
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 
     async fn put_silo_idp(
@@ -2822,8 +2944,11 @@ pub async fn start_server_with_context(
     let api = api_description()?;
     // Spawn the stub provisioner before starting the HTTP server
     // so the queue is being drained from the moment handlers can
-    // accept requests.
-    let _provisioner = provisioner::spawn(Arc::clone(&context.store));
+    // accept requests. Tests / real-agent deploys can opt out via
+    // `ApiContext::without_in_process_provisioner`.
+    if context.spawn_in_process_provisioner {
+        let _provisioner = provisioner::spawn(Arc::clone(&context.store));
+    }
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
         .map_err(|e| anyhow::anyhow!("failed to start HTTP server: {e}"))?

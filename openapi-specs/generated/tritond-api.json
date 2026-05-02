@@ -6,6 +6,93 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v2/agent/claim": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Atomically claim the next Pending provisioning job.",
+        "description": "Returns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v2/agent/claim` rather than `/v2/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.",
+        "operationId": "agent_claim_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimJobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/agent/jobs/{job_id}/complete": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Mark a previously-claimed provisioning job terminal.",
+        "description": "`outcome` is `Completed` for success or `Failed { reason }` for an agent-side abort. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].",
+        "operationId": "agent_complete_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisioningJob"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/audit/events": {
       "get": {
         "tags": [
@@ -2805,6 +2892,13 @@
             "enum": [
               "audit_only"
             ]
+          },
+          {
+            "description": "Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v2/agent/*` surface.",
+            "type": "string",
+            "enum": [
+              "agent"
+            ]
           }
         ]
       },
@@ -2967,6 +3061,45 @@
         "required": [
           "hash",
           "seq"
+        ]
+      },
+      "ClaimJobRequest": {
+        "description": "Request body for `POST /v2/agent/jobs/claim`.\n\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart.",
+        "type": "object",
+        "properties": {
+          "claimed_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimed_by"
+        ]
+      },
+      "ClaimJobResponse": {
+        "description": "Response body for `POST /v2/agent/jobs/claim`.\n\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll.",
+        "type": "object",
+        "properties": {
+          "job": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProvisioningJob"
+              }
+            ]
+          }
+        }
+      },
+      "CompleteJobRequest": {
+        "description": "Request body for `POST /v2/agent/jobs/{job_id}/complete`.",
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/JobOutcome"
+          }
+        },
+        "required": [
+          "outcome"
         ]
       },
       "Decision": {
@@ -3344,6 +3477,173 @@
           "silo_id",
           "ssh_key_ids",
           "updated_at"
+        ]
+      },
+      "JobKind": {
+        "description": "What a provisioning job asks an agent to do.\n\nEach variant carries the target `instance_id` so an agent can look up the current state, do the work, and drive the lifecycle forward without needing the issuer to embed extra context.\n\nPhase 0 has exactly three kinds. A future slice may add others (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so adding a variant is not a breaking change for matchers.",
+        "oneOf": [
+          {
+            "description": "Drive a Pending instance through Provisioning → Running. Used both for first-time create and for `start` (which transitions Stopped → Pending and then enqueues a Provision).",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "provision"
+                ]
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind"
+            ]
+          },
+          {
+            "description": "Drive a Running instance through Stopping → Stopped.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stop"
+                ]
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind"
+            ]
+          },
+          {
+            "description": "Drive a Running instance through Stopping → Pending → Provisioning → Running. The agent is responsible for the whole cycle; the operator never sees Pending in between.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "restart"
+                ]
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind"
+            ]
+          }
+        ]
+      },
+      "JobOutcome": {
+        "description": "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`]).",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "completed"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "reason"
+            ]
+          }
+        ]
+      },
+      "JobStatus": {
+        "description": "Lifecycle of a single provisioning job.\n\n`Pending` → claimable by the next agent that polls. `InProgress` → an agent has claimed it; the agent is responsible for driving to `Completed` or `Failed`. Terminal states (`Completed`, `Failed`) are not re-queued automatically — operators retry by issuing the originating action again.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "in_progress"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "completed"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            },
+            "required": [
+              "reason",
+              "status"
+            ]
+          }
         ]
       },
       "LifecycleState": {
@@ -3953,6 +4253,59 @@
           "silo_id"
         ]
       },
+      "ProvisioningJob": {
+        "description": "A unit of work for a provisioning agent. Created by the tritond instance handlers; consumed by an agent (the in-process stub today; a real `tritonagent` per CN in the future).\n\nThe wire shape is stable across Phase 0 and the eventual real agent — the only thing that changes is *who* claims and completes jobs.",
+        "type": "object",
+        "properties": {
+          "claimed_at": {
+            "nullable": true,
+            "description": "Set when the job was first claimed by an agent.",
+            "default": null,
+            "type": "string",
+            "format": "date-time"
+          },
+          "claimed_by": {
+            "nullable": true,
+            "description": "Identifier of the agent that claimed the job. In Phase 0 this is the in-process stub's name (e.g. `\"stub-provisioner\"`).",
+            "default": null,
+            "type": "string"
+          },
+          "completed_at": {
+            "nullable": true,
+            "description": "Set when the job reached a terminal status (Completed or Failed).",
+            "default": null,
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "seq": {
+            "description": "Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          }
+        },
+        "required": [
+          "created_at",
+          "id",
+          "kind",
+          "seq",
+          "status"
+        ]
+      },
       "Quota": {
         "description": "Per-project resource quota. Singleton: each project has at most one quota record. Set with PUT, read with GET, remove with DELETE (project becomes \"unlimited\" — no record means no enforcement).\n\nEnforcement is *not* shipped in Phase 0 — these limits are stored and readable but no instance-create flow consults them yet. The shape is fixed now so the enforcement layer (Tier 3) has a stable contract to build against.\n\nLimits are absolute caps, not reservations: `cpu_limit = 8` means \"this project may have up to 8 vCPUs across all running instances.\" Storage and memory are bytes; cpu and instance counts are simple `u32`.",
         "type": "object",
@@ -4283,6 +4636,9 @@
     }
   },
   "tags": [
+    {
+      "name": "agent"
+    },
     {
       "name": "audit"
     },

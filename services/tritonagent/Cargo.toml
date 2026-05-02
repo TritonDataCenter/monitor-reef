@@ -1,0 +1,42 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritonagent"
+version = "0.1.0"
+edition.workspace = true
+description = "Per-CN provisioning agent for the Triton Cloud control plane"
+
+[lints]
+workspace = true
+
+[lib]
+name = "tritonagent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tritonagent"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+hostname = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tritond-client = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+dropshot = { workspace = true }
+tokio = { workspace = true }
+tritond = { workspace = true }
+tritond-audit = { workspace = true }
+tritond-auth = { workspace = true }
+tritond-store = { workspace = true }

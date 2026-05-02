@@ -18,6 +18,7 @@ fn scope_label(scope: &ApiKeyScope) -> &'static str {
         ApiKeyScope::Full => "full",
         ApiKeyScope::ReadOnly => "read_only",
         ApiKeyScope::AuditOnly => "audit_only",
+        ApiKeyScope::Agent => "agent",
     }
 }
 use uuid::Uuid;

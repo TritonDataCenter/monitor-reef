@@ -370,6 +370,12 @@ pub enum ApiKeyScope {
     /// `audit_verify`). Useful for compliance pipelines that should
     /// see "who did what when" but never the resources themselves.
     AuditOnly,
+    /// Provisioning-agent scope: `agent_claim` and `agent_complete`
+    /// only. A key with this scope cannot read tenant resources or
+    /// audit events; it can only pull jobs from the queue and
+    /// report outcomes. Used by the per-CN `tritonagent` to
+    /// authenticate to tritond's `/v2/agent/*` surface.
+    Agent,
 }
 
 /// API key record. Storage carries the bcrypt hash of the secret
@@ -806,7 +812,13 @@ pub struct NewJob {
 }
 
 /// Outcome a worker reports when finishing a job.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Wire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete`
+/// when a real `tritonagent` is reporting back. The serde tag is
+/// `kind` and the case is snake_case — matches every other tagged
+/// enum on the wire (e.g. [`JobStatus`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum JobOutcome {
     Completed,

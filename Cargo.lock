@@ -5460,6 +5460,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "tritonagent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "dropshot",
+ "hostname 0.4.2",
+ "reqwest 0.13.2",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "tritond",
+ "tritond-audit",
+ "tritond-auth",
+ "tritond-client",
+ "tritond-store",
+ "uuid",
+]
+
+[[package]]
 name = "tritond"
 version = "0.1.0"
 dependencies = [

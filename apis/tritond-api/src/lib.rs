@@ -29,8 +29,9 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, FloatingIp,
-    IdpConfigView, Image, Instance, NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota,
-    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
+    IdpConfigView, Image, Instance, JobOutcome, NewFloatingIp, NewImage, NewInstance, NewProject,
+    NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
+    SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -102,6 +103,41 @@ pub struct ApiKeyCreated {
     #[serde(flatten)]
     pub key: ApiKeyView,
     pub secret: String,
+}
+
+/// Path parameters for endpoints that operate on a single
+/// provisioning job by id.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentJobPath {
+    pub job_id: Uuid,
+}
+
+/// Request body for `POST /v2/agent/jobs/claim`.
+///
+/// `claimed_by` is the agent's own identity — used by the store as
+/// the [`ProvisioningJob::claimed_by`] field, and rolled into audit
+/// events so concurrent agents can be told apart.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ClaimJobRequest {
+    pub claimed_by: String,
+}
+
+/// Response body for `POST /v2/agent/jobs/claim`.
+///
+/// `job` is `Some(...)` when the queue had a Pending job and the
+/// claim succeeded; `None` when the queue is empty. The HTTP status
+/// is always `200 OK`; the agent reads the `job` field to decide
+/// whether to do work or sleep until the next poll.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ClaimJobResponse {
+    #[serde(default)]
+    pub job: Option<ProvisioningJob>,
+}
+
+/// Request body for `POST /v2/agent/jobs/{job_id}/complete`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CompleteJobRequest {
+    pub outcome: JobOutcome,
 }
 
 /// Path parameters for endpoints that operate on a single audit event.
@@ -383,6 +419,42 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         query: Query<AuditVerifyQuery>,
     ) -> Result<HttpResponseOk<AuditVerifyResponse>, HttpError>;
+
+    /// Atomically claim the next Pending provisioning job.
+    /// Returns `200 OK` with `{"job": null}` when the queue is
+    /// empty (the agent should sleep before its next poll), and
+    /// `200 OK` with `{"job": {...}}` when a job was claimed and
+    /// transitioned to `InProgress`. Auth: requires an API key
+    /// with [`tritond_store::ApiKeyScope::Agent`].
+    ///
+    /// The path is `/v2/agent/claim` rather than
+    /// `/v2/agent/jobs/claim` because Dropshot's router cannot
+    /// disambiguate a literal `claim` segment from a `{job_id}`
+    /// path parameter at the same level.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/claim",
+        tags = ["agent"],
+    }]
+    async fn agent_claim_job(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<ClaimJobRequest>,
+    ) -> Result<HttpResponseOk<ClaimJobResponse>, HttpError>;
+
+    /// Mark a previously-claimed provisioning job terminal.
+    /// `outcome` is `Completed` for success or `Failed { reason }`
+    /// for an agent-side abort. Auth: requires an API key with
+    /// [`tritond_store::ApiKeyScope::Agent`].
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/jobs/{job_id}/complete",
+        tags = ["agent"],
+    }]
+    async fn agent_complete_job(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AgentJobPath>,
+        body: TypedBody<CompleteJobRequest>,
+    ) -> Result<HttpResponseOk<ProvisioningJob>, HttpError>;
 
     /// Configure the OIDC identity provider for a silo. Returns 502
     /// if the discovery document cannot be fetched, 404 if the silo

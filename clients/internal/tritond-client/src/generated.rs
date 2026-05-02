@@ -319,6 +319,13 @@ pub mod types {
     #[doc = "      \"enum\": ["]
     #[doc = "        \"audit_only\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v2/agent/*` surface.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"agent\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
@@ -347,6 +354,9 @@ pub mod types {
         #[doc = "Audit chain reads only (`audit_list`, `audit_fetch`, `audit_verify`). Useful for compliance pipelines that should see \"who did what when\" but never the resources themselves."]
         #[serde(rename = "audit_only")]
         AuditOnly,
+        #[doc = "Provisioning-agent scope: `agent_claim` and `agent_complete` only. A key with this scope cannot read tenant resources or audit events; it can only pull jobs from the queue and report outcomes. Used by the per-CN `tritonagent` to authenticate to tritond's `/v2/agent/*` surface."]
+        #[serde(rename = "agent")]
+        Agent,
     }
 
     impl ::std::fmt::Display for ApiKeyScope {
@@ -355,6 +365,7 @@ pub mod types {
                 Self::Full => f.write_str("full"),
                 Self::ReadOnly => f.write_str("read_only"),
                 Self::AuditOnly => f.write_str("audit_only"),
+                Self::Agent => f.write_str("agent"),
             }
         }
     }
@@ -366,6 +377,7 @@ pub mod types {
                 "full" => Ok(Self::Full),
                 "read_only" => Ok(Self::ReadOnly),
                 "audit_only" => Ok(Self::AuditOnly),
+                "agent" => Ok(Self::Agent),
                 _ => Err("invalid value".into()),
             }
         }
@@ -712,6 +724,119 @@ pub mod types {
 
     impl ChainHead {
         pub fn builder() -> builder::ChainHead {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/agent/jobs/claim`.\n\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/agent/jobs/claim`.\\n\\n`claimed_by` is the agent's own identity — used by the store as the [`ProvisioningJob::claimed_by`] field, and rolled into audit events so concurrent agents can be told apart.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"claimed_by\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"claimed_by\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ClaimJobRequest {
+        pub claimed_by: ::std::string::String,
+    }
+
+    impl ClaimJobRequest {
+        pub fn builder() -> builder::ClaimJobRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `POST /v2/agent/jobs/claim`.\n\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `POST /v2/agent/jobs/claim`.\\n\\n`job` is `Some(...)` when the queue had a Pending job and the claim succeeded; `None` when the queue is empty. The HTTP status is always `200 OK`; the agent reads the `job` field to decide whether to do work or sleep until the next poll.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"job\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ProvisioningJob\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ClaimJobResponse {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub job: ::std::option::Option<ProvisioningJob>,
+    }
+
+    impl ::std::default::Default for ClaimJobResponse {
+        fn default() -> Self {
+            Self {
+                job: Default::default(),
+            }
+        }
+    }
+
+    impl ClaimJobResponse {
+        pub fn builder() -> builder::ClaimJobResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/agent/jobs/{job_id}/complete`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/agent/jobs/{job_id}/complete`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"outcome\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"outcome\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/JobOutcome\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct CompleteJobRequest {
+        pub outcome: JobOutcome,
+    }
+
+    impl CompleteJobRequest {
+        pub fn builder() -> builder::CompleteJobRequest {
             Default::default()
         }
     }
@@ -1478,6 +1603,236 @@ pub mod types {
         pub fn builder() -> builder::Instance {
             Default::default()
         }
+    }
+
+    #[doc = "What a provisioning job asks an agent to do.\n\nEach variant carries the target `instance_id` so an agent can look up the current state, do the work, and drive the lifecycle forward without needing the issuer to embed extra context.\n\nPhase 0 has exactly three kinds. A future slice may add others (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so adding a variant is not a breaking change for matchers."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a provisioning job asks an agent to do.\\n\\nEach variant carries the target `instance_id` so an agent can look up the current state, do the work, and drive the lifecycle forward without needing the issuer to embed extra context.\\n\\nPhase 0 has exactly three kinds. A future slice may add others (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so adding a variant is not a breaking change for matchers.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Drive a Pending instance through Provisioning → Running. Used both for first-time create and for `start` (which transitions Stopped → Pending and then enqueues a Provision).\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"provision\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Drive a Running instance through Stopping → Stopped.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"stop\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Drive a Running instance through Stopping → Pending → Provisioning → Running. The agent is responsible for the whole cycle; the operator never sees Pending in between.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"instance_id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"restart\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind", content = "instance_id")]
+    pub enum JobKind {
+        #[doc = "Drive a Pending instance through Provisioning → Running. Used both for first-time create and for `start` (which transitions Stopped → Pending and then enqueues a Provision)."]
+        #[serde(rename = "provision")]
+        Provision(::uuid::Uuid),
+        #[doc = "Drive a Running instance through Stopping → Stopped."]
+        #[serde(rename = "stop")]
+        Stop(::uuid::Uuid),
+        #[doc = "Drive a Running instance through Stopping → Pending → Provisioning → Running. The agent is responsible for the whole cycle; the operator never sees Pending in between."]
+        #[serde(rename = "restart")]
+        Restart(::uuid::Uuid),
+    }
+
+    #[doc = "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`])."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Outcome a worker reports when finishing a job.\\n\\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`]).\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"completed\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"reason\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"failed\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"reason\": {"]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind", content = "reason")]
+    pub enum JobOutcome {
+        #[serde(rename = "completed")]
+        Completed,
+        #[serde(rename = "failed")]
+        Failed(::std::string::String),
+    }
+
+    #[doc = "Lifecycle of a single provisioning job.\n\n`Pending` → claimable by the next agent that polls. `InProgress` → an agent has claimed it; the agent is responsible for driving to `Completed` or `Failed`. Terminal states (`Completed`, `Failed`) are not re-queued automatically — operators retry by issuing the originating action again."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Lifecycle of a single provisioning job.\\n\\n`Pending` → claimable by the next agent that polls. `InProgress` → an agent has claimed it; the agent is responsible for driving to `Completed` or `Failed`. Terminal states (`Completed`, `Failed`) are not re-queued automatically — operators retry by issuing the originating action again.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"status\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"status\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"pending\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"status\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"status\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"in_progress\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"status\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"status\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"completed\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"reason\","]
+    #[doc = "        \"status\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"reason\": {"]
+    #[doc = "          \"type\": \"string\""]
+    #[doc = "        },"]
+    #[doc = "        \"status\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"failed\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "status", content = "reason")]
+    pub enum JobStatus {
+        #[serde(rename = "pending")]
+        Pending,
+        #[serde(rename = "in_progress")]
+        InProgress,
+        #[serde(rename = "completed")]
+        Completed,
+        #[serde(rename = "failed")]
+        Failed(::std::string::String),
     }
 
     #[doc = "Lifecycle state of a tenant instance. The state machine:\n\n```text create ↓ Pending ──→ Provisioning ──┬→ Running ←──┬── Stopped │             │      ↑ │             │      │ ↓             ↓      │ Failed        Stopping─┘ ```\n\nPhase 0 collapses Pending → Provisioning → Running into a synchronous transition inside the create handler (there is no agent yet). The full async path lands when the provisioning intent queue + stub executor slice ships.\n\nOperator-driven transitions: start (Stopped → Pending), stop (Running → Stopping), restart (Running → Stopping → Pending). Agent-driven transitions: Pending → Provisioning → Running, Provisioning → Failed, Stopping → Stopped.\n\nDelete is allowed only from Stopped or Failed; deleting a Running instance returns 409."]
@@ -2512,6 +2867,96 @@ pub mod types {
 
     impl Project {
         pub fn builder() -> builder::Project {
+            Default::default()
+        }
+    }
+
+    #[doc = "A unit of work for a provisioning agent. Created by the tritond instance handlers; consumed by an agent (the in-process stub today; a real `tritonagent` per CN in the future).\n\nThe wire shape is stable across Phase 0 and the eventual real agent — the only thing that changes is *who* claims and completes jobs."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A unit of work for a provisioning agent. Created by the tritond instance handlers; consumed by an agent (the in-process stub today; a real `tritonagent` per CN in the future).\\n\\nThe wire shape is stable across Phase 0 and the eventual real agent — the only thing that changes is *who* claims and completes jobs.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"seq\","]
+    #[doc = "    \"status\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"claimed_at\": {"]
+    #[doc = "      \"description\": \"Set when the job was first claimed by an agent.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"claimed_by\": {"]
+    #[doc = "      \"description\": \"Identifier of the agent that claimed the job. In Phase 0 this is the in-process stub's name (e.g. `\\\"stub-provisioner\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"completed_at\": {"]
+    #[doc = "      \"description\": \"Set when the job reached a terminal status (Completed or Failed).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/JobKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"seq\": {"]
+    #[doc = "      \"description\": \"Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/JobStatus\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ProvisioningJob {
+        #[doc = "Set when the job was first claimed by an agent."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claimed_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[doc = "Identifier of the agent that claimed the job. In Phase 0 this is the in-process stub's name (e.g. `\"stub-provisioner\"`)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claimed_by: ::std::option::Option<::std::string::String>,
+        #[doc = "Set when the job reached a terminal status (Completed or Failed)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub completed_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub id: ::uuid::Uuid,
+        pub kind: JobKind,
+        #[doc = "Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time."]
+        pub seq: u64,
+        pub status: JobStatus,
+    }
+
+    impl ProvisioningJob {
+        pub fn builder() -> builder::ProvisioningJob {
             Default::default()
         }
     }
@@ -3689,6 +4134,140 @@ pub mod types {
                 Self {
                     hash: Ok(value.hash),
                     seq: Ok(value.seq),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ClaimJobRequest {
+            claimed_by: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ClaimJobRequest {
+            fn default() -> Self {
+                Self {
+                    claimed_by: Err("no value supplied for claimed_by".to_string()),
+                }
+            }
+        }
+
+        impl ClaimJobRequest {
+            pub fn claimed_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claimed_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for claimed_by: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ClaimJobRequest> for super::ClaimJobRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ClaimJobRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    claimed_by: value.claimed_by?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ClaimJobRequest> for ClaimJobRequest {
+            fn from(value: super::ClaimJobRequest) -> Self {
+                Self {
+                    claimed_by: Ok(value.claimed_by),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ClaimJobResponse {
+            job: ::std::result::Result<
+                ::std::option::Option<super::ProvisioningJob>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for ClaimJobResponse {
+            fn default() -> Self {
+                Self {
+                    job: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl ClaimJobResponse {
+            pub fn job<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ProvisioningJob>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.job = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for job: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ClaimJobResponse> for super::ClaimJobResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ClaimJobResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { job: value.job? })
+            }
+        }
+
+        impl ::std::convert::From<super::ClaimJobResponse> for ClaimJobResponse {
+            fn from(value: super::ClaimJobResponse) -> Self {
+                Self { job: Ok(value.job) }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct CompleteJobRequest {
+            outcome: ::std::result::Result<super::JobOutcome, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for CompleteJobRequest {
+            fn default() -> Self {
+                Self {
+                    outcome: Err("no value supplied for outcome".to_string()),
+                }
+            }
+        }
+
+        impl CompleteJobRequest {
+            pub fn outcome<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::JobOutcome>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.outcome = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for outcome: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<CompleteJobRequest> for super::CompleteJobRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CompleteJobRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    outcome: value.outcome?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::CompleteJobRequest> for CompleteJobRequest {
+            fn from(value: super::CompleteJobRequest) -> Self {
+                Self {
+                    outcome: Ok(value.outcome),
                 }
             }
         }
@@ -6044,6 +6623,165 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ProvisioningJob {
+            claimed_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            claimed_by: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            completed_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<super::JobKind, ::std::string::String>,
+            seq: ::std::result::Result<u64, ::std::string::String>,
+            status: ::std::result::Result<super::JobStatus, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ProvisioningJob {
+            fn default() -> Self {
+                Self {
+                    claimed_at: Ok(Default::default()),
+                    claimed_by: Ok(Default::default()),
+                    completed_at: Ok(Default::default()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    seq: Err("no value supplied for seq".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                }
+            }
+        }
+
+        impl ProvisioningJob {
+            pub fn claimed_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claimed_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for claimed_at: {e}"));
+                self
+            }
+            pub fn claimed_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claimed_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for claimed_by: {e}"));
+                self
+            }
+            pub fn completed_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.completed_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for completed_at: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::JobKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn seq<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.seq = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for seq: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::JobStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ProvisioningJob> for super::ProvisioningJob {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ProvisioningJob,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    claimed_at: value.claimed_at?,
+                    claimed_by: value.claimed_by?,
+                    completed_at: value.completed_at?,
+                    created_at: value.created_at?,
+                    id: value.id?,
+                    kind: value.kind?,
+                    seq: value.seq?,
+                    status: value.status?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ProvisioningJob> for ProvisioningJob {
+            fn from(value: super::ProvisioningJob) -> Self {
+                Self {
+                    claimed_at: Ok(value.claimed_at),
+                    claimed_by: Ok(value.claimed_by),
+                    completed_at: Ok(value.completed_at),
+                    created_at: Ok(value.created_at),
+                    id: Ok(value.id),
+                    kind: Ok(value.kind),
+                    seq: Ok(value.seq),
+                    status: Ok(value.status),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Quota {
             cpu_limit: ::std::result::Result<u32, ::std::string::String>,
             disk_bytes: ::std::result::Result<u64, ::std::string::String>,
@@ -6932,6 +7670,16 @@ impl ClientInfo<()> for Client {
 
 impl ClientHooks<()> for &Client {}
 impl Client {
+    #[doc = "Atomically claim the next Pending provisioning job\n\nReturns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v2/agent/claim` rather than `/v2/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.\n\nSends a `POST` request to `/v2/agent/claim`\n\n```ignore\nlet response = client.agent_claim_job()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_claim_job(&self) -> builder::AgentClaimJob<'_> {
+        builder::AgentClaimJob::new(self)
+    }
+
+    #[doc = "Mark a previously-claimed provisioning job terminal\n\n`outcome` is `Completed` for success or `Failed { reason }` for an agent-side abort. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `POST` request to `/v2/agent/jobs/{job_id}/complete`\n\n```ignore\nlet response = client.agent_complete_job()\n    .job_id(job_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_complete_job(&self) -> builder::AgentCompleteJob<'_> {
+        builder::AgentCompleteJob::new(self)
+    }
+
     #[doc = "Page through audit events. Returns at most `limit` events with\n\n`seq > after_seq` plus the current chain head.\n\nSends a `GET` request to `/v2/audit/events`\n\nArguments:\n- `after_seq`: Return events with `seq > after_seq`. Default 0 (start of chain).\n- `limit`: Maximum events to return. Default 100, max 1000.\n```ignore\nlet response = client.list_audit_events()\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn list_audit_events(&self) -> builder::ListAuditEvents<'_> {
         builder::ListAuditEvents::new(self)
@@ -7212,6 +7960,189 @@ pub mod builder {
         ByteStream, ClientHooks, ClientInfo, Error, OperationInfo, RequestBuilderExt,
         ResponseValue, encode_path,
     };
+    #[doc = "Builder for [`Client::agent_claim_job`]\n\n[`Client::agent_claim_job`]: super::Client::agent_claim_job"]
+    #[derive(Debug, Clone)]
+    pub struct AgentClaimJob<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::ClaimJobRequest, String>,
+    }
+
+    impl<'a> AgentClaimJob<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ClaimJobRequest>,
+            <V as std::convert::TryInto<types::ClaimJobRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `ClaimJobRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::ClaimJobRequest) -> types::builder::ClaimJobRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/claim`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ClaimJobResponse>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::ClaimJobRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/claim", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_claim_job",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_complete_job`]\n\n[`Client::agent_complete_job`]: super::Client::agent_complete_job"]
+    #[derive(Debug, Clone)]
+    pub struct AgentCompleteJob<'a> {
+        client: &'a super::Client,
+        job_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::CompleteJobRequest, String>,
+    }
+
+    impl<'a> AgentCompleteJob<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                job_id: Err("job_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn job_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.job_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for job_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::CompleteJobRequest>,
+            <V as std::convert::TryInto<types::CompleteJobRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `CompleteJobRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::CompleteJobRequest,
+                ) -> types::builder::CompleteJobRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/jobs/{job_id}/complete`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::ProvisioningJob>, Error<types::Error>> {
+            let Self {
+                client,
+                job_id,
+                body,
+            } = self;
+            let job_id = job_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::CompleteJobRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/agent/jobs/{}/complete",
+                client.baseurl,
+                encode_path(&job_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_complete_job",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::list_audit_events`]\n\n[`Client::list_audit_events`]: super::Client::list_audit_events"]
     #[derive(Debug, Clone)]
     pub struct ListAuditEvents<'a> {

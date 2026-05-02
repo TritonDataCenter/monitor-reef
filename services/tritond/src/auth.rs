@@ -270,6 +270,15 @@ pub enum Action {
     FloatingIpDelete,
     FloatingIpAttach,
     FloatingIpDetach,
+    /// Pull the next Pending [`ProvisioningJob`] from the queue.
+    /// Fleet-scoped (no silo); the agent identifies itself as
+    /// `claimed_by` so concurrent agents can be told apart in the
+    /// audit log.
+    AgentClaim,
+    /// Mark a previously-claimed [`ProvisioningJob`] as terminal.
+    /// Cedar gates the action; the store layer verifies the
+    /// outcome's transitions are legal.
+    AgentComplete,
 }
 
 impl Action {
@@ -333,6 +342,8 @@ impl Action {
             Action::FloatingIpDelete => "floating_ip_delete",
             Action::FloatingIpAttach => "floating_ip_attach",
             Action::FloatingIpDetach => "floating_ip_detach",
+            Action::AgentClaim => "agent_claim",
+            Action::AgentComplete => "agent_complete",
         }
     }
 
@@ -695,6 +706,10 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
                 | Action::AuditFetch
                 | Action::AuditVerify
         ),
+        ApiKeyScope::Agent => matches!(
+            action,
+            Action::Health | Action::AgentClaim | Action::AgentComplete
+        ),
         _ => false,
     }
 }
@@ -759,7 +774,13 @@ fn is_read_action(action: Action) -> bool {
         | Action::FloatingIpCreate
         | Action::FloatingIpDelete
         | Action::FloatingIpAttach
-        | Action::FloatingIpDetach => false,
+        | Action::FloatingIpDetach
+        // Agent actions are queue mutations; classified as writes
+        // so a ReadOnly key can't peek at jobs and a write-classified
+        // key can't accidentally claim. The Agent scope is the only
+        // way to authorise them — see `scope_allows_action`.
+        | Action::AgentClaim
+        | Action::AgentComplete => false,
     }
 }
 

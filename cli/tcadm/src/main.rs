@@ -659,6 +659,7 @@ enum ApiKeyScopeArg {
     Full,
     ReadOnly,
     AuditOnly,
+    Agent,
 }
 
 impl From<ApiKeyScopeArg> for tritond_client::types::ApiKeyScope {
@@ -667,6 +668,7 @@ impl From<ApiKeyScopeArg> for tritond_client::types::ApiKeyScope {
             ApiKeyScopeArg::Full => tritond_client::types::ApiKeyScope::Full,
             ApiKeyScopeArg::ReadOnly => tritond_client::types::ApiKeyScope::ReadOnly,
             ApiKeyScopeArg::AuditOnly => tritond_client::types::ApiKeyScope::AuditOnly,
+            ApiKeyScopeArg::Agent => tritond_client::types::ApiKeyScope::Agent,
         }
     }
 }
