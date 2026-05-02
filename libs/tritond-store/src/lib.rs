@@ -31,11 +31,11 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    ApiKey, ApiKeyView, Federation, IdpConfig, IdpConfigView, Image, Instance, JobKind, JobOutcome,
-    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING,
-    Vpc,
+    ApiKey, ApiKeyView, Disk, DiskKind, Federation, IdpConfig, IdpConfigView, Image, Instance,
+    InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
+    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey, User,
+    UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 use async_trait::async_trait;
@@ -389,7 +389,8 @@ pub trait Store: Send + Sync + 'static {
     // Instances (project-scoped, with lifecycle state machine)
     // ------------------------------------------------------------------
 
-    /// Create an instance, atomically creating its primary NIC.
+    /// Create an instance, atomically creating its primary NIC and
+    /// boot Disk.
     ///
     /// The store enforces structural invariants:
     ///
@@ -407,13 +408,13 @@ pub trait Store: Send + Sync + 'static {
     ///   [`StoreError::Conflict`].
     ///
     /// On success the instance is created with `lifecycle =
-    /// Pending` and a primary NIC named `"primary"` is allocated:
-    /// MAC is randomly generated; primary IPv4 / IPv6 are allocated
-    /// from the parent subnet's CIDR (each family allocated only
-    /// when the subnet has that family). NIC creation is atomic
-    /// with instance creation — both records exist or neither
-    /// does. If subnet IP pool exhaustion occurs, returns
-    /// [`StoreError::Backend`] (operationally unreachable for v0).
+    /// Pending`, the primary NIC named `"primary"` is allocated
+    /// (MAC randomly generated; IPv4/IPv6 from the parent subnet),
+    /// and the boot Disk named `"boot"` is created sized to the
+    /// source image and tagged with that image's id. All three
+    /// records are written in a single transaction — either all
+    /// exist or none do. Subnet IP exhaustion → [`StoreError::Backend`]
+    /// (operationally unreachable for v0).
     ///
     /// The caller is expected to have validated `cpu > 0` and
     /// `memory_bytes > 0` at the API edge.
@@ -422,7 +423,7 @@ pub trait Store: Send + Sync + 'static {
         silo_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
-    ) -> Result<(Instance, Nic), StoreError>;
+    ) -> Result<InstanceCreateResult, StoreError>;
 
     /// Look up an instance by id.
     async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError>;
@@ -439,9 +440,10 @@ pub trait Store: Send + Sync + 'static {
     /// stop a Running instance before deletion. Returns
     /// [`StoreError::NotFound`] if the id does not exist.
     ///
-    /// Cascades to the instance's NICs: each NIC record is
-    /// removed and its IPv4 / IPv6 allocations are freed back to
-    /// the parent subnet's pool, all in the same transaction.
+    /// Cascades to the instance's NICs and Disks: each NIC record
+    /// is removed, its IPv4 / IPv6 allocations freed back to the
+    /// parent subnet's pool, every disk record is removed, all in
+    /// the same transaction.
     async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError>;
 
     /// Atomic compare-and-set on an instance's lifecycle. Reads the
@@ -476,6 +478,20 @@ pub trait Store: Send + Sync + 'static {
     /// unspecified; Phase 0 produces exactly one NIC per instance
     /// (the auto-created `"primary"`).
     async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Disks (instance-scoped, auto-created at instance create)
+    // ------------------------------------------------------------------
+
+    /// Look up a Disk by id. Returns [`StoreError::NotFound`] when
+    /// no such Disk exists. Handlers add silo + project + instance
+    /// id rechecks on top.
+    async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError>;
+
+    /// List the Disks attached to a single instance. Order is
+    /// unspecified; Phase 0 produces exactly one Disk per instance
+    /// (the auto-created `"boot"`).
+    async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError>;
 
     // ------------------------------------------------------------------
     // Provisioning jobs (FIFO queue consumed by an agent)

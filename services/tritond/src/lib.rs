@@ -35,10 +35,11 @@ use dropshot::{
 use tritond_api::{
     ApiKeyCreated, ApiKeyPath, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig, RefreshRequest,
-    SiloImagePath, SiloPath, SiloProjectInstanceNicPath, SiloProjectInstancePath, SiloProjectPath,
-    SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
+    SiloImagePath, SiloPath, SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath,
+    SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
+    SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, IdpConfigView, Image, Instance, JobKind, LifecycleState,
+        ApiKeyView, AuditEvent, Disk, IdpConfigView, Image, Instance, JobKind, LifecycleState,
         LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo,
         NewSshKey, NewSubnet, NewVpc, Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
     },
@@ -1768,23 +1769,22 @@ impl TritondApi for TritondServiceImpl {
             .await);
         }
 
-        let (instance, _primary_nic) =
-            match ctx.store.create_instance(silo_id, project_id, req).await {
-                Ok(pair) => pair,
-                Err(e) => {
-                    ctx.audit
-                        .record_mutation(
-                            &principal,
-                            Action::InstanceCreate,
-                            request_id,
-                            None,
-                            store_error_to_audit_outcome(&e),
-                            serde_json::Value::Null,
-                        )
-                        .await;
-                    return Err(store_error_to_http(e));
-                }
-            };
+        let instance = match ctx.store.create_instance(silo_id, project_id, req).await {
+            Ok(result) => result.instance,
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::InstanceCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                return Err(store_error_to_http(e));
+            }
+        };
 
         // Enqueue the provisioning job. The stub provisioner (or
         // a real per-CN agent in the future) will pick it up and
@@ -2050,6 +2050,77 @@ impl TritondApi for TritondServiceImpl {
             return Err(not_found());
         }
         Ok(HttpResponseOk(nic))
+    }
+
+    async fn list_instance_disks(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectInstancePath {
+            silo_id,
+            project_id,
+            instance_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DiskList,
+            silo_id,
+        )
+        .await?;
+        // Defence-in-depth: instance must live in path silo+project.
+        let instance = ctx
+            .store
+            .get_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if instance.silo_id != silo_id || instance.project_id != project_id {
+            return Err(not_found());
+        }
+        let disks = ctx
+            .store
+            .list_disks_for_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(disks))
+    }
+
+    async fn get_instance_disk(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstanceDiskPath>,
+    ) -> Result<HttpResponseOk<Disk>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloProjectInstanceDiskPath {
+            silo_id,
+            project_id,
+            instance_id,
+            disk_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DiskGet,
+            silo_id,
+        )
+        .await?;
+        let disk = ctx
+            .store
+            .get_disk(disk_id)
+            .await
+            .map_err(store_error_to_http)?;
+        // Defence-in-depth on all three parent ids.
+        if disk.silo_id != silo_id
+            || disk.project_id != project_id
+            || disk.instance_id != instance_id
+        {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(disk))
     }
 }
 

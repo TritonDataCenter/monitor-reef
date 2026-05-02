@@ -895,6 +895,68 @@ pub fn generate_mac<R: rand::Rng>(rng: &mut R) -> String {
     )
 }
 
+/// What a disk is for. Phase 0 ships only `Boot` disks (auto-created
+/// from the instance's image at instance create time). `Data` is
+/// reserved for the future multi-disk attach slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum DiskKind {
+    /// Bootable; sourced from an Image. The instance boots from this
+    /// disk on first start.
+    Boot,
+    /// Blank persistent storage attached to the instance. Reserved
+    /// for the future multi-disk slice; not yet exercised.
+    Data,
+}
+
+/// Bundled result of a successful [`crate::Store::create_instance`].
+/// Surfaces every record the store creates atomically with the
+/// instance.
+///
+/// Phase 0 always returns exactly one NIC (the auto-created
+/// `"primary"`) and one Disk (the auto-created `"boot"`). The
+/// vectors are additive — when multi-NIC / multi-disk attach lands
+/// as a follow-on slice, callers don't need to change shape; they
+/// just observe more entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstanceCreateResult {
+    pub instance: Instance,
+    pub nics: Vec<Nic>,
+    pub disks: Vec<Disk>,
+}
+
+/// Per-instance persistent storage. Phase 0 auto-creates a single
+/// boot disk per instance, sized to the source image and tagged
+/// with that image's id. The disk record is the metadata view; the
+/// actual content (zfs dataset, mantafs object, etc.) is materialized
+/// by the agent at provisioning time.
+///
+/// Multi-disk attach (data disks beyond boot) lands as a follow-on
+/// slice. The wire shape here is stable across that change — a
+/// `kind: Data` disk is a strict superset of what `Boot` carries
+/// once `source_image_id` is allowed to be `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Disk {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub instance_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub kind: DiskKind,
+    /// Total size in bytes. Boot disks default to `image.size_bytes`;
+    /// future data disks accept an explicit operator-supplied size.
+    pub size_bytes: u64,
+    /// Image the boot disk was sourced from. `Some` for `Boot` disks
+    /// that came from a registered image; `None` for blank `Data`
+    /// disks (Phase 0 has no callers that produce `None`, but the
+    /// type allows it for the multi-disk slice).
+    #[serde(default)]
+    pub source_image_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Cluster-level system keys. Phase 0 has exactly one
 /// (`SystemKey::JwtSigning`); future entries will include the
 /// transit-engine master key and any per-silo OIDC client secrets.

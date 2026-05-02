@@ -19,10 +19,11 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, Instance, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError,
-    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, Disk, DiskKind, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome,
+    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -86,6 +87,7 @@ struct Inner {
     /// lowest-numbered free address.
     allocated_ipv4_by_subnet: HashMap<Uuid, HashSet<Ipv4Addr>>,
     allocated_ipv6_by_subnet: HashMap<Uuid, HashSet<Ipv6Addr>>,
+    disks_by_id: HashMap<Uuid, Disk>,
 }
 
 /// In-process [`Store`] implementation.
@@ -738,7 +740,7 @@ impl Store for MemStore {
         silo_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
-    ) -> Result<(Instance, Nic), StoreError> {
+    ) -> Result<InstanceCreateResult, StoreError> {
         let mut guard = self.inner.write().await;
 
         // Project must exist and be in the named silo.
@@ -758,6 +760,7 @@ impl Store for MemStore {
         if image.silo_id != silo_id {
             return Err(StoreError::NotFound);
         }
+        let image = image.clone();
 
         // Subnet must exist and live under this same silo+project.
         let subnet = guard
@@ -844,12 +847,29 @@ impl Store for MemStore {
             created_at: now,
             updated_at: now,
         };
+        let boot_disk = Disk {
+            id: Uuid::new_v4(),
+            silo_id,
+            project_id,
+            instance_id,
+            name: "boot".to_string(),
+            description: format!("Boot disk for instance {}", instance.name),
+            kind: DiskKind::Boot,
+            size_bytes: image.size_bytes,
+            source_image_id: Some(image.id),
+            created_at: now,
+        };
         guard
             .instance_id_by_project_name
             .insert(name_key, instance.id);
         guard.instances_by_id.insert(instance.id, instance.clone());
         guard.nics_by_id.insert(nic.id, nic.clone());
-        Ok((instance, nic))
+        guard.disks_by_id.insert(boot_disk.id, boot_disk.clone());
+        Ok(InstanceCreateResult {
+            instance,
+            nics: vec![nic],
+            disks: vec![boot_disk],
+        })
     }
 
     async fn get_instance(&self, instance_id: Uuid) -> Result<Instance, StoreError> {
@@ -922,6 +942,18 @@ impl Store for MemStore {
             }
         }
 
+        // Cascade disks too. No allocator state for disks (unlike
+        // NIC IPs); just drop the records.
+        let disk_ids: Vec<Uuid> = guard
+            .disks_by_id
+            .values()
+            .filter(|d| d.instance_id == instance_id)
+            .map(|d| d.id)
+            .collect();
+        for disk_id in disk_ids {
+            guard.disks_by_id.remove(&disk_id);
+        }
+
         guard.instances_by_id.remove(&instance_id);
         guard
             .instance_id_by_project_name
@@ -966,6 +998,25 @@ impl Store for MemStore {
             .nics_by_id
             .values()
             .filter(|n| n.instance_id == instance_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .disks_by_id
+            .get(&disk_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .disks_by_id
+            .values()
+            .filter(|d| d.instance_id == instance_id)
             .cloned()
             .collect())
     }
@@ -2429,7 +2480,7 @@ mod tests {
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
 
-        let (instance, _nic) = store
+        let InstanceCreateResult { instance, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2557,7 +2608,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, _nic) = store
+        let InstanceCreateResult { instance, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2585,7 +2636,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, _nic) = store
+        let InstanceCreateResult { instance, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2610,7 +2661,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, _nic) = store
+        let InstanceCreateResult { instance, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2647,7 +2698,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, _nic) = store
+        let InstanceCreateResult { instance, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2687,7 +2738,7 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, _nic) = store
+        let InstanceCreateResult { instance, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2716,7 +2767,11 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, nic) = store
+        let InstanceCreateResult {
+            instance,
+            nics,
+            disks: _disks,
+        } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2724,6 +2779,8 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(nics.len(), 1);
+        let nic = &nics[0];
         assert_eq!(nic.instance_id, instance.id);
         assert_eq!(nic.subnet_id, subnet_id);
         assert_eq!(nic.name, "primary");
@@ -2752,7 +2809,11 @@ mod tests {
         let store = MemStore::new();
         let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
-        let (instance, nic) = store
+        let InstanceCreateResult {
+            instance,
+            nics,
+            disks: _disks,
+        } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2760,6 +2821,7 @@ mod tests {
             )
             .await
             .unwrap();
+        let nic = &nics[0];
         let original_ip = nic.primary_ipv4.unwrap();
         // Drive Pending → Stopped so delete is allowed.
         store
@@ -2781,7 +2843,7 @@ mod tests {
 
         // Re-creating an instance under the same subnet picks up the
         // freed IP (lowest free is the one we just released).
-        let (_, new_nic) = store
+        let InstanceCreateResult { nics: new_nics, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2789,7 +2851,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(new_nic.primary_ipv4, Some(original_ip));
+        assert_eq!(new_nics[0].primary_ipv4, Some(original_ip));
     }
 
     #[tokio::test]
@@ -2835,7 +2897,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let (_, nic) = store
+        let InstanceCreateResult { nics, .. } = store
             .create_instance(
                 silo_id,
                 project_id,
@@ -2843,8 +2905,72 @@ mod tests {
             )
             .await
             .unwrap();
+        let nic = &nics[0];
         assert!(nic.primary_ipv4.is_some());
         assert!(nic.primary_ipv6.is_some());
+    }
+
+    #[tokio::test]
+    async fn instance_create_returns_boot_disk_sized_to_image() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult {
+            instance, disks, ..
+        } = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        assert_eq!(disks.len(), 1);
+        let boot = &disks[0];
+        assert_eq!(boot.instance_id, instance.id);
+        assert_eq!(boot.name, "boot");
+        assert_eq!(boot.kind, DiskKind::Boot);
+        assert_eq!(boot.source_image_id, Some(image_id));
+        // The fixture image is 1_000_000_000 bytes.
+        assert_eq!(boot.size_bytes, 1_000_000_000);
+
+        // list_disks_for_instance returns the boot disk.
+        let listed = store.list_disks_for_instance(instance.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, boot.id);
+    }
+
+    #[tokio::test]
+    async fn delete_instance_cascades_to_boot_disk() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult {
+            instance, disks, ..
+        } = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let boot_id = disks[0].id;
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Stopped,
+            )
+            .await
+            .unwrap();
+        store.delete_instance(instance.id).await.unwrap();
+
+        let err = store
+            .get_disk(boot_id)
+            .await
+            .expect_err("boot disk should be cascade-deleted");
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     use crate::JobKind;

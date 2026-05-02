@@ -593,6 +593,191 @@ pub mod types {
         }
     }
 
+    #[doc = "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized to the source image and tagged with that image's id. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized to the source image and tagged with that image's id. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\\n\\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"silo_id\","]
+    #[doc = "    \"size_bytes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/DiskKind\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"size_bytes\": {"]
+    #[doc = "      \"description\": \"Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"source_image_id\": {"]
+    #[doc = "      \"description\": \"Image the boot disk was sourced from. `Some` for `Boot` disks that came from a registered image; `None` for blank `Data` disks (Phase 0 has no callers that produce `None`, but the type allows it for the multi-disk slice).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Disk {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub instance_id: ::uuid::Uuid,
+        pub kind: DiskKind,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        pub silo_id: ::uuid::Uuid,
+        #[doc = "Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size."]
+        pub size_bytes: u64,
+        #[doc = "Image the boot disk was sourced from. `Some` for `Boot` disks that came from a registered image; `None` for blank `Data` disks (Phase 0 has no callers that produce `None`, but the type allows it for the multi-disk slice)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_image_id: ::std::option::Option<::uuid::Uuid>,
+    }
+
+    impl Disk {
+        pub fn builder() -> builder::Disk {
+            Default::default()
+        }
+    }
+
+    #[doc = "What a disk is for. Phase 0 ships only `Boot` disks (auto-created from the instance's image at instance create time). `Data` is reserved for the future multi-disk attach slice."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"What a disk is for. Phase 0 ships only `Boot` disks (auto-created from the instance's image at instance create time). `Data` is reserved for the future multi-disk attach slice.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Bootable; sourced from an Image. The instance boots from this disk on first start.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"boot\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Blank persistent storage attached to the instance. Reserved for the future multi-disk slice; not yet exercised.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"data\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum DiskKind {
+        #[doc = "Bootable; sourced from an Image. The instance boots from this disk on first start."]
+        #[serde(rename = "boot")]
+        Boot,
+        #[doc = "Blank persistent storage attached to the instance. Reserved for the future multi-disk slice; not yet exercised."]
+        #[serde(rename = "data")]
+        Data,
+    }
+
+    impl ::std::fmt::Display for DiskKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Boot => f.write_str("boot"),
+                Self::Data => f.write_str("data"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for DiskKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "boot" => Ok(Self::Boot),
+                "data" => Ok(Self::Data),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for DiskKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for DiskKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for DiskKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Error information from a response."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3010,6 +3195,179 @@ pub mod types {
                 Self {
                     hash: Ok(value.hash),
                     seq: Ok(value.seq),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct Disk {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<super::DiskKind, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            size_bytes: ::std::result::Result<u64, ::std::string::String>,
+            source_image_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Disk {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    size_bytes: Err("no value supplied for size_bytes".to_string()),
+                    source_image_id: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl Disk {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::DiskKind>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+            pub fn size_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size_bytes: {e}"));
+                self
+            }
+            pub fn source_image_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_image_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for source_image_id: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Disk> for super::Disk {
+            type Error = super::error::ConversionError;
+            fn try_from(value: Disk) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    instance_id: value.instance_id?,
+                    kind: value.kind?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    silo_id: value.silo_id?,
+                    size_bytes: value.size_bytes?,
+                    source_image_id: value.source_image_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Disk> for Disk {
+            fn from(value: super::Disk) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    instance_id: Ok(value.instance_id),
+                    kind: Ok(value.kind),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    silo_id: Ok(value.silo_id),
+                    size_bytes: Ok(value.size_bytes),
+                    source_image_id: Ok(value.source_image_id),
                 }
             }
         }
@@ -5871,6 +6229,16 @@ impl Client {
         builder::DeleteProjectInstance::new(self)
     }
 
+    #[doc = "List the Disks attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks`\n\n```ignore\nlet response = client.list_instance_disks()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn list_instance_disks(&self) -> builder::ListInstanceDisks<'_> {
+        builder::ListInstanceDisks::new(self)
+    }
+
+    #[doc = "Read a single Disk. Returns 404 if the Disk does not exist\n\nor belongs to a different silo, project, or instance.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`\n\n```ignore\nlet response = client.get_instance_disk()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .disk_id(disk_id)\n    .send()\n    .await;\n```"]
+    pub fn get_instance_disk(&self) -> builder::GetInstanceDisk<'_> {
+        builder::GetInstanceDisk::new(self)
+    }
+
     #[doc = "List the NICs attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`\n\n```ignore\nlet response = client.list_instance_nics()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn list_instance_nics(&self) -> builder::ListInstanceNics<'_> {
         builder::ListInstanceNics::new(self)
@@ -8108,6 +8476,227 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_instance_disks`]\n\n[`Client::list_instance_disks`]: super::Client::list_instance_disks"]
+    #[derive(Debug, Clone)]
+    pub struct ListInstanceDisks<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListInstanceDisks<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Disk>>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                instance_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/instances/{}/disks",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_instance_disks",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_instance_disk`]\n\n[`Client::get_instance_disk`]: super::Client::get_instance_disk"]
+    #[derive(Debug, Clone)]
+    pub struct GetInstanceDisk<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        disk_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetInstanceDisk<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                disk_id: Err("disk_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn disk_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.disk_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for disk_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                project_id,
+                instance_id,
+                disk_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let disk_id = disk_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/projects/{}/instances/{}/disks/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+                encode_path(&disk_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_instance_disk",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

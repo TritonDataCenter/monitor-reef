@@ -28,9 +28,9 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, IdpConfigView, Image, Instance,
-    NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
-    Project, Quota, Silo, SshKey, Subnet, Vpc,
+    ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, IdpConfigView, Image,
+    Instance, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc,
+    Nic, Project, Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -161,6 +161,16 @@ pub struct SiloProjectInstanceNicPath {
     pub project_id: Uuid,
     pub instance_id: Uuid,
     pub nic_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single Disk
+/// belonging to an instance.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloProjectInstanceDiskPath {
+    pub silo_id: Uuid,
+    pub project_id: Uuid,
+    pub instance_id: Uuid,
+    pub disk_id: Uuid,
 }
 
 /// Query parameters for `GET /v2/audit/events`.
@@ -808,4 +818,29 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstanceNicPath>,
     ) -> Result<HttpResponseOk<Nic>, HttpError>;
+
+    /// List the Disks attached to an instance. Phase 0 produces
+    /// exactly one (the auto-created `"boot"`); future multi-disk
+    /// attach lands as a follow-on slice.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks",
+        tags = ["disks"],
+    }]
+    async fn list_instance_disks(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstancePath>,
+    ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError>;
+
+    /// Read a single Disk. Returns 404 if the Disk does not exist
+    /// or belongs to a different silo, project, or instance.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}",
+        tags = ["disks"],
+    }]
+    async fn get_instance_disk(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloProjectInstanceDiskPath>,
+    ) -> Result<HttpResponseOk<Disk>, HttpError>;
 }

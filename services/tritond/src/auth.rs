@@ -113,7 +113,9 @@ permit(
         Action::"instance_stop",
         Action::"instance_restart",
         Action::"nic_list",
-        Action::"nic_get"
+        Action::"nic_get",
+        Action::"disk_list",
+        Action::"disk_get"
     ],
     resource
 ) when {
@@ -249,6 +251,8 @@ pub enum Action {
     InstanceRestart,
     NicList,
     NicGet,
+    DiskList,
+    DiskGet,
 }
 
 impl Action {
@@ -304,6 +308,8 @@ impl Action {
             Action::InstanceRestart => "instance_restart",
             Action::NicList => "nic_list",
             Action::NicGet => "nic_get",
+            Action::DiskList => "disk_list",
+            Action::DiskGet => "disk_get",
         }
     }
 

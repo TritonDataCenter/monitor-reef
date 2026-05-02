@@ -1110,6 +1110,133 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks": {
+      "get": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "List the Disks attached to an instance. Phase 0 produces",
+        "description": "exactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.",
+        "operationId": "list_instance_disks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Disk",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Disk"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}": {
+      "get": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "Read a single Disk. Returns 404 if the Disk does not exist",
+        "description": "or belongs to a different silo, project, or instance.",
+        "operationId": "get_instance_disk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disk_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Disk"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics": {
       "get": {
         "tags": [
@@ -2477,6 +2604,84 @@
           }
         ]
       },
+      "Disk": {
+        "description": "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized to the source image and tagged with that image's id. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DiskKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "size_bytes": {
+            "description": "Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "source_image_id": {
+            "nullable": true,
+            "description": "Image the boot disk was sourced from. `Some` for `Boot` disks that came from a registered image; `None` for blank `Data` disks (Phase 0 has no callers that produce `None`, but the type allows it for the multi-disk slice).",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "instance_id",
+          "kind",
+          "name",
+          "project_id",
+          "silo_id",
+          "size_bytes"
+        ]
+      },
+      "DiskKind": {
+        "description": "What a disk is for. Phase 0 ships only `Boot` disks (auto-created from the instance's image at instance create time). `Data` is reserved for the future multi-disk attach slice.",
+        "oneOf": [
+          {
+            "description": "Bootable; sourced from an Image. The instance boots from this disk on first start.",
+            "type": "string",
+            "enum": [
+              "boot"
+            ]
+          },
+          {
+            "description": "Blank persistent storage attached to the instance. Reserved for the future multi-disk slice; not yet exercised.",
+            "type": "string",
+            "enum": [
+              "data"
+            ]
+          }
+        ]
+      },
       "Error": {
         "description": "Error information from a response.",
         "type": "object",
@@ -3583,6 +3788,9 @@
     },
     {
       "name": "auth"
+    },
+    {
+      "name": "disks"
     },
     {
       "name": "images"

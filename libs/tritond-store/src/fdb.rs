@@ -59,6 +59,8 @@
 //! nic/in_instance/<inst>/<nic>      -> empty (membership index)
 //! nic/ip_alloc/<subnet>/v4/<addr>   -> empty (allocation index, v4)
 //! nic/ip_alloc/<subnet>/v6/<addr>   -> empty (allocation index, v6)
+//! disk/by_id/<uuid>                 -> JSON-encoded Disk
+//! disk/in_instance/<inst>/<disk>    -> empty (membership index)
 //! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
 //! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
 //! job/seq/counter                   -> next seq, big-endian u64
@@ -77,10 +79,11 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    ApiKey, IdpConfig, Image, Instance, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError,
-    Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    ApiKey, Disk, DiskKind, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome,
+    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewImage, NewInstance, NewJob,
+    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -322,6 +325,18 @@ impl FdbStore {
 
     fn nic_ip_alloc_v6_prefix(subnet_id: Uuid) -> Vec<u8> {
         format!("nic/ip_alloc/{subnet_id}/v6/").into_bytes()
+    }
+
+    fn disk_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("disk/by_id/{id}").into_bytes()
+    }
+
+    fn disk_in_instance_key(instance_id: Uuid, disk_id: Uuid) -> Vec<u8> {
+        format!("disk/in_instance/{instance_id}/{disk_id}").into_bytes()
+    }
+
+    fn disk_in_instance_prefix(instance_id: Uuid) -> Vec<u8> {
+        format!("disk/in_instance/{instance_id}/").into_bytes()
     }
 
     fn job_by_id_key(id: Uuid) -> Vec<u8> {
@@ -1900,7 +1915,7 @@ impl Store for FdbStore {
         silo_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
-    ) -> Result<(Instance, Nic), StoreError> {
+    ) -> Result<InstanceCreateResult, StoreError> {
         // All cross-resource reads + the IP allocation set scan +
         // the instance write + the NIC write + the IP-alloc index
         // writes happen in a single transaction. A concurrent
@@ -1925,14 +1940,17 @@ impl Store for FdbStore {
 
         let instance_id = Uuid::new_v4();
         let nic_id = Uuid::new_v4();
+        let disk_id = Uuid::new_v4();
         let by_id_key = Self::instance_by_id_key(instance_id);
         let in_project_key = Self::instance_in_project_key(project_id, instance_id);
         let nic_by_id_key = Self::nic_by_id_key(nic_id);
         let nic_in_instance_key = Self::nic_in_instance_key(instance_id, nic_id);
+        let disk_by_id_key = Self::disk_by_id_key(disk_id);
+        let disk_in_instance_key = Self::disk_in_instance_key(instance_id, disk_id);
         let instance_id_str = instance_id.to_string();
 
         enum Outcome {
-            Created(Box<(Instance, Nic)>),
+            Created(Box<InstanceCreateResult>),
             ProjectMissingOrWrongSilo,
             ImageMissingOrWrongSilo,
             SubnetMissingOrWrongParent,
@@ -1954,6 +1972,8 @@ impl Store for FdbStore {
                 let in_project_key = in_project_key.clone();
                 let nic_by_id_key = nic_by_id_key.clone();
                 let nic_in_instance_key = nic_in_instance_key.clone();
+                let disk_by_id_key = disk_by_id_key.clone();
+                let disk_in_instance_key = disk_in_instance_key.clone();
                 let v4_begin = v4_begin.clone();
                 let v4_end = v4_end.clone();
                 let v6_begin = v6_begin.clone();
@@ -2100,6 +2120,18 @@ impl Store for FdbStore {
                         created_at: now,
                         updated_at: now,
                     };
+                    let boot_disk = Disk {
+                        id: disk_id,
+                        silo_id,
+                        project_id,
+                        instance_id,
+                        name: "boot".to_string(),
+                        description: format!("Boot disk for instance {}", instance.name),
+                        kind: DiskKind::Boot,
+                        size_bytes: image.size_bytes,
+                        source_image_id: Some(image.id),
+                        created_at: now,
+                    };
                     let instance_value = match serde_json::to_vec(&instance) {
                         Ok(v) => v,
                         Err(_) => return Ok(Outcome::NameTaken),
@@ -2108,11 +2140,17 @@ impl Store for FdbStore {
                         Ok(v) => v,
                         Err(_) => return Ok(Outcome::NameTaken),
                     };
+                    let disk_value = match serde_json::to_vec(&boot_disk) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::NameTaken),
+                    };
                     tr.set(&by_id_key, &instance_value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_project_key, b"");
                     tr.set(&nic_by_id_key, &nic_value);
                     tr.set(&nic_in_instance_key, b"");
+                    tr.set(&disk_by_id_key, &disk_value);
+                    tr.set(&disk_in_instance_key, b"");
                     if let Some(ip) = primary_ipv4 {
                         let alloc_key = Self::nic_ip_alloc_v4_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
@@ -2121,7 +2159,11 @@ impl Store for FdbStore {
                         let alloc_key = Self::nic_ip_alloc_v6_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
                     }
-                    Ok(Outcome::Created(Box::new((instance, nic))))
+                    Ok(Outcome::Created(Box::new(InstanceCreateResult {
+                        instance,
+                        nics: vec![nic],
+                        disks: vec![boot_disk],
+                    })))
                 }
             })
             .await;
@@ -2203,6 +2245,9 @@ impl Store for FdbStore {
         let nic_prefix = Self::nic_in_instance_prefix(instance_id);
         let (nic_begin, nic_end) = prefix_range(&nic_prefix);
         let nic_prefix_len = nic_prefix.len();
+        let disk_prefix = Self::disk_in_instance_prefix(instance_id);
+        let (disk_begin, disk_end) = prefix_range(&disk_prefix);
+        let disk_prefix_len = disk_prefix.len();
 
         enum Outcome {
             Deleted,
@@ -2215,6 +2260,8 @@ impl Store for FdbStore {
                 let by_id_key = by_id_key.clone();
                 let nic_begin = nic_begin.clone();
                 let nic_end = nic_end.clone();
+                let disk_begin = disk_begin.clone();
+                let disk_end = disk_end.clone();
                 async move {
                     let bytes = match tr.get(&by_id_key, false).await? {
                         Some(b) => b,
@@ -2289,6 +2336,31 @@ impl Store for FdbStore {
                         }
                         tr.clear(&nic_key);
                         tr.clear(&nic_in_instance_key);
+                    }
+
+                    // Cascade disks: discover, then clear each
+                    // disk record + its membership entry.
+                    let disk_opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(disk_begin),
+                        end: KeySelector::first_greater_or_equal(disk_end),
+                        ..RangeOption::default()
+                    };
+                    let disk_kvs = tr.get_range(&disk_opt, 1, false).await?;
+                    let mut disk_ids: Vec<Uuid> = Vec::new();
+                    for kv in disk_kvs.iter() {
+                        let suffix = &kv.key()[disk_prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(id) = Uuid::parse_str(s)
+                        {
+                            disk_ids.push(id);
+                        }
+                    }
+                    drop(disk_kvs);
+                    for disk_id in disk_ids {
+                        let dk = format!("disk/by_id/{disk_id}").into_bytes();
+                        let dki = format!("disk/in_instance/{instance_id}/{disk_id}").into_bytes();
+                        tr.clear(&dk);
+                        tr.clear(&dki);
                     }
 
                     tr.clear(&by_id_key);
@@ -2369,6 +2441,57 @@ impl Store for FdbStore {
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))
+    }
+
+    async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError> {
+        let key = Self::disk_by_id_key(disk_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize disk: {e}")))
+    }
+
+    async fn list_disks_for_instance(&self, instance_id: Uuid) -> Result<Vec<Disk>, StoreError> {
+        let prefix = Self::disk_in_instance_prefix(instance_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("disk index uuid: {e}")))?;
+            let by_id_key = Self::disk_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let disk: Disk = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize disk: {e}")))?;
+                out.push(disk);
+            }
+        }
+        Ok(out)
     }
 
     async fn list_nics_for_instance(&self, instance_id: Uuid) -> Result<Vec<Nic>, StoreError> {

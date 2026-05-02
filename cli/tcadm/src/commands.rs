@@ -628,6 +628,90 @@ pub async fn silo_project_instance_delete(
     Ok(())
 }
 
+/// List the disks attached to an instance.
+pub async fn silo_project_instance_disk_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let disks = client
+        .list_instance_disks()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("list disks")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&disks)?);
+        return Ok(());
+    }
+    if disks.is_empty() {
+        println!("(no disks)");
+        return Ok(());
+    }
+    for d in disks {
+        println!(
+            "{}  {:?}  {}MB  {}",
+            d.id,
+            d.kind,
+            d.size_bytes / 1_048_576,
+            d.name
+        );
+    }
+    Ok(())
+}
+
+/// Read a single disk.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn silo_project_instance_disk_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    disk_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let disk = client
+        .get_instance_disk()
+        .silo_id(silo_id)
+        .project_id(project_id)
+        .instance_id(instance_id)
+        .disk_id(disk_id)
+        .send()
+        .await
+        .context("get disk")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&disk)?);
+    } else {
+        println!("Disk {} on instance {}", disk.id, disk.instance_id);
+        println!("  name:        {}", disk.name);
+        println!("  description: {}", disk.description);
+        println!("  kind:        {:?}", disk.kind);
+        println!("  size_bytes:  {}", disk.size_bytes);
+        println!(
+            "  source_image:{}",
+            disk.source_image_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "(none)".to_string())
+        );
+        println!("  created:     {}", disk.created_at);
+    }
+    Ok(())
+}
+
 /// List the NICs attached to an instance.
 pub async fn silo_project_instance_nic_list(
     endpoint_override: Option<String>,

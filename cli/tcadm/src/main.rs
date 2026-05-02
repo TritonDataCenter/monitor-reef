@@ -325,6 +325,32 @@ enum SiloProjectInstanceCommand {
         #[command(subcommand)]
         command: SiloProjectInstanceNicCommand,
     },
+    /// Inspect disks attached to an instance.
+    Disk {
+        #[command(subcommand)]
+        command: SiloProjectInstanceDiskCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum SiloProjectInstanceDiskCommand {
+    /// List the disks attached to an instance.
+    List {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single disk.
+    Get {
+        silo_id: Uuid,
+        project_id: Uuid,
+        instance_id: Uuid,
+        disk_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -811,6 +837,42 @@ async fn main() -> Result<()> {
                         )
                         .await
                     }
+                    SiloProjectInstanceCommand::Disk { command } => match command {
+                        SiloProjectInstanceDiskCommand::List {
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        } => {
+                            commands::silo_project_instance_disk_list(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                instance_id,
+                                json,
+                            )
+                            .await
+                        }
+                        SiloProjectInstanceDiskCommand::Get {
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            disk_id,
+                            json,
+                        } => {
+                            commands::silo_project_instance_disk_get(
+                                cli.endpoint,
+                                cli.api_key,
+                                silo_id,
+                                project_id,
+                                instance_id,
+                                disk_id,
+                                json,
+                            )
+                            .await
+                        }
+                    },
                     SiloProjectInstanceCommand::Nic { command } => match command {
                         SiloProjectInstanceNicCommand::List {
                             silo_id,
