@@ -54,26 +54,35 @@ use governor::{Quota, RateLimiter};
 /// times in a row never trips it.
 pub const DEFAULT_LOGIN_QUOTA_PER_MINUTE: u32 = 10;
 
-const DEFAULT_QUOTA_NZ: NonZeroU32 = match NonZeroU32::new(DEFAULT_LOGIN_QUOTA_PER_MINUTE) {
+/// Default per-IP CN-approve quota: matches login's bucket. The
+/// approve endpoint takes a 6-character claim code (~30 bits of
+/// entropy) under a 1h TTL; the per-IP limit + the entropy +
+/// the TTL together leave the brute-force search space far out
+/// of reach.
+pub const DEFAULT_CN_APPROVE_QUOTA_PER_MINUTE: u32 = 10;
+
+const DEFAULT_LOGIN_QUOTA_NZ: NonZeroU32 = match NonZeroU32::new(DEFAULT_LOGIN_QUOTA_PER_MINUTE) {
     Some(n) => n,
     None => panic!("DEFAULT_LOGIN_QUOTA_PER_MINUTE must be non-zero"),
 };
 
-/// Per-source-IP token bucket fronting the login endpoint.
-pub struct LoginRateLimiter {
+const DEFAULT_CN_APPROVE_QUOTA_NZ: NonZeroU32 =
+    match NonZeroU32::new(DEFAULT_CN_APPROVE_QUOTA_PER_MINUTE) {
+        Some(n) => n,
+        None => panic!("DEFAULT_CN_APPROVE_QUOTA_PER_MINUTE must be non-zero"),
+    };
+
+/// Generic per-source-IP token bucket. Used by both the login
+/// throttle and the CN-approve throttle; each gets its own
+/// instance with its own bucket-set so attackers hammering one
+/// surface don't drain the other's budget.
+pub struct IpRateLimiter {
     inner: RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>,
     clock: DefaultClock,
 }
 
-impl LoginRateLimiter {
-    /// Build a limiter at the default quota.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::with_quota(Quota::per_minute(DEFAULT_QUOTA_NZ))
-    }
-
-    /// Build a limiter at an explicit quota — used by tests that want
-    /// a tighter or looser bucket than the production default.
+impl IpRateLimiter {
+    /// Build a limiter at an explicit quota.
     #[must_use]
     pub fn with_quota(quota: Quota) -> Self {
         let clock = DefaultClock::default();
@@ -92,7 +101,26 @@ impl LoginRateLimiter {
     }
 }
 
-impl Default for LoginRateLimiter {
+/// Type alias preserved for the existing login-handler call sites;
+/// internally identical to [`IpRateLimiter`] but constructed with
+/// the login quota by default.
+pub type LoginRateLimiter = IpRateLimiter;
+
+impl IpRateLimiter {
+    /// Build a limiter at the default login quota.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_quota(Quota::per_minute(DEFAULT_LOGIN_QUOTA_NZ))
+    }
+
+    /// Build a limiter at the default CN-approve quota.
+    #[must_use]
+    pub fn for_cn_approve() -> Self {
+        Self::with_quota(Quota::per_minute(DEFAULT_CN_APPROVE_QUOTA_NZ))
+    }
+}
+
+impl Default for IpRateLimiter {
     fn default() -> Self {
         Self::new()
     }

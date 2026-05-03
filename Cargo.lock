@@ -5662,6 +5662,7 @@ dependencies = [
  "dropshot",
  "schemars 0.8.22",
  "serde",
+ "serde_json",
  "tritond-audit",
  "tritond-auth",
  "tritond-store",

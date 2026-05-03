@@ -3760,8 +3760,8 @@ impl Store for FdbStore {
     ) -> Result<Cn, StoreError> {
         enum Outcome {
             Approved(Box<Cn>),
-            NotPending,
-            CredentialPending,
+            NotFound,
+            AlreadyBound,
         }
 
         let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
@@ -3773,25 +3773,37 @@ impl Store for FdbStore {
                 async move {
                     let bytes = match tr.get(&by_uuid_key, false).await? {
                         Some(b) => b,
-                        None => return Ok(Outcome::NotPending),
+                        None => return Ok(Outcome::NotFound),
                     };
                     let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
                         FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
                     })?;
-                    if cn.state != CnState::Pending {
-                        return Ok(Outcome::NotPending);
+                    // Disabled: treat as gone.
+                    if cn.state == CnState::Disabled {
+                        return Ok(Outcome::NotFound);
                     }
-                    if cn.pending_credential.is_some() {
-                        return Ok(Outcome::CredentialPending);
+                    // Already bound: programmer error — never re-mint
+                    // without going through disable first.
+                    if cn.bound_api_key_id.is_some() {
+                        return Ok(Outcome::AlreadyBound);
                     }
+                    let prev_state = cn.state;
                     if let Some(old_code) = &cn.claim_code {
                         tr.clear(&Self::cn_by_claim_key(old_code));
                     }
-                    // Drop old by_state/pending; add by_state/approved.
-                    tr.clear(&Self::cn_by_state_key(CnState::Pending, server_uuid));
+                    // If the record was Pending, drop the by_state/pending
+                    // membership before adding the new approved one.
+                    // (Auto-approve case: register_cn already wrote
+                    // by_state/approved, so this is a no-op clear.)
+                    tr.clear(&Self::cn_by_state_key(prev_state, server_uuid));
 
                     cn.state = CnState::Approved;
-                    cn.approved_at = Some(approved_at);
+                    // Preserve approved_at when register_cn already
+                    // stamped it (auto-approve case); set it now for
+                    // the Pending → Approved transition.
+                    if cn.approved_at.is_none() {
+                        cn.approved_at = Some(approved_at);
+                    }
                     cn.claim_code = None;
                     cn.claim_code_expires_at = None;
                     cn.bound_api_key_id = Some(bound_api_key_id);
@@ -3809,9 +3821,9 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Approved(cn)) => Ok(*cn),
-            Ok(Outcome::NotPending) => Err(StoreError::NotFound),
-            Ok(Outcome::CredentialPending) => Err(StoreError::Conflict(
-                "cn already has a pending credential awaiting retrieval".to_string(),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Ok(Outcome::AlreadyBound) => Err(StoreError::Conflict(
+                "cn already has a bound api key; disable + re-approve to rotate".to_string(),
             )),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }

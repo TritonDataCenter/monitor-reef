@@ -28,10 +28,10 @@ use tritond_auth::RedactedString;
 use uuid::Uuid;
 
 use crate::types::{
-    ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, Disk, FloatingIp,
-    IdpConfigView, Image, Instance, JobKind, JobOutcome, NewFloatingIp, NewImage, NewInstance,
-    NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, Subnet, Vpc,
+    ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
+    CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
+    NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Vpc,
 };
 
 /// Liveness response.
@@ -232,6 +232,106 @@ pub struct ProvisioningBlueprint {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AuditEventPath {
     pub seq: u64,
+}
+
+// ---------------------------------------------------------------------
+// CN registration / approval (slice C)
+// ---------------------------------------------------------------------
+
+/// Request body for `POST /v2/agent/register`. Anonymous endpoint
+/// (no auth header required); the agent has no credentials yet at
+/// this point in its lifecycle.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct RegisterCnRequest {
+    /// SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity
+    /// for the entire registration record.
+    pub server_uuid: Uuid,
+    pub hostname: String,
+    /// Admin-network IPv4 (best-effort; included for operator
+    /// visibility, not used for authentication).
+    #[serde(default)]
+    pub admin_ip: Option<std::net::Ipv4Addr>,
+    /// Raw `/usr/bin/sysinfo` JSON. Opaque to tritond; surfaced via
+    /// `tcadm cn show` for operator inspection.
+    pub sysinfo: serde_json::Value,
+}
+
+/// Response body for `POST /v2/agent/register`.
+///
+/// The agent gets back its `poll_token` — needed for every
+/// subsequent call to `GET /v2/agent/register/status` — plus, when
+/// in Pending state, the `claim_code` it must display on the
+/// console for the operator to pair.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct RegisterCnResponse {
+    pub server_uuid: Uuid,
+    pub state: CnState,
+    /// `Some(...)` only when state is Pending. Formatted for human
+    /// display: `XXX-XXX`.
+    #[serde(default)]
+    pub claim_code: Option<String>,
+    #[serde(default)]
+    pub claim_code_expires_at: Option<DateTime<Utc>>,
+    pub poll_token: String,
+}
+
+/// Query string for `GET /v2/agent/register/status`. The agent
+/// long-polls this endpoint until tritond returns the API key.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct RegisterStatusQuery {
+    pub poll_token: String,
+}
+
+/// Response body for `GET /v2/agent/register/status`.
+///
+/// `api_key` is populated exactly once — on the first call after
+/// the operator approves (or auto-approve fires). Subsequent calls
+/// return `state = Approved` with `api_key = None`. The agent
+/// persists the key locally on receipt; if the agent loses the
+/// key file, an operator must `tcadm cn disable` and re-approve.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct RegisterStatusResponse {
+    pub state: CnState,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+/// Path parameter for endpoints that operate on a single CN.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CnPath {
+    pub server_uuid: Uuid,
+}
+
+/// Optional state filter for `GET /v2/cns`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CnListQuery {
+    #[serde(default)]
+    pub state: Option<CnState>,
+}
+
+/// Request body for `POST /v2/cns/approve`.
+///
+/// The operator presents the claim code displayed on the CN's
+/// console (or syslog, or the `/var/lib/tritonagent/claim-code`
+/// file). Hyphens and case are normalized server-side.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ApproveCnRequest {
+    pub code: String,
+}
+
+/// Request body for `POST /v2/cns/auto-approve`.
+///
+/// Opens (or replaces) the global auto-approve window. Bounded by
+/// both wall-time and a remaining-count budget so a forgotten
+/// window can't stay open forever; tritond clamps `duration_secs`
+/// to the 24h hard cap server-side.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct OpenAutoApproveRequest {
+    pub duration_secs: u64,
+    /// Maximum number of registrations to auto-approve before the
+    /// window closes early. `None` means "time-bound only".
+    #[serde(default)]
+    pub count: Option<u64>,
 }
 
 /// Path parameters for endpoints that operate on a single project
@@ -558,6 +658,148 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentJobPath>,
     ) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError>;
+
+    /// Self-register a compute node. Anonymous endpoint (no API
+    /// key needed) — the agent has none until approval completes.
+    /// Tritond creates a [`CnState::Pending`] record with a fresh
+    /// claim code unless the global auto-approve window is open,
+    /// in which case the record is created directly Approved and
+    /// the agent will retrieve its API key on the very next
+    /// `/register/status` long-poll.
+    ///
+    /// Idempotent on `server_uuid`: re-registration of a Pending
+    /// record rotates the claim code; re-registration of an
+    /// Approved record refreshes sysinfo without re-minting
+    /// credentials.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/register",
+        tags = ["agent"],
+    }]
+    async fn agent_register(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<RegisterCnRequest>,
+    ) -> Result<HttpResponseOk<RegisterCnResponse>, HttpError>;
+
+    /// Long-poll for the per-CN API key. Anonymous endpoint
+    /// authenticated only by holding the `poll_token` returned at
+    /// registration. Tritond holds the connection open for up to
+    /// ~30s waiting for state to flip from Pending to Approved
+    /// (or for the auto-approve credential to be wired up); on
+    /// timeout the agent re-polls.
+    ///
+    /// The `api_key` field is populated **once** — on the first
+    /// successful retrieval after approval. Subsequent calls
+    /// return `state = Approved` with `api_key = None`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/register/status",
+        tags = ["agent"],
+    }]
+    async fn agent_register_status(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<RegisterStatusQuery>,
+    ) -> Result<HttpResponseOk<RegisterStatusResponse>, HttpError>;
+
+    /// List compute nodes, optionally filtered by state. Operator
+    /// surface (root + future fleet-scoped operator role).
+    #[endpoint {
+        method = GET,
+        path = "/v2/cns",
+        tags = ["cns"],
+    }]
+    async fn list_cns(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<CnListQuery>,
+    ) -> Result<HttpResponseOk<Vec<CnView>>, HttpError>;
+
+    /// Read a single compute-node record by `server_uuid`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/cns/{server_uuid}",
+        tags = ["cns"],
+    }]
+    async fn get_cn(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// Approve a Pending compute node by claim code. Mints the
+    /// per-CN API key inside the same transaction that flips
+    /// state; the plaintext is delivered to the agent via its
+    /// long-poll on `/register/status`. Per-source-IP rate-limited.
+    ///
+    /// Returns 404 for unknown / expired / already-approved
+    /// codes (conflated to defeat enumeration). Returns 429
+    /// when the per-IP bucket is drained.
+    ///
+    /// The path is `/v2/cn-approvals` rather than nested under
+    /// `/v2/cns/...` because Dropshot's router cannot
+    /// disambiguate a literal `approve` segment from the
+    /// `{server_uuid}` parameter at the same level.
+    #[endpoint {
+        method = POST,
+        path = "/v2/cn-approvals",
+        tags = ["cns"],
+    }]
+    async fn approve_cn(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<ApproveCnRequest>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// Disable a compute node. Revokes the bound API key and
+    /// flips state to Disabled. The record is retained for audit
+    /// visibility; a second call is idempotent.
+    #[endpoint {
+        method = POST,
+        path = "/v2/cns/{server_uuid}/disable",
+        tags = ["cns"],
+    }]
+    async fn disable_cn(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// Read the current auto-approve window, if open.
+    /// Returns `200 OK` with `null` when no window is open.
+    ///
+    /// Path lives at `/v2/cn-auto-approve` rather than nested
+    /// under `/v2/cns/...` for the same reason as `/v2/cn-approvals`:
+    /// a literal `auto-approve` segment cannot coexist with the
+    /// `{server_uuid}` parameter on Dropshot's router.
+    #[endpoint {
+        method = GET,
+        path = "/v2/cn-auto-approve",
+        tags = ["cns"],
+    }]
+    async fn get_auto_approve_window(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Option<AutoApproveWindow>>, HttpError>;
+
+    /// Open (or replace) the auto-approve window. While the
+    /// window is open, new self-registrations are promoted to
+    /// Approved without operator action. Server-side cap:
+    /// `duration_secs` is clamped to 24h.
+    #[endpoint {
+        method = POST,
+        path = "/v2/cn-auto-approve",
+        tags = ["cns"],
+    }]
+    async fn open_auto_approve_window(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<OpenAutoApproveRequest>,
+    ) -> Result<HttpResponseOk<AutoApproveWindow>, HttpError>;
+
+    /// Close the auto-approve window. Idempotent; no-op when no
+    /// window is open.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/cn-auto-approve",
+        tags = ["cns"],
+    }]
+    async fn close_auto_approve_window(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// Configure the OIDC identity provider for a silo. Returns 502
     /// if the discovery document cannot be fetched, 404 if the silo

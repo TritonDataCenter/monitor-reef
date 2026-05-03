@@ -65,7 +65,13 @@ const POLICY_BUNDLE: &str = r#"
 @id("anonymous-public-actions")
 permit(
     principal,
-    action in [Action::"health", Action::"login", Action::"refresh"],
+    action in [
+        Action::"health",
+        Action::"login",
+        Action::"refresh",
+        Action::"agent_register",
+        Action::"agent_register_status"
+    ],
     resource
 );
 
@@ -284,6 +290,30 @@ pub enum Action {
     /// response. The Agent scope is the *only* path to this
     /// data: it does not require silo-scoped tenant reads.
     AgentBlueprint,
+    /// Anonymous self-registration of a compute node. Gated by
+    /// the per-source-IP rate limiter, not by Cedar credentials —
+    /// the agent has no key at this point in its lifecycle.
+    AgentRegister,
+    /// Anonymous long-poll for the per-CN API key after
+    /// registration. Authenticated only by holding the
+    /// `poll_token` returned at registration; rate-limited per IP.
+    AgentRegisterStatus,
+    /// List CN registrations. Operator surface (root-only today;
+    /// no silo dimension).
+    CnList,
+    /// Read a single CN record.
+    CnGet,
+    /// Approve a Pending CN by claim code. Mints the per-CN bound
+    /// API key.
+    CnApprove,
+    /// Disable a CN; revokes the bound key.
+    CnDisable,
+    /// Read the current auto-approve window state.
+    AutoApproveGet,
+    /// Open (or replace) the auto-approve window.
+    AutoApproveSet,
+    /// Close the auto-approve window early.
+    AutoApproveClear,
 }
 
 impl Action {
@@ -350,6 +380,15 @@ impl Action {
             Action::AgentClaim => "agent_claim",
             Action::AgentComplete => "agent_complete",
             Action::AgentBlueprint => "agent_blueprint",
+            Action::AgentRegister => "agent_register",
+            Action::AgentRegisterStatus => "agent_register_status",
+            Action::CnList => "cn_list",
+            Action::CnGet => "cn_get",
+            Action::CnApprove => "cn_approve",
+            Action::CnDisable => "cn_disable",
+            Action::AutoApproveGet => "auto_approve_get",
+            Action::AutoApproveSet => "auto_approve_set",
+            Action::AutoApproveClear => "auto_approve_clear",
         }
     }
 
@@ -787,7 +826,21 @@ fn is_read_action(action: Action) -> bool {
         // way to authorise them — see `scope_allows_action`.
         | Action::AgentClaim
         | Action::AgentComplete
-        | Action::AgentBlueprint => false,
+        | Action::AgentBlueprint
+        // Agent registration is anonymous (no key), but if a key
+        // is somehow attached the scope check should reject it
+        // outright — these aren't read actions, they create a CN
+        // record / consume a credential.
+        | Action::AgentRegister
+        | Action::AgentRegisterStatus
+        // CN management: writes change CN state; the read fns are
+        // operator-only via Cedar.
+        | Action::CnApprove
+        | Action::CnDisable
+        | Action::AutoApproveSet
+        | Action::AutoApproveClear => false,
+        // CN reads.
+        Action::CnList | Action::CnGet | Action::AutoApproveGet => true,
     }
 }
 

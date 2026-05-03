@@ -35,18 +35,20 @@ use dropshot::{
     HttpServerStarter, Path, Query, RequestContext, TypedBody,
 };
 use tritond_api::{
-    AgentJobPath, ApiKeyCreated, ApiKeyPath, AttachFloatingIpRequest, AuditEventList,
-    AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest,
-    ClaimJobResponse, CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest,
-    NewApiKey, NewIdpConfig, NewImageFromBundle, ProvisioningBlueprint, RefreshRequest,
-    SiloImagePath, SiloPath, SiloProjectFloatingIpPath, SiloProjectInstanceDiskPath,
-    SiloProjectInstanceNicPath, SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath,
-    SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
+    AgentJobPath, ApiKeyCreated, ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest,
+    AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse,
+    ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath, CompleteJobRequest, HealthResponse,
+    InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
+    OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest, RegisterCnRequest,
+    RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse, SiloImagePath, SiloPath,
+    SiloProjectFloatingIpPath, SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath,
+    SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
+    SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, Disk, FloatingIp, IdpConfigView, Image, ImageCompatibility,
-        Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage,
-        NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
-        Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Vpc,
+        ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
+        ImageCompatibility, Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind,
+        NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
+        NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -54,7 +56,10 @@ use tritond_auth::OidcConfig;
 use tritond_auth::{
     JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
-use tritond_store::{ApiKey, IdpConfig, MemStore, Store, StoreError};
+use tritond_store::{
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnState, IdpConfig, MemStore, Store,
+    StoreError, normalize_claim_code,
+};
 use uuid::Uuid;
 
 use crate::audit::AuditService;
@@ -62,7 +67,7 @@ use crate::auth::{
     Action, AuthService, authenticate_and_authorize, authenticate_and_authorize_in_silo,
     require_authenticated,
 };
-use crate::rate_limit::LoginRateLimiter;
+use crate::rate_limit::{IpRateLimiter, LoginRateLimiter};
 
 /// Service version, populated from Cargo at build time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -79,6 +84,10 @@ pub struct ApiContext {
     /// [`crate::rate_limit`] for the shape of the limiter and why it
     /// only fronts login.
     pub login_rate_limiter: Arc<LoginRateLimiter>,
+    /// Per-source-IP throttle on `POST /v2/cns/approve`. Independent
+    /// bucket-set from the login limiter so a brute-force on one
+    /// surface doesn't drain the other's budget.
+    pub cn_approve_rate_limiter: Arc<IpRateLimiter>,
     /// When `false`, [`start_server_with_context`] does *not*
     /// spawn the in-process stub provisioner. The agent integration
     /// test sets this so a real `tritonagent` (or its test stand-in)
@@ -108,9 +117,19 @@ impl ApiContext {
             auth,
             audit,
             login_rate_limiter: Arc::new(LoginRateLimiter::new()),
+            cn_approve_rate_limiter: Arc::new(IpRateLimiter::for_cn_approve()),
             spawn_in_process_provisioner: true,
             sweeper: None,
         }
+    }
+
+    /// Replace the default CN-approve rate limiter — integration
+    /// tests use this to install a tighter quota than production
+    /// without slowing the login bucket.
+    #[must_use]
+    pub fn with_cn_approve_rate_limiter(mut self, limiter: Arc<IpRateLimiter>) -> Self {
+        self.cn_approve_rate_limiter = limiter;
+        self
     }
 
     /// Enable the stale-claim sweeper at the given cadence.
@@ -2787,6 +2806,508 @@ impl TritondApi for TritondServiceImpl {
                 Err(store_error_to_http(e))
             }
         }
+    }
+
+    // ----- CN registration / approval (slice C) -----
+
+    async fn agent_register(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<RegisterCnRequest>,
+    ) -> Result<HttpResponseOk<RegisterCnResponse>, HttpError> {
+        let ctx = rqctx.context();
+        // Cedar gate (anonymous → public-actions list).
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentRegister,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        let now = chrono::Utc::now();
+
+        let cn = ctx
+            .store
+            .register_cn(
+                req.server_uuid,
+                req.hostname.clone(),
+                req.admin_ip,
+                req.sysinfo.clone(),
+                now,
+            )
+            .await
+            .map_err(store_error_to_http)?;
+
+        // Auto-approve path: register_cn returned a fresh Approved
+        // record without a bound key. Mint the key + wire it in so
+        // the agent's first long-poll can retrieve it.
+        let mut effective = cn.clone();
+        if effective.state == CnState::Approved && effective.bound_api_key_id.is_none() {
+            match mint_and_attach_cn_credential(ctx, &principal, request_id, &effective).await {
+                Ok(updated) => effective = updated,
+                Err(http) => return Err(http),
+            }
+        }
+
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::AgentRegister,
+                request_id,
+                Some(format!("Cn::\"{}\"", effective.server_uuid)),
+                AuditOutcome::Success {
+                    resource: Some(format!("Cn::\"{}\"", effective.server_uuid)),
+                },
+                serde_json::json!({
+                    "server_uuid": effective.server_uuid,
+                    "hostname": req.hostname,
+                    "admin_ip": req.admin_ip,
+                    "state": effective.state,
+                    "auto_approved": effective.state == CnState::Approved
+                        && effective.approved_at == Some(now),
+                }),
+            )
+            .await;
+
+        Ok(HttpResponseOk(RegisterCnResponse {
+            server_uuid: effective.server_uuid,
+            state: effective.state,
+            claim_code: effective
+                .claim_code
+                .as_deref()
+                .map(tritond_store::format_claim_code),
+            claim_code_expires_at: effective.claim_code_expires_at,
+            poll_token: effective.poll_token,
+        }))
+    }
+
+    async fn agent_register_status(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<RegisterStatusQuery>,
+    ) -> Result<HttpResponseOk<RegisterStatusResponse>, HttpError> {
+        let ctx = rqctx.context();
+        // Cedar gate (anonymous → public-actions list).
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentRegisterStatus,
+        )
+        .await?;
+        let q = query.into_inner();
+
+        // Long-poll: spin until state flips, an Approved record has
+        // a credential to retrieve, or we hit the deadline. The
+        // 30s wall-clock cap matches typical operator-side approve
+        // latency and keeps idle connections from accumulating.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let poll_interval = std::time::Duration::from_millis(500);
+
+        loop {
+            let cn = match ctx.store.get_cn_by_poll_token(&q.poll_token).await {
+                Ok(c) => c,
+                Err(StoreError::NotFound) => {
+                    return Err(HttpError::for_client_error(
+                        Some("NotFound".to_string()),
+                        ClientErrorStatusCode::NOT_FOUND,
+                        "unknown poll token".to_string(),
+                    ));
+                }
+                Err(e) => return Err(store_error_to_http(e)),
+            };
+
+            if cn.state == CnState::Approved {
+                let credential = ctx
+                    .store
+                    .consume_cn_pending_credential(&q.poll_token)
+                    .await
+                    .map_err(store_error_to_http)?;
+                return Ok(HttpResponseOk(RegisterStatusResponse {
+                    state: cn.state,
+                    api_key: credential,
+                }));
+            }
+            if cn.state == CnState::Disabled {
+                return Ok(HttpResponseOk(RegisterStatusResponse {
+                    state: cn.state,
+                    api_key: None,
+                }));
+            }
+
+            if std::time::Instant::now() >= deadline {
+                return Ok(HttpResponseOk(RegisterStatusResponse {
+                    state: cn.state,
+                    api_key: None,
+                }));
+            }
+            tokio::time::sleep(poll_interval).await;
+        }
+    }
+
+    async fn list_cns(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<CnListQuery>,
+    ) -> Result<HttpResponseOk<Vec<CnView>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnList)
+            .await?;
+        let cns = ctx
+            .store
+            .list_cns(query.into_inner().state)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(cns.into_iter().map(CnView::from).collect()))
+    }
+
+    async fn get_cn(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnGet)
+            .await?;
+        let cn = ctx
+            .store
+            .get_cn(path.into_inner().server_uuid)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(CnView::from(cn)))
+    }
+
+    async fn approve_cn(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<ApproveCnRequest>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError> {
+        let ctx = rqctx.context();
+        // Per-IP rate limit applies BEFORE Cedar so a hostile
+        // client without auth can't spend our cycles on Cedar
+        // evaluation. Same shape as the login limiter.
+        let source_ip = rqctx.request.remote_addr().ip();
+        if let Err(retry_after) = ctx.cn_approve_rate_limiter.check(source_ip) {
+            return Err(too_many_requests(retry_after));
+        }
+
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::CnApprove,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        let normalized = normalize_claim_code(&req.code).ok_or_else(|| {
+            HttpError::for_client_error(
+                Some("BadRequest".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "claim code must be 6 chars of Crockford base32 (XXX-XXX accepted)".to_string(),
+            )
+        })?;
+
+        let cn = match ctx.store.get_cn_by_claim_code(&normalized).await {
+            Ok(c) => c,
+            Err(StoreError::NotFound) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::CnApprove,
+                        request_id,
+                        None,
+                        AuditOutcome::ClientError {
+                            code: 404,
+                            message: "no Pending CN matches that claim code".to_string(),
+                        },
+                        serde_json::json!({"code_prefix": &normalized[..3]}),
+                    )
+                    .await;
+                return Err(HttpError::for_client_error(
+                    Some("NotFound".to_string()),
+                    ClientErrorStatusCode::NOT_FOUND,
+                    "no Pending CN matches that claim code".to_string(),
+                ));
+            }
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+
+        let updated = mint_and_attach_cn_credential(ctx, &principal, request_id, &cn).await?;
+
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::CnApprove,
+                request_id,
+                Some(format!("Cn::\"{}\"", updated.server_uuid)),
+                AuditOutcome::Success {
+                    resource: Some(format!("Cn::\"{}\"", updated.server_uuid)),
+                },
+                serde_json::json!({
+                    "server_uuid": updated.server_uuid,
+                    "hostname": updated.hostname,
+                    "bound_api_key_id": updated.bound_api_key_id,
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(CnView::from(updated)))
+    }
+
+    async fn disable_cn(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::CnDisable,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let server_uuid = path.into_inner().server_uuid;
+
+        let cn = ctx
+            .store
+            .disable_cn(server_uuid)
+            .await
+            .map_err(store_error_to_http)?;
+
+        // Best-effort revoke the bound API key. We log but don't
+        // fail the request if the delete misses — the CN record
+        // is already in Disabled state.
+        if let Some(key_id) = cn.bound_api_key_id {
+            // Look up the key so we can find its owner; the
+            // delete API requires owner_id as a defence-in-depth
+            // check. The agent-scope keys are owned by whichever
+            // operator approved the CN.
+            if let Ok(keys) = ctx.store.list_api_keys(Uuid::nil()).await {
+                // Key owner isn't queryable directly without
+                // user_id. For Phase 0 the deletion is best-effort
+                // — we look up by id across all known users via
+                // the lookup index. A future slice will add a
+                // direct delete-by-id method.
+                let _ = keys; // placeholder; key revocation is in commit C-3.
+            }
+            tracing::info!(
+                key_id = %key_id,
+                cn = %server_uuid,
+                "TODO: revoke bound api key (slice C-3)"
+            );
+        }
+
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::CnDisable,
+                request_id,
+                Some(format!("Cn::\"{server_uuid}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("Cn::\"{server_uuid}\"")),
+                },
+                serde_json::json!({
+                    "server_uuid": server_uuid,
+                    "previous_state": cn.state,
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(CnView::from(cn)))
+    }
+
+    async fn get_auto_approve_window(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Option<AutoApproveWindow>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AutoApproveGet,
+        )
+        .await?;
+        let window = ctx
+            .store
+            .get_auto_approve_window()
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(window))
+    }
+
+    async fn open_auto_approve_window(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<OpenAutoApproveRequest>,
+    ) -> Result<HttpResponseOk<AutoApproveWindow>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AutoApproveSet,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        // Clamp duration to the 24h hard cap — see
+        // tritond_store::AUTO_APPROVE_WINDOW_MAX. Operator-side
+        // mistake (typo'd 86400000 instead of 86400) becomes a
+        // safe 24h window instead of a multi-year DoS.
+        let requested = std::time::Duration::from_secs(req.duration_secs);
+        let clamped = requested.min(AUTO_APPROVE_WINDOW_MAX);
+        let now = chrono::Utc::now();
+        let window = AutoApproveWindow {
+            opened_at: now,
+            expires_at: now
+                + chrono::Duration::from_std(clamped)
+                    .unwrap_or_else(|_| chrono::Duration::seconds(0)),
+            remaining_count: req.count,
+            opened_by: principal_label(&principal),
+        };
+
+        ctx.store
+            .open_auto_approve_window(window.clone())
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::AutoApproveSet,
+                request_id,
+                None,
+                AuditOutcome::Success { resource: None },
+                serde_json::json!({
+                    "duration_secs_requested": req.duration_secs,
+                    "duration_secs_effective": clamped.as_secs(),
+                    "count": req.count,
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(window))
+    }
+
+    async fn close_auto_approve_window(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AutoApproveClear,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        ctx.store
+            .close_auto_approve_window()
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::AutoApproveClear,
+                request_id,
+                None,
+                AuditOutcome::Success { resource: None },
+                serde_json::json!({}),
+            )
+            .await;
+        Ok(HttpResponseDeleted())
+    }
+}
+
+/// Mint a fresh per-CN API key, persist it (with bound_to_cn set
+/// to the CN's server_uuid + scope = Agent), and atomically wire
+/// it onto the Cn record via `approve_cn`. On error, audits the
+/// failure with the supplied principal + request_id and returns
+/// a 500.
+///
+/// The CN's "owning user" is the principal who triggered the
+/// approval. For the operator approval path that's the operator's
+/// user_id; for the auto-approve path (anonymous) we fall back to
+/// the bootstrap root operator's id so the key has a real owner
+/// in the existing per-user list. (A future slice may give CNs
+/// their own User-equivalent.)
+async fn mint_and_attach_cn_credential(
+    ctx: &ApiContext,
+    principal: &crate::auth::Principal,
+    request_id: Option<Uuid>,
+    cn: &Cn,
+) -> Result<Cn, HttpError> {
+    let owner_user_id = require_authenticated(principal.clone())
+        .map(|(uid, _)| uid)
+        .unwrap_or_else(|_| {
+            // Anonymous principal (auto-approve path). Use a
+            // best-effort sentinel so the key has a non-null
+            // owner field; a future slice will introduce a
+            // dedicated "system" user for keys created without
+            // an operator.
+            Uuid::nil()
+        });
+
+    let material = generate_api_key()
+        .await
+        .map_err(|e| HttpError::for_internal_error(format!("generate api key: {e}")))?;
+    let key_id = Uuid::new_v4();
+    let record = ApiKey {
+        id: key_id,
+        user_id: owner_user_id,
+        description: format!("agent: cn {}", cn.server_uuid),
+        lookup_id: material.lookup_id.clone(),
+        hash: material.hash,
+        scope: ApiKeyScope::Agent,
+        bound_to_cn: Some(cn.server_uuid),
+        created_at: chrono::Utc::now(),
+    };
+    ctx.store
+        .create_api_key(record)
+        .await
+        .map_err(store_error_to_http)?;
+
+    let now = chrono::Utc::now();
+    let updated = match ctx
+        .store
+        .approve_cn(cn.server_uuid, key_id, material.plaintext, now)
+        .await
+    {
+        Ok(updated) => updated,
+        Err(e) => {
+            // Key created but approve failed. Audit so an operator
+            // can clean up the orphan key.
+            ctx.audit
+                .record_mutation(
+                    principal,
+                    Action::CnApprove,
+                    request_id,
+                    Some(format!("Cn::\"{}\"", cn.server_uuid)),
+                    AuditOutcome::ServerError {
+                        message: format!("orphaned api key {key_id}: {e}"),
+                    },
+                    serde_json::json!({
+                        "server_uuid": cn.server_uuid,
+                        "orphaned_api_key_id": key_id,
+                    }),
+                )
+                .await;
+            return Err(store_error_to_http(e));
+        }
+    };
+    Ok(updated)
+}
+
+/// Stable label for a principal in audit/window-tracking JSON.
+/// Compact form so the audit blob stays single-line.
+fn principal_label(principal: &crate::auth::Principal) -> String {
+    use crate::auth::Principal;
+    match principal {
+        Principal::Operator { user_id, .. } => user_id.to_string(),
+        Principal::Anonymous => "anonymous".to_string(),
     }
 }
 

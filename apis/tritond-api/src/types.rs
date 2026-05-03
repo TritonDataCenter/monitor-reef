@@ -18,9 +18,9 @@ pub use tritond_audit::{
     EventHash as AuditEventHash, Outcome as AuditOutcome, VerifyOutcome as AuditVerifyOutcome,
 };
 pub use tritond_store::{
-    AddressFamily, ApiKeyScope, ApiKeyView, Disk, DiskKind, FloatingIp, FloatingIpAttachment,
-    IdpConfigView, Image, ImageCompatibility, Instance, JobKind, JobOutcome, JobStatus,
-    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Silo, SshKey, Subnet, UserView, Vpc,
+    AddressFamily, ApiKeyScope, ApiKeyView, AutoApproveWindow, CnState, CnView, Disk, DiskKind,
+    FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, Instance, JobKind,
+    JobOutcome, JobStatus, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage,
+    NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, UserView, Vpc,
 };

@@ -1619,19 +1619,27 @@ impl Store for MemStore {
             .get(&server_uuid)
             .cloned()
             .ok_or(StoreError::NotFound)?;
-        if cn.state != CnState::Pending {
+        // Disabled blocks the flow entirely (record is gone for
+        // approval purposes). Re-bind blocks too — operators must
+        // disable + re-approve to rotate the credential.
+        if cn.state == CnState::Disabled {
             return Err(StoreError::NotFound);
         }
-        if cn.pending_credential.is_some() {
+        if cn.bound_api_key_id.is_some() {
             return Err(StoreError::Conflict(
-                "cn already has a pending credential awaiting retrieval".to_string(),
+                "cn already has a bound api key; disable + re-approve to rotate".to_string(),
             ));
         }
         if let Some(old_code) = &cn.claim_code {
             guard.cn_server_uuid_by_claim_code.remove(old_code);
         }
         cn.state = CnState::Approved;
-        cn.approved_at = Some(approved_at);
+        // Preserve approved_at when register_cn already stamped it
+        // (auto-approve case); set it now for the Pending → Approved
+        // transition.
+        if cn.approved_at.is_none() {
+            cn.approved_at = Some(approved_at);
+        }
         cn.claim_code = None;
         cn.claim_code_expires_at = None;
         cn.bound_api_key_id = Some(bound_api_key_id);

@@ -481,6 +481,38 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v2/cns/approve`.\n\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/cns/approve`.\\n\\nThe operator presents the claim code displayed on the CN's console (or syslog, or the `/var/lib/tritonagent/claim-code` file). Hyphens and case are normalized server-side.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ApproveCnRequest {
+        pub code: ::std::string::String,
+    }
+
+    impl ApproveCnRequest {
+        pub fn builder() -> builder::ApproveCnRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Body for `POST /attach`. Names the target NIC the FloatingIp should swap onto. The server resolves silo + project + instance from the NIC; cross-tenant targets surface as 404."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -703,6 +735,64 @@ pub mod types {
         }
     }
 
+    #[doc = "Auto-approve window: while open, new Pending CN registrations are promoted to Approved without operator action. Bounded by both wall time (`expires_at`) and a remaining-count budget so an operator can't accidentally leave the window open forever."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Auto-approve window: while open, new Pending CN registrations are promoted to Approved without operator action. Bounded by both wall time (`expires_at`) and a remaining-count budget so an operator can't accidentally leave the window open forever.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"expires_at\","]
+    #[doc = "    \"opened_at\","]
+    #[doc = "    \"opened_by\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"expires_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"opened_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"opened_by\": {"]
+    #[doc = "      \"description\": \"Operator who opened the window (free-text, captured from the authenticated principal at open time).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"remaining_count\": {"]
+    #[doc = "      \"description\": \"Remaining auto-approvals before the window closes. `None` means \\\"unlimited count, time-bound only\\\".\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AutoApproveWindow {
+        pub expires_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub opened_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Operator who opened the window (free-text, captured from the authenticated principal at open time)."]
+        pub opened_by: ::std::string::String,
+        #[doc = "Remaining auto-approvals before the window closes. `None` means \"unlimited count, time-bound only\"."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub remaining_count: ::std::option::Option<u64>,
+    }
+
+    impl AutoApproveWindow {
+        pub fn builder() -> builder::AutoApproveWindow {
+            Default::default()
+        }
+    }
+
     #[doc = "Snapshot of where the chain currently ends."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -823,6 +913,218 @@ pub mod types {
 
     impl ClaimJobResponse {
         pub fn builder() -> builder::ClaimJobResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "Lifecycle state of a compute-node registration."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Lifecycle state of a compute-node registration.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Self-registered; awaiting operator approval (or auto-approve window). Carries an active `claim_code` until approval or expiry.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"pending\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v2/agent/*` surface.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"approved\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Explicitly disabled by an operator. The bound API key is revoked. The record stays for audit visibility; a fresh registration from the same `server_uuid` is rejected until the operator removes the disabled record (Phase 1 surface) — for Phase 0, \\\"disable\\\" is the terminal state.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"disabled\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum CnState {
+        #[doc = "Self-registered; awaiting operator approval (or auto-approve window). Carries an active `claim_code` until approval or expiry."]
+        #[serde(rename = "pending")]
+        Pending,
+        #[doc = "Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v2/agent/*` surface."]
+        #[serde(rename = "approved")]
+        Approved,
+        #[doc = "Explicitly disabled by an operator. The bound API key is revoked. The record stays for audit visibility; a fresh registration from the same `server_uuid` is rejected until the operator removes the disabled record (Phase 1 surface) — for Phase 0, \"disable\" is the terminal state."]
+        #[serde(rename = "disabled")]
+        Disabled,
+    }
+
+    impl ::std::fmt::Display for CnState {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Pending => f.write_str("pending"),
+                Self::Approved => f.write_str("approved"),
+                Self::Disabled => f.write_str("disabled"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for CnState {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "pending" => Ok(Self::Pending),
+                "approved" => Ok(Self::Approved),
+                "disabled" => Ok(Self::Disabled),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for CnState {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for CnState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for CnState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Wire-safe view of a [`Cn`]: strips the transient plaintext credential field and any other secrets from operator-facing JSON."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Wire-safe view of a [`Cn`]: strips the transient plaintext credential field and any other secrets from operator-facing JSON.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"hostname\","]
+    #[doc = "    \"registered_at\","]
+    #[doc = "    \"server_uuid\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"sysinfo\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"admin_ip\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"approved_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"bound_api_key_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"claim_code\": {"]
+    #[doc = "      \"description\": \"Displayed in the `XXX-XXX` format for operator readability. `None` once approved or expired.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"claim_code_expires_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"hostname\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_seen\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"registered_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"server_uuid\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
+    #[doc = "    },"]
+    #[doc = "    \"sysinfo\": {}"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct CnView {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub admin_ip: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub approved_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub bound_api_key_id: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Displayed in the `XXX-XXX` format for operator readability. `None` once approved or expired."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claim_code: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claim_code_expires_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        pub hostname: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_seen: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        pub registered_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub server_uuid: ::uuid::Uuid,
+        pub state: CnState,
+        pub sysinfo: ::serde_json::Value,
+    }
+
+    impl CnView {
+        pub fn builder() -> builder::CnView {
             Default::default()
         }
     }
@@ -2902,6 +3204,52 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v2/cns/auto-approve`.\n\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/cns/auto-approve`.\\n\\nOpens (or replaces) the global auto-approve window. Bounded by both wall-time and a remaining-count budget so a forgotten window can't stay open forever; tritond clamps `duration_secs` to the 24h hard cap server-side.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"duration_secs\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"count\": {"]
+    #[doc = "      \"description\": \"Maximum number of registrations to auto-approve before the window closes early. `None` means \\\"time-bound only\\\".\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"duration_secs\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct OpenAutoApproveRequest {
+        #[doc = "Maximum number of registrations to auto-approve before the window closes early. `None` means \"time-bound only\"."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub count: ::std::option::Option<u64>,
+        pub duration_secs: u64,
+    }
+
+    impl OpenAutoApproveRequest {
+        pub fn builder() -> builder::OpenAutoApproveRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Outcome of the action after the handler finished."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3401,6 +3749,165 @@ pub mod types {
 
     impl RefreshRequest {
         pub fn builder() -> builder::RefreshRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/agent/register`. Anonymous endpoint (no auth header required); the agent has no credentials yet at this point in its lifecycle.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"hostname\","]
+    #[doc = "    \"server_uuid\","]
+    #[doc = "    \"sysinfo\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"admin_ip\": {"]
+    #[doc = "      \"description\": \"Admin-network IPv4 (best-effort; included for operator visibility, not used for authentication).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"hostname\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"server_uuid\": {"]
+    #[doc = "      \"description\": \"SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"sysinfo\": {"]
+    #[doc = "      \"description\": \"Raw `/usr/bin/sysinfo` JSON. Opaque to tritond; surfaced via `tcadm cn show` for operator inspection.\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RegisterCnRequest {
+        #[doc = "Admin-network IPv4 (best-effort; included for operator visibility, not used for authentication)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub admin_ip: ::std::option::Option<::std::net::Ipv4Addr>,
+        pub hostname: ::std::string::String,
+        #[doc = "SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record."]
+        pub server_uuid: ::uuid::Uuid,
+        #[doc = "Raw `/usr/bin/sysinfo` JSON. Opaque to tritond; surfaced via `tcadm cn show` for operator inspection."]
+        pub sysinfo: ::serde_json::Value,
+    }
+
+    impl RegisterCnRequest {
+        pub fn builder() -> builder::RegisterCnRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `POST /v2/agent/register`.\n\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v2/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `POST /v2/agent/register`.\\n\\nThe agent gets back its `poll_token` — needed for every subsequent call to `GET /v2/agent/register/status` — plus, when in Pending state, the `claim_code` it must display on the console for the operator to pair.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"poll_token\","]
+    #[doc = "    \"server_uuid\","]
+    #[doc = "    \"state\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"claim_code\": {"]
+    #[doc = "      \"description\": \"`Some(...)` only when state is Pending. Formatted for human display: `XXX-XXX`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"claim_code_expires_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"poll_token\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"server_uuid\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RegisterCnResponse {
+        #[doc = "`Some(...)` only when state is Pending. Formatted for human display: `XXX-XXX`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claim_code: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub claim_code_expires_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        pub poll_token: ::std::string::String,
+        pub server_uuid: ::uuid::Uuid,
+        pub state: CnState,
+    }
+
+    impl RegisterCnResponse {
+        pub fn builder() -> builder::RegisterCnResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `GET /v2/agent/register/status`.\n\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v2/agent/register/status`.\\n\\n`api_key` is populated exactly once — on the first call after the operator approves (or auto-approve fires). Subsequent calls return `state = Approved` with `api_key = None`. The agent persists the key locally on receipt; if the agent loses the key file, an operator must `tcadm cn disable` and re-approve.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"state\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"api_key\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RegisterStatusResponse {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub api_key: ::std::option::Option<::std::string::String>,
+        pub state: CnState,
+    }
+
+    impl RegisterStatusResponse {
+        pub fn builder() -> builder::RegisterStatusResponse {
             Default::default()
         }
     }
@@ -4079,6 +4586,49 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ApproveCnRequest {
+            code: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ApproveCnRequest {
+            fn default() -> Self {
+                Self {
+                    code: Err("no value supplied for code".to_string()),
+                }
+            }
+        }
+
+        impl ApproveCnRequest {
+            pub fn code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ApproveCnRequest> for super::ApproveCnRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ApproveCnRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { code: value.code? })
+            }
+        }
+
+        impl ::std::convert::From<super::ApproveCnRequest> for ApproveCnRequest {
+            fn from(value: super::ApproveCnRequest) -> Self {
+                Self {
+                    code: Ok(value.code),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct AttachFloatingIpRequest {
             nic_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
@@ -4441,6 +4991,100 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct AutoApproveWindow {
+            expires_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            opened_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            opened_by: ::std::result::Result<::std::string::String, ::std::string::String>,
+            remaining_count:
+                ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AutoApproveWindow {
+            fn default() -> Self {
+                Self {
+                    expires_at: Err("no value supplied for expires_at".to_string()),
+                    opened_at: Err("no value supplied for opened_at".to_string()),
+                    opened_by: Err("no value supplied for opened_by".to_string()),
+                    remaining_count: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl AutoApproveWindow {
+            pub fn expires_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expires_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expires_at: {e}"));
+                self
+            }
+            pub fn opened_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.opened_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for opened_at: {e}"));
+                self
+            }
+            pub fn opened_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.opened_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for opened_by: {e}"));
+                self
+            }
+            pub fn remaining_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.remaining_count = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for remaining_count: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AutoApproveWindow> for super::AutoApproveWindow {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AutoApproveWindow,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    expires_at: value.expires_at?,
+                    opened_at: value.opened_at?,
+                    opened_by: value.opened_by?,
+                    remaining_count: value.remaining_count?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AutoApproveWindow> for AutoApproveWindow {
+            fn from(value: super::AutoApproveWindow) -> Self {
+                Self {
+                    expires_at: Ok(value.expires_at),
+                    opened_at: Ok(value.opened_at),
+                    opened_by: Ok(value.opened_by),
+                    remaining_count: Ok(value.remaining_count),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ChainHead {
             hash: ::std::result::Result<::std::string::String, ::std::string::String>,
             seq: ::std::result::Result<u64, ::std::string::String>,
@@ -4585,6 +5229,216 @@ pub mod types {
         impl ::std::convert::From<super::ClaimJobResponse> for ClaimJobResponse {
             fn from(value: super::ClaimJobResponse) -> Self {
                 Self { job: Ok(value.job) }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct CnView {
+            admin_ip: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            approved_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            bound_api_key_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            claim_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            claim_code_expires_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            hostname: ::std::result::Result<::std::string::String, ::std::string::String>,
+            last_seen: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            registered_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            state: ::std::result::Result<super::CnState, ::std::string::String>,
+            sysinfo: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for CnView {
+            fn default() -> Self {
+                Self {
+                    admin_ip: Ok(Default::default()),
+                    approved_at: Ok(Default::default()),
+                    bound_api_key_id: Ok(Default::default()),
+                    claim_code: Ok(Default::default()),
+                    claim_code_expires_at: Ok(Default::default()),
+                    hostname: Err("no value supplied for hostname".to_string()),
+                    last_seen: Ok(Default::default()),
+                    registered_at: Err("no value supplied for registered_at".to_string()),
+                    server_uuid: Err("no value supplied for server_uuid".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                    sysinfo: Err("no value supplied for sysinfo".to_string()),
+                }
+            }
+        }
+
+        impl CnView {
+            pub fn admin_ip<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.admin_ip = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for admin_ip: {e}"));
+                self
+            }
+            pub fn approved_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.approved_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for approved_at: {e}"));
+                self
+            }
+            pub fn bound_api_key_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bound_api_key_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for bound_api_key_id: {e}")
+                });
+                self
+            }
+            pub fn claim_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claim_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for claim_code: {e}"));
+                self
+            }
+            pub fn claim_code_expires_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claim_code_expires_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for claim_code_expires_at: {e}")
+                });
+                self
+            }
+            pub fn hostname<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hostname = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hostname: {e}"));
+                self
+            }
+            pub fn last_seen<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_seen = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_seen: {e}"));
+                self
+            }
+            pub fn registered_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.registered_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for registered_at: {e}"));
+                self
+            }
+            pub fn server_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.server_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for server_uuid: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CnState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn sysinfo<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sysinfo = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sysinfo: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<CnView> for super::CnView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CnView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    admin_ip: value.admin_ip?,
+                    approved_at: value.approved_at?,
+                    bound_api_key_id: value.bound_api_key_id?,
+                    claim_code: value.claim_code?,
+                    claim_code_expires_at: value.claim_code_expires_at?,
+                    hostname: value.hostname?,
+                    last_seen: value.last_seen?,
+                    registered_at: value.registered_at?,
+                    server_uuid: value.server_uuid?,
+                    state: value.state?,
+                    sysinfo: value.sysinfo?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::CnView> for CnView {
+            fn from(value: super::CnView) -> Self {
+                Self {
+                    admin_ip: Ok(value.admin_ip),
+                    approved_at: Ok(value.approved_at),
+                    bound_api_key_id: Ok(value.bound_api_key_id),
+                    claim_code: Ok(value.claim_code),
+                    claim_code_expires_at: Ok(value.claim_code_expires_at),
+                    hostname: Ok(value.hostname),
+                    last_seen: Ok(value.last_seen),
+                    registered_at: Ok(value.registered_at),
+                    server_uuid: Ok(value.server_uuid),
+                    state: Ok(value.state),
+                    sysinfo: Ok(value.sysinfo),
+                }
             }
         }
 
@@ -7125,6 +7979,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct OpenAutoApproveRequest {
+            count: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            duration_secs: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for OpenAutoApproveRequest {
+            fn default() -> Self {
+                Self {
+                    count: Ok(Default::default()),
+                    duration_secs: Err("no value supplied for duration_secs".to_string()),
+                }
+            }
+        }
+
+        impl OpenAutoApproveRequest {
+            pub fn count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for count: {e}"));
+                self
+            }
+            pub fn duration_secs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.duration_secs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for duration_secs: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<OpenAutoApproveRequest> for super::OpenAutoApproveRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: OpenAutoApproveRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    count: value.count?,
+                    duration_secs: value.duration_secs?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::OpenAutoApproveRequest> for OpenAutoApproveRequest {
+            fn from(value: super::OpenAutoApproveRequest) -> Self {
+                Self {
+                    count: Ok(value.count),
+                    duration_secs: Ok(value.duration_secs),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Project {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -7696,6 +8609,267 @@ pub mod types {
             fn from(value: super::RefreshRequest) -> Self {
                 Self {
                     refresh_token: Ok(value.refresh_token),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RegisterCnRequest {
+            admin_ip: ::std::result::Result<
+                ::std::option::Option<::std::net::Ipv4Addr>,
+                ::std::string::String,
+            >,
+            hostname: ::std::result::Result<::std::string::String, ::std::string::String>,
+            server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            sysinfo: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RegisterCnRequest {
+            fn default() -> Self {
+                Self {
+                    admin_ip: Ok(Default::default()),
+                    hostname: Err("no value supplied for hostname".to_string()),
+                    server_uuid: Err("no value supplied for server_uuid".to_string()),
+                    sysinfo: Err("no value supplied for sysinfo".to_string()),
+                }
+            }
+        }
+
+        impl RegisterCnRequest {
+            pub fn admin_ip<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::Ipv4Addr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.admin_ip = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for admin_ip: {e}"));
+                self
+            }
+            pub fn hostname<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hostname = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hostname: {e}"));
+                self
+            }
+            pub fn server_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.server_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for server_uuid: {e}"));
+                self
+            }
+            pub fn sysinfo<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sysinfo = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sysinfo: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RegisterCnRequest> for super::RegisterCnRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RegisterCnRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    admin_ip: value.admin_ip?,
+                    hostname: value.hostname?,
+                    server_uuid: value.server_uuid?,
+                    sysinfo: value.sysinfo?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RegisterCnRequest> for RegisterCnRequest {
+            fn from(value: super::RegisterCnRequest) -> Self {
+                Self {
+                    admin_ip: Ok(value.admin_ip),
+                    hostname: Ok(value.hostname),
+                    server_uuid: Ok(value.server_uuid),
+                    sysinfo: Ok(value.sysinfo),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RegisterCnResponse {
+            claim_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            claim_code_expires_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            poll_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+            server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            state: ::std::result::Result<super::CnState, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RegisterCnResponse {
+            fn default() -> Self {
+                Self {
+                    claim_code: Ok(Default::default()),
+                    claim_code_expires_at: Ok(Default::default()),
+                    poll_token: Err("no value supplied for poll_token".to_string()),
+                    server_uuid: Err("no value supplied for server_uuid".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                }
+            }
+        }
+
+        impl RegisterCnResponse {
+            pub fn claim_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claim_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for claim_code: {e}"));
+                self
+            }
+            pub fn claim_code_expires_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.claim_code_expires_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for claim_code_expires_at: {e}")
+                });
+                self
+            }
+            pub fn poll_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.poll_token = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for poll_token: {e}"));
+                self
+            }
+            pub fn server_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.server_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for server_uuid: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CnState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RegisterCnResponse> for super::RegisterCnResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RegisterCnResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    claim_code: value.claim_code?,
+                    claim_code_expires_at: value.claim_code_expires_at?,
+                    poll_token: value.poll_token?,
+                    server_uuid: value.server_uuid?,
+                    state: value.state?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RegisterCnResponse> for RegisterCnResponse {
+            fn from(value: super::RegisterCnResponse) -> Self {
+                Self {
+                    claim_code: Ok(value.claim_code),
+                    claim_code_expires_at: Ok(value.claim_code_expires_at),
+                    poll_token: Ok(value.poll_token),
+                    server_uuid: Ok(value.server_uuid),
+                    state: Ok(value.state),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RegisterStatusResponse {
+            api_key: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<super::CnState, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RegisterStatusResponse {
+            fn default() -> Self {
+                Self {
+                    api_key: Ok(Default::default()),
+                    state: Err("no value supplied for state".to_string()),
+                }
+            }
+        }
+
+        impl RegisterStatusResponse {
+            pub fn api_key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.api_key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for api_key: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CnState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RegisterStatusResponse> for super::RegisterStatusResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RegisterStatusResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    api_key: value.api_key?,
+                    state: value.state?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RegisterStatusResponse> for RegisterStatusResponse {
+            fn from(value: super::RegisterStatusResponse) -> Self {
+                Self {
+                    api_key: Ok(value.api_key),
+                    state: Ok(value.state),
                 }
             }
         }
@@ -8427,6 +9601,16 @@ impl Client {
         builder::AgentCompleteJob::new(self)
     }
 
+    #[doc = "Self-register a compute node. Anonymous endpoint (no API\n\nkey needed) — the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.\n\nSends a `POST` request to `/v2/agent/register`\n\n```ignore\nlet response = client.agent_register()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_register(&self) -> builder::AgentRegister<'_> {
+        builder::AgentRegister::new(self)
+    }
+
+    #[doc = "Long-poll for the per-CN API key. Anonymous endpoint\n\nauthenticated only by holding the `poll_token` returned at registration. Tritond holds the connection open for up to ~30s waiting for state to flip from Pending to Approved (or for the auto-approve credential to be wired up); on timeout the agent re-polls.\n\nThe `api_key` field is populated **once** — on the first successful retrieval after approval. Subsequent calls return `state = Approved` with `api_key = None`.\n\nSends a `GET` request to `/v2/agent/register/status`\n\n```ignore\nlet response = client.agent_register_status()\n    .poll_token(poll_token)\n    .send()\n    .await;\n```"]
+    pub fn agent_register_status(&self) -> builder::AgentRegisterStatus<'_> {
+        builder::AgentRegisterStatus::new(self)
+    }
+
     #[doc = "Page through audit events. Returns at most `limit` events with\n\n`seq > after_seq` plus the current chain head.\n\nSends a `GET` request to `/v2/audit/events`\n\nArguments:\n- `after_seq`: Return events with `seq > after_seq`. Default 0 (start of chain).\n- `limit`: Maximum events to return. Default 100, max 1000.\n```ignore\nlet response = client.list_audit_events()\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
     pub fn list_audit_events(&self) -> builder::ListAuditEvents<'_> {
         builder::ListAuditEvents::new(self)
@@ -8465,6 +9649,41 @@ impl Client {
     #[doc = "Exchange a valid refresh token for a fresh access/refresh pair\n\nReturns 401 if the refresh token is invalid or expired.\n\nSends a `POST` request to `/v2/auth/refresh`\n\n```ignore\nlet response = client.refresh()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn refresh(&self) -> builder::Refresh<'_> {
         builder::Refresh::new(self)
+    }
+
+    #[doc = "Approve a Pending compute node by claim code. Mints the\n\nper-CN API key inside the same transaction that flips state; the plaintext is delivered to the agent via its long-poll on `/register/status`. Per-source-IP rate-limited.\n\nReturns 404 for unknown / expired / already-approved codes (conflated to defeat enumeration). Returns 429 when the per-IP bucket is drained.\n\nThe path is `/v2/cn-approvals` rather than nested under `/v2/cns/...` because Dropshot's router cannot disambiguate a literal `approve` segment from the `{server_uuid}` parameter at the same level.\n\nSends a `POST` request to `/v2/cn-approvals`\n\n```ignore\nlet response = client.approve_cn()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn approve_cn(&self) -> builder::ApproveCn<'_> {
+        builder::ApproveCn::new(self)
+    }
+
+    #[doc = "Read the current auto-approve window, if open\n\nReturns `200 OK` with `null` when no window is open.\n\nPath lives at `/v2/cn-auto-approve` rather than nested under `/v2/cns/...` for the same reason as `/v2/cn-approvals`: a literal `auto-approve` segment cannot coexist with the `{server_uuid}` parameter on Dropshot's router.\n\nSends a `GET` request to `/v2/cn-auto-approve`\n\n```ignore\nlet response = client.get_auto_approve_window()\n    .send()\n    .await;\n```"]
+    pub fn get_auto_approve_window(&self) -> builder::GetAutoApproveWindow<'_> {
+        builder::GetAutoApproveWindow::new(self)
+    }
+
+    #[doc = "Open (or replace) the auto-approve window. While the\n\nwindow is open, new self-registrations are promoted to Approved without operator action. Server-side cap: `duration_secs` is clamped to 24h.\n\nSends a `POST` request to `/v2/cn-auto-approve`\n\n```ignore\nlet response = client.open_auto_approve_window()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn open_auto_approve_window(&self) -> builder::OpenAutoApproveWindow<'_> {
+        builder::OpenAutoApproveWindow::new(self)
+    }
+
+    #[doc = "Close the auto-approve window. Idempotent; no-op when no\n\nwindow is open.\n\nSends a `DELETE` request to `/v2/cn-auto-approve`\n\n```ignore\nlet response = client.close_auto_approve_window()\n    .send()\n    .await;\n```"]
+    pub fn close_auto_approve_window(&self) -> builder::CloseAutoApproveWindow<'_> {
+        builder::CloseAutoApproveWindow::new(self)
+    }
+
+    #[doc = "List compute nodes, optionally filtered by state. Operator\n\nsurface (root + future fleet-scoped operator role).\n\nSends a `GET` request to `/v2/cns`\n\n```ignore\nlet response = client.list_cns()\n    .state(state)\n    .send()\n    .await;\n```"]
+    pub fn list_cns(&self) -> builder::ListCns<'_> {
+        builder::ListCns::new(self)
+    }
+
+    #[doc = "Read a single compute-node record by `server_uuid`\n\nSends a `GET` request to `/v2/cns/{server_uuid}`\n\n```ignore\nlet response = client.get_cn()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
+    pub fn get_cn(&self) -> builder::GetCn<'_> {
+        builder::GetCn::new(self)
+    }
+
+    #[doc = "Disable a compute node. Revokes the bound API key and\n\nflips state to Disabled. The record is retained for audit visibility; a second call is idempotent.\n\nSends a `POST` request to `/v2/cns/{server_uuid}/disable`\n\n```ignore\nlet response = client.disable_cn()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
+    pub fn disable_cn(&self) -> builder::DisableCn<'_> {
+        builder::DisableCn::new(self)
     }
 
     #[doc = "Liveness check. Returns service status and version string\n\nSends a `GET` request to `/v2/health`\n\n```ignore\nlet response = client.health()\n    .send()\n    .await;\n```"]
@@ -8948,6 +10167,159 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_complete_job",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_register`]\n\n[`Client::agent_register`]: super::Client::agent_register"]
+    #[derive(Debug, Clone)]
+    pub struct AgentRegister<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::RegisterCnRequest, String>,
+    }
+
+    impl<'a> AgentRegister<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::RegisterCnRequest>,
+            <V as std::convert::TryInto<types::RegisterCnRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `RegisterCnRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::RegisterCnRequest,
+                ) -> types::builder::RegisterCnRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/register`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::RegisterCnResponse>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::RegisterCnRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/register", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_register",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_register_status`]\n\n[`Client::agent_register_status`]: super::Client::agent_register_status"]
+    #[derive(Debug, Clone)]
+    pub struct AgentRegisterStatus<'a> {
+        client: &'a super::Client,
+        poll_token: Result<::std::string::String, String>,
+    }
+
+    impl<'a> AgentRegisterStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                poll_token: Err("poll_token was not initialized".to_string()),
+            }
+        }
+
+        pub fn poll_token<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.poll_token = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for poll_token failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/agent/register/status`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::RegisterStatusResponse>, Error<types::Error>> {
+            let Self { client, poll_token } = self;
+            let poll_token = poll_token.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/register/status", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new(
+                    "poll_token",
+                    &poll_token,
+                ))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_register_status",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
@@ -9551,6 +10923,485 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "refresh",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::approve_cn`]\n\n[`Client::approve_cn`]: super::Client::approve_cn"]
+    #[derive(Debug, Clone)]
+    pub struct ApproveCn<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::ApproveCnRequest, String>,
+    }
+
+    impl<'a> ApproveCn<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ApproveCnRequest>,
+            <V as std::convert::TryInto<types::ApproveCnRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `ApproveCnRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::ApproveCnRequest,
+                ) -> types::builder::ApproveCnRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/cn-approvals`"]
+        pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::ApproveCnRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/cn-approvals", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "approve_cn",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_auto_approve_window`]\n\n[`Client::get_auto_approve_window`]: super::Client::get_auto_approve_window"]
+    #[derive(Debug, Clone)]
+    pub struct GetAutoApproveWindow<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> GetAutoApproveWindow<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/cn-auto-approve`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AutoApproveWindow>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/cn-auto-approve", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_auto_approve_window",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::open_auto_approve_window`]\n\n[`Client::open_auto_approve_window`]: super::Client::open_auto_approve_window"]
+    #[derive(Debug, Clone)]
+    pub struct OpenAutoApproveWindow<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::OpenAutoApproveRequest, String>,
+    }
+
+    impl<'a> OpenAutoApproveWindow<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::OpenAutoApproveRequest>,
+            <V as std::convert::TryInto<types::OpenAutoApproveRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `OpenAutoApproveRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::OpenAutoApproveRequest,
+                ) -> types::builder::OpenAutoApproveRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/cn-auto-approve`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AutoApproveWindow>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::OpenAutoApproveRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/cn-auto-approve", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "open_auto_approve_window",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::close_auto_approve_window`]\n\n[`Client::close_auto_approve_window`]: super::Client::close_auto_approve_window"]
+    #[derive(Debug, Clone)]
+    pub struct CloseAutoApproveWindow<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> CloseAutoApproveWindow<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/cn-auto-approve`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/cn-auto-approve", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "close_auto_approve_window",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_cns`]\n\n[`Client::list_cns`]: super::Client::list_cns"]
+    #[derive(Debug, Clone)]
+    pub struct ListCns<'a> {
+        client: &'a super::Client,
+        state: Result<Option<types::CnState>, String>,
+    }
+
+    impl<'a> ListCns<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                state: Ok(None),
+            }
+        }
+
+        pub fn state<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::CnState>,
+        {
+            self.state = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `CnState` for state failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/cns`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::CnView>>, Error<types::Error>> {
+            let Self { client, state } = self;
+            let state = state.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/cns", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("state", &state))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_cns",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_cn`]\n\n[`Client::get_cn`]: super::Client::get_cn"]
+    #[derive(Debug, Clone)]
+    pub struct GetCn<'a> {
+        client: &'a super::Client,
+        server_uuid: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetCn<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                server_uuid: Err("server_uuid was not initialized".to_string()),
+            }
+        }
+
+        pub fn server_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.server_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for server_uuid failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/cns/{server_uuid}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
+            let Self {
+                client,
+                server_uuid,
+            } = self;
+            let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/cns/{}",
+                client.baseurl,
+                encode_path(&server_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_cn",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::disable_cn`]\n\n[`Client::disable_cn`]: super::Client::disable_cn"]
+    #[derive(Debug, Clone)]
+    pub struct DisableCn<'a> {
+        client: &'a super::Client,
+        server_uuid: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DisableCn<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                server_uuid: Err("server_uuid was not initialized".to_string()),
+            }
+        }
+
+        pub fn server_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.server_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for server_uuid failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/cns/{server_uuid}/disable`"]
+        pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
+            let Self {
+                client,
+                server_uuid,
+            } = self;
+            let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/cns/{}/disable",
+                client.baseurl,
+                encode_path(&server_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "disable_cn",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
