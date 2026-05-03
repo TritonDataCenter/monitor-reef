@@ -997,6 +997,14 @@ pub struct ProvisioningJob {
     /// Failed).
     #[serde(default)]
     pub completed_at: Option<DateTime<Utc>>,
+    /// Optional placement: when `Some(server_uuid)`, only an
+    /// agent bound to that CN will claim the job. When `None`,
+    /// any claimer (the in-process stub or any bound agent) can
+    /// claim. Populated at enqueue time by a future scheduler;
+    /// today's instance handlers leave it `None` for backward
+    /// compatibility.
+    #[serde(default)]
+    pub target_cn_uuid: Option<Uuid>,
 }
 
 /// Request body for enqueuing a new job. Server assigns `id`,
@@ -1004,6 +1012,10 @@ pub struct ProvisioningJob {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewJob {
     pub kind: JobKind,
+    /// Pin this job to a specific CN. See
+    /// [`ProvisioningJob::target_cn_uuid`].
+    #[serde(default)]
+    pub target_cn_uuid: Option<Uuid>,
 }
 
 /// Outcome a worker reports when finishing a job.

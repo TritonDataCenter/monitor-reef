@@ -3608,6 +3608,14 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/JobStatus\""]
+    #[doc = "    },"]
+    #[doc = "    \"target_cn_uuid\": {"]
+    #[doc = "      \"description\": \"Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Populated at enqueue time by a future scheduler; today's instance handlers leave it `None` for backward compatibility.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -3632,6 +3640,9 @@ pub mod types {
         #[doc = "Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time."]
         pub seq: u64,
         pub status: JobStatus,
+        #[doc = "Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Populated at enqueue time by a future scheduler; today's instance handlers leave it `None` for backward compatibility."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub target_cn_uuid: ::std::option::Option<::uuid::Uuid>,
     }
 
     impl ProvisioningJob {
@@ -8299,6 +8310,8 @@ pub mod types {
             kind: ::std::result::Result<super::JobKind, ::std::string::String>,
             seq: ::std::result::Result<u64, ::std::string::String>,
             status: ::std::result::Result<super::JobStatus, ::std::string::String>,
+            target_cn_uuid:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
         }
 
         impl ::std::default::Default for ProvisioningJob {
@@ -8312,6 +8325,7 @@ pub mod types {
                     kind: Err("no value supplied for kind".to_string()),
                     seq: Err("no value supplied for seq".to_string()),
                     status: Err("no value supplied for status".to_string()),
+                    target_cn_uuid: Ok(Default::default()),
                 }
             }
         }
@@ -8401,6 +8415,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for status: {e}"));
                 self
             }
+            pub fn target_cn_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.target_cn_uuid = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for target_cn_uuid: {e}")
+                });
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<ProvisioningJob> for super::ProvisioningJob {
@@ -8417,6 +8441,7 @@ pub mod types {
                     kind: value.kind?,
                     seq: value.seq?,
                     status: value.status?,
+                    target_cn_uuid: value.target_cn_uuid?,
                 })
             }
         }
@@ -8432,6 +8457,7 @@ pub mod types {
                     kind: Ok(value.kind),
                     seq: Ok(value.seq),
                     status: Ok(value.status),
+                    target_cn_uuid: Ok(value.target_cn_uuid),
                 }
             }
         }

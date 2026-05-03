@@ -593,11 +593,24 @@ pub trait Store: Send + Sync + 'static {
     /// Atomically claim the next Pending job (lowest `seq`),
     /// transitioning it to [`JobStatus::InProgress`] and stamping
     /// `claimed_at` + `claimed_by`. Returns
-    /// [`StoreError::NotFound`] if the queue has no Pending jobs.
+    /// [`StoreError::NotFound`] if the queue has no Pending jobs
+    /// matching the claimer.
     ///
     /// `claimed_by` is a free-form identifier the agent picks
     /// (e.g. `"stub-provisioner"` for the in-process stub).
-    async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError>;
+    ///
+    /// `claimer_cn` is the bound CN of the claiming API key, if
+    /// any. Job-targeting matrix:
+    /// * `claimer_cn = None` → only claims jobs whose
+    ///   `target_cn_uuid` is also `None` (the in-process stub
+    ///   and other unbound claimers see only unrouted work).
+    /// * `claimer_cn = Some(uuid)` → claims jobs whose
+    ///   `target_cn_uuid` is `None` or `Some(uuid)`.
+    async fn claim_next_job(
+        &self,
+        claimed_by: &str,
+        claimer_cn: Option<Uuid>,
+    ) -> Result<ProvisioningJob, StoreError>;
 
     /// Mark a job as terminal (Completed or Failed). Stamps
     /// `completed_at`. Returns [`StoreError::NotFound`] if the job

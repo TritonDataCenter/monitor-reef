@@ -35,6 +35,19 @@ use crate::{ApiKeyScope, NewInstanceNic};
 /// rare; the cap is purely defensive.
 const VNI_RETRY_ATTEMPTS: usize = 8;
 
+/// Job targeting matrix shared by both store backends:
+/// * unrouted job (target=None) — claimable by anyone.
+/// * routed job (target=Some(X)) — only the bound claimer for X
+///   can take it. Unbound claimers (the in-process stub or a
+///   legacy operator-minted Agent key) cannot claim routed jobs.
+fn job_target_matches(job_target: Option<Uuid>, claimer_cn: Option<Uuid>) -> bool {
+    match (job_target, claimer_cn) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(t), Some(c)) => t == c,
+    }
+}
+
 #[derive(Default)]
 struct Inner {
     silos_by_id: HashMap<Uuid, Silo>,
@@ -1352,6 +1365,7 @@ impl Store for MemStore {
             claimed_at: None,
             claimed_by: None,
             completed_at: None,
+            target_cn_uuid: req.target_cn_uuid,
         };
         guard.jobs_by_id.insert(job.id, job.clone());
         Ok(job)
@@ -1372,13 +1386,19 @@ impl Store for MemStore {
         Ok(stale)
     }
 
-    async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError> {
+    async fn claim_next_job(
+        &self,
+        claimed_by: &str,
+        claimer_cn: Option<Uuid>,
+    ) -> Result<ProvisioningJob, StoreError> {
         let mut guard = self.inner.write().await;
-        // FIFO: lowest `seq` among Pending wins.
+        // FIFO: lowest `seq` among Pending whose target_cn_uuid
+        // matches the claimer.
         let target_id = guard
             .jobs_by_id
             .values()
             .filter(|j| matches!(j.status.kind(), JobStatusKind::Pending))
+            .filter(|j| job_target_matches(j.target_cn_uuid, claimer_cn))
             .min_by_key(|j| j.seq)
             .map(|j| j.id);
         let id = target_id.ok_or(StoreError::NotFound)?;
@@ -4096,6 +4116,7 @@ mod tests {
     fn provision_job(instance_id: Uuid) -> NewJob {
         NewJob {
             kind: JobKind::Provision { instance_id },
+            target_cn_uuid: None,
         }
     }
 
@@ -4119,20 +4140,81 @@ mod tests {
         let j1 = store.enqueue_job(provision_job(i1)).await.unwrap();
         let j2 = store.enqueue_job(provision_job(i2)).await.unwrap();
 
-        let claimed = store.claim_next_job("worker-a").await.unwrap();
+        let claimed = store.claim_next_job("worker-a", None).await.unwrap();
         assert_eq!(claimed.id, j1.id);
         assert!(matches!(claimed.status, JobStatus::InProgress));
         assert_eq!(claimed.claimed_by.as_deref(), Some("worker-a"));
 
-        let claimed = store.claim_next_job("worker-b").await.unwrap();
+        let claimed = store.claim_next_job("worker-b", None).await.unwrap();
         assert_eq!(claimed.id, j2.id);
+    }
+
+    #[tokio::test]
+    async fn claim_targeting_matrix() {
+        let store = MemStore::new();
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+
+        // Enqueue: one unrouted, one routed-to-A.
+        let unrouted = store
+            .enqueue_job(NewJob {
+                kind: JobKind::Provision {
+                    instance_id: Uuid::new_v4(),
+                },
+                target_cn_uuid: None,
+            })
+            .await
+            .unwrap();
+        let routed_a = store
+            .enqueue_job(NewJob {
+                kind: JobKind::Provision {
+                    instance_id: Uuid::new_v4(),
+                },
+                target_cn_uuid: Some(cn_a),
+            })
+            .await
+            .unwrap();
+
+        // Unbound claimer (the in-process stub) sees only the
+        // unrouted job, in seq order.
+        let claimed = store.claim_next_job("stub", None).await.unwrap();
+        assert_eq!(claimed.id, unrouted.id);
+        // Routed_a is still pending — unbound claimer skipped it.
+        let err = store
+            .claim_next_job("stub", None)
+            .await
+            .expect_err("only one unrouted job; stub should see queue empty now");
+        assert!(matches!(err, StoreError::NotFound));
+
+        // Bound CN-A picks up the routed-A job.
+        let claimed = store.claim_next_job("agent-a", Some(cn_a)).await.unwrap();
+        assert_eq!(claimed.id, routed_a.id);
+
+        // Re-enqueue routed-to-B; bound CN-A cannot claim.
+        let routed_b = store
+            .enqueue_job(NewJob {
+                kind: JobKind::Provision {
+                    instance_id: Uuid::new_v4(),
+                },
+                target_cn_uuid: Some(cn_b),
+            })
+            .await
+            .unwrap();
+        let err = store
+            .claim_next_job("agent-a", Some(cn_a))
+            .await
+            .expect_err("CN-A is bound, can't take a CN-B-routed job");
+        assert!(matches!(err, StoreError::NotFound));
+        // CN-B can.
+        let claimed = store.claim_next_job("agent-b", Some(cn_b)).await.unwrap();
+        assert_eq!(claimed.id, routed_b.id);
     }
 
     #[tokio::test]
     async fn claim_empty_queue_is_not_found() {
         let store = MemStore::new();
         let err = store
-            .claim_next_job("worker")
+            .claim_next_job("worker", None)
             .await
             .expect_err("empty queue should be not-found");
         assert!(matches!(err, StoreError::NotFound));
@@ -4145,7 +4227,7 @@ mod tests {
             .enqueue_job(provision_job(Uuid::new_v4()))
             .await
             .unwrap();
-        store.claim_next_job("w").await.unwrap();
+        store.claim_next_job("w", None).await.unwrap();
         let done = store
             .complete_job(job.id, JobOutcome::Completed)
             .await

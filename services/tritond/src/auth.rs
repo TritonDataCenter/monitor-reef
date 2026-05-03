@@ -944,10 +944,7 @@ pub fn principal_bound_cn(principal: &Principal) -> Option<Uuid> {
 /// request claims (e.g. `claimed_by` parsed as a UUID, or the
 /// job's `claimed_by`); returns `Ok(())` when they match (or the
 /// principal is unbound), `Err(403)` otherwise.
-pub fn enforce_cn_binding(
-    bound_cn: Option<Uuid>,
-    claimed_cn: Uuid,
-) -> Result<(), HttpError> {
+pub fn enforce_cn_binding(bound_cn: Option<Uuid>, claimed_cn: Uuid) -> Result<(), HttpError> {
     match bound_cn {
         None => Ok(()), // Unbound key (operator-minted): no binding to check.
         Some(b) if b == claimed_cn => Ok(()),

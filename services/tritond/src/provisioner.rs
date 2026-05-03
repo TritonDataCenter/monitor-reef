@@ -71,7 +71,10 @@ pub fn spawn(store: Arc<dyn Store>) -> tokio::task::JoinHandle<()> {
 
 async fn run(store: Arc<dyn Store>) {
     loop {
-        match store.claim_next_job(STUB_AGENT_ID).await {
+        // The in-process stub is unbound, so it only sees
+        // unrouted (target_cn_uuid = None) jobs. Routed jobs
+        // wait for their target CN's bound agent.
+        match store.claim_next_job(STUB_AGENT_ID, None).await {
             Ok(job) => {
                 let job_id = job.id;
                 let outcome = process(&job, &store).await;

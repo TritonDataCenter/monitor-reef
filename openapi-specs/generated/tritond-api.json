@@ -5037,6 +5037,13 @@
           },
           "status": {
             "$ref": "#/components/schemas/JobStatus"
+          },
+          "target_cn_uuid": {
+            "nullable": true,
+            "description": "Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Populated at enqueue time by a future scheduler; today's instance handlers leave it `None` for backward compatibility.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [

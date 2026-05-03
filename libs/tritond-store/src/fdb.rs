@@ -461,6 +461,17 @@ enum DeleteOutcome {
     NotFound,
 }
 
+/// Job targeting matrix: unrouted jobs (target=None) are claimable
+/// by anyone; routed jobs (target=Some(X)) are claimable only by
+/// the bound claimer for X. Mirrors the in-memory store's helper.
+fn targeting_matches(job_target: Option<Uuid>, claimer_cn: Option<Uuid>) -> bool {
+    match (job_target, claimer_cn) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(t), Some(c)) => t == c,
+    }
+}
+
 /// Compute the half-open range `[prefix, prefix++)` for prefix scans.
 fn prefix_range(prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let mut end = prefix.to_vec();
@@ -3250,6 +3261,7 @@ impl Store for FdbStore {
                 let by_id_key = by_id_key.clone();
                 let id_bytes = id_str.as_bytes().to_vec();
                 let kind = req.kind.clone();
+                let target_cn_uuid = req.target_cn_uuid;
                 async move {
                     // Read counter (or default to 0).
                     let current_seq = match tr.get(&counter_key, false).await? {
@@ -3267,6 +3279,7 @@ impl Store for FdbStore {
                         claimed_at: None,
                         claimed_by: None,
                         completed_at: None,
+                        target_cn_uuid,
                     };
                     let value = serde_json::to_vec(&job).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize job: {e}").into())
@@ -3320,7 +3333,11 @@ impl Store for FdbStore {
         Ok(stale)
     }
 
-    async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError> {
+    async fn claim_next_job(
+        &self,
+        claimed_by: &str,
+        claimer_cn: Option<Uuid>,
+    ) -> Result<ProvisioningJob, StoreError> {
         let prefix = Self::job_pending_prefix().to_vec();
         let (begin, end) = prefix_range(&prefix);
         let claimed_by = claimed_by.to_string();
@@ -3329,6 +3346,11 @@ impl Store for FdbStore {
             Claimed(Box<ProvisioningJob>),
             Empty,
         }
+
+        // Linear walk over Pending in seq order; skip mis-targeted
+        // jobs. Cap at 256 so a flood of routed jobs an unbound
+        // claimer can't take doesn't turn into a degenerate scan.
+        const SCAN_LIMIT: usize = 256;
 
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
@@ -3340,49 +3362,59 @@ impl Store for FdbStore {
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(begin),
                         end: KeySelector::first_greater_or_equal(end),
-                        limit: Some(1),
+                        limit: Some(SCAN_LIMIT),
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
-                    // Pick the (single) lowest-seq pending entry.
-                    let (pending_key, job_id_bytes) = match kvs.iter().next() {
-                        Some(kv) => (kv.key().to_vec(), kv.value().to_vec()),
-                        None => return Ok(Outcome::Empty),
-                    };
+                    let entries: Vec<(Vec<u8>, Vec<u8>)> = kvs
+                        .iter()
+                        .map(|kv| (kv.key().to_vec(), kv.value().to_vec()))
+                        .collect();
                     drop(kvs);
-                    let id_str = std::str::from_utf8(&job_id_bytes).map_err(|e| {
-                        FdbBindingError::CustomError(
-                            format!("pending index value not utf8: {e}").into(),
-                        )
-                    })?;
-                    let job_id = Uuid::parse_str(id_str).map_err(|e| {
-                        FdbBindingError::CustomError(
-                            format!("pending index value not uuid: {e}").into(),
-                        )
-                    })?;
-                    let by_id_key = format!("job/by_id/{job_id}").into_bytes();
-                    let bytes = match tr.get(&by_id_key, false).await? {
-                        Some(b) => b,
-                        // Pending index points at a vanished record;
-                        // skip the entry by clearing it and treating
-                        // the queue as empty for this attempt.
-                        None => {
-                            tr.clear(&pending_key);
-                            return Ok(Outcome::Empty);
+
+                    for (pending_key, job_id_bytes) in entries {
+                        let id_str = std::str::from_utf8(&job_id_bytes).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("pending index value not utf8: {e}").into(),
+                            )
+                        })?;
+                        let job_id = Uuid::parse_str(id_str).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("pending index value not uuid: {e}").into(),
+                            )
+                        })?;
+                        let by_id_key = format!("job/by_id/{job_id}").into_bytes();
+                        let bytes = match tr.get(&by_id_key, false).await? {
+                            Some(b) => b,
+                            None => {
+                                // Pending index points at a vanished
+                                // record; clear and continue to the
+                                // next candidate.
+                                tr.clear(&pending_key);
+                                continue;
+                            }
+                        };
+                        let mut job: ProvisioningJob =
+                            serde_json::from_slice(&bytes).map_err(|e| {
+                                FdbBindingError::CustomError(format!("deserialize job: {e}").into())
+                            })?;
+                        // Targeting check: skip mis-routed jobs
+                        // without clearing their pending index — a
+                        // different agent will pick them up.
+                        if !targeting_matches(job.target_cn_uuid, claimer_cn) {
+                            continue;
                         }
-                    };
-                    let mut job: ProvisioningJob = serde_json::from_slice(&bytes).map_err(|e| {
-                        FdbBindingError::CustomError(format!("deserialize job: {e}").into())
-                    })?;
-                    job.status = JobStatus::InProgress;
-                    job.claimed_at = Some(Utc::now());
-                    job.claimed_by = Some(claimed_by);
-                    let value = serde_json::to_vec(&job).map_err(|e| {
-                        FdbBindingError::CustomError(format!("serialize job: {e}").into())
-                    })?;
-                    tr.set(&by_id_key, &value);
-                    tr.clear(&pending_key);
-                    Ok(Outcome::Claimed(Box::new(job)))
+                        job.status = JobStatus::InProgress;
+                        job.claimed_at = Some(Utc::now());
+                        job.claimed_by = Some(claimed_by);
+                        let value = serde_json::to_vec(&job).map_err(|e| {
+                            FdbBindingError::CustomError(format!("serialize job: {e}").into())
+                        })?;
+                        tr.set(&by_id_key, &value);
+                        tr.clear(&pending_key);
+                        return Ok(Outcome::Claimed(Box::new(job)));
+                    }
+                    Ok(Outcome::Empty)
                 }
             })
             .await;

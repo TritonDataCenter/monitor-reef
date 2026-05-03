@@ -157,6 +157,7 @@ async fn agent_claim_then_complete_drains_queue() {
         .store
         .enqueue_job(NewJob {
             kind: JobKind::Provision { instance_id },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();
@@ -213,6 +214,7 @@ async fn agent_complete_with_failure_records_reason() {
     test.store
         .enqueue_job(NewJob {
             kind: JobKind::Provision { instance_id },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();
@@ -288,6 +290,7 @@ async fn blueprint_returns_kind_and_instance_when_present() {
             kind: JobKind::Provision {
                 instance_id: phantom_instance,
             },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();
@@ -319,6 +322,7 @@ async fn blueprint_denied_to_read_only_scope() {
             kind: JobKind::Provision {
                 instance_id: phantom_instance,
             },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();
@@ -444,6 +448,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
             kind: JobKind::Provision {
                 instance_id: instance.id,
             },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();
@@ -545,10 +550,15 @@ async fn sweeper_reaps_stale_inprogress_job() {
             kind: JobKind::Provision {
                 instance_id: phantom_instance,
             },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();
-    let claimed = test.store.claim_next_job("crashed-agent").await.unwrap();
+    let claimed = test
+        .store
+        .claim_next_job("crashed-agent", None)
+        .await
+        .unwrap();
     assert_eq!(claimed.id, queued.id);
     assert!(matches!(
         claimed.status,
@@ -858,6 +868,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
             kind: JobKind::Provision {
                 instance_id: created.instance.id,
             },
+            target_cn_uuid: None,
         })
         .await
         .unwrap();

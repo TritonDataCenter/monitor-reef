@@ -542,4 +542,3 @@ async fn bound_api_key_rejects_claim_for_other_cn() {
 
     test.close().await;
 }
-

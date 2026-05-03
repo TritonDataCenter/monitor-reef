@@ -610,7 +610,11 @@ impl TritondApi for TritondServiceImpl {
         // The store returns NotFound when the queue is empty; we
         // turn that into the wire-level "no work" signal so the
         // agent can poll on a timer without 404 noise.
-        let job = match ctx.store.claim_next_job(&req.claimed_by).await {
+        // Pass the bound CN through as the claimer identity.
+        // Unbound claimers (the in-process stub or a legacy
+        // operator-minted Agent key) get only unrouted jobs.
+        let claimer_cn = crate::auth::principal_bound_cn(&principal);
+        let job = match ctx.store.claim_next_job(&req.claimed_by, claimer_cn).await {
             Ok(job) => Some(job),
             Err(StoreError::NotFound) => None,
             Err(e) => return Err(store_error_to_http(e)),
@@ -696,7 +700,11 @@ impl TritondApi for TritondServiceImpl {
         // itself claimed. We look up the job, check the binding,
         // and only then issue the terminal write.
         if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
-            let job = ctx.store.get_job(job_id).await.map_err(store_error_to_http)?;
+            let job = ctx
+                .store
+                .get_job(job_id)
+                .await
+                .map_err(store_error_to_http)?;
             enforce_job_belongs_to_bound_cn(&job, bound)?;
         }
         let outcome_label = match &req.outcome {
@@ -2163,6 +2171,10 @@ impl TritondApi for TritondServiceImpl {
                 kind: JobKind::Provision {
                     instance_id: instance.id,
                 },
+                // Phase 0: leave placement to whichever agent
+                // claims first. A future scheduler will populate
+                // this from a real placement decision.
+                target_cn_uuid: None,
             })
             .await
         {
@@ -2290,6 +2302,7 @@ impl TritondApi for TritondServiceImpl {
                     .store
                     .enqueue_job(NewJob {
                         kind: JobKind::Delete { instance_id },
+                        target_cn_uuid: None,
                     })
                     .await
                 {
@@ -3331,10 +3344,7 @@ async fn mint_and_attach_cn_credential(
 /// it claimed) doesn't match the bound key's CN. Used by
 /// `agent_complete_job` and `agent_job_blueprint` so a bound
 /// key for CN-A can't operate on a job claimed by CN-B.
-fn enforce_job_belongs_to_bound_cn(
-    job: &ProvisioningJob,
-    bound_cn: Uuid,
-) -> Result<(), HttpError> {
+fn enforce_job_belongs_to_bound_cn(job: &ProvisioningJob, bound_cn: Uuid) -> Result<(), HttpError> {
     // `claimed_by` is free-text on the wire today; bound agents
     // are required to set it to their server_uuid string.
     let Some(ref claimed_by) = job.claimed_by else {
@@ -3453,6 +3463,7 @@ async fn instance_lifecycle_transition(
             .store
             .enqueue_job(NewJob {
                 kind: template.for_instance(instance_id),
+                target_cn_uuid: None,
             })
             .await
     {
