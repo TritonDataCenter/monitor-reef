@@ -31,7 +31,9 @@
 //! [`ApiKeyScope::Agent`]: tritond_client::types::ApiKeyScope::Agent
 //! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
 
+pub mod images;
 pub mod vmadm;
+pub mod zfs;
 
 use std::time::Duration;
 
@@ -217,6 +219,19 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
                     "instance {instance_id} no longer exists; refusing to provision a phantom"
                 );
             }
+            // Make sure the boot image is on this host before
+            // we hand off to vmadm. `ensure` is idempotent — on
+            // hosts that already have the dataset it returns
+            // immediately. On a fresh host the first instance
+            // pays the download + zfs-recv cost; subsequent
+            // instances clone the snapshot for ~free.
+            let image = blueprint
+                .image
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Provision blueprint has no image"))?;
+            images::ensure(image)
+                .await
+                .context("ensure image content on host")?;
             vmadm::create_zone(&blueprint).await?;
         }
         JobKind::Stop(instance_id) => {

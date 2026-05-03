@@ -510,15 +510,120 @@ pub struct NewImage {
     pub sha256: String,
     #[serde(default)]
     pub source_url: Option<String>,
-    /// Optional UUID to pin for the new image. When `Some`, the
-    /// store uses this value instead of generating a fresh UUID
-    /// — useful when an operator wants tritond's image id to
-    /// equal the corresponding `imgadm` UUID on every CN, so the
-    /// per-CN agent can pass it straight through to
-    /// `vmadm create`. The store rejects the create with
-    /// [`StoreError::Conflict`] if the id is already in use.
+    /// Optional UUID to pin for the new image. When `None` (the
+    /// usual case), the server derives the UUID deterministically
+    /// from `sha256` via [`derive_image_id`] — same content
+    /// always yields the same id across hosts and replays, so
+    /// the per-CN agent's content-addressed ZFS dataset
+    /// (`zones/<image_id>`) collapses identical bytes into one
+    /// import. `Some(...)` is only useful for cross-cluster
+    /// mirroring scenarios where the operator wants tritond's id
+    /// to match a UUID minted elsewhere; the store rejects the
+    /// create with [`StoreError::Conflict`] if the id is already
+    /// in use.
     #[serde(default)]
     pub id: Option<Uuid>,
+}
+
+/// Stable namespace for [`derive_image_id`]. Picked once on
+/// 2026-05-02; **never change this value** — it would
+/// retroactively re-key every persisted image. Generated via
+/// `python3 -c 'import uuid; print(uuid.uuid4())'`.
+pub const TRITOND_IMAGE_NAMESPACE: Uuid = Uuid::from_bytes([
+    0xb5, 0xb5, 0x0a, 0x2c, 0xf0, 0x6c, 0x49, 0x09, 0x94, 0x52, 0x11, 0xe2, 0xef, 0xd7, 0xcd, 0x67,
+]);
+
+/// Derive an image UUID from its owning silo + content sha256.
+///
+/// Uses UUID v5 (SHA-1-based) over a fixed tritond namespace
+/// so the mapping `(silo_id, sha256) → uuid` is stable across
+/// hosts and cluster replays. The same image content
+/// registered in the same silo under two different names
+/// yields the same id, which makes per-CN `zones/<image_id>`
+/// content-addressed storage work without a separate lookup
+/// table.
+///
+/// **Why silo-keyed and not content-only.** Phase 0 image
+/// records carry `silo_id` as part of their identity (same
+/// name in different silos must coexist as separate records).
+/// A purely content-keyed id would force `(silo_id, image_id)`
+/// to become a composite primary key — a substantial schema
+/// change for a small future-proofing win. The Slice B catalog
+/// redesign tackles cross-silo dedup; for now we accept that
+/// two silos registering identical bytes on the same CN end
+/// up with two ZFS datasets.
+///
+/// `sha256` is expected to be lowercase hex; case is normalised
+/// here so trivial input differences don't desync the mapping.
+#[must_use]
+pub fn derive_image_id(silo_id: Uuid, sha256: &str) -> Uuid {
+    let normalised = sha256.to_ascii_lowercase();
+    let mut input = Vec::with_capacity(16 + normalised.len() + 1);
+    input.extend_from_slice(silo_id.as_bytes());
+    input.push(b':');
+    input.extend_from_slice(normalised.as_bytes());
+    Uuid::new_v5(&TRITOND_IMAGE_NAMESPACE, &input)
+}
+
+#[cfg(test)]
+mod derive_image_id_tests {
+    use super::*;
+
+    fn fixture_silo() -> Uuid {
+        Uuid::from_bytes([0xab; 16])
+    }
+
+    #[test]
+    fn deterministic_for_same_inputs() {
+        let s = fixture_silo();
+        assert_eq!(
+            derive_image_id(s, "abc123"),
+            derive_image_id(s, "abc123"),
+            "same (silo, sha256) must yield same UUID",
+        );
+    }
+
+    #[test]
+    fn case_insensitive_on_sha256() {
+        let s = fixture_silo();
+        assert_eq!(
+            derive_image_id(s, "ABCDEF1234"),
+            derive_image_id(s, "abcdef1234"),
+            "case differences must not desync the mapping",
+        );
+    }
+
+    #[test]
+    fn different_content_yields_different_id() {
+        let s = fixture_silo();
+        assert_ne!(
+            derive_image_id(s, &"a".repeat(64)),
+            derive_image_id(s, &"b".repeat(64)),
+            "distinct sha256 inputs must not collide",
+        );
+    }
+
+    #[test]
+    fn same_content_in_different_silos_does_not_collide() {
+        let a = Uuid::from_bytes([0x01; 16]);
+        let b = Uuid::from_bytes([0x02; 16]);
+        assert_ne!(
+            derive_image_id(a, "abc123"),
+            derive_image_id(b, "abc123"),
+            "same content in different silos must yield distinct ids",
+        );
+    }
+
+    #[test]
+    fn namespace_pinned() {
+        // Locks the namespace constant: regenerating the namespace
+        // would re-key every persisted image, so a future change
+        // here is a wire break and must be deliberate.
+        assert_eq!(
+            TRITOND_IMAGE_NAMESPACE.to_string(),
+            "b5b50a2c-f06c-4909-9452-11e2efd7cd67",
+        );
+    }
 }
 
 /// Per-project resource quota. Singleton: each project has at most

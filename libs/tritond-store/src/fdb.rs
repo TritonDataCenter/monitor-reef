@@ -1644,7 +1644,15 @@ impl Store for FdbStore {
     }
 
     async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
-        let id = req.id.unwrap_or_else(Uuid::new_v4);
+        // None → derive from sha256 (the new default), which makes
+        // tritond's image identity content-addressed and lets the
+        // per-CN agent share one ZFS dataset across silos when
+        // operators register the same content under different
+        // names. Some(...) → operator pinned, used for cross-cluster
+        // mirror cases.
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(silo_id, &req.sha256));
         let image = Image {
             id,
             silo_id,

@@ -36,7 +36,8 @@ pub use types::{
     Image, Instance, InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
     NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
-    SshKey, Subnet, SystemKey, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    SshKey, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, User, UserView, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
 };
 
 use async_trait::async_trait;

@@ -656,16 +656,14 @@ impl Store for MemStore {
             )));
         }
         let id = match req.id {
-            Some(pinned) => {
-                if guard.images_by_id.contains_key(&pinned) {
-                    return Err(StoreError::Conflict(format!(
-                        "image with id {pinned} already exists",
-                    )));
-                }
-                pinned
-            }
-            None => Uuid::new_v4(),
+            Some(pinned) => pinned,
+            None => crate::derive_image_id(silo_id, &req.sha256),
         };
+        if guard.images_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "image with id {id} already exists",
+            )));
+        }
         let image = Image {
             id,
             silo_id,
@@ -2480,13 +2478,27 @@ mod tests {
     }
 
     fn image_req(name: &str) -> NewImage {
+        // sha256 is derived from the test image name so two
+        // distinct fixtures in the same silo don't collide on
+        // the new content-addressed image-id derivation.
+        // Production callers compute the real sha256 over the
+        // image content; tests just need uniqueness.
+        let mut sha = String::with_capacity(64);
+        for byte in name.as_bytes() {
+            use std::fmt::Write as _;
+            write!(&mut sha, "{byte:02x}").ok();
+        }
+        while sha.len() < 64 {
+            sha.push('0');
+        }
+        sha.truncate(64);
         NewImage {
             name: name.to_string(),
             description: None,
             os: "linux".to_string(),
             version: "ubuntu-22.04".to_string(),
             size_bytes: 1_000_000_000,
-            sha256: "0".repeat(64),
+            sha256: sha,
             source_url: Some("mantafs://images/test".to_string()),
             id: None,
         }
