@@ -82,6 +82,19 @@ struct Cli {
     /// path is the obvious one.
     #[arg(long, env = "TRITONAGENT_DRY_RUN", default_value_t = false)]
     dry_run: bool,
+
+    /// When set, do NOT spawn the background heartbeater /
+    /// zoneevent watcher. The agent will only run the job-claim
+    /// loop. Used by tritond integration tests that don't want
+    /// the heartbeater chattering at the test server. Off by
+    /// default — production CNs are expected to publish liveness
+    /// + status.
+    #[arg(
+        long = "no-heartbeater",
+        env = "TRITONAGENT_DISABLE_HEARTBEATER",
+        default_value_t = false
+    )]
+    no_heartbeater: bool,
 }
 
 #[tokio::main]
@@ -132,6 +145,7 @@ async fn main() -> Result<()> {
         agent_id: server_uuid.to_string(),
         poll_interval: Duration::from_secs(cli.poll_interval_secs),
         dry_run: cli.dry_run,
+        spawn_heartbeater: !cli.no_heartbeater,
     };
     tritonagent::run(cfg).await
 }

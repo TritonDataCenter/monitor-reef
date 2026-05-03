@@ -35,9 +35,11 @@ pub mod credentials;
 pub mod images;
 pub mod platform;
 pub mod registration;
+pub mod status;
 pub mod vmadm;
 pub mod zfs;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
@@ -46,6 +48,12 @@ use tritond_client::Client;
 use tritond_client::types::{
     ClaimJobRequest, CompleteJobRequest, ImageCompatibility, JobKind, JobOutcome, ProvisioningJob,
 };
+use tritond_cn_platform::cn_status::{
+    DiskUsageSampler, Heartbeater, StatusCollector, UuidNamedImageFilter, ZoneeventWatcher,
+};
+use tritond_cn_platform::smartos::{KstatTool, VmadmTool, ZfsTool};
+
+use crate::status::TritondStatusSink;
 
 /// Configuration for an [`Agent`] run.
 #[derive(Debug, Clone)]
@@ -66,6 +74,13 @@ pub struct AgentConfig {
     /// without SmartOS (e.g. the dev laptop). Defaults to `false`
     /// so the production path is the obvious default.
     pub dry_run: bool,
+    /// When `true` (the default), the agent spawns the harvested
+    /// `cn_status::Heartbeater` alongside the job-claim loop and
+    /// posts liveness + status to tritond's `/v2/agent/heartbeat`
+    /// and `/v2/agent/status`. Disabled by `--no-heartbeater`
+    /// for tritond integration tests that don't want background
+    /// chatter at the test server.
+    pub spawn_heartbeater: bool,
 }
 
 impl AgentConfig {
@@ -101,17 +116,47 @@ impl AgentConfig {
 
 /// Run the agent loop forever. Returns only on a fatal error.
 pub async fn run(cfg: AgentConfig) -> Result<()> {
-    let client = cfg.build_client()?;
+    let client = Arc::new(cfg.build_client()?);
     info!(
         agent_id = %cfg.agent_id,
         endpoint = %cfg.endpoint,
         poll_interval_ms = cfg.poll_interval.as_millis(),
         dry_run = cfg.dry_run,
+        spawn_heartbeater = cfg.spawn_heartbeater,
         "tritonagent starting",
     );
 
+    // Optional background publisher. Spawned only when the operator
+    // hasn't asked us to stay quiet (the integration-test path).
+    // Both handles must outlive the poll loop so that on shutdown
+    // we can drain them gracefully — the heartbeater holds the
+    // dirty flag the watcher pokes, and tearing them down out of
+    // order risks a missed status sample.
+    let mut publisher = if cfg.spawn_heartbeater {
+        Some(spawn_publisher(Arc::clone(&client)))
+    } else {
+        None
+    };
+
+    let result = run_poll_loop(client.as_ref(), &cfg).await;
+
+    if let Some(p) = publisher.take() {
+        p.shutdown().await;
+    }
+
+    result
+}
+
+/// The job-claim loop, factored out so [`run`] can wrap it with the
+/// publisher's lifetime without duplicating the poll/backoff logic.
+///
+/// Returns `Ok(())` only on a clean caller-initiated stop; today
+/// nothing inside the loop can return a clean `Ok(())`, but the
+/// signature matches `run` so future SIGTERM handling drops in
+/// without a refactor.
+async fn run_poll_loop(client: &Client, cfg: &AgentConfig) -> Result<()> {
     loop {
-        match poll_once(&client, &cfg).await {
+        match poll_once(client, cfg).await {
             Ok(true) => {
                 // Worked a job; immediately try the next one — the
                 // queue may have more.
@@ -126,6 +171,60 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
                 tokio::time::sleep(cfg.poll_interval * 2).await;
             }
         }
+    }
+}
+
+/// Owns the heartbeater + zoneevent watcher handles together so
+/// `run` can shut them down in lock-step on exit.
+struct PublisherHandles {
+    heartbeater: tritond_cn_platform::cn_status::HeartbeaterHandle,
+    zoneevent: ZoneeventWatcher,
+}
+
+impl PublisherHandles {
+    /// Stop the watcher first (it can no longer poke a flag the
+    /// heartbeater will consume), then wait for the heartbeater's
+    /// in-flight tick to finish.
+    async fn shutdown(self) {
+        self.zoneevent.stop().await;
+        self.heartbeater.shutdown().await;
+    }
+}
+
+/// Build and spawn the heartbeater + zoneevent watcher pair.
+///
+/// The heartbeater owns the [`DirtyFlag`]; the watcher pokes it on
+/// every zone state change so a status sample lands within the
+/// 500ms `STATUS_CHECK_INTERVAL` rather than waiting up to 60s for
+/// the next periodic max-tick.
+///
+/// On non-SmartOS hosts the zoneevent binary is missing — the
+/// watcher's spawn loop logs a warning and retries every 30s,
+/// which is the same behaviour the legacy cn-agent had on dev
+/// laptops. We don't gate the watcher on platform detection
+/// because the agent's only supported deployment target is
+/// SmartOS; a missing binary is operator misconfiguration, not a
+/// supported runtime mode.
+fn spawn_publisher(client: Arc<Client>) -> PublisherHandles {
+    let sink = TritondStatusSink::new(client);
+    let vmadm = Arc::new(VmadmTool::new());
+    let zfs = Arc::new(ZfsTool::new());
+    let kstat = Arc::new(KstatTool::new());
+    let disk_usage = DiskUsageSampler::new(Arc::clone(&zfs), Arc::new(UuidNamedImageFilter));
+    let collector = StatusCollector::new(vmadm, zfs, kstat, disk_usage);
+
+    let heartbeater = Heartbeater::new(Arc::new(sink), collector);
+    // Capture the dirty flag BEFORE spawning — once `spawn()`
+    // consumes the heartbeater there's no path back to its
+    // internal flag. The watcher needs the same instance the
+    // heartbeater is reading, so this ordering matters.
+    let dirty = heartbeater.dirty_flag();
+    let hb_handle = heartbeater.spawn();
+    let zoneevent = ZoneeventWatcher::spawn(dirty);
+
+    PublisherHandles {
+        heartbeater: hb_handle,
+        zoneevent,
     }
 }
 
