@@ -593,6 +593,20 @@ impl TritondApi for TritondServiceImpl {
         .await?;
         let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
+        // Per-CN binding: a key minted for CN-A cannot claim as
+        // CN-B. The string `claimed_by` must parse as the bound
+        // server_uuid. Unbound keys (operator-minted) skip the
+        // check; their `claimed_by` stays free-text.
+        if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
+            let claimed_uuid = Uuid::parse_str(&req.claimed_by).map_err(|_| {
+                HttpError::for_client_error(
+                    Some("Forbidden".to_string()),
+                    ClientErrorStatusCode::FORBIDDEN,
+                    "bound api key requires claimed_by to be a uuid".to_string(),
+                )
+            })?;
+            crate::auth::enforce_cn_binding(Some(bound), claimed_uuid)?;
+        }
         // The store returns NotFound when the queue is empty; we
         // turn that into the wire-level "no work" signal so the
         // agent can poll on a timer without 404 noise.
@@ -638,7 +652,7 @@ impl TritondApi for TritondServiceImpl {
         path: Path<AgentJobPath>,
     ) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError> {
         let ctx = rqctx.context();
-        authenticate_and_authorize(
+        let principal = authenticate_and_authorize(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
@@ -652,6 +666,11 @@ impl TritondApi for TritondServiceImpl {
             .get_job(job_id)
             .await
             .map_err(store_error_to_http)?;
+        // Per-CN binding: a bound key may only fetch blueprints
+        // for jobs it itself claimed. Unbound keys see anything.
+        if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
+            enforce_job_belongs_to_bound_cn(&job, bound)?;
+        }
         let blueprint = build_blueprint(ctx.store.as_ref(), &job).await?;
         Ok(HttpResponseOk(blueprint))
     }
@@ -673,6 +692,13 @@ impl TritondApi for TritondServiceImpl {
         let request_id = parse_request_id(&rqctx);
         let job_id = path.into_inner().job_id;
         let req = body.into_inner();
+        // Per-CN binding: a bound key may only complete jobs it
+        // itself claimed. We look up the job, check the binding,
+        // and only then issue the terminal write.
+        if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
+            let job = ctx.store.get_job(job_id).await.map_err(store_error_to_http)?;
+            enforce_job_belongs_to_bound_cn(&job, bound)?;
+        }
         let outcome_label = match &req.outcome {
             JobOutcome::Completed => "completed",
             JobOutcome::Failed { .. } => "failed",
@@ -3299,6 +3325,33 @@ async fn mint_and_attach_cn_credential(
         }
     };
     Ok(updated)
+}
+
+/// 403 if the job's `claimed_by` (which the agent set when
+/// it claimed) doesn't match the bound key's CN. Used by
+/// `agent_complete_job` and `agent_job_blueprint` so a bound
+/// key for CN-A can't operate on a job claimed by CN-B.
+fn enforce_job_belongs_to_bound_cn(
+    job: &ProvisioningJob,
+    bound_cn: Uuid,
+) -> Result<(), HttpError> {
+    // `claimed_by` is free-text on the wire today; bound agents
+    // are required to set it to their server_uuid string.
+    let Some(ref claimed_by) = job.claimed_by else {
+        return Err(HttpError::for_client_error(
+            Some("Forbidden".to_string()),
+            ClientErrorStatusCode::FORBIDDEN,
+            "job has no claimer; bound key cannot operate on it".to_string(),
+        ));
+    };
+    let claimed_uuid = Uuid::parse_str(claimed_by).map_err(|_| {
+        HttpError::for_client_error(
+            Some("Forbidden".to_string()),
+            ClientErrorStatusCode::FORBIDDEN,
+            "job claimed_by is not a uuid; bound key cannot match it".to_string(),
+        )
+    })?;
+    crate::auth::enforce_cn_binding(Some(bound_cn), claimed_uuid)
 }
 
 /// Stable label for a principal in audit/window-tracking JSON.

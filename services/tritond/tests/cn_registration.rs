@@ -25,7 +25,8 @@ use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::Client;
 use tritond_client::types::{
-    ApproveCnRequest, CnState, LoginRequest, OpenAutoApproveRequest, RegisterCnRequest,
+    ApproveCnRequest, ClaimJobRequest, CnState, LoginRequest, OpenAutoApproveRequest,
+    RegisterCnRequest,
 };
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
@@ -462,3 +463,83 @@ async fn list_cns_filters_by_state() {
 
     test.close().await;
 }
+
+#[tokio::test]
+async fn bound_api_key_rejects_claim_for_other_cn() {
+    let test = TestServer::start().await;
+    let anon = test.anonymous_client();
+    let session = root_session(&test).await;
+
+    // Register + approve a CN; retrieve its bound api key.
+    let cn_a = Uuid::new_v4();
+    let registered = anon
+        .agent_register()
+        .body(RegisterCnRequest {
+            server_uuid: cn_a,
+            hostname: "cn-a".to_string(),
+            admin_ip: None,
+            sysinfo: fixture_sysinfo(cn_a, "cn-a"),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let claim_code = registered.claim_code.unwrap();
+    session
+        .approve_cn()
+        .body(ApproveCnRequest { code: claim_code })
+        .send()
+        .await
+        .unwrap();
+    let api_key = anon
+        .agent_register_status()
+        .poll_token(&registered.poll_token)
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .api_key
+        .expect("approval delivers a key");
+
+    // Build a client carrying the bound CN-A key.
+    let agent = test.bearer_client(&api_key);
+
+    // Claim with claimed_by = OTHER uuid → 403 (binding mismatch).
+    let other = Uuid::new_v4();
+    let err = agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: other.to_string(),
+        })
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    // Claim with claimed_by = bound CN-A → succeeds (queue empty,
+    // returns null job, but no 403 from the binding check).
+    let resp = agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: cn_a.to_string(),
+        })
+        .send()
+        .await
+        .expect("matching claimed_by passes the binding check")
+        .into_inner();
+    assert!(resp.job.is_none(), "queue empty");
+
+    // Non-uuid claimed_by → 403 (a bound key requires a uuid form).
+    let err = agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: "agent-A".to_string(),
+        })
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    test.close().await;
+}
+

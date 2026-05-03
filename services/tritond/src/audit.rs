@@ -198,6 +198,7 @@ mod tests {
             is_root: false,
             silo_id: None,
             scope: None,
+            bound_cn: None,
         };
         let emitted = svc
             .record_decision(&principal, Action::CreateSilo, None, Decision::Deny)

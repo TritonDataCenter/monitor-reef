@@ -154,6 +154,14 @@ pub enum Principal {
         is_root: bool,
         silo_id: Option<Uuid>,
         scope: Option<ApiKeyScope>,
+        /// CN binding from the presenting API key, if any. Set
+        /// when the request authenticated via a key with
+        /// [`ApiKey::bound_to_cn`] populated (the per-CN keys
+        /// minted by the registration approval flow). Handlers
+        /// that act "as a CN" (the entire `/v2/agent/*` surface)
+        /// must verify this matches whatever CN identity the
+        /// request claims; mismatch is a 403.
+        bound_cn: Option<Uuid>,
     },
     /// No valid credential was presented (or the presented one was
     /// invalid). Cedar will allow this principal only on
@@ -471,6 +479,7 @@ impl AuthService {
                     // JWT-authenticated principals carry the user's
                     // full permissions; scope only applies to API keys.
                     scope: None,
+                    bound_cn: None,
                 }),
                 Err(StoreError::NotFound) => Ok(Principal::Anonymous),
                 Err(e) => {
@@ -576,6 +585,7 @@ impl AuthService {
             // OIDC-authenticated principals carry the user's full
             // permissions; scope only applies to API keys.
             scope: None,
+            bound_cn: None,
         })
     }
 
@@ -615,6 +625,10 @@ impl AuthService {
                 // a second store round-trip. `Full` falls through as
                 // "no extra restriction" — see [`scope_allows_action`].
                 scope: Some(record.scope),
+                // Per-CN binding (set by the registration approval
+                // flow). Handlers under `/v2/agent/*` enforce that
+                // the request's CN identity matches this value.
+                bound_cn: record.bound_to_cn,
             }),
             Err(StoreError::NotFound) => Ok(Principal::Anonymous),
             Err(e) => {
@@ -914,6 +928,37 @@ pub fn require_authenticated(principal: Principal) -> Result<(Uuid, bool), HttpE
     }
 }
 
+/// Returns the per-CN binding from the principal's API key, if
+/// any. Used by `/v2/agent/*` handlers to enforce that a key
+/// minted for CN-A cannot drive work as CN-B.
+#[must_use]
+pub fn principal_bound_cn(principal: &Principal) -> Option<Uuid> {
+    match principal {
+        Principal::Operator { bound_cn, .. } => *bound_cn,
+        Principal::Anonymous => None,
+    }
+}
+
+/// 403 helper for the per-CN binding check. Caller passes the
+/// bound CN (from `principal_bound_cn`) and the CN identity the
+/// request claims (e.g. `claimed_by` parsed as a UUID, or the
+/// job's `claimed_by`); returns `Ok(())` when they match (or the
+/// principal is unbound), `Err(403)` otherwise.
+pub fn enforce_cn_binding(
+    bound_cn: Option<Uuid>,
+    claimed_cn: Uuid,
+) -> Result<(), HttpError> {
+    match bound_cn {
+        None => Ok(()), // Unbound key (operator-minted): no binding to check.
+        Some(b) if b == claimed_cn => Ok(()),
+        Some(_) => Err(HttpError::for_client_error(
+            Some("Forbidden".to_string()),
+            ClientErrorStatusCode::FORBIDDEN,
+            "api key is bound to a different cn than the one this request names".to_string(),
+        )),
+    }
+}
+
 fn forbidden_for(action: Action) -> HttpError {
     HttpError::for_client_error(
         Some("Forbidden".to_string()),
@@ -1002,6 +1047,7 @@ mod tests {
             is_root: true,
             silo_id: None,
             scope: None,
+            bound_cn: None,
         };
         for action in [
             Action::CreateSilo,
@@ -1022,6 +1068,7 @@ mod tests {
             is_root: false,
             silo_id: None,
             scope: None,
+            bound_cn: None,
         };
         assert!(auth.authorize(&p, Action::Health).is_ok());
         let err = auth
@@ -1038,6 +1085,7 @@ mod tests {
             is_root: true,
             silo_id: None,
             scope: Some(ApiKeyScope::ReadOnly),
+            bound_cn: None,
         };
         // Reads pass.
         assert!(auth.authorize(&p, Action::ListApiKeys).is_ok());
@@ -1061,6 +1109,7 @@ mod tests {
             is_root: true,
             silo_id: None,
             scope: Some(ApiKeyScope::AuditOnly),
+            bound_cn: None,
         };
         for action in [Action::AuditList, Action::AuditFetch, Action::AuditVerify] {
             assert!(auth.authorize(&p, action).is_ok(), "denied {action:?}");
