@@ -153,8 +153,14 @@ async fn poll_once(client: &Client, cfg: &AgentConfig) -> Result<bool> {
             // future slice) and the audit chain. The agent does
             // not retry — operators retry by issuing the
             // originating action again.
-            error!(job_id = %job.id, error = %reason, "job failed; reporting to tritond");
-            JobOutcome::Failed(reason.to_string())
+            //
+            // `{:#}` renders the full anyhow chain on one line
+            // (top message + each `with_context` cause), which is
+            // what the operator and the audit chain need to
+            // diagnose without an interactive shell on the agent.
+            let chain = format!("{reason:#}");
+            error!(job_id = %job.id, error = %chain, "job failed; reporting to tritond");
+            JobOutcome::Failed(chain)
         }
     };
 
