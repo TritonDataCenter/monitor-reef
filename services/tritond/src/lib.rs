@@ -407,6 +407,7 @@ impl TritondApi for TritondServiceImpl {
             lookup_id: material.lookup_id,
             hash: material.hash,
             scope: req.scope,
+            bound_to_cn: None,
             created_at: chrono::Utc::now(),
         };
         let saved = ctx

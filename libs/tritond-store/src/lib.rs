@@ -31,16 +31,20 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, Disk, DiskKind, FLOATING_IP_V4_POOL,
-    FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView,
-    Image, ImageCompatibility, Instance, InstanceCreateResult, JobKind, JobOutcome, JobStatus,
-    JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
-    NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
-    Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
-    User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
+    AUTO_APPROVE_WINDOW_MAX, AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
+    CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnState, CnView, Disk, DiskKind,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment,
+    IdpConfig, IdpConfigView, Image, ImageCompatibility, Instance, InstanceCreateResult, JobKind,
+    JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp,
+    NewImage, NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
+    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey,
+    TRITOND_IMAGE_NAMESPACE, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    derive_image_id, format_claim_code, generate_claim_code, generate_poll_token,
+    normalize_claim_code,
 };
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Errors that a [`Store`] implementation may produce.
@@ -612,4 +616,134 @@ pub trait Store: Send + Sync + 'static {
     /// reverse chronological order (newest first). Used by
     /// operator debugging surfaces.
     async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Compute nodes (CN registration + approval)
+    // ------------------------------------------------------------------
+
+    /// Self-register a compute node by `server_uuid`.
+    ///
+    /// Upsert semantics:
+    /// * If no record exists, creates one in [`CnState::Pending`]
+    ///   with a fresh `claim_code`, `poll_token`, and the supplied
+    ///   `sysinfo`/`hostname`/`admin_ip`. If a global
+    ///   [`AutoApproveWindow`] is open and has a remaining slot,
+    ///   the record is created directly in [`CnState::Approved`]
+    ///   without a claim code; the slot is consumed atomically and
+    ///   `bound_api_key_id` is left `None` (the caller mints the
+    ///   key and follows up with [`approve_cn_post_register`]).
+    /// * If a Pending record already exists, refreshes the
+    ///   sysinfo/hostname/admin_ip plus rotates the `claim_code` and
+    ///   `poll_token` (the previous code becomes invalid). This is
+    ///   the "agent restarted before approval came in" path.
+    /// * If an Approved record exists, the call is idempotent —
+    ///   sysinfo and `last_seen` are refreshed but credentials are
+    ///   not re-minted; the agent is expected to already hold its
+    ///   bound API key.
+    /// * If a Disabled record exists, returns
+    ///   [`StoreError::Conflict`]: an operator must remove the
+    ///   record before the same `server_uuid` can re-join.
+    ///
+    /// Returns the resulting [`Cn`].
+    async fn register_cn(
+        &self,
+        server_uuid: Uuid,
+        hostname: String,
+        admin_ip: Option<std::net::Ipv4Addr>,
+        sysinfo: serde_json::Value,
+        now: DateTime<Utc>,
+    ) -> Result<Cn, StoreError>;
+
+    /// Look up a CN by `server_uuid`.
+    async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError>;
+
+    /// Look up a CN by its long-poll token. Used by
+    /// `GET /v2/agent/register/status` to resolve "the agent
+    /// holding this token" to its record. Returns
+    /// [`StoreError::NotFound`] if no record matches.
+    async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError>;
+
+    /// Look up the Pending CN whose normalized `claim_code` matches.
+    /// Returns [`StoreError::NotFound`] for no-such-code OR for a
+    /// code whose record is not Pending OR for a code whose
+    /// `claim_code_expires_at` has passed (the latter conflated
+    /// into NotFound so probes can't distinguish).
+    async fn get_cn_by_claim_code(&self, code: &str) -> Result<Cn, StoreError>;
+
+    /// List CNs, optionally filtered by state. Order is unspecified.
+    async fn list_cns(&self, state_filter: Option<CnState>) -> Result<Vec<Cn>, StoreError>;
+
+    /// Atomically attach a freshly-minted bound API key to a CN.
+    ///
+    /// Two callers:
+    /// 1. The operator approval flow: CN is Pending; this flips
+    ///    state to Approved, clears the claim code, and stashes the
+    ///    plaintext credential for the agent's long-poll.
+    /// 2. The auto-approve flow: `register_cn` has already created
+    ///    the record in Approved state (claim code never issued);
+    ///    this attaches the freshly-minted key + plaintext.
+    ///
+    /// Precondition: `bound_api_key_id.is_none()` AND state is not
+    /// Disabled. A second call (after the agent has already retrieved
+    /// the credential) would either see a populated `bound_api_key_id`
+    /// (returns `Conflict`) or a Disabled record (returns `NotFound`).
+    ///
+    /// Returns [`StoreError::NotFound`] if the CN does not exist or
+    /// is Disabled; [`StoreError::Conflict`] if a credential is
+    /// already attached (programmer error — never reapprove).
+    async fn approve_cn(
+        &self,
+        server_uuid: Uuid,
+        bound_api_key_id: Uuid,
+        pending_credential: String,
+        approved_at: DateTime<Utc>,
+    ) -> Result<Cn, StoreError>;
+
+    /// Atomically take the pending plaintext credential off a Cn
+    /// record. Returns `Ok(None)` when the field was already empty
+    /// (idempotent for repeat-poll behavior). Looking up by
+    /// `poll_token` rather than `server_uuid` is deliberate: the
+    /// agent only has the poll token at this point.
+    async fn consume_cn_pending_credential(
+        &self,
+        poll_token: &str,
+    ) -> Result<Option<String>, StoreError>;
+
+    /// Disable a CN (Approved → Disabled or Pending → Disabled).
+    /// The bound API key (if any) should be deleted by the caller
+    /// in the same logical operation; this method only flips state
+    /// and returns the updated record.
+    async fn disable_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError>;
+
+    /// Update a CN's `last_seen` timestamp. Used by Slice D's
+    /// heartbeater.
+    async fn update_cn_last_seen(
+        &self,
+        server_uuid: Uuid,
+        at: DateTime<Utc>,
+    ) -> Result<(), StoreError>;
+
+    // ---- Auto-approve window (singleton) ----
+
+    /// Read the current auto-approve window, if one is open.
+    /// Returns `Ok(None)` when no window has been opened or the
+    /// last one was closed/expired.
+    async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError>;
+
+    /// Open or replace the auto-approve window. The caller is
+    /// responsible for clamping `expires_at - opened_at` to
+    /// [`AUTO_APPROVE_WINDOW_MAX`] before calling.
+    async fn open_auto_approve_window(&self, w: AutoApproveWindow) -> Result<(), StoreError>;
+
+    /// Close the auto-approve window (operator-initiated). Idempotent
+    /// if no window is open.
+    async fn close_auto_approve_window(&self) -> Result<(), StoreError>;
+
+    /// Atomically: if a window is open, has not expired (`now <
+    /// expires_at`), and has a remaining count > 0 (or `None` =
+    /// unlimited), decrement remaining_count and return
+    /// `Ok(true)`. Otherwise return `Ok(false)`. Used by
+    /// `register_cn` to decide whether to short-circuit to
+    /// Approved.
+    async fn try_consume_auto_approve_slot(&self, now: DateTime<Utc>) -> Result<bool, StoreError>;
 }

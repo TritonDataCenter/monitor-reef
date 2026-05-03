@@ -398,6 +398,12 @@ pub struct ApiKey {
     /// deserialise as [`ApiKeyScope::Full`].
     #[serde(default)]
     pub scope: ApiKeyScope,
+    /// When set, this key is bound to a specific compute node and the
+    /// auth layer rejects any request whose `claimed_by` (or future
+    /// per-CN selector) doesn't match. Minted by the CN approval
+    /// flow; manually-minted operator keys leave this `None`.
+    #[serde(default)]
+    pub bound_to_cn: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -408,6 +414,8 @@ pub struct ApiKeyView {
     pub user_id: Uuid,
     pub description: String,
     pub scope: ApiKeyScope,
+    #[serde(default)]
+    pub bound_to_cn: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -418,6 +426,7 @@ impl From<ApiKey> for ApiKeyView {
             user_id: key.user_id,
             description: key.description,
             scope: key.scope,
+            bound_to_cn: key.bound_to_cn,
             created_at: key.created_at,
         }
     }
@@ -1304,5 +1313,259 @@ impl SystemKey {
         match self {
             SystemKey::JwtSigning => "jwt_signing",
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Compute nodes (`Cn`)
+// ---------------------------------------------------------------------
+
+/// Lifecycle state of a compute-node registration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum CnState {
+    /// Self-registered; awaiting operator approval (or auto-approve
+    /// window). Carries an active `claim_code` until approval or
+    /// expiry.
+    Pending,
+    /// Approved and active. The per-CN API key bound via
+    /// [`ApiKey::bound_to_cn`] is the agent's credential for the
+    /// rest of the `/v2/agent/*` surface.
+    Approved,
+    /// Explicitly disabled by an operator. The bound API key is
+    /// revoked. The record stays for audit visibility; a fresh
+    /// registration from the same `server_uuid` is rejected until
+    /// the operator removes the disabled record (Phase 1 surface)
+    /// — for Phase 0, "disable" is the terminal state.
+    Disabled,
+}
+
+/// A compute node registered with the control plane.
+///
+/// Identity is the SmartOS `server_uuid` (read from
+/// `/usr/bin/sysinfo`), not a tritond-generated id, so re-registration
+/// after a reboot or reimage of the same physical host idempotently
+/// maps to the same record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cn {
+    /// SmartOS server UUID. Stable across reboots; unique per
+    /// physical compute node.
+    pub server_uuid: Uuid,
+    pub hostname: String,
+    /// Admin-network IPv4 address last reported during registration.
+    /// Stored for operator visibility only ("this CN claims to be at
+    /// IP X"); not used as an authentication signal.
+    pub admin_ip: Option<Ipv4Addr>,
+    pub state: CnState,
+    pub registered_at: DateTime<Utc>,
+    /// When the Pending → Approved transition happened. `None`
+    /// while still Pending.
+    pub approved_at: Option<DateTime<Utc>>,
+    /// Most recent agent-side activity. Updated by Slice D's
+    /// heartbeater; `None` until then.
+    pub last_seen: Option<DateTime<Utc>>,
+    /// Raw sysinfo blob from the most recent registration. Opaque
+    /// to tritond; surfaced via `tcadm cn show`.
+    pub sysinfo: serde_json::Value,
+    /// Active claim code in normalized form (six chars of Crockford
+    /// base32, no hyphens). `None` once approved or expired. Indexed
+    /// for O(1) lookup by code.
+    pub claim_code: Option<String>,
+    pub claim_code_expires_at: Option<DateTime<Utc>>,
+    /// Opaque token the agent presents to long-poll
+    /// `/v2/agent/register/status`. Rotated on every (re-)registration
+    /// so a stale agent never accidentally retrieves a credential
+    /// belonging to a fresh registration. Holding the token is *not*
+    /// sufficient to approve; operators approve via `claim_code`.
+    pub poll_token: String,
+    /// API key id minted at approval, bound to this CN. `None`
+    /// while Pending. The plaintext is delivered to the agent via
+    /// [`Cn::pending_credential`] on the next long-poll, then
+    /// cleared.
+    pub bound_api_key_id: Option<Uuid>,
+    /// Plaintext API key, stored transiently between approval and
+    /// the agent's first long-poll-after-approval. Cleared on
+    /// retrieval. Never serialized into wire-level views.
+    ///
+    /// Storing plaintext at rest is a known Phase 0 cost: the
+    /// window is typically sub-second (long-poll triggers
+    /// immediately on state flip) and capped at the claim code's
+    /// retention TTL. A future slice will encrypt this field
+    /// against the manta-storage Phase 0 secrets engine.
+    #[serde(default)]
+    pub pending_credential: Option<String>,
+}
+
+/// Wire-safe view of a [`Cn`]: strips the transient plaintext
+/// credential field and any other secrets from operator-facing JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CnView {
+    pub server_uuid: Uuid,
+    pub hostname: String,
+    pub admin_ip: Option<Ipv4Addr>,
+    pub state: CnState,
+    pub registered_at: DateTime<Utc>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub last_seen: Option<DateTime<Utc>>,
+    pub sysinfo: serde_json::Value,
+    /// Displayed in the `XXX-XXX` format for operator readability.
+    /// `None` once approved or expired.
+    pub claim_code: Option<String>,
+    pub claim_code_expires_at: Option<DateTime<Utc>>,
+    pub bound_api_key_id: Option<Uuid>,
+}
+
+impl From<Cn> for CnView {
+    fn from(cn: Cn) -> Self {
+        CnView {
+            server_uuid: cn.server_uuid,
+            hostname: cn.hostname,
+            admin_ip: cn.admin_ip,
+            state: cn.state,
+            registered_at: cn.registered_at,
+            approved_at: cn.approved_at,
+            last_seen: cn.last_seen,
+            sysinfo: cn.sysinfo,
+            claim_code: cn.claim_code.as_deref().map(format_claim_code),
+            claim_code_expires_at: cn.claim_code_expires_at,
+            bound_api_key_id: cn.bound_api_key_id,
+        }
+    }
+}
+
+/// Auto-approve window: while open, new Pending CN registrations are
+/// promoted to Approved without operator action. Bounded by both wall
+/// time (`expires_at`) and a remaining-count budget so an operator
+/// can't accidentally leave the window open forever.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AutoApproveWindow {
+    pub opened_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    /// Remaining auto-approvals before the window closes. `None`
+    /// means "unlimited count, time-bound only".
+    pub remaining_count: Option<u64>,
+    /// Operator who opened the window (free-text, captured from the
+    /// authenticated principal at open time).
+    pub opened_by: String,
+}
+
+/// Hard upper bound on auto-approve window duration: 24 hours. Bigger
+/// than this and the window is too useful to an attacker who notices
+/// it's open.
+pub const AUTO_APPROVE_WINDOW_MAX: std::time::Duration =
+    std::time::Duration::from_secs(24 * 60 * 60);
+
+/// How long a freshly-issued claim code remains valid. After expiry,
+/// the agent's next registration attempt rotates it.
+pub const CLAIM_CODE_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Crockford base32 alphabet (omits `0/O/1/I/L/U` to avoid
+/// console-misread ambiguity). `U` is omitted by Crockford to
+/// reduce the chance of accidental swear words in random codes.
+pub const CLAIM_CODE_ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/// Length of the normalized claim code (no separator). Six
+/// characters of base32 = 30 bits of entropy, ample given the 1h
+/// TTL and per-IP rate limit on the approve endpoint.
+pub const CLAIM_CODE_LEN: usize = 6;
+
+/// Generate a fresh claim code in normalized form (six characters,
+/// no hyphen) using the supplied RNG. Caller is responsible for
+/// the FDB-side collision check; this function does not consult
+/// any index.
+pub fn generate_claim_code<R: rand::Rng + ?Sized>(rng: &mut R) -> String {
+    let mut out = String::with_capacity(CLAIM_CODE_LEN);
+    for _ in 0..CLAIM_CODE_LEN {
+        let idx = rng.random_range(0..CLAIM_CODE_ALPHABET.len());
+        out.push(CLAIM_CODE_ALPHABET[idx] as char);
+    }
+    out
+}
+
+/// Format a normalized claim code for display: `XXX-XXX`.
+pub fn format_claim_code(normalized: &str) -> String {
+    if normalized.len() == CLAIM_CODE_LEN {
+        format!("{}-{}", &normalized[..3], &normalized[3..])
+    } else {
+        normalized.to_string()
+    }
+}
+
+/// Normalize a user-typed claim code: strip the hyphen, uppercase,
+/// reject anything that isn't six characters of the Crockford
+/// alphabet. Returns `None` for invalid inputs so the caller can
+/// 400 cleanly.
+pub fn normalize_claim_code(input: &str) -> Option<String> {
+    let stripped: String = input
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .collect();
+    if stripped.len() != CLAIM_CODE_LEN {
+        return None;
+    }
+    let upper = stripped.to_ascii_uppercase();
+    if !upper.bytes().all(|b| CLAIM_CODE_ALPHABET.contains(&b)) {
+        return None;
+    }
+    Some(upper)
+}
+
+/// Generate a fresh poll token: 32 hex chars (128 bits of entropy).
+/// This is the long-poll bearer; uniqueness is checked at the FDB
+/// layer.
+pub fn generate_poll_token<R: rand::Rng + ?Sized>(rng: &mut R) -> String {
+    let mut bytes = [0u8; 16];
+    rng.fill_bytes(&mut bytes);
+    let mut hex = String::with_capacity(32);
+    for b in bytes {
+        hex.push_str(&format!("{b:02x}"));
+    }
+    hex
+}
+
+#[cfg(test)]
+mod cn_tests {
+    use super::*;
+
+    #[test]
+    fn claim_code_round_trip() {
+        let mut rng = rand::rng();
+        let code = generate_claim_code(&mut rng);
+        assert_eq!(code.len(), CLAIM_CODE_LEN);
+        assert!(code.bytes().all(|b| CLAIM_CODE_ALPHABET.contains(&b)));
+        let display = format_claim_code(&code);
+        assert_eq!(display.len(), CLAIM_CODE_LEN + 1); // hyphen
+        let normalized = normalize_claim_code(&display).expect("normalize");
+        assert_eq!(normalized, code);
+    }
+
+    #[test]
+    fn normalize_rejects_lookalike_chars() {
+        // Crockford drops 0/O/1/I/L/U. A code containing those is invalid.
+        assert!(normalize_claim_code("ABCDEU").is_none());
+        assert!(normalize_claim_code("ABCDEL").is_none());
+        assert!(normalize_claim_code("ABCDEI").is_none());
+        assert!(normalize_claim_code("ABCDEO").is_none());
+    }
+
+    #[test]
+    fn normalize_accepts_lowercase_and_hyphen() {
+        let normalized = normalize_claim_code("k7p-9x2").expect("normalize");
+        assert_eq!(normalized, "K7P9X2");
+    }
+
+    #[test]
+    fn normalize_rejects_wrong_length() {
+        assert!(normalize_claim_code("ABC").is_none());
+        assert!(normalize_claim_code("ABCDEFG").is_none());
+    }
+
+    #[test]
+    fn poll_token_is_32_hex_chars() {
+        let mut rng = rand::rng();
+        let token = generate_poll_token(&mut rng);
+        assert_eq!(token.len(), 32);
+        assert!(token.bytes().all(|b| b.is_ascii_hexdigit()));
     }
 }

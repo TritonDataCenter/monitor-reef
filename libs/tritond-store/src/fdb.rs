@@ -69,6 +69,11 @@
 //! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
 //! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
 //! job/seq/counter                   -> next seq, big-endian u64
+//! cn/by_uuid/<server_uuid>          -> JSON-encoded Cn
+//! cn/by_claim/<normalized_code>     -> server_uuid hyphenated bytes
+//! cn/by_poll/<poll_token>           -> server_uuid hyphenated bytes
+//! cn/by_state/<state>/<server_uuid> -> empty (membership index)
+//! auto_approve/window               -> JSON-encoded AutoApproveWindow (singleton)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! ```
 //!
@@ -84,12 +89,13 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::{
-    AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
-    FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
-    JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
+    Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
+    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
+    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -394,6 +400,40 @@ impl FdbStore {
 
     fn job_seq_counter_key() -> &'static [u8] {
         b"job/seq/counter"
+    }
+
+    fn cn_by_uuid_key(server_uuid: Uuid) -> Vec<u8> {
+        format!("cn/by_uuid/{server_uuid}").into_bytes()
+    }
+
+    fn cn_by_claim_key(normalized_code: &str) -> Vec<u8> {
+        format!("cn/by_claim/{normalized_code}").into_bytes()
+    }
+
+    fn cn_by_poll_key(poll_token: &str) -> Vec<u8> {
+        format!("cn/by_poll/{poll_token}").into_bytes()
+    }
+
+    fn cn_by_state_key(state: CnState, server_uuid: Uuid) -> Vec<u8> {
+        format!("cn/by_state/{}/{server_uuid}", cn_state_tag(state)).into_bytes()
+    }
+
+    fn cn_by_state_prefix(state: CnState) -> Vec<u8> {
+        format!("cn/by_state/{}/", cn_state_tag(state)).into_bytes()
+    }
+
+    fn auto_approve_window_key() -> &'static [u8] {
+        b"auto_approve/window"
+    }
+}
+
+/// Map [`CnState`] to its serde wire-format tag (matching the
+/// `#[serde(rename_all = "snake_case")]` on the enum).
+fn cn_state_tag(state: CnState) -> &'static str {
+    match state {
+        CnState::Pending => "pending",
+        CnState::Approved => "approved",
+        CnState::Disabled => "disabled",
     }
 }
 
@@ -3457,6 +3497,527 @@ impl Store for FdbStore {
         jobs.truncate(limit);
         Ok(jobs)
     }
+
+    async fn register_cn(
+        &self,
+        server_uuid: Uuid,
+        hostname: String,
+        admin_ip: Option<std::net::Ipv4Addr>,
+        sysinfo: serde_json::Value,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<Cn, StoreError> {
+        // Outcome carries the resulting Cn (or a logical conflict)
+        // out of the FDB transaction closure.
+        enum Outcome {
+            Created(Box<Cn>),
+            Disabled,
+            ClaimCodeExhausted,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let window_key = Self::auto_approve_window_key().to_vec();
+        let server_uuid_bytes = server_uuid.to_string().into_bytes();
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                let window_key = window_key.clone();
+                let server_uuid_bytes = server_uuid_bytes.clone();
+                let hostname = hostname.clone();
+                let sysinfo = sysinfo.clone();
+                async move {
+                    // Branch 1: existing record at by_uuid.
+                    if let Some(bytes) = tr.get(&by_uuid_key, false).await? {
+                        let existing: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                            FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                        })?;
+                        match existing.state {
+                            CnState::Disabled => {
+                                return Ok(Outcome::Disabled);
+                            }
+                            CnState::Approved => {
+                                // Idempotent refresh: keep credentials,
+                                // refresh sysinfo + hostname + last_seen.
+                                let mut updated = existing;
+                                updated.hostname = hostname;
+                                updated.admin_ip = admin_ip;
+                                updated.sysinfo = sysinfo;
+                                updated.last_seen = Some(now);
+                                let value = serde_json::to_vec(&updated).map_err(|e| {
+                                    FdbBindingError::CustomError(
+                                        format!("serialize cn: {e}").into(),
+                                    )
+                                })?;
+                                tr.set(&by_uuid_key, &value);
+                                return Ok(Outcome::Created(Box::new(updated)));
+                            }
+                            CnState::Pending => {
+                                // Drop the old by_claim and by_poll
+                                // index entries; mint fresh ones (with
+                                // collision check).
+                                if let Some(old_code) = &existing.claim_code {
+                                    tr.clear(&Self::cn_by_claim_key(old_code));
+                                }
+                                tr.clear(&Self::cn_by_poll_key(&existing.poll_token));
+
+                                let (claim_code, poll_token) =
+                                    match mint_unique_claim_and_poll(&tr).await? {
+                                        Some(pair) => pair,
+                                        None => return Ok(Outcome::ClaimCodeExhausted),
+                                    };
+                                let cn = Cn {
+                                    server_uuid,
+                                    hostname,
+                                    admin_ip,
+                                    state: CnState::Pending,
+                                    registered_at: existing.registered_at,
+                                    approved_at: None,
+                                    last_seen: Some(now),
+                                    sysinfo,
+                                    claim_code: Some(claim_code.clone()),
+                                    claim_code_expires_at: Some(now + claim_code_ttl()),
+                                    poll_token: poll_token.clone(),
+                                    bound_api_key_id: None,
+                                    pending_credential: None,
+                                };
+                                let value = serde_json::to_vec(&cn).map_err(|e| {
+                                    FdbBindingError::CustomError(
+                                        format!("serialize cn: {e}").into(),
+                                    )
+                                })?;
+                                tr.set(&by_uuid_key, &value);
+                                tr.set(&Self::cn_by_claim_key(&claim_code), &server_uuid_bytes);
+                                tr.set(&Self::cn_by_poll_key(&poll_token), &server_uuid_bytes);
+                                // by_state membership is unchanged (still pending).
+                                tr.set(&Self::cn_by_state_key(CnState::Pending, server_uuid), b"");
+                                return Ok(Outcome::Created(Box::new(cn)));
+                            }
+                        }
+                    }
+
+                    // Branch 2: brand-new registration. Try to consume
+                    // an auto-approve slot atomically inside this txn.
+                    let auto_approved =
+                        consume_auto_approve_slot_in_txn(&tr, &window_key, now).await?;
+
+                    let poll_token = match mint_unique_poll_token(&tr).await? {
+                        Some(t) => t,
+                        None => return Ok(Outcome::ClaimCodeExhausted),
+                    };
+                    let (claim_code, claim_expiry, state) = if auto_approved {
+                        (None, None, CnState::Approved)
+                    } else {
+                        let code = match mint_unique_claim_code(&tr).await? {
+                            Some(c) => c,
+                            None => return Ok(Outcome::ClaimCodeExhausted),
+                        };
+                        let expiry = now + claim_code_ttl();
+                        (Some(code), Some(expiry), CnState::Pending)
+                    };
+
+                    let cn = Cn {
+                        server_uuid,
+                        hostname,
+                        admin_ip,
+                        state,
+                        registered_at: now,
+                        approved_at: if auto_approved { Some(now) } else { None },
+                        last_seen: Some(now),
+                        sysinfo,
+                        claim_code: claim_code.clone(),
+                        claim_code_expires_at: claim_expiry,
+                        poll_token: poll_token.clone(),
+                        bound_api_key_id: None,
+                        pending_credential: None,
+                    };
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    if let Some(code) = &claim_code {
+                        tr.set(&Self::cn_by_claim_key(code), &server_uuid_bytes);
+                    }
+                    tr.set(&Self::cn_by_poll_key(&poll_token), &server_uuid_bytes);
+                    tr.set(&Self::cn_by_state_key(state, server_uuid), b"");
+                    Ok(Outcome::Created(Box::new(cn)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(cn)) => Ok(*cn),
+            Ok(Outcome::Disabled) => Err(StoreError::Conflict(format!(
+                "cn {server_uuid} is disabled; remove the record before re-registering"
+            ))),
+            Ok(Outcome::ClaimCodeExhausted) => {
+                Err(StoreError::Backend("claim code exhausted".to_string()))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError> {
+        let key = Self::cn_by_uuid_key(server_uuid);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize cn: {e}")))
+    }
+
+    async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError> {
+        let key = Self::cn_by_poll_key(poll_token);
+        let id_bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("cn poll index not utf8: {e}")))?;
+        let id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("cn poll index not uuid: {e}")))?;
+        self.get_cn(id).await
+    }
+
+    async fn get_cn_by_claim_code(&self, code: &str) -> Result<Cn, StoreError> {
+        let key = Self::cn_by_claim_key(code);
+        let id_bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("cn claim index not utf8: {e}")))?;
+        let id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("cn claim index not uuid: {e}")))?;
+        let cn = self.get_cn(id).await?;
+        // Conflate state-mismatch and expiry into NotFound so probes
+        // can't distinguish "wrong code" from "right code, wrong state".
+        if cn.state != CnState::Pending {
+            return Err(StoreError::NotFound);
+        }
+        if let Some(expiry) = cn.claim_code_expires_at
+            && Utc::now() >= expiry
+        {
+            return Err(StoreError::NotFound);
+        }
+        Ok(cn)
+    }
+
+    async fn list_cns(&self, state_filter: Option<CnState>) -> Result<Vec<Cn>, StoreError> {
+        let states: Vec<CnState> = match state_filter {
+            Some(s) => vec![s],
+            None => vec![CnState::Pending, CnState::Approved, CnState::Disabled],
+        };
+
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for state in states {
+            let prefix = Self::cn_by_state_prefix(state);
+            let (begin, end) = prefix_range(&prefix);
+            let prefix_len = prefix.len();
+
+            let id_strs: Result<Vec<String>, FdbBindingError> = self
+                .db
+                .run(|tr, _| {
+                    let begin = begin.clone();
+                    let end = end.clone();
+                    async move {
+                        let opt = RangeOption {
+                            begin: KeySelector::first_greater_or_equal(begin),
+                            end: KeySelector::first_greater_or_equal(end),
+                            ..RangeOption::default()
+                        };
+                        let kvs = tr.get_range(&opt, 1, false).await?;
+                        let mut ids = Vec::new();
+                        for kv in kvs.iter() {
+                            let suffix = &kv.key()[prefix_len..];
+                            if let Ok(s) = std::str::from_utf8(suffix) {
+                                ids.push(s.to_string());
+                            }
+                        }
+                        Ok(ids)
+                    }
+                })
+                .await;
+            let id_strs =
+                id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+            for s in id_strs {
+                let id = Uuid::parse_str(&s)
+                    .map_err(|e| StoreError::Backend(format!("cn state index uuid: {e}")))?;
+                if !seen.insert(id) {
+                    continue;
+                }
+                let by_id_key = Self::cn_by_uuid_key(id);
+                if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                    let cn: Cn = serde_json::from_slice(&bytes)
+                        .map_err(|e| StoreError::Backend(format!("deserialize cn: {e}")))?;
+                    out.push(cn);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    async fn approve_cn(
+        &self,
+        server_uuid: Uuid,
+        bound_api_key_id: Uuid,
+        pending_credential: String,
+        approved_at: chrono::DateTime<Utc>,
+    ) -> Result<Cn, StoreError> {
+        enum Outcome {
+            Approved(Box<Cn>),
+            NotPending,
+            CredentialPending,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                let pending_credential = pending_credential.clone();
+                async move {
+                    let bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotPending),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    if cn.state != CnState::Pending {
+                        return Ok(Outcome::NotPending);
+                    }
+                    if cn.pending_credential.is_some() {
+                        return Ok(Outcome::CredentialPending);
+                    }
+                    if let Some(old_code) = &cn.claim_code {
+                        tr.clear(&Self::cn_by_claim_key(old_code));
+                    }
+                    // Drop old by_state/pending; add by_state/approved.
+                    tr.clear(&Self::cn_by_state_key(CnState::Pending, server_uuid));
+
+                    cn.state = CnState::Approved;
+                    cn.approved_at = Some(approved_at);
+                    cn.claim_code = None;
+                    cn.claim_code_expires_at = None;
+                    cn.bound_api_key_id = Some(bound_api_key_id);
+                    cn.pending_credential = Some(pending_credential);
+
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    tr.set(&Self::cn_by_state_key(CnState::Approved, server_uuid), b"");
+                    Ok(Outcome::Approved(Box::new(cn)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Approved(cn)) => Ok(*cn),
+            Ok(Outcome::NotPending) => Err(StoreError::NotFound),
+            Ok(Outcome::CredentialPending) => Err(StoreError::Conflict(
+                "cn already has a pending credential awaiting retrieval".to_string(),
+            )),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn consume_cn_pending_credential(
+        &self,
+        poll_token: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let by_poll_key = Self::cn_by_poll_key(poll_token);
+
+        enum Outcome {
+            Consumed(Option<String>),
+            NotFound,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_poll_key = by_poll_key.clone();
+                async move {
+                    let id_bytes = match tr.get(&by_poll_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let id_str = std::str::from_utf8(&id_bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("cn poll index not utf8: {e}").into())
+                    })?;
+                    let id = Uuid::parse_str(id_str).map_err(|e| {
+                        FdbBindingError::CustomError(format!("cn poll index not uuid: {e}").into())
+                    })?;
+                    let by_uuid_key = Self::cn_by_uuid_key(id);
+                    let cn_bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&cn_bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    let taken = cn.pending_credential.take();
+                    if taken.is_some() {
+                        let value = serde_json::to_vec(&cn).map_err(|e| {
+                            FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                        })?;
+                        tr.set(&by_uuid_key, &value);
+                    }
+                    Ok(Outcome::Consumed(taken))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Consumed(opt)) => Ok(opt),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn disable_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError> {
+        enum Outcome {
+            Disabled(Box<Cn>),
+            NotFound,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    if let Some(old_code) = &cn.claim_code {
+                        tr.clear(&Self::cn_by_claim_key(old_code));
+                    }
+                    let old_state = cn.state;
+                    tr.clear(&Self::cn_by_state_key(old_state, server_uuid));
+
+                    cn.state = CnState::Disabled;
+                    cn.claim_code = None;
+                    cn.claim_code_expires_at = None;
+                    cn.pending_credential = None;
+
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    tr.set(&Self::cn_by_state_key(CnState::Disabled, server_uuid), b"");
+                    Ok(Outcome::Disabled(Box::new(cn)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Disabled(cn)) => Ok(*cn),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn update_cn_last_seen(
+        &self,
+        server_uuid: Uuid,
+        at: chrono::DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        enum Outcome {
+            Updated,
+            NotFound,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    cn.last_seen = Some(at);
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    Ok(Outcome::Updated)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated) => Ok(()),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError> {
+        let key = Self::auto_approve_window_key().to_vec();
+        let bytes = self.read_bytes(&key).await?;
+        match bytes {
+            Some(bytes) => {
+                let w: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(|e| {
+                    StoreError::Backend(format!("deserialize auto-approve window: {e}"))
+                })?;
+                Ok(Some(w))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn open_auto_approve_window(&self, w: AutoApproveWindow) -> Result<(), StoreError> {
+        let value = serde_json::to_vec(&w)
+            .map_err(|e| StoreError::Backend(format!("serialize auto-approve window: {e}")))?;
+        let key = Self::auto_approve_window_key().to_vec();
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&key, &value);
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn close_auto_approve_window(&self) -> Result<(), StoreError> {
+        let key = Self::auto_approve_window_key().to_vec();
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    tr.clear(&key);
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn try_consume_auto_approve_slot(
+        &self,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let key = Self::auto_approve_window_key().to_vec();
+        let result: Result<bool, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move { consume_auto_approve_slot_in_txn(&tr, &key, now).await }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
 }
 
 /// Parse an 8-byte big-endian counter value.
@@ -3476,6 +4037,114 @@ fn subnet_prefix_len(vpc_id: Uuid) -> usize {
     format!("subnet/in_vpc/{vpc_id}/").len()
 }
 
+/// `chrono::Duration` form of [`CLAIM_CODE_TTL`]. Hand-converted (the
+/// public constant is `std::time::Duration`) without `.expect()` so
+/// the workspace `clippy::expect_used` deny lint is happy. The TTL
+/// is one hour; well within `chrono::Duration`'s i64-millis range.
+fn claim_code_ttl() -> chrono::Duration {
+    chrono::Duration::seconds(CLAIM_CODE_TTL.as_secs() as i64)
+}
+
+/// Number of attempts to mint a fresh, collision-free claim code or
+/// poll token inside a transaction. With 30 bits of claim entropy and
+/// 128 bits of poll entropy, collision is vanishingly rare; the cap is
+/// purely defensive.
+const CN_CODE_RETRY_ATTEMPTS: usize = 16;
+
+/// Mint a claim code that does not already index any CN. Returns
+/// `None` if every attempt collided (treated by the caller as a
+/// `Backend("claim code exhausted")`).
+async fn mint_unique_claim_code(
+    tr: &foundationdb::RetryableTransaction,
+) -> Result<Option<String>, FdbBindingError> {
+    for _ in 0..CN_CODE_RETRY_ATTEMPTS {
+        let code = {
+            let mut rng = rand::rng();
+            generate_claim_code(&mut rng)
+        };
+        let key = format!("cn/by_claim/{code}").into_bytes();
+        if tr.get(&key, false).await?.is_none() {
+            return Ok(Some(code));
+        }
+    }
+    Ok(None)
+}
+
+/// Mint a poll token that does not already index any CN.
+async fn mint_unique_poll_token(
+    tr: &foundationdb::RetryableTransaction,
+) -> Result<Option<String>, FdbBindingError> {
+    for _ in 0..CN_CODE_RETRY_ATTEMPTS {
+        let token = {
+            let mut rng = rand::rng();
+            generate_poll_token(&mut rng)
+        };
+        let key = format!("cn/by_poll/{token}").into_bytes();
+        if tr.get(&key, false).await?.is_none() {
+            return Ok(Some(token));
+        }
+    }
+    Ok(None)
+}
+
+/// Convenience for the Pending-rotation path: mint a fresh claim
+/// code + poll token pair, both checked against their indexes.
+async fn mint_unique_claim_and_poll(
+    tr: &foundationdb::RetryableTransaction,
+) -> Result<Option<(String, String)>, FdbBindingError> {
+    let Some(claim) = mint_unique_claim_code(tr).await? else {
+        return Ok(None);
+    };
+    let Some(poll) = mint_unique_poll_token(tr).await? else {
+        return Ok(None);
+    };
+    Ok(Some((claim, poll)))
+}
+
+/// Atomically: read the auto-approve window singleton; if it's open,
+/// unexpired, and has slot, decrement (or close on exhaust) and
+/// return true. Otherwise return false. Shared between
+/// `register_cn`'s auto-approve path and `try_consume_auto_approve_slot`.
+async fn consume_auto_approve_slot_in_txn(
+    tr: &foundationdb::RetryableTransaction,
+    window_key: &[u8],
+    now: chrono::DateTime<Utc>,
+) -> Result<bool, FdbBindingError> {
+    let bytes = match tr.get(window_key, false).await? {
+        Some(b) => b,
+        None => return Ok(false),
+    };
+    let mut window: AutoApproveWindow = serde_json::from_slice(&bytes).map_err(|e| {
+        FdbBindingError::CustomError(format!("deserialize auto-approve window: {e}").into())
+    })?;
+    if now >= window.expires_at {
+        tr.clear(window_key);
+        return Ok(false);
+    }
+    match window.remaining_count {
+        Some(0) => {
+            tr.clear(window_key);
+            Ok(false)
+        }
+        Some(ref mut n) => {
+            *n -= 1;
+            let exhausted = *n == 0;
+            if exhausted {
+                tr.clear(window_key);
+            } else {
+                let value = serde_json::to_vec(&window).map_err(|e| {
+                    FdbBindingError::CustomError(
+                        format!("serialize auto-approve window: {e}").into(),
+                    )
+                })?;
+                tr.set(window_key, &value);
+            }
+            Ok(true)
+        }
+        None => Ok(true),
+    }
+}
+
 impl FdbStore {
     /// Read the value for a single key, returning `None` if absent.
     async fn read_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError> {
@@ -3488,5 +4157,410 @@ impl FdbStore {
             })
             .await;
         result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+}
+
+#[cfg(test)]
+mod cn_tests {
+    //! CN registration / approval tests against a real FoundationDB
+    //! cluster. Mirrors the MemStore CN test block in `mem.rs`.
+    //!
+    //! Marked `#[ignore]` because they require a running FDB cluster
+    //! reachable via the default cluster file resolution. Run with
+    //! `cargo test -p tritond-store --features foundationdb -- --ignored`.
+    //!
+    //! Each test uses a per-test key prefix (via a random uuid in the
+    //! `server_uuid`) so concurrent runs don't trip on each other; we
+    //! do not blow away the keyspace.
+    use super::*;
+    use crate::AutoApproveWindow;
+
+    fn fdb_test_store() -> FdbStore {
+        FdbStore::open(None).expect("open FDB cluster from default cluster file")
+    }
+
+    fn sysinfo_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "UUID": "00000000-0000-0000-0000-000000000001",
+            "Hostname": "test-cn",
+        })
+    }
+
+    /// Drop every key the CN tests touch for `server_uuid`. Runs at
+    /// the start of each test so reruns against a stale FDB cluster
+    /// produce repeatable state.
+    async fn purge_cn(store: &FdbStore, server_uuid: Uuid) {
+        // Read the record first to learn which claim/poll indices
+        // need clearing; ignore any decode failure.
+        let by_uuid = FdbStore::cn_by_uuid_key(server_uuid);
+        if let Ok(Some(bytes)) = store.read_bytes(&by_uuid).await
+            && let Ok(cn) = serde_json::from_slice::<Cn>(&bytes)
+        {
+            let _ = store
+                .db
+                .run(|tr, _| {
+                    let by_uuid = by_uuid.clone();
+                    let claim_key = cn.claim_code.as_deref().map(FdbStore::cn_by_claim_key);
+                    let poll_key = FdbStore::cn_by_poll_key(&cn.poll_token);
+                    let state_key = FdbStore::cn_by_state_key(cn.state, server_uuid);
+                    let pending_state_key =
+                        FdbStore::cn_by_state_key(CnState::Pending, server_uuid);
+                    let approved_state_key =
+                        FdbStore::cn_by_state_key(CnState::Approved, server_uuid);
+                    let disabled_state_key =
+                        FdbStore::cn_by_state_key(CnState::Disabled, server_uuid);
+                    async move {
+                        tr.clear(&by_uuid);
+                        if let Some(k) = claim_key.as_deref() {
+                            tr.clear(k);
+                        }
+                        tr.clear(&poll_key);
+                        tr.clear(&state_key);
+                        // Belt-and-suspenders: clear all three state
+                        // membership keys in case state was rewritten
+                        // between the read above and this txn.
+                        tr.clear(&pending_state_key);
+                        tr.clear(&approved_state_key);
+                        tr.clear(&disabled_state_key);
+                        Ok(())
+                    }
+                })
+                .await;
+        } else {
+            // Best-effort clear of state membership rows even with no
+            // cn record (lets stuck rows from prior runs go away).
+            let _ = store
+                .db
+                .run(|tr, _| {
+                    let pending = FdbStore::cn_by_state_key(CnState::Pending, server_uuid);
+                    let approved = FdbStore::cn_by_state_key(CnState::Approved, server_uuid);
+                    let disabled = FdbStore::cn_by_state_key(CnState::Disabled, server_uuid);
+                    async move {
+                        tr.clear(&pending);
+                        tr.clear(&approved);
+                        tr.clear(&disabled);
+                        Ok(())
+                    }
+                })
+                .await;
+        }
+    }
+
+    /// Clear the auto-approve singleton. Used by every auto-approve
+    /// test so leftover state from a previous run doesn't leak in.
+    async fn purge_window(store: &FdbStore) {
+        let _ = store.close_auto_approve_window().await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn register_cn_creates_pending_with_claim_code() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        let cn = store
+            .register_cn(id, "host1".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register_cn");
+        assert_eq!(cn.state, CnState::Pending);
+        assert!(cn.claim_code.is_some());
+        assert_eq!(cn.claim_code.as_ref().expect("claim").len(), 6);
+        assert_eq!(cn.poll_token.len(), 32);
+        assert!(cn.bound_api_key_id.is_none());
+        assert!(cn.pending_credential.is_none());
+        assert!(cn.approved_at.is_none());
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn re_register_pending_rotates_claim_code() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        let first = store
+            .register_cn(id, "host1".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register first");
+        let second = store
+            .register_cn(id, "host1-renamed".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register second");
+        assert_eq!(first.registered_at, second.registered_at);
+        assert_ne!(first.claim_code, second.claim_code);
+        assert_ne!(first.poll_token, second.poll_token);
+        assert_eq!(second.hostname, "host1-renamed");
+
+        let err = store
+            .get_cn_by_claim_code(first.claim_code.as_ref().expect("claim"))
+            .await
+            .expect_err("old claim should be unfindable");
+        assert!(matches!(err, StoreError::NotFound));
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn re_register_approved_is_idempotent() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register");
+        store
+            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), now)
+            .await
+            .expect("approve");
+
+        let later = now + chrono::Duration::seconds(60);
+        let updated = store
+            .register_cn(
+                id,
+                "h2".into(),
+                None,
+                serde_json::json!({"updated": true}),
+                later,
+            )
+            .await
+            .expect("re-register");
+        assert_eq!(updated.state, CnState::Approved);
+        assert_eq!(updated.hostname, "h2");
+        assert_eq!(updated.last_seen, Some(later));
+        assert_eq!(updated.sysinfo, serde_json::json!({"updated": true}));
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn approve_cn_flips_state_and_stashes_credential() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        let cn = store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register");
+        let key_id = Uuid::new_v4();
+        let approved = store
+            .approve_cn(id, key_id, "tcadm_secret".into(), now)
+            .await
+            .expect("approve");
+        assert_eq!(approved.state, CnState::Approved);
+        assert!(approved.claim_code.is_none());
+        assert_eq!(approved.bound_api_key_id, Some(key_id));
+        assert_eq!(approved.pending_credential.as_deref(), Some("tcadm_secret"));
+
+        let err = store
+            .get_cn_by_claim_code(cn.claim_code.as_ref().expect("claim"))
+            .await
+            .expect_err("old claim should be unfindable");
+        assert!(matches!(err, StoreError::NotFound));
+
+        let consumed = store
+            .consume_cn_pending_credential(&cn.poll_token)
+            .await
+            .expect("consume first");
+        assert_eq!(consumed.as_deref(), Some("tcadm_secret"));
+
+        let consumed_again = store
+            .consume_cn_pending_credential(&cn.poll_token)
+            .await
+            .expect("consume second");
+        assert!(consumed_again.is_none());
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn approve_cn_pending_only() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+
+        let err = store
+            .approve_cn(id, Uuid::new_v4(), "x".into(), Utc::now())
+            .await
+            .expect_err("approve before register should fail");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn disable_cn_blocks_re_registration() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register");
+        store.disable_cn(id).await.expect("disable");
+        let err = store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect_err("re-register after disable should fail");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn auto_approve_window_promotes_registration() {
+        let store = fdb_test_store();
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        let id3 = Uuid::new_v4();
+        purge_cn(&store, id1).await;
+        purge_cn(&store, id2).await;
+        purge_cn(&store, id3).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        store
+            .open_auto_approve_window(AutoApproveWindow {
+                opened_at: now,
+                expires_at: now + chrono::Duration::minutes(30),
+                remaining_count: Some(2),
+                opened_by: "root".into(),
+            })
+            .await
+            .expect("open window");
+
+        let cn1 = store
+            .register_cn(id1, "h1".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register cn1");
+        assert_eq!(cn1.state, CnState::Approved);
+        assert!(cn1.claim_code.is_none());
+        assert!(cn1.approved_at.is_some());
+
+        let cn2 = store
+            .register_cn(id2, "h2".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register cn2");
+        assert_eq!(cn2.state, CnState::Approved);
+
+        let cn3 = store
+            .register_cn(id3, "h3".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register cn3");
+        assert_eq!(cn3.state, CnState::Pending);
+        assert!(cn3.claim_code.is_some());
+
+        assert!(
+            store
+                .get_auto_approve_window()
+                .await
+                .expect("get window")
+                .is_none()
+        );
+
+        purge_cn(&store, id1).await;
+        purge_cn(&store, id2).await;
+        purge_cn(&store, id3).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn auto_approve_window_expires_on_time() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let opened = Utc::now();
+        store
+            .open_auto_approve_window(AutoApproveWindow {
+                opened_at: opened,
+                expires_at: opened + chrono::Duration::seconds(10),
+                remaining_count: None,
+                opened_by: "root".into(),
+            })
+            .await
+            .expect("open window");
+
+        let later = opened + chrono::Duration::seconds(20);
+        let cn = store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), later)
+            .await
+            .expect("register");
+        assert_eq!(cn.state, CnState::Pending);
+        assert!(
+            store
+                .get_auto_approve_window()
+                .await
+                .expect("get window")
+                .is_none()
+        );
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn list_cns_filters_by_state() {
+        let store = fdb_test_store();
+        let pid = Uuid::new_v4();
+        let aid = Uuid::new_v4();
+        purge_cn(&store, pid).await;
+        purge_cn(&store, aid).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        store
+            .register_cn(pid, "p".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register pending");
+        store
+            .register_cn(aid, "a".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register approved-target");
+        store
+            .approve_cn(aid, Uuid::new_v4(), "k".into(), now)
+            .await
+            .expect("approve");
+
+        let pending = store
+            .list_cns(Some(CnState::Pending))
+            .await
+            .expect("list pending");
+        assert!(pending.iter().any(|c| c.server_uuid == pid));
+        assert!(!pending.iter().any(|c| c.server_uuid == aid));
+
+        let approved = store
+            .list_cns(Some(CnState::Approved))
+            .await
+            .expect("list approved");
+        assert!(approved.iter().any(|c| c.server_uuid == aid));
+        assert!(!approved.iter().any(|c| c.server_uuid == pid));
+
+        let all = store.list_cns(None).await.expect("list all");
+        assert!(all.iter().any(|c| c.server_uuid == pid));
+        assert!(all.iter().any(|c| c.server_uuid == aid));
+
+        purge_cn(&store, pid).await;
+        purge_cn(&store, aid).await;
     }
 }

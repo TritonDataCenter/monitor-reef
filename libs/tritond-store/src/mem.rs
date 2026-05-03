@@ -18,16 +18,17 @@ use rand::Rng;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::{
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
+    Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
+    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
+    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token,
+};
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
-use crate::{
-    AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
-    FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
-    JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
-};
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
 /// candidates and any realistic VPC count, collisions are vanishingly
@@ -99,6 +100,16 @@ struct Inner {
     /// the v4 and v6 pools (they're disjoint by family).
     allocated_floating_ipv4: HashSet<Ipv4Addr>,
     allocated_floating_ipv6: HashSet<Ipv6Addr>,
+    /// CN registrations keyed by `server_uuid`.
+    cns_by_server_uuid: HashMap<Uuid, Cn>,
+    /// `claim_code` (normalized) → `server_uuid`. Only populated for
+    /// records currently in [`CnState::Pending`] with an unexpired
+    /// claim code.
+    cn_server_uuid_by_claim_code: HashMap<String, Uuid>,
+    /// `poll_token` → `server_uuid`. Rotated on every (re-)registration.
+    cn_server_uuid_by_poll_token: HashMap<String, Uuid>,
+    /// Singleton auto-approve window. `None` when closed.
+    auto_approve_window: Option<AutoApproveWindow>,
 }
 
 /// In-process [`Store`] implementation.
@@ -1426,6 +1437,355 @@ impl Store for MemStore {
         jobs.truncate(limit);
         Ok(jobs)
     }
+
+    async fn register_cn(
+        &self,
+        server_uuid: Uuid,
+        hostname: String,
+        admin_ip: Option<Ipv4Addr>,
+        sysinfo: serde_json::Value,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<Cn, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        // Disabled records block re-registration.
+        if let Some(existing) = guard.cns_by_server_uuid.get(&server_uuid)
+            && existing.state == CnState::Disabled
+        {
+            return Err(StoreError::Conflict(format!(
+                "cn {server_uuid} is disabled; remove the record before re-registering"
+            )));
+        }
+
+        // Already-Approved records: idempotent refresh.
+        if let Some(existing) = guard.cns_by_server_uuid.get(&server_uuid).cloned()
+            && existing.state == CnState::Approved
+        {
+            let mut updated = existing;
+            updated.hostname = hostname;
+            updated.admin_ip = admin_ip;
+            updated.sysinfo = sysinfo;
+            updated.last_seen = Some(now);
+            guard
+                .cns_by_server_uuid
+                .insert(server_uuid, updated.clone());
+            return Ok(updated);
+        }
+
+        // Pending: rotate claim_code + poll_token, refresh sysinfo.
+        if let Some(existing) = guard.cns_by_server_uuid.get(&server_uuid).cloned() {
+            // Drop old indexes.
+            if let Some(old_code) = &existing.claim_code {
+                guard.cn_server_uuid_by_claim_code.remove(old_code);
+            }
+            guard
+                .cn_server_uuid_by_poll_token
+                .remove(&existing.poll_token);
+
+            let (claim_code, poll_token) = mem_mint_claim_and_poll(&guard);
+            let cn = Cn {
+                server_uuid,
+                hostname,
+                admin_ip,
+                state: CnState::Pending,
+                registered_at: existing.registered_at,
+                approved_at: None,
+                last_seen: Some(now),
+                sysinfo,
+                claim_code: Some(claim_code.clone()),
+                claim_code_expires_at: Some(now + claim_code_ttl()),
+                poll_token: poll_token.clone(),
+                bound_api_key_id: None,
+                pending_credential: None,
+            };
+            guard
+                .cn_server_uuid_by_claim_code
+                .insert(claim_code, server_uuid);
+            guard
+                .cn_server_uuid_by_poll_token
+                .insert(poll_token, server_uuid);
+            guard.cns_by_server_uuid.insert(server_uuid, cn.clone());
+            return Ok(cn);
+        }
+
+        // Brand new registration. Try to consume an auto-approve slot.
+        let auto_approved = mem_try_consume_window(&mut guard, now);
+
+        let poll_token = mem_unique_poll_token(&guard);
+        let (claim_code, claim_expiry, state) = if auto_approved {
+            (None, None, CnState::Approved)
+        } else {
+            let code = mem_unique_claim_code(&guard);
+            let expiry = now + claim_code_ttl();
+            (Some(code), Some(expiry), CnState::Pending)
+        };
+
+        let cn = Cn {
+            server_uuid,
+            hostname,
+            admin_ip,
+            state,
+            registered_at: now,
+            approved_at: if auto_approved { Some(now) } else { None },
+            last_seen: Some(now),
+            sysinfo,
+            claim_code: claim_code.clone(),
+            claim_code_expires_at: claim_expiry,
+            poll_token: poll_token.clone(),
+            bound_api_key_id: None,
+            pending_credential: None,
+        };
+        if let Some(code) = &claim_code {
+            guard
+                .cn_server_uuid_by_claim_code
+                .insert(code.clone(), server_uuid);
+        }
+        guard
+            .cn_server_uuid_by_poll_token
+            .insert(poll_token, server_uuid);
+        guard.cns_by_server_uuid.insert(server_uuid, cn.clone());
+        Ok(cn)
+    }
+
+    async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .cns_by_server_uuid
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn get_cn_by_poll_token(&self, poll_token: &str) -> Result<Cn, StoreError> {
+        let guard = self.inner.read().await;
+        let server_uuid = guard
+            .cn_server_uuid_by_poll_token
+            .get(poll_token)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .cns_by_server_uuid
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn get_cn_by_claim_code(&self, code: &str) -> Result<Cn, StoreError> {
+        let guard = self.inner.read().await;
+        let server_uuid = guard
+            .cn_server_uuid_by_claim_code
+            .get(code)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        let cn = guard
+            .cns_by_server_uuid
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        // Conflate state-mismatch and expiry into NotFound so probes can't
+        // distinguish "wrong code" from "right code, wrong state".
+        if cn.state != CnState::Pending {
+            return Err(StoreError::NotFound);
+        }
+        if let Some(expiry) = cn.claim_code_expires_at
+            && Utc::now() >= expiry
+        {
+            return Err(StoreError::NotFound);
+        }
+        Ok(cn)
+    }
+
+    async fn list_cns(&self, state_filter: Option<CnState>) -> Result<Vec<Cn>, StoreError> {
+        let guard = self.inner.read().await;
+        let cns: Vec<Cn> = guard
+            .cns_by_server_uuid
+            .values()
+            .filter(|c| state_filter.is_none_or(|s| c.state == s))
+            .cloned()
+            .collect();
+        Ok(cns)
+    }
+
+    async fn approve_cn(
+        &self,
+        server_uuid: Uuid,
+        bound_api_key_id: Uuid,
+        pending_credential: String,
+        approved_at: chrono::DateTime<Utc>,
+    ) -> Result<Cn, StoreError> {
+        let mut guard = self.inner.write().await;
+        let mut cn = guard
+            .cns_by_server_uuid
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        if cn.state != CnState::Pending {
+            return Err(StoreError::NotFound);
+        }
+        if cn.pending_credential.is_some() {
+            return Err(StoreError::Conflict(
+                "cn already has a pending credential awaiting retrieval".to_string(),
+            ));
+        }
+        if let Some(old_code) = &cn.claim_code {
+            guard.cn_server_uuid_by_claim_code.remove(old_code);
+        }
+        cn.state = CnState::Approved;
+        cn.approved_at = Some(approved_at);
+        cn.claim_code = None;
+        cn.claim_code_expires_at = None;
+        cn.bound_api_key_id = Some(bound_api_key_id);
+        cn.pending_credential = Some(pending_credential);
+        guard.cns_by_server_uuid.insert(server_uuid, cn.clone());
+        Ok(cn)
+    }
+
+    async fn consume_cn_pending_credential(
+        &self,
+        poll_token: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let mut guard = self.inner.write().await;
+        let server_uuid = guard
+            .cn_server_uuid_by_poll_token
+            .get(poll_token)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        let cn = guard
+            .cns_by_server_uuid
+            .get_mut(&server_uuid)
+            .ok_or(StoreError::NotFound)?;
+        Ok(cn.pending_credential.take())
+    }
+
+    async fn disable_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError> {
+        let mut guard = self.inner.write().await;
+        let mut cn = guard
+            .cns_by_server_uuid
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        if let Some(old_code) = &cn.claim_code {
+            guard.cn_server_uuid_by_claim_code.remove(old_code);
+        }
+        cn.state = CnState::Disabled;
+        cn.claim_code = None;
+        cn.claim_code_expires_at = None;
+        cn.pending_credential = None;
+        guard.cns_by_server_uuid.insert(server_uuid, cn.clone());
+        Ok(cn)
+    }
+
+    async fn update_cn_last_seen(
+        &self,
+        server_uuid: Uuid,
+        at: chrono::DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let cn = guard
+            .cns_by_server_uuid
+            .get_mut(&server_uuid)
+            .ok_or(StoreError::NotFound)?;
+        cn.last_seen = Some(at);
+        Ok(())
+    }
+
+    async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.auto_approve_window.clone())
+    }
+
+    async fn open_auto_approve_window(&self, w: AutoApproveWindow) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.auto_approve_window = Some(w);
+        Ok(())
+    }
+
+    async fn close_auto_approve_window(&self) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.auto_approve_window = None;
+        Ok(())
+    }
+
+    async fn try_consume_auto_approve_slot(
+        &self,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<bool, StoreError> {
+        let mut guard = self.inner.write().await;
+        Ok(mem_try_consume_window(&mut guard, now))
+    }
+}
+
+/// `chrono::Duration` form of [`CLAIM_CODE_TTL`]. Hand-converted (the
+/// public constant is `std::time::Duration`) to avoid a `.expect()`
+/// on `chrono::Duration::from_std` and keep the workspace
+/// `clippy::expect_used` deny lint happy. The TTL is one hour;
+/// well within `chrono::Duration`'s i64-millis range.
+fn claim_code_ttl() -> chrono::Duration {
+    chrono::Duration::seconds(CLAIM_CODE_TTL.as_secs() as i64)
+}
+
+/// Look up an unused claim code, retrying on collision. Probability
+/// of collision at any realistic pending count is negligible (30
+/// bits of entropy), so the retry loop almost never spins.
+fn mem_unique_claim_code(guard: &Inner) -> String {
+    let mut rng = rand::rng();
+    for _ in 0..16 {
+        let code = generate_claim_code(&mut rng);
+        if !guard.cn_server_uuid_by_claim_code.contains_key(&code) {
+            return code;
+        }
+    }
+    // Astronomically unlikely; fall back to using the candidate
+    // anyway (the FDB layer's CAS would catch a real collision).
+    generate_claim_code(&mut rng)
+}
+
+fn mem_unique_poll_token(guard: &Inner) -> String {
+    let mut rng = rand::rng();
+    for _ in 0..16 {
+        let token = generate_poll_token(&mut rng);
+        if !guard.cn_server_uuid_by_poll_token.contains_key(&token) {
+            return token;
+        }
+    }
+    generate_poll_token(&mut rng)
+}
+
+/// Convenience for the Pending → claim_code+poll_token rotation
+/// case in `register_cn`. Doesn't insert; returns the freshly-minted
+/// pair for the caller to wire up.
+fn mem_mint_claim_and_poll(guard: &Inner) -> (String, String) {
+    let claim = mem_unique_claim_code(guard);
+    let poll = mem_unique_poll_token(guard);
+    (claim, poll)
+}
+
+/// Decrement the auto-approve window if it's open and has a slot.
+/// Closes the window when remaining_count reaches 0 or expires_at
+/// passes. Returns true iff a slot was consumed.
+fn mem_try_consume_window(guard: &mut Inner, now: chrono::DateTime<Utc>) -> bool {
+    let Some(window) = guard.auto_approve_window.as_mut() else {
+        return false;
+    };
+    if now >= window.expires_at {
+        guard.auto_approve_window = None;
+        return false;
+    }
+    match window.remaining_count {
+        Some(0) => {
+            guard.auto_approve_window = None;
+            false
+        }
+        Some(ref mut n) => {
+            *n -= 1;
+            let exhausted = *n == 0;
+            if exhausted {
+                guard.auto_approve_window = None;
+            }
+            true
+        }
+        None => true,
+    }
 }
 
 #[cfg(test)]
@@ -1566,6 +1926,7 @@ mod tests {
             lookup_id: "AAAAAAAAAAAA".to_string(),
             hash: "$hashA".to_string(),
             scope: ApiKeyScope::Full,
+            bound_to_cn: None,
             created_at: Utc::now(),
         };
         let key_b = ApiKey {
@@ -1575,6 +1936,7 @@ mod tests {
             lookup_id: "BBBBBBBBBBBB".to_string(),
             hash: "$hashB".to_string(),
             scope: ApiKeyScope::Full,
+            bound_to_cn: None,
             created_at: Utc::now(),
         };
         store.create_api_key(key_a.clone()).await.unwrap();
@@ -1822,6 +2184,7 @@ mod tests {
             lookup_id: "AAAAAAAAAAAA".to_string(),
             hash: "$hash".to_string(),
             scope: ApiKeyScope::Full,
+            bound_to_cn: None,
             created_at: Utc::now(),
         };
         store.create_api_key(make(Uuid::new_v4())).await.unwrap();
@@ -3845,5 +4208,251 @@ mod tests {
             .unwrap();
         let read = store.get_system_key(SystemKey::JwtSigning).await.unwrap();
         assert_eq!(read, payload);
+    }
+
+    // ---------- CN registration / approval ----------
+
+    fn sysinfo_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "UUID": "00000000-0000-0000-0000-000000000001",
+            "Hostname": "test-cn",
+        })
+    }
+
+    #[tokio::test]
+    async fn register_cn_creates_pending_with_claim_code() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let cn = store
+            .register_cn(id, "host1".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        assert_eq!(cn.state, CnState::Pending);
+        assert!(cn.claim_code.is_some());
+        assert_eq!(cn.claim_code.as_ref().unwrap().len(), 6);
+        assert!(cn.poll_token.len() == 32);
+        assert!(cn.bound_api_key_id.is_none());
+        assert!(cn.pending_credential.is_none());
+        assert!(cn.approved_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn re_register_pending_rotates_claim_code() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let first = store
+            .register_cn(id, "host1".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        let second = store
+            .register_cn(id, "host1-renamed".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        // Same record (same registered_at), but different claim/poll.
+        assert_eq!(first.registered_at, second.registered_at);
+        assert_ne!(first.claim_code, second.claim_code);
+        assert_ne!(first.poll_token, second.poll_token);
+        assert_eq!(second.hostname, "host1-renamed");
+        // Old claim code is no longer findable.
+        let err = store
+            .get_cn_by_claim_code(first.claim_code.as_ref().unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn re_register_approved_is_idempotent() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        store
+            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), now)
+            .await
+            .unwrap();
+        // Re-register: should remain Approved, refresh sysinfo + last_seen,
+        // not re-mint anything.
+        let later = now + chrono::Duration::seconds(60);
+        let updated = store
+            .register_cn(
+                id,
+                "h2".into(),
+                None,
+                serde_json::json!({"updated": true}),
+                later,
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.state, CnState::Approved);
+        assert_eq!(updated.hostname, "h2");
+        assert_eq!(updated.last_seen, Some(later));
+        assert_eq!(updated.sysinfo, serde_json::json!({"updated": true}));
+    }
+
+    #[tokio::test]
+    async fn approve_cn_flips_state_and_stashes_credential() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let cn = store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        let key_id = Uuid::new_v4();
+        let approved = store
+            .approve_cn(id, key_id, "tcadm_secret".into(), now)
+            .await
+            .unwrap();
+        assert_eq!(approved.state, CnState::Approved);
+        assert!(approved.claim_code.is_none());
+        assert_eq!(approved.bound_api_key_id, Some(key_id));
+        assert_eq!(approved.pending_credential.as_deref(), Some("tcadm_secret"));
+
+        // Old claim code is gone.
+        let err = store
+            .get_cn_by_claim_code(cn.claim_code.as_ref().unwrap())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+
+        // First long-poll consumes the credential.
+        let consumed = store
+            .consume_cn_pending_credential(&cn.poll_token)
+            .await
+            .unwrap();
+        assert_eq!(consumed.as_deref(), Some("tcadm_secret"));
+
+        // Second long-poll sees None.
+        let consumed_again = store
+            .consume_cn_pending_credential(&cn.poll_token)
+            .await
+            .unwrap();
+        assert!(consumed_again.is_none());
+    }
+
+    #[tokio::test]
+    async fn approve_cn_pending_only() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        // Approve before register: NotFound.
+        let err = store
+            .approve_cn(id, Uuid::new_v4(), "x".into(), Utc::now())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn disable_cn_blocks_re_registration() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        store.disable_cn(id).await.unwrap();
+        let err = store
+            .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn auto_approve_window_promotes_registration() {
+        let store = MemStore::new();
+        let now = Utc::now();
+        store
+            .open_auto_approve_window(AutoApproveWindow {
+                opened_at: now,
+                expires_at: now + chrono::Duration::minutes(30),
+                remaining_count: Some(2),
+                opened_by: "root".into(),
+            })
+            .await
+            .unwrap();
+
+        let cn1 = store
+            .register_cn(Uuid::new_v4(), "h1".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        assert_eq!(cn1.state, CnState::Approved);
+        assert!(cn1.claim_code.is_none());
+        assert!(cn1.approved_at.is_some());
+
+        let cn2 = store
+            .register_cn(Uuid::new_v4(), "h2".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        assert_eq!(cn2.state, CnState::Approved);
+
+        // Window exhausted (count was 2). Third registration is Pending.
+        let cn3 = store
+            .register_cn(Uuid::new_v4(), "h3".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        assert_eq!(cn3.state, CnState::Pending);
+        assert!(cn3.claim_code.is_some());
+
+        // Window record is gone after exhaustion.
+        assert!(store.get_auto_approve_window().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn auto_approve_window_expires_on_time() {
+        let store = MemStore::new();
+        let opened = Utc::now();
+        store
+            .open_auto_approve_window(AutoApproveWindow {
+                opened_at: opened,
+                expires_at: opened + chrono::Duration::seconds(10),
+                remaining_count: None, // unlimited count
+                opened_by: "root".into(),
+            })
+            .await
+            .unwrap();
+        // Time has passed.
+        let later = opened + chrono::Duration::seconds(20);
+        let cn = store
+            .register_cn(Uuid::new_v4(), "h".into(), None, sysinfo_fixture(), later)
+            .await
+            .unwrap();
+        assert_eq!(cn.state, CnState::Pending);
+        // Window auto-cleared.
+        assert!(store.get_auto_approve_window().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn list_cns_filters_by_state() {
+        let store = MemStore::new();
+        let now = Utc::now();
+        let p = store
+            .register_cn(Uuid::new_v4(), "p".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        let a = store
+            .register_cn(Uuid::new_v4(), "a".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        store
+            .approve_cn(a.server_uuid, Uuid::new_v4(), "k".into(), now)
+            .await
+            .unwrap();
+
+        let pending = store.list_cns(Some(CnState::Pending)).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].server_uuid, p.server_uuid);
+        let approved = store.list_cns(Some(CnState::Approved)).await.unwrap();
+        assert_eq!(approved.len(), 1);
+        assert_eq!(approved[0].server_uuid, a.server_uuid);
+        let all = store.list_cns(None).await.unwrap();
+        assert_eq!(all.len(), 2);
     }
 }

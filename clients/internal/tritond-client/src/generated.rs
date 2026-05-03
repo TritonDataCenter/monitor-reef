@@ -248,6 +248,13 @@ pub mod types {
     #[doc = "    \"user_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"bound_to_cn\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"created_at\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
@@ -277,6 +284,8 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct ApiKeyCreated {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub bound_to_cn: ::std::option::Option<::uuid::Uuid>,
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
@@ -424,6 +433,13 @@ pub mod types {
     #[doc = "    \"user_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"bound_to_cn\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"created_at\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
@@ -450,6 +466,8 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct ApiKeyView {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub bound_to_cn: ::std::option::Option<::uuid::Uuid>,
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
@@ -3810,6 +3828,8 @@ pub mod types {
     pub mod builder {
         #[derive(Clone, Debug)]
         pub struct ApiKeyCreated {
+            bound_to_cn:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -3824,6 +3844,7 @@ pub mod types {
         impl ::std::default::Default for ApiKeyCreated {
             fn default() -> Self {
                 Self {
+                    bound_to_cn: Ok(Default::default()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
@@ -3835,6 +3856,16 @@ pub mod types {
         }
 
         impl ApiKeyCreated {
+            pub fn bound_to_cn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bound_to_cn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bound_to_cn: {e}"));
+                self
+            }
             pub fn created_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
@@ -3903,6 +3934,7 @@ pub mod types {
                 value: ApiKeyCreated,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    bound_to_cn: value.bound_to_cn?,
                     created_at: value.created_at?,
                     description: value.description?,
                     id: value.id?,
@@ -3916,6 +3948,7 @@ pub mod types {
         impl ::std::convert::From<super::ApiKeyCreated> for ApiKeyCreated {
             fn from(value: super::ApiKeyCreated) -> Self {
                 Self {
+                    bound_to_cn: Ok(value.bound_to_cn),
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
                     id: Ok(value.id),
@@ -3928,6 +3961,8 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct ApiKeyView {
+            bound_to_cn:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -3941,6 +3976,7 @@ pub mod types {
         impl ::std::default::Default for ApiKeyView {
             fn default() -> Self {
                 Self {
+                    bound_to_cn: Ok(Default::default()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
@@ -3951,6 +3987,16 @@ pub mod types {
         }
 
         impl ApiKeyView {
+            pub fn bound_to_cn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bound_to_cn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bound_to_cn: {e}"));
+                self
+            }
             pub fn created_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
@@ -4009,6 +4055,7 @@ pub mod types {
                 value: ApiKeyView,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    bound_to_cn: value.bound_to_cn?,
                     created_at: value.created_at?,
                     description: value.description?,
                     id: value.id?,
@@ -4021,6 +4068,7 @@ pub mod types {
         impl ::std::convert::From<super::ApiKeyView> for ApiKeyView {
             fn from(value: super::ApiKeyView) -> Self {
                 Self {
+                    bound_to_cn: Ok(value.bound_to_cn),
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
                     id: Ok(value.id),

@@ -2933,6 +2933,12 @@
         "description": "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.",
         "type": "object",
         "properties": {
+          "bound_to_cn": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -3001,6 +3007,12 @@
         "description": "Wire-safe view of an [`ApiKey`]: identifying metadata, no hash.",
         "type": "object",
         "properties": {
+          "bound_to_cn": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
