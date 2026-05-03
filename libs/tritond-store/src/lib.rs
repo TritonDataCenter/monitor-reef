@@ -37,8 +37,9 @@ pub use types::{
     IdpConfig, IdpConfigView, Image, ImageCompatibility, Instance, InstanceCreateResult, JobKind,
     JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp,
     NewImage, NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey,
-    TRITOND_IMAGE_NAMESPACE, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet,
+    SystemKey, TRITOND_IMAGE_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
     derive_image_id, format_claim_code, generate_claim_code, generate_poll_token,
     normalize_claim_code,
 };
@@ -205,6 +206,31 @@ pub trait Store: Send + Sync + 'static {
     /// Delete a project by id. Returns [`StoreError::NotFound`] if the
     /// id does not exist.
     async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Tenants (silo-scoped customer containers)
+    // ------------------------------------------------------------------
+
+    /// Create a new tenant inside a silo. Returns
+    /// [`StoreError::Conflict`] if `req.name` is already in use
+    /// within the silo. Returns [`StoreError::NotFound`] if the
+    /// silo doesn't exist.
+    async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError>;
+
+    /// Look up a tenant by id. Returns [`StoreError::NotFound`]
+    /// when no such tenant exists.
+    async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError>;
+
+    /// List every tenant owned by a silo. Returns an empty Vec
+    /// (not NotFound) when the silo exists but has no tenants;
+    /// returns NotFound when the silo itself doesn't exist.
+    async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError>;
+
+    /// Delete a tenant by id. Returns [`StoreError::NotFound`]
+    /// if the tenant doesn't exist; [`StoreError::Conflict`] if
+    /// the tenant still has child projects (no cascading deletes
+    /// in Phase 0 — locked decision #17).
+    async fn delete_tenant(&self, tenant_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // VPCs (project-scoped)

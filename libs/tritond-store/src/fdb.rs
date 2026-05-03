@@ -36,6 +36,9 @@
 //! project/by_id/<uuid>              -> JSON-encoded Project
 //! project/by_silo/<silo>/<name>     -> uuid hyphenated bytes
 //! project/in_silo/<silo>/<proj>     -> empty (membership index)
+//! tenant/by_id/<uuid>               -> JSON-encoded Tenant
+//! tenant/by_silo/<silo>/<name>      -> uuid hyphenated bytes
+//! tenant/in_silo/<silo>/<tenant>    -> empty (membership index)
 //! vpc/by_id/<uuid>                  -> JSON-encoded Vpc
 //! vpc/by_project/<proj>/<name>      -> uuid hyphenated bytes
 //! vpc/in_project/<proj>/<vpc>       -> empty (membership index)
@@ -93,9 +96,9 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
-    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
-    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    generate_claim_code, generate_poll_token,
+    NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
+    SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -148,6 +151,22 @@ impl FdbStore {
 
     fn silo_by_name_key(name: &str) -> Vec<u8> {
         format!("silo/by_name/{name}").into_bytes()
+    }
+
+    fn tenant_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("tenant/by_id/{id}").into_bytes()
+    }
+
+    fn tenant_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
+        format!("tenant/by_silo/{silo_id}/{name}").into_bytes()
+    }
+
+    fn tenant_in_silo_key(silo_id: Uuid, tenant_id: Uuid) -> Vec<u8> {
+        format!("tenant/in_silo/{silo_id}/{tenant_id}").into_bytes()
+    }
+
+    fn tenant_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
+        format!("tenant/in_silo/{silo_id}/").into_bytes()
     }
 
     fn user_by_id_key(id: Uuid) -> Vec<u8> {
@@ -1066,6 +1085,165 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError> {
+        let tenant = Tenant {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name,
+            description: req.description.unwrap_or_default(),
+            created_at: Utc::now(),
+        };
+        let value = serde_json::to_vec(&tenant)
+            .map_err(|e| StoreError::Backend(format!("serialize tenant: {e}")))?;
+        let by_id_key = Self::tenant_by_id_key(tenant.id);
+        let by_name_key = Self::tenant_by_silo_name_key(silo_id, &tenant.name);
+        let in_silo_key = Self::tenant_in_silo_key(silo_id, tenant.id);
+        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let id_str = tenant.id.to_string();
+        let name_str = tenant.name.clone();
+
+        // Outcome distinguishes silo-missing from name-conflict so the
+        // single transaction can convey both into our caller's error
+        // shape.
+        enum Outcome {
+            Created,
+            SiloMissing,
+            NameTaken,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                let silo_check_key = silo_check_key.clone();
+                let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                async move {
+                    if tr.get(&silo_check_key, false).await?.is_none() {
+                        return Ok(Outcome::SiloMissing);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_silo_key, b"");
+                    Ok(Outcome::Created)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created) => Ok(tenant),
+            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "tenant with name {name_str:?} already exists in silo {silo_id}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
+        let key = Self::tenant_by_id_key(tenant_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))
+    }
+
+    async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError> {
+        // Confirm the silo exists first so callers can distinguish
+        // "silo missing" (NotFound) from "silo present but empty"
+        // (empty Vec).
+        let silo_check_key = Self::silo_by_id_key(silo_id);
+        if self.read_bytes(&silo_check_key).await?.is_none() {
+            return Err(StoreError::NotFound);
+        }
+
+        let prefix = Self::tenant_in_silo_prefix(silo_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("tenant index uuid: {e}")))?;
+            let by_id_key = Self::tenant_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let tenant: Tenant = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+                out.push(tenant);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_tenant(&self, tenant_id: Uuid) -> Result<(), StoreError> {
+        // Read the row outside the transaction so we know the
+        // silo_id + name to clear from the indices. Concurrent
+        // delete shows up as DelOut::Vanished below.
+        let by_id_key = Self::tenant_by_id_key(tenant_id);
+        let bytes = match self.read_bytes(&by_id_key).await? {
+            Some(b) => b,
+            None => return Err(StoreError::NotFound),
+        };
+        let tenant: Tenant = serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+        let by_name_key = Self::tenant_by_silo_name_key(tenant.silo_id, &tenant.name);
+        let in_silo_key = Self::tenant_in_silo_key(tenant.silo_id, tenant.id);
+
+        // TODO(slice E-3): reject deletion when child projects exist
+        let outcome: Result<DeleteOutcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_silo_key = in_silo_key.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Ok(DeleteOutcome::NotFound);
+                    }
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_silo_key);
+                    Ok(DeleteOutcome::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(DeleteOutcome::Deleted) => Ok(()),
+            Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
@@ -4651,5 +4829,213 @@ mod cn_tests {
 
         purge_cn(&store, pid).await;
         purge_cn(&store, aid).await;
+    }
+}
+
+#[cfg(test)]
+mod tenant_tests {
+    //! Tenant CRUD tests against a real FoundationDB cluster. Mirrors
+    //! the MemStore tenant test block in `mem.rs`.
+    //!
+    //! Marked `#[ignore]` because they require a running FDB cluster
+    //! reachable via the default cluster file resolution. Run with
+    //! `cargo test -p tritond-store --features foundationdb -- --ignored`.
+    //!
+    //! Each test mints fresh silo + tenant uuids so concurrent runs
+    //! against a shared cluster don't trip on each other; we do not
+    //! blow away the keyspace.
+    use super::*;
+
+    fn fdb_test_store() -> FdbStore {
+        FdbStore::open(None).expect("open FDB cluster from default cluster file")
+    }
+
+    /// Drop a tenant row + indices we know about. Best-effort — the
+    /// row may have been deleted by the test itself.
+    async fn purge_tenant(store: &FdbStore, tenant_id: Uuid) {
+        let by_id = FdbStore::tenant_by_id_key(tenant_id);
+        if let Ok(Some(bytes)) = store.read_bytes(&by_id).await
+            && let Ok(t) = serde_json::from_slice::<Tenant>(&bytes)
+        {
+            let by_name = FdbStore::tenant_by_silo_name_key(t.silo_id, &t.name);
+            let in_silo = FdbStore::tenant_in_silo_key(t.silo_id, t.id);
+            let _ = store
+                .db
+                .run(|tr, _| {
+                    let by_id = by_id.clone();
+                    let by_name = by_name.clone();
+                    let in_silo = in_silo.clone();
+                    async move {
+                        tr.clear(&by_id);
+                        tr.clear(&by_name);
+                        tr.clear(&in_silo);
+                        Ok(())
+                    }
+                })
+                .await;
+        }
+    }
+
+    /// Drop a silo row + by_name index. Best-effort cleanup.
+    async fn purge_silo(store: &FdbStore, silo_id: Uuid) {
+        let by_id = FdbStore::silo_by_id_key(silo_id);
+        if let Ok(Some(bytes)) = store.read_bytes(&by_id).await
+            && let Ok(s) = serde_json::from_slice::<Silo>(&bytes)
+        {
+            let by_name = FdbStore::silo_by_name_key(&s.name);
+            let _ = store
+                .db
+                .run(|tr, _| {
+                    let by_id = by_id.clone();
+                    let by_name = by_name.clone();
+                    async move {
+                        tr.clear(&by_id);
+                        tr.clear(&by_name);
+                        Ok(())
+                    }
+                })
+                .await;
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn tenant_round_trip() {
+        let store = fdb_test_store();
+        let silo = store
+            .create_silo(NewSilo {
+                name: format!("brand-{}", Uuid::new_v4()),
+                description: None,
+            })
+            .await
+            .expect("create silo");
+
+        let t = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: Some("first customer".to_string()),
+                },
+            )
+            .await
+            .expect("create tenant");
+        assert_eq!(t.silo_id, silo.id);
+        assert_eq!(t.name, "acme");
+        assert_eq!(t.description, "first customer");
+
+        let fetched = store.get_tenant(t.id).await.expect("get tenant");
+        assert_eq!(fetched, t);
+
+        let listed = store
+            .list_tenants_in_silo(silo.id)
+            .await
+            .expect("list tenants");
+        assert!(listed.iter().any(|x| x.id == t.id));
+
+        store.delete_tenant(t.id).await.expect("delete tenant");
+        let err = store
+            .get_tenant(t.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+
+        purge_tenant(&store, t.id).await;
+        purge_silo(&store, silo.id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn tenants_within_silo_must_have_unique_names() {
+        let store = fdb_test_store();
+        let silo = store
+            .create_silo(NewSilo {
+                name: format!("brand-{}", Uuid::new_v4()),
+                description: None,
+            })
+            .await
+            .expect("create silo");
+
+        let t = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("create first");
+        let err = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("duplicate within silo conflicts");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        purge_tenant(&store, t.id).await;
+        purge_silo(&store, silo.id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn same_tenant_name_in_different_silos_does_not_conflict() {
+        let store = fdb_test_store();
+        let a = store
+            .create_silo(NewSilo {
+                name: format!("brand-a-{}", Uuid::new_v4()),
+                description: None,
+            })
+            .await
+            .expect("create silo a");
+        let b = store
+            .create_silo(NewSilo {
+                name: format!("brand-b-{}", Uuid::new_v4()),
+                description: None,
+            })
+            .await
+            .expect("create silo b");
+
+        let t1 = store
+            .create_tenant(
+                a.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("create in a");
+        let t2 = store
+            .create_tenant(
+                b.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("same name across silos must be allowed");
+
+        purge_tenant(&store, t1.id).await;
+        purge_tenant(&store, t2.id).await;
+        purge_silo(&store, a.id).await;
+        purge_silo(&store, b.id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn list_tenants_in_unknown_silo_returns_not_found() {
+        let store = fdb_test_store();
+        let err = store
+            .list_tenants_in_silo(Uuid::new_v4())
+            .await
+            .expect_err("unknown silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
     }
 }

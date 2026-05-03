@@ -23,9 +23,9 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
-    NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
-    Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    generate_claim_code, generate_poll_token,
+    NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
+    SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
@@ -65,6 +65,10 @@ struct Inner {
     /// `(silo_id, name)` → project_id index for the within-silo
     /// uniqueness check.
     project_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
+    tenants_by_id: HashMap<Uuid, Tenant>,
+    /// `(silo_id, name)` → tenant_id index for the within-silo
+    /// uniqueness check.
+    tenant_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
     vpcs_by_id: HashMap<Uuid, Vpc>,
     /// `(project_id, name)` → vpc_id index for within-project name
     /// uniqueness.
@@ -407,6 +411,65 @@ impl Store for MemStore {
         guard
             .project_id_by_silo_name
             .remove(&(project.silo_id, project.name));
+        Ok(())
+    }
+
+    async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.silos_by_id.contains_key(&silo_id) {
+            return Err(StoreError::NotFound);
+        }
+        let key = (silo_id, req.name.clone());
+        if guard.tenant_id_by_silo_name.contains_key(&key) {
+            return Err(StoreError::Conflict(format!(
+                "tenant with name {:?} already exists in silo {silo_id}",
+                req.name
+            )));
+        }
+        let tenant = Tenant {
+            id: Uuid::new_v4(),
+            silo_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            created_at: Utc::now(),
+        };
+        guard.tenant_id_by_silo_name.insert(key, tenant.id);
+        guard.tenants_by_id.insert(tenant.id, tenant.clone());
+        Ok(tenant)
+    }
+
+    async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .tenants_by_id
+            .get(&tenant_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_tenants_in_silo(&self, silo_id: Uuid) -> Result<Vec<Tenant>, StoreError> {
+        let guard = self.inner.read().await;
+        if !guard.silos_by_id.contains_key(&silo_id) {
+            return Err(StoreError::NotFound);
+        }
+        Ok(guard
+            .tenants_by_id
+            .values()
+            .filter(|t| t.silo_id == silo_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_tenant(&self, tenant_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let tenant = guard
+            .tenants_by_id
+            .remove(&tenant_id)
+            .ok_or(StoreError::NotFound)?;
+        // TODO(slice E-3): reject deletion when child projects exist
+        guard
+            .tenant_id_by_silo_name
+            .remove(&(tenant.silo_id, tenant.name));
         Ok(())
     }
 
@@ -2180,6 +2243,128 @@ mod tests {
                     description: None,
                 },
             )
+            .await
+            .expect_err("unknown silo should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn tenant_round_trip() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "brand".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+
+        let t = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: Some("first customer".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(t.silo_id, silo.id);
+        assert_eq!(t.name, "acme");
+        assert_eq!(t.description, "first customer");
+
+        let fetched = store.get_tenant(t.id).await.unwrap();
+        assert_eq!(fetched, t);
+
+        let listed = store.list_tenants_in_silo(silo.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, t.id);
+
+        store.delete_tenant(t.id).await.unwrap();
+        let err = store
+            .get_tenant(t.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn tenants_within_silo_must_have_unique_names() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "brand".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("duplicate tenant name within silo conflicts");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn same_tenant_name_in_different_silos_does_not_conflict() {
+        let store = MemStore::new();
+        let a = store
+            .create_silo(NewSilo {
+                name: "brand-a".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let b = store
+            .create_silo(NewSilo {
+                name: "brand-b".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        store
+            .create_tenant(
+                a.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .create_tenant(
+                b.id,
+                NewTenant {
+                    name: "acme".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect("same tenant name across silos must be allowed");
+    }
+
+    #[tokio::test]
+    async fn list_tenants_in_unknown_silo_returns_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .list_tenants_in_silo(Uuid::new_v4())
             .await
             .expect_err("unknown silo should be not-found");
         assert!(matches!(err, StoreError::NotFound));

@@ -143,6 +143,31 @@ pub struct NewProject {
     pub description: Option<String>,
 }
 
+/// A logical customer container inside a [`Silo`]. Tenants own
+/// users, projects, and per-tenant resources; a Silo is the
+/// brand-level identity / billing / catalog parent.
+///
+/// Phase 0 ships the structural primitive only. Per-tenant
+/// billing fields, IdP overrides, and explicit user-tenant
+/// membership land in follow-on slices.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Tenant {
+    pub id: Uuid,
+    pub silo_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating a tenant. The owning silo comes
+/// from the URL path, not the body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewTenant {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 /// Reserved-VNI ceiling. Values below this are off-limits for tenant
 /// VPCs; the dataplane keeps `[0, 4096)` for system VNIs (boundary
 /// services, transit, future internal traffic). 4096 matches Oxide's
