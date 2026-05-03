@@ -1663,6 +1663,7 @@ impl Store for FdbStore {
             size_bytes: req.size_bytes,
             sha256: req.sha256,
             source_url: req.source_url,
+            compatibility: req.compatibility,
             created_at: Utc::now(),
         };
         let value = serde_json::to_vec(&image)

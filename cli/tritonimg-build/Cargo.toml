@@ -1,0 +1,26 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritonimg-build"
+version = "0.1.0"
+edition.workspace = true
+description = "CLI: package a SmartOS dataset as a tritond image bundle"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "tritonimg-build"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+sha2 = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tritond-image-manifest = { workspace = true }

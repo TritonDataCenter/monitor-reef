@@ -232,6 +232,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
             sha256: "0".repeat(64),
             source_url: Some("mantafs://images/ubuntu".to_string()),
             id: None,
+            compatibility: None,
         })
         .send()
         .await
@@ -267,8 +268,8 @@ fn instance_req(fx: &Fixture, name: &str) -> NewInstance {
         ssh_key_ids: vec![fx.ssh_key_id],
         cpu: 2,
         memory_bytes: 2 * 1024 * 1024 * 1024,
-            extra_nics: Vec::new(),
-        }
+        extra_nics: Vec::new(),
+    }
 }
 
 // ---------- tests ----------

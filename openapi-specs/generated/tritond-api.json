@@ -673,6 +673,55 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/image-bundles": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Register an image from a tritond image bundle. tritond",
+        "description": "fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from the `{image_id}` parameter of `GET /v2/silos/{silo_id}/images/{image_id}`.",
+        "operationId": "create_silo_image_from_bundle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImageFromBundle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/images": {
       "get": {
         "tags": [
@@ -3391,6 +3440,16 @@
         "description": "Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\n\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private.",
         "type": "object",
         "properties": {
+          "compatibility": {
+            "nullable": true,
+            "description": "Optional host-compatibility constraints, populated when the image was registered via the bundle path (image-create with `bundle_url`). When `Some`, the per-CN agent rejects a Provision before vmadm if the instance brand or host platform fails the constraints. `None` skips the gate (legacy / explicit-fields image-create path); a future slice migrates every Image record to carry compatibility metadata.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageCompatibility"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -3443,6 +3502,30 @@
           "silo_id",
           "size_bytes",
           "version"
+        ]
+      },
+      "ImageCompatibility": {
+        "description": "Host-compatibility constraints on an [`Image`]. Mirrors `tritond_image_manifest::Compatibility` exactly — the bundle ingest path copies the manifest's compatibility block in without translation. The per-CN agent enforces these gates at provision time.",
+        "type": "object",
+        "properties": {
+          "arch": {
+            "description": "CPU architecture (e.g. `x86_64`).",
+            "type": "string"
+          },
+          "brand": {
+            "description": "SmartOS brand the image is built for (e.g. `joyent-minimal`, `lx`). Compared against the instance's requested brand.",
+            "type": "string"
+          },
+          "min_smartos_platform": {
+            "nullable": true,
+            "description": "SmartOS platform buildstamp (`YYYYMMDDTHHMMSSZ`); the host's platform buildstamp must be lexicographically `>=` this value. `None` means \"any platform.\"",
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "arch",
+          "brand"
         ]
       },
       "Instance": {
@@ -3898,6 +3981,16 @@
         "description": "Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`.",
         "type": "object",
         "properties": {
+          "compatibility": {
+            "nullable": true,
+            "description": "Optional host-compatibility constraints. Populated by the server when an image is registered via the bundle ingest path; absent when the operator passed individual fields by hand. The per-CN agent enforces these when `Some`.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageCompatibility"
+              }
+            ]
+          },
           "description": {
             "nullable": true,
             "default": null,
@@ -3939,6 +4032,18 @@
           "sha256",
           "size_bytes",
           "version"
+        ]
+      },
+      "NewImageFromBundle": {
+        "description": "Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).",
+        "type": "object",
+        "properties": {
+          "bundle_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundle_url"
         ]
       },
       "NewInstance": {

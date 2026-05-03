@@ -1714,6 +1714,12 @@ pub async fn silo_image_add(
             sha256,
             source_url,
             id,
+            // tcadm's explicit-fields image-create path doesn't
+            // populate compatibility — operators who want
+            // compatibility gates should use the bundle path
+            // (`tritonimg-build` + `tcadm silo image add-bundle`,
+            // future flag).
+            compatibility: None,
         })
         .send()
         .await

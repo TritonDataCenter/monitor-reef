@@ -79,6 +79,27 @@ pub struct TokenResponse {
     pub refresh_expires_at: DateTime<Utc>,
 }
 
+/// Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.
+///
+/// `bundle_url` points at a tritond image bundle (an
+/// uncompressed tar with `manifest.json` + `content.zfs.gz`,
+/// produced by the `tritonimg-build` CLI). tritond fetches the
+/// bundle once at registration time, validates the manifest,
+/// re-hashes the content against the manifest's claimed sha256,
+/// and populates the Image record's `name`, `version`, `os`,
+/// `size_bytes`, `sha256`, and `compatibility` from the
+/// manifest. Operators don't pass any of those fields by hand
+/// — the bundle is the source of truth.
+///
+/// The bundle URL is also recorded as the Image's `source_url`
+/// so the per-CN agent fetches the same bundle at provision
+/// time (extracts manifest, sha256-verifies content, ZFS-
+/// receives).
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct NewImageFromBundle {
+    pub bundle_url: String,
+}
+
 /// Request body for `POST /v2/auth/api-keys`.
 ///
 /// `scope` defaults to [`ApiKeyScope::Full`] when omitted on the
@@ -810,6 +831,32 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloPath>,
         body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// Register an image from a tritond image bundle. tritond
+    /// fetches the bundle once at registration, validates the
+    /// manifest, re-hashes the content, and populates every
+    /// Image-record field from the manifest. The returned
+    /// `Image` carries `compatibility = Some(...)` so the per-CN
+    /// agent enforces brand + min_smartos_platform gates at
+    /// provision time. Returns 400 on a malformed bundle or
+    /// sha256 mismatch, 502 if `bundle_url` is unreachable, 409
+    /// on a name or content collision within the silo.
+    ///
+    /// The path is `/v2/silos/{silo_id}/image-bundles` rather
+    /// than `/v2/silos/{silo_id}/images/from-bundle` because
+    /// Dropshot's router cannot disambiguate a literal
+    /// `from-bundle` segment from the `{image_id}` parameter
+    /// of `GET /v2/silos/{silo_id}/images/{image_id}`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/image-bundles",
+        tags = ["images"],
+    }]
+    async fn create_silo_image_from_bundle(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewImageFromBundle>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
     /// Read a single image. Returns 404 when the image does not

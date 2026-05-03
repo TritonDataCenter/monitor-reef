@@ -32,16 +32,17 @@
 //! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
 
 pub mod images;
+pub mod platform;
 pub mod vmadm;
 pub mod zfs;
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use tracing::{error, info, warn};
 use tritond_client::Client;
 use tritond_client::types::{
-    ClaimJobRequest, CompleteJobRequest, JobKind, JobOutcome, ProvisioningJob,
+    ClaimJobRequest, CompleteJobRequest, ImageCompatibility, JobKind, JobOutcome, ProvisioningJob,
 };
 
 /// Configuration for an [`Agent`] run.
@@ -235,6 +236,15 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
                 .image
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Provision blueprint has no image"))?;
+            // Compatibility gate: refuse the provision if the
+            // image declares a min_smartos_platform newer than
+            // this host. Image records minted via the legacy
+            // (non-bundle) image-create path have
+            // `compatibility = None` and skip the check —
+            // matches the behaviour from before slice B.
+            if let Some(compat) = image.compatibility.as_ref() {
+                check_image_compatibility(compat).await?;
+            }
             images::ensure(image)
                 .await
                 .context("ensure image content on host")?;
@@ -255,5 +265,43 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
         }
     }
 
+    Ok(())
+}
+
+/// Refuse a Provision when the host can't satisfy the image's
+/// declared compatibility constraints. Returns `Ok(())` when
+/// the host meets every constraint; `Err` otherwise — the
+/// caller wraps the error into `JobOutcome::Failed` so the
+/// operator sees a clear reason in the audit chain.
+///
+/// Phase 0 enforces:
+///
+/// * `min_smartos_platform` — host's `uname -v` buildstamp
+///   must lex-compare `>=` the image's minimum.
+///
+/// `compatibility.brand` is *not* enforced here because the
+/// agent's vmadm payload always uses the brand the image
+/// declares (`joyent-minimal`); a mismatch between the
+/// image's brand and what vmadm would accept fails inside
+/// `vmadm create` itself. A future slice that lets operators
+/// pick the instance brand independently of the image will
+/// add the brand check too.
+async fn check_image_compatibility(compat: &ImageCompatibility) -> Result<()> {
+    let Some(min_required) = compat.min_smartos_platform.as_deref() else {
+        return Ok(());
+    };
+    let host = platform::host_platform_buildstamp()
+        .await
+        .context("read host platform buildstamp")?;
+    if host.as_str() < min_required {
+        return Err(anyhow!(
+            "host platform {host} is older than image's min_smartos_platform {min_required}",
+        ));
+    }
+    info!(
+        host = %host,
+        min_required,
+        "host platform satisfies image compatibility",
+    );
     Ok(())
 }

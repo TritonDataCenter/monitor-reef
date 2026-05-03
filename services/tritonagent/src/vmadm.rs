@@ -352,6 +352,7 @@ mod tests {
             size_bytes: 256 * 1024 * 1024,
             sha256: "deadbeef".repeat(8),
             source_url: None,
+            compatibility: None,
             created_at: now,
         };
         let nic = Nic {

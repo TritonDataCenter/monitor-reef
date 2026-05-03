@@ -22,6 +22,7 @@ members = [
     "libs/triton-auth",
     "libs/tritond-audit",
     "libs/tritond-auth",
+    "libs/tritond-image-manifest",
     "libs/tritond-store",
     "client-generator",
     "openapi-manager",
@@ -30,6 +31,7 @@ members = [
     "services/tritond",
     "services/tritonagent",
     "cli/tcadm",
+    "cli/tritonimg-build",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
@@ -162,6 +164,10 @@ signature = "2.2"
 ssh-encoding = "0.2"
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "encryption"] }
 strum = { version = "0.28", features = ["derive"] }
+# Used by `tritond-image-manifest` to read/write Triton image
+# bundles (uncompressed .tar with manifest.json + content.zfs.gz).
+# Pure-Rust, no system tar dep, fine on illumos.
+tar = "0.4"
 syn = "2.0"
 tempfile = "3"
 test-case = "3.3"
@@ -197,6 +203,7 @@ tritond-api = { path = "apis/tritond-api" }
 tritond-audit = { path = "libs/tritond-audit" }
 tritond-auth = { path = "libs/tritond-auth" }
 tritond-client = { path = "clients/internal/tritond-client" }
+tritond-image-manifest = { path = "libs/tritond-image-manifest" }
 tritond-store = { path = "libs/tritond-store" }
 tritonagent = { path = "services/tritonagent" }
 vmapi-api = { path = "apis/vmapi-api" }

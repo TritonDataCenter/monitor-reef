@@ -19,14 +19,14 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[cfg(test)]
-use crate::ApiKeyScope;
+use crate::{ApiKeyScope, NewInstanceNic};
 use crate::{
     AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
     FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
     JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
-    NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
-    Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
+    ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -674,6 +674,7 @@ impl Store for MemStore {
             size_bytes: req.size_bytes,
             sha256: req.sha256,
             source_url: req.source_url,
+            compatibility: req.compatibility,
             created_at: Utc::now(),
         };
         guard.image_id_by_silo_name.insert(name_key, image.id);
@@ -2591,6 +2592,7 @@ mod tests {
             sha256: sha,
             source_url: Some("mantafs://images/test".to_string()),
             id: None,
+            compatibility: None,
         }
     }
 

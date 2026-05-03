@@ -33,11 +33,11 @@ pub use mem::MemStore;
 pub use types::{
     AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, Disk, DiskKind, FLOATING_IP_V4_POOL,
     FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView,
-    Image, Instance, InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, User,
-    UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
+    Image, ImageCompatibility, Instance, InstanceCreateResult, JobKind, JobOutcome, JobStatus,
+    JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
+    NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
+    Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
+    User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
 };
 
 use async_trait::async_trait;

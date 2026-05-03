@@ -493,7 +493,37 @@ pub struct Image {
     /// means the content is registered out-of-band (e.g. already in
     /// mantafs at a known path resolved by image_id).
     pub source_url: Option<String>,
+    /// Optional host-compatibility constraints, populated when
+    /// the image was registered via the bundle path (image-create
+    /// with `bundle_url`). When `Some`, the per-CN agent
+    /// rejects a Provision before vmadm if the instance brand
+    /// or host platform fails the constraints. `None` skips the
+    /// gate (legacy / explicit-fields image-create path); a
+    /// future slice migrates every Image record to carry
+    /// compatibility metadata.
+    #[serde(default)]
+    pub compatibility: Option<ImageCompatibility>,
     pub created_at: DateTime<Utc>,
+}
+
+/// Host-compatibility constraints on an [`Image`]. Mirrors
+/// `tritond_image_manifest::Compatibility` exactly — the bundle
+/// ingest path copies the manifest's compatibility block in
+/// without translation. The per-CN agent enforces these gates
+/// at provision time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ImageCompatibility {
+    /// SmartOS brand the image is built for (e.g.
+    /// `joyent-minimal`, `lx`). Compared against the
+    /// instance's requested brand.
+    pub brand: String,
+    /// CPU architecture (e.g. `x86_64`).
+    pub arch: String,
+    /// SmartOS platform buildstamp (`YYYYMMDDTHHMMSSZ`); the
+    /// host's platform buildstamp must be lexicographically
+    /// `>=` this value. `None` means "any platform."
+    #[serde(default)]
+    pub min_smartos_platform: Option<String>,
 }
 
 /// Request body for registering an image in a silo's catalog. The
@@ -523,6 +553,13 @@ pub struct NewImage {
     /// in use.
     #[serde(default)]
     pub id: Option<Uuid>,
+    /// Optional host-compatibility constraints. Populated by
+    /// the server when an image is registered via the bundle
+    /// ingest path; absent when the operator passed individual
+    /// fields by hand. The per-CN agent enforces these when
+    /// `Some`.
+    #[serde(default)]
+    pub compatibility: Option<ImageCompatibility>,
 }
 
 /// Stable namespace for [`derive_image_id`]. Picked once on

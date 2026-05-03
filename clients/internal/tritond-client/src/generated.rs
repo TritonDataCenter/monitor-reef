@@ -1413,6 +1413,21 @@ pub mod types {
     #[doc = "    \"version\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"compatibility\": {"]
+    #[doc = "      \"description\": \"Optional host-compatibility constraints, populated when the image was registered via the bundle path (image-create with `bundle_url`). When `Some`, the per-CN agent rejects a Provision before vmadm if the instance brand or host platform fails the constraints. `None` skips the gate (legacy / explicit-fields image-create path); a future slice migrates every Image record to carry compatibility metadata.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageCompatibility\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"created_at\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
@@ -1464,6 +1479,9 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Image {
+        #[doc = "Optional host-compatibility constraints, populated when the image was registered via the bundle path (image-create with `bundle_url`). When `Some`, the per-CN agent rejects a Provision before vmadm if the instance brand or host platform fails the constraints. `None` skips the gate (legacy / explicit-fields image-create path); a future slice migrates every Image record to carry compatibility metadata."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub compatibility: ::std::option::Option<ImageCompatibility>,
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
@@ -1484,6 +1502,57 @@ pub mod types {
 
     impl Image {
         pub fn builder() -> builder::Image {
+            Default::default()
+        }
+    }
+
+    #[doc = "Host-compatibility constraints on an [`Image`]. Mirrors `tritond_image_manifest::Compatibility` exactly — the bundle ingest path copies the manifest's compatibility block in without translation. The per-CN agent enforces these gates at provision time."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Host-compatibility constraints on an [`Image`]. Mirrors `tritond_image_manifest::Compatibility` exactly — the bundle ingest path copies the manifest's compatibility block in without translation. The per-CN agent enforces these gates at provision time.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"arch\","]
+    #[doc = "    \"brand\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"arch\": {"]
+    #[doc = "      \"description\": \"CPU architecture (e.g. `x86_64`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"brand\": {"]
+    #[doc = "      \"description\": \"SmartOS brand the image is built for (e.g. `joyent-minimal`, `lx`). Compared against the instance's requested brand.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"min_smartos_platform\": {"]
+    #[doc = "      \"description\": \"SmartOS platform buildstamp (`YYYYMMDDTHHMMSSZ`); the host's platform buildstamp must be lexicographically `>=` this value. `None` means \\\"any platform.\\\"\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ImageCompatibility {
+        #[doc = "CPU architecture (e.g. `x86_64`)."]
+        pub arch: ::std::string::String,
+        #[doc = "SmartOS brand the image is built for (e.g. `joyent-minimal`, `lx`). Compared against the instance's requested brand."]
+        pub brand: ::std::string::String,
+        #[doc = "SmartOS platform buildstamp (`YYYYMMDDTHHMMSSZ`); the host's platform buildstamp must be lexicographically `>=` this value. `None` means \"any platform.\""]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub min_smartos_platform: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ImageCompatibility {
+        pub fn builder() -> builder::ImageCompatibility {
             Default::default()
         }
     }
@@ -2176,6 +2245,21 @@ pub mod types {
     #[doc = "    \"version\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"compatibility\": {"]
+    #[doc = "      \"description\": \"Optional host-compatibility constraints. Populated by the server when an image is registered via the bundle ingest path; absent when the operator passed individual fields by hand. The per-CN agent enforces these when `Some`.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageCompatibility\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -2221,6 +2305,9 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct NewImage {
+        #[doc = "Optional host-compatibility constraints. Populated by the server when an image is registered via the bundle ingest path; absent when the operator passed individual fields by hand. The per-CN agent enforces these when `Some`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub compatibility: ::std::option::Option<ImageCompatibility>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
         #[doc = "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `sha256` via [`derive_image_id`] — same content always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use."]
@@ -2237,6 +2324,38 @@ pub mod types {
 
     impl NewImage {
         pub fn builder() -> builder::NewImage {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.\\n\\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\\n\\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"bundle_url\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"bundle_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewImageFromBundle {
+        pub bundle_url: ::std::string::String,
+    }
+
+    impl NewImageFromBundle {
+        pub fn builder() -> builder::NewImageFromBundle {
             Default::default()
         }
     }
@@ -5094,6 +5213,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Image {
+            compatibility: ::std::result::Result<
+                ::std::option::Option<super::ImageCompatibility>,
+                ::std::string::String,
+            >,
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -5115,6 +5238,7 @@ pub mod types {
         impl ::std::default::Default for Image {
             fn default() -> Self {
                 Self {
+                    compatibility: Ok(Default::default()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
@@ -5130,6 +5254,16 @@ pub mod types {
         }
 
         impl Image {
+            pub fn compatibility<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ImageCompatibility>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.compatibility = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for compatibility: {e}"));
+                self
+            }
             pub fn created_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
@@ -5238,6 +5372,7 @@ pub mod types {
                 value: Image,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    compatibility: value.compatibility?,
                     created_at: value.created_at?,
                     description: value.description?,
                     id: value.id?,
@@ -5255,6 +5390,7 @@ pub mod types {
         impl ::std::convert::From<super::Image> for Image {
             fn from(value: super::Image) -> Self {
                 Self {
+                    compatibility: Ok(value.compatibility),
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
                     id: Ok(value.id),
@@ -5265,6 +5401,82 @@ pub mod types {
                     size_bytes: Ok(value.size_bytes),
                     source_url: Ok(value.source_url),
                     version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ImageCompatibility {
+            arch: ::std::result::Result<::std::string::String, ::std::string::String>,
+            brand: ::std::result::Result<::std::string::String, ::std::string::String>,
+            min_smartos_platform: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for ImageCompatibility {
+            fn default() -> Self {
+                Self {
+                    arch: Err("no value supplied for arch".to_string()),
+                    brand: Err("no value supplied for brand".to_string()),
+                    min_smartos_platform: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl ImageCompatibility {
+            pub fn arch<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.arch = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for arch: {e}"));
+                self
+            }
+            pub fn brand<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.brand = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for brand: {e}"));
+                self
+            }
+            pub fn min_smartos_platform<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.min_smartos_platform = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for min_smartos_platform: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ImageCompatibility> for super::ImageCompatibility {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ImageCompatibility,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    arch: value.arch?,
+                    brand: value.brand?,
+                    min_smartos_platform: value.min_smartos_platform?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ImageCompatibility> for ImageCompatibility {
+            fn from(value: super::ImageCompatibility) -> Self {
+                Self {
+                    arch: Ok(value.arch),
+                    brand: Ok(value.brand),
+                    min_smartos_platform: Ok(value.min_smartos_platform),
                 }
             }
         }
@@ -5775,6 +5987,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct NewImage {
+            compatibility: ::std::result::Result<
+                ::std::option::Option<super::ImageCompatibility>,
+                ::std::string::String,
+            >,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -5794,6 +6010,7 @@ pub mod types {
         impl ::std::default::Default for NewImage {
             fn default() -> Self {
                 Self {
+                    compatibility: Ok(Default::default()),
                     description: Ok(Default::default()),
                     id: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
@@ -5807,6 +6024,16 @@ pub mod types {
         }
 
         impl NewImage {
+            pub fn compatibility<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ImageCompatibility>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.compatibility = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for compatibility: {e}"));
+                self
+            }
             pub fn description<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -5895,6 +6122,7 @@ pub mod types {
                 value: NewImage,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    compatibility: value.compatibility?,
                     description: value.description?,
                     id: value.id?,
                     name: value.name?,
@@ -5910,6 +6138,7 @@ pub mod types {
         impl ::std::convert::From<super::NewImage> for NewImage {
             fn from(value: super::NewImage) -> Self {
                 Self {
+                    compatibility: Ok(value.compatibility),
                     description: Ok(value.description),
                     id: Ok(value.id),
                     name: Ok(value.name),
@@ -5918,6 +6147,51 @@ pub mod types {
                     size_bytes: Ok(value.size_bytes),
                     source_url: Ok(value.source_url),
                     version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewImageFromBundle {
+            bundle_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewImageFromBundle {
+            fn default() -> Self {
+                Self {
+                    bundle_url: Err("no value supplied for bundle_url".to_string()),
+                }
+            }
+        }
+
+        impl NewImageFromBundle {
+            pub fn bundle_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bundle_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bundle_url: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewImageFromBundle> for super::NewImageFromBundle {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewImageFromBundle,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    bundle_url: value.bundle_url?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewImageFromBundle> for NewImageFromBundle {
+            fn from(value: super::NewImageFromBundle) -> Self {
+                Self {
+                    bundle_url: Ok(value.bundle_url),
                 }
             }
         }
@@ -8175,6 +8449,11 @@ impl Client {
         builder::DeleteSiloIdp::new(self)
     }
 
+    #[doc = "Register an image from a tritond image bundle. tritond\n\nfetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from the `{image_id}` parameter of `GET /v2/silos/{silo_id}/images/{image_id}`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/image-bundles`\n\n```ignore\nlet response = client.create_silo_image_from_bundle()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_silo_image_from_bundle(&self) -> builder::CreateSiloImageFromBundle<'_> {
+        builder::CreateSiloImageFromBundle::new(self)
+    }
+
     #[doc = "List the images registered in a silo's catalog\n\nSends a `GET` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.list_silo_images()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_images(&self) -> builder::ListSiloImages<'_> {
         builder::ListSiloImages::new(self)
@@ -9671,6 +9950,107 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_silo_image_from_bundle`]\n\n[`Client::create_silo_image_from_bundle`]: super::Client::create_silo_image_from_bundle"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSiloImageFromBundle<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewImageFromBundle, String>,
+    }
+
+    impl<'a> CreateSiloImageFromBundle<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImageFromBundle>,
+            <V as std::convert::TryInto<types::NewImageFromBundle>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImageFromBundle` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NewImageFromBundle,
+                ) -> types::builder::NewImageFromBundle,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/image-bundles`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewImageFromBundle::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/image-bundles",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_silo_image_from_bundle",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

@@ -106,8 +106,26 @@ pub async fn ensure(image: &Image) -> Result<()> {
         .with_context(|| format!("create cache dir {CACHE_DIR}"))?;
     let download_path: PathBuf = format!("{CACHE_DIR}/{}.gz", image.id).into();
 
+    // Two on-disk shapes for `source_url`:
+    //
+    //   * legacy bare-gz: pre-slice-B images (no compatibility
+    //     metadata) point at a gzipped `zfs send` stream
+    //     directly. We download it, sha256-verify, and feed
+    //     it to `zfs receive`.
+    //
+    //   * tritond bundle: slice-B images (compatibility set)
+    //     point at a tar bundle produced by `tritonimg-build`.
+    //     We download the tar, extract `content.zfs.gz` to
+    //     `download_path`, sha256-verify the extracted bytes,
+    //     and feed the same `zfs receive` path. The manifest
+    //     was already validated server-side at ingest, so we
+    //     don't re-parse it here.
     info!(image_id = %image.id, %source, "downloading image content");
-    download_and_verify(source, &image.sha256, &download_path).await?;
+    if image.compatibility.is_some() {
+        download_bundle_extract_content(source, &image.sha256, &download_path).await?;
+    } else {
+        download_and_verify(source, &image.sha256, &download_path).await?;
+    }
 
     info!(image_id = %image.id, %dataset, "running gzip -dc | zfs receive");
     let recv_result = zfs::recv_gzipped(&dataset, &download_path).await;
@@ -195,6 +213,117 @@ async fn write_imgadm_manifest(image: &Image) -> Result<()> {
     fs::write(&path, &body)
         .await
         .with_context(|| format!("write {path}"))?;
+    Ok(())
+}
+
+/// Download a tritond image bundle from `url`, extract
+/// `content.zfs.gz` into `content_dest`, and sha256-verify the
+/// extracted bytes against `expected_sha256` (which must equal
+/// the manifest's `content.sha256` — the agent doesn't trust
+/// the manifest on disk, only the value tritond gave us via
+/// the Image record). The intermediate tar is unpacked to a
+/// sibling temp directory and removed on the way out.
+async fn download_bundle_extract_content(
+    url: &str,
+    expected_sha256: &str,
+    content_dest: &Path,
+) -> Result<()> {
+    let parent = content_dest.parent().ok_or_else(|| {
+        anyhow!("bundle content dest has no parent dir: {content_dest:?}")
+    })?;
+    let bundle_path = parent.join(format!(
+        "{}.tar",
+        content_dest
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("bundle")
+    ));
+    download_to_path(url, &bundle_path).await?;
+
+    // Extract to a per-call temp dir so concurrent imports of
+    // distinct images don't clobber each other's content.zfs.gz.
+    let extract_dir = parent.join(format!(
+        "extract-{}",
+        content_dest
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("bundle")
+    ));
+    let _ = fs::remove_dir_all(&extract_dir).await;
+    let extract_dir_clone = extract_dir.clone();
+    let bundle_for_blocking = bundle_path.clone();
+    let extracted = tokio::task::spawn_blocking(move || {
+        tritond_image_manifest::extract_bundle(&bundle_for_blocking, &extract_dir_clone)
+    })
+    .await
+    .context("join extract task")?
+    .context("extract bundle tar")?;
+    let _ = fs::remove_file(&bundle_path).await;
+
+    // Move the extracted content into the canonical
+    // `download_path` slot so the rest of the install path
+    // (zfs receive) doesn't care which branch we took.
+    fs::rename(&extracted.content_path, content_dest)
+        .await
+        .with_context(|| {
+            format!(
+                "move extracted content {:?} → {:?}",
+                extracted.content_path, content_dest,
+            )
+        })?;
+    let _ = fs::remove_dir_all(&extract_dir).await;
+
+    // Re-verify against the operator-provided sha256 (which
+    // tritond stored on the Image record at ingest time and
+    // already cross-checked against the manifest). A second
+    // check here hardens against a compromised on-disk cache
+    // or a torn rename.
+    verify_sha256(content_dest, expected_sha256).await
+}
+
+async fn download_to_path(url: &str, dest: &Path) -> Result<()> {
+    let client = build_fetch_client()?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?
+        .error_for_status()
+        .with_context(|| format!("HTTP error from {url}"))?;
+    let mut stream = resp.bytes_stream();
+    let mut file = fs::File::create(dest)
+        .await
+        .with_context(|| format!("create {dest:?}"))?;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("read body chunk")?;
+        file.write_all(&chunk)
+            .await
+            .context("write chunk to file")?;
+    }
+    file.flush().await.context("flush download")?;
+    Ok(())
+}
+
+async fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
+    let mut file = fs::File::open(path)
+        .await
+        .with_context(|| format!("open {path:?} for hashing"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1024 * 1024];
+    use tokio::io::AsyncReadExt as _;
+    loop {
+        let n = file.read(&mut buf).await.context("read for hashing")?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = format!("{:x}", hasher.finalize());
+    let want = expected.to_ascii_lowercase();
+    if actual != want {
+        let _ = fs::remove_file(path).await;
+        bail!("image content sha256 mismatch: expected {want}, got {actual}");
+    }
     Ok(())
 }
 
