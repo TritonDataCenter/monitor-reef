@@ -405,6 +405,115 @@ pub async fn silo_idp_delete(
     Ok(())
 }
 
+/// List the tenants in a silo.
+pub async fn tenant_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let tenants = client
+        .list_silo_tenants()
+        .silo_id(silo_id)
+        .send()
+        .await
+        .context("list tenants")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&tenants)?);
+        return Ok(());
+    }
+    if tenants.is_empty() {
+        println!("(no tenants)");
+        return Ok(());
+    }
+    for t in tenants {
+        println!("{}  {}  {}  {}", t.id, t.name, t.description, t.created_at);
+    }
+    Ok(())
+}
+
+/// Show a single tenant.
+pub async fn tenant_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    tenant_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let tenant = client
+        .get_silo_tenant()
+        .silo_id(silo_id)
+        .tenant_id(tenant_id)
+        .send()
+        .await
+        .context("get tenant")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&tenant)?);
+    } else {
+        println!("Tenant {} in silo {}", tenant.id, tenant.silo_id);
+        println!("  name:        {}", tenant.name);
+        println!("  description: {}", tenant.description);
+        println!("  created:     {}", tenant.created_at);
+    }
+    Ok(())
+}
+
+/// Create a new tenant in a silo.
+pub async fn tenant_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    name: String,
+    description: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let tenant = client
+        .create_silo_tenant()
+        .silo_id(silo_id)
+        .body(tritond_client::types::NewTenant { name, description })
+        .send()
+        .await
+        .context("create tenant")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&tenant)?);
+    } else {
+        println!("Created tenant {} in silo {}", tenant.id, tenant.silo_id);
+        println!("  name:        {}", tenant.name);
+        println!("  description: {}", tenant.description);
+        println!("  created:     {}", tenant.created_at);
+    }
+    Ok(())
+}
+
+/// Delete a tenant.
+pub async fn tenant_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    silo_id: Uuid,
+    tenant_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_silo_tenant()
+        .silo_id(silo_id)
+        .tenant_id(tenant_id)
+        .send()
+        .await
+        .context("delete tenant")?;
+    println!("Deleted tenant {tenant_id}");
+    Ok(())
+}
+
 /// List the projects in a silo.
 pub async fn tenant_project_list(
     endpoint_override: Option<String>,

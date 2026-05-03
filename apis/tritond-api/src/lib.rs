@@ -31,7 +31,7 @@ use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
     CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
     NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Vpc,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -45,6 +45,17 @@ pub struct HealthResponse {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SiloPath {
     pub silo_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single tenant
+/// inside a silo. Tenants live under silos in the URL even though
+/// the operator-only Tenant CRUD endpoints administer them
+/// directly; the silo segment lets a future per-silo operator
+/// role surface tenant management without rooting it at `/v2/tenants`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SiloTenantPath {
+    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
 }
 
 /// Path parameters for endpoints that operate on a single API key.
@@ -887,6 +898,58 @@ pub trait TritondApi {
     async fn delete_silo_idp(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List the tenants in a silo. Operator-facing surface; root
+    /// can administer tenants directly.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/tenants",
+        tags = ["silos", "tenants"],
+    }]
+    async fn list_silo_tenants(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<Tenant>>, HttpError>;
+
+    /// Create a tenant in a silo. Returns 409 if the tenant name is
+    /// already in use within the silo, 404 if the silo does not exist.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/tenants",
+        tags = ["silos", "tenants"],
+    }]
+    async fn create_silo_tenant(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewTenant>,
+    ) -> Result<HttpResponseCreated<Tenant>, HttpError>;
+
+    /// Read a single tenant. Returns 404 when the tenant does not
+    /// exist or belongs to a different silo (cross-silo probes do
+    /// not learn that the resource exists).
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos/{silo_id}/tenants/{tenant_id}",
+        tags = ["silos", "tenants"],
+    }]
+    async fn get_silo_tenant(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Tenant>, HttpError>;
+
+    /// Delete a tenant. Returns 404 when the tenant does not exist
+    /// or belongs to a different silo. Phase-0 deletion is
+    /// permissive (does not check for child projects); the
+    /// block-on-children guard belongs in a future cleanup.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/silos/{silo_id}/tenants/{tenant_id}",
+        tags = ["silos", "tenants"],
+    }]
+    async fn delete_silo_tenant(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List the projects inside a tenant.

@@ -383,7 +383,15 @@ async fn instance_delete_cascades_boot_disk() {
         .into_inner()[0]
         .clone();
 
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Running",
+        SETTLE,
+    )
+    .await;
     root.stop_project_instance()
         .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
@@ -391,7 +399,15 @@ async fn instance_delete_cascades_boot_disk() {
         .send()
         .await
         .unwrap();
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Stopped",
+        SETTLE,
+    )
+    .await;
     root.delete_project_instance()
         .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)

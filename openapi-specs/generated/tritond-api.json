@@ -1463,6 +1463,187 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/tenants": {
+      "get": {
+        "tags": [
+          "silos",
+          "tenants"
+        ],
+        "summary": "List the tenants in a silo. Operator-facing surface; root",
+        "description": "can administer tenants directly.",
+        "operationId": "list_silo_tenants",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Tenant",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Tenant"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "silos",
+          "tenants"
+        ],
+        "summary": "Create a tenant in a silo. Returns 409 if the tenant name is",
+        "description": "already in use within the silo, 404 if the silo does not exist.",
+        "operationId": "create_silo_tenant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTenant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/silos/{silo_id}/tenants/{tenant_id}": {
+      "get": {
+        "tags": [
+          "silos",
+          "tenants"
+        ],
+        "summary": "Read a single tenant. Returns 404 when the tenant does not",
+        "description": "exist or belongs to a different silo (cross-silo probes do not learn that the resource exists).",
+        "operationId": "get_silo_tenant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "silos",
+          "tenants"
+        ],
+        "summary": "Delete a tenant. Returns 404 when the tenant does not exist",
+        "description": "or belongs to a different silo. Phase-0 deletion is permissive (does not check for child projects); the block-on-children guard belongs in a future cleanup.",
+        "operationId": "delete_silo_tenant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/projects": {
       "get": {
         "tags": [
@@ -4775,6 +4956,23 @@
           "name"
         ]
       },
+      "NewTenant": {
+        "description": "Request body for creating a tenant. The owning silo comes from the URL path, not the body.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "NewVpc": {
         "description": "Request body for creating a VPC. The owning tenant + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
         "type": "object",
@@ -5408,6 +5606,37 @@
           "vpc_id"
         ]
       },
+      "Tenant": {
+        "description": "A logical customer container inside a [`Silo`]. Tenants own users, projects, and per-tenant resources; a Silo is the brand-level identity / billing / catalog parent.\n\nPhase 0 ships the structural primitive only. Per-tenant billing fields, IdP overrides, and explicit user-tenant membership land in follow-on slices.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "silo_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "name",
+          "silo_id"
+        ]
+      },
       "TokenResponse": {
         "description": "Response body for both login and refresh.",
         "type": "object",
@@ -5601,6 +5830,9 @@
     },
     {
       "name": "system"
+    },
+    {
+      "name": "tenants"
     },
     {
       "name": "vpcs"

@@ -98,7 +98,11 @@ permit(
         Action::"image_list",
         Action::"image_create",
         Action::"image_get",
-        Action::"image_delete"
+        Action::"image_delete",
+        Action::"tenant_list",
+        Action::"tenant_create",
+        Action::"tenant_get",
+        Action::"tenant_delete"
     ],
     resource
 ) when {
@@ -287,6 +291,10 @@ pub enum Action {
     SiloIdpSet,
     SiloIdpGet,
     SiloIdpDelete,
+    TenantList,
+    TenantCreate,
+    TenantGet,
+    TenantDelete,
     ProjectList,
     ProjectCreate,
     ProjectGet,
@@ -394,6 +402,10 @@ impl Action {
             Action::SiloIdpSet => "silo_idp_set",
             Action::SiloIdpGet => "silo_idp_get",
             Action::SiloIdpDelete => "silo_idp_delete",
+            Action::TenantList => "tenant_list",
+            Action::TenantCreate => "tenant_create",
+            Action::TenantGet => "tenant_get",
+            Action::TenantDelete => "tenant_delete",
             Action::ProjectList => "project_list",
             Action::ProjectCreate => "project_create",
             Action::ProjectGet => "project_get",
@@ -932,7 +944,9 @@ fn is_read_action(action: Action) -> bool {
         | Action::AuditList
         | Action::AuditFetch
         | Action::AuditVerify
-        | Action::SiloIdpGet => true,
+        | Action::SiloIdpGet
+        | Action::TenantList
+        | Action::TenantGet => true,
         // Read-only project & workload resources.
         Action::ProjectList
         | Action::ProjectGet
@@ -959,6 +973,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::DeleteApiKey
         | Action::SiloIdpSet
         | Action::SiloIdpDelete
+        | Action::TenantCreate
+        | Action::TenantDelete
         | Action::ProjectCreate
         | Action::ProjectDelete
         | Action::VpcCreate

@@ -304,8 +304,15 @@ async fn instance_create_settles_at_running_via_queue() {
     assert_eq!(inst.tenant_id, fx.tenant_id);
     assert_eq!(inst.project_id, fx.project_id);
 
-    let settled =
-        wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    let settled = wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Running",
+        SETTLE,
+    )
+    .await;
     assert_eq!(lifecycle_state(&settled.lifecycle), "Running");
 
     test.close().await;
@@ -325,7 +332,15 @@ async fn instance_lifecycle_start_stop_restart() {
         .await
         .unwrap()
         .into_inner();
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Running",
+        SETTLE,
+    )
+    .await;
 
     // Running → Stopping → Stopped (handler returns Stopping; agent
     // drives the rest).
@@ -339,7 +354,15 @@ async fn instance_lifecycle_start_stop_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(lifecycle_state(&stop_response.lifecycle), "Stopping");
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Stopped",
+        SETTLE,
+    )
+    .await;
 
     // Stop while already stopped → 409 (CAS rejects). NB: there's a
     // brief window during Stopping where the CAS would also reject;
@@ -366,7 +389,15 @@ async fn instance_lifecycle_start_stop_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(lifecycle_state(&start_response.lifecycle), "Pending");
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Running",
+        SETTLE,
+    )
+    .await;
 
     // Restart: handler returns Stopping; agent drives the full
     // restart cycle Stopping → Pending → Provisioning → Running.
@@ -380,7 +411,15 @@ async fn instance_lifecycle_start_stop_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(lifecycle_state(&restart_response.lifecycle), "Stopping");
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Running",
+        SETTLE,
+    )
+    .await;
 
     test.close().await;
 }
@@ -399,7 +438,15 @@ async fn delete_running_instance_returns_409() {
         .await
         .unwrap()
         .into_inner();
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Running",
+        SETTLE,
+    )
+    .await;
 
     let err = root
         .delete_project_instance()
@@ -419,7 +466,15 @@ async fn delete_running_instance_returns_409() {
         .send()
         .await
         .unwrap();
-    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(
+        &root,
+        fx.tenant_id,
+        fx.project_id,
+        inst.id,
+        "Stopped",
+        SETTLE,
+    )
+    .await;
     root.delete_project_instance()
         .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)

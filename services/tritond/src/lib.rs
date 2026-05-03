@@ -41,14 +41,16 @@ use tritond_api::{
     CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig,
     NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest,
     RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse,
-    SiloImagePath, SiloPath, SiloSshKeyPath, TenantPath, TenantProjectFloatingIpPath,
-    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
-    TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    SiloImagePath, SiloPath, SiloSshKeyPath, SiloTenantPath, TenantPath,
+    TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
+    TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath,
+    TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind,
         NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-        NewSubnet, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Vpc,
+        NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet,
+        Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -858,6 +860,159 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         ctx.auth.oidc().invalidate(&silo_id.to_string()).await;
+        Ok(HttpResponseDeleted())
+    }
+
+    async fn list_silo_tenants(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+    ) -> Result<HttpResponseOk<Vec<Tenant>>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::TenantList,
+            silo_id,
+        )
+        .await?;
+        let tenants = ctx
+            .store
+            .list_tenants_in_silo(silo_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(tenants))
+    }
+
+    async fn create_silo_tenant(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewTenant>,
+    ) -> Result<HttpResponseCreated<Tenant>, HttpError> {
+        let ctx = rqctx.context();
+        let silo_id = path.into_inner().silo_id;
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::TenantCreate,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        match ctx.store.create_tenant(silo_id, req).await {
+            Ok(tenant) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::TenantCreate,
+                        request_id,
+                        Some(format!("Tenant::\"{}\"", tenant.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Tenant::\"{}\"", tenant.id)),
+                        },
+                        serde_json::json!({
+                            "silo_id": silo_id,
+                            "name": tenant.name,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(tenant))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::TenantCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::json!({ "silo_id": silo_id }),
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_silo_tenant(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseOk<Tenant>, HttpError> {
+        let ctx = rqctx.context();
+        let SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+        authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::TenantGet,
+            silo_id,
+        )
+        .await?;
+        let tenant = ctx
+            .store
+            .get_tenant(tenant_id)
+            .await
+            .map_err(store_error_to_http)?;
+        // Defence-in-depth: a tenant from another silo must surface as
+        // 404, not as a successful read of a sibling silo's resource.
+        if tenant.silo_id != silo_id {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(tenant))
+    }
+
+    async fn delete_silo_tenant(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloTenantPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let SiloTenantPath { silo_id, tenant_id } = path.into_inner();
+        let principal = authenticate_and_authorize_in_silo(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::TenantDelete,
+            silo_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let tenant = ctx
+            .store
+            .get_tenant(tenant_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if tenant.silo_id != silo_id {
+            return Err(not_found());
+        }
+        // TODO: today's `Store::delete_tenant` is permissive — it
+        // does not block the delete when child projects (or other
+        // descendant resources) still exist. The block-on-children
+        // guard belongs in a future cleanup so a careless operator
+        // can't orphan a project graph by deleting its tenant.
+        ctx.store
+            .delete_tenant(tenant_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::TenantDelete,
+                request_id,
+                Some(format!("Tenant::\"{tenant_id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("Tenant::\"{tenant_id}\"")),
+                },
+                serde_json::json!({ "silo_id": silo_id }),
+            )
+            .await;
         Ok(HttpResponseDeleted())
     }
 

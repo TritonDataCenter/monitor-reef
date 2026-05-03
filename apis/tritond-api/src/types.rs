@@ -22,5 +22,6 @@ pub use tritond_store::{
     FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, Instance, JobKind,
     JobOutcome, JobStatus, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage,
     NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, UserView, Vpc,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Tenant,
+    UserView, Vpc,
 };

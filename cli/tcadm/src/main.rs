@@ -138,6 +138,34 @@ enum SiloCommand {
 
 #[derive(Subcommand)]
 enum TenantCommand {
+    /// List tenants in a silo.
+    List {
+        silo_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a single tenant.
+    Show {
+        silo_id: Uuid,
+        tenant_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a tenant in a silo.
+    Create {
+        silo_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a tenant by id.
+    Delete {
+        silo_id: Uuid,
+        tenant_id: Uuid,
+    },
     /// Manage projects inside a tenant.
     Project {
         #[command(subcommand)]
@@ -999,6 +1027,36 @@ async fn main() -> Result<()> {
             },
         },
         Commands::Tenant { command } => match command {
+            TenantCommand::List { silo_id, json } => {
+                commands::tenant_list(cli.endpoint, cli.api_key, silo_id, json).await
+            }
+            TenantCommand::Show {
+                silo_id,
+                tenant_id,
+                json,
+            } => {
+                commands::tenant_show(cli.endpoint, cli.api_key, silo_id, tenant_id, json).await
+            }
+            TenantCommand::Create {
+                silo_id,
+                name,
+                description,
+                json,
+            } => {
+                commands::tenant_create(
+                    cli.endpoint,
+                    cli.api_key,
+                    silo_id,
+                    name,
+                    description,
+                    json,
+                )
+                .await
+            }
+            TenantCommand::Delete {
+                silo_id,
+                tenant_id,
+            } => commands::tenant_delete(cli.endpoint, cli.api_key, silo_id, tenant_id).await,
             TenantCommand::Project { command } => match command {
                 TenantProjectCommand::List { tenant_id, json } => {
                     commands::tenant_project_list(cli.endpoint, cli.api_key, tenant_id, json).await
@@ -1024,15 +1082,26 @@ async fn main() -> Result<()> {
                     project_id,
                     json,
                 } => {
-                    commands::tenant_project_get(cli.endpoint, cli.api_key, tenant_id, project_id, json)
-                        .await
+                    commands::tenant_project_get(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        json,
+                    )
+                    .await
                 }
                 TenantProjectCommand::Delete {
                     tenant_id,
                     project_id,
                 } => {
-                    commands::tenant_project_delete(cli.endpoint, cli.api_key, tenant_id, project_id)
-                        .await
+                    commands::tenant_project_delete(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                    )
+                    .await
                 }
                 TenantProjectCommand::Instance { command } => match command {
                     TenantProjectInstanceCommand::List {

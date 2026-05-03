@@ -3081,6 +3081,46 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for creating a tenant. The owning silo comes from the URL path, not the body."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating a tenant. The owning silo comes from the URL path, not the body.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewTenant {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+    }
+
+    impl NewTenant {
+        pub fn builder() -> builder::NewTenant {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for creating a VPC. The owning tenant + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4168,6 +4208,61 @@ pub mod types {
 
     impl Subnet {
         pub fn builder() -> builder::Subnet {
+            Default::default()
+        }
+    }
+
+    #[doc = "A logical customer container inside a [`Silo`]. Tenants own users, projects, and per-tenant resources; a Silo is the brand-level identity / billing / catalog parent.\n\nPhase 0 ships the structural primitive only. Per-tenant billing fields, IdP overrides, and explicit user-tenant membership land in follow-on slices."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A logical customer container inside a [`Silo`]. Tenants own users, projects, and per-tenant resources; a Silo is the brand-level identity / billing / catalog parent.\\n\\nPhase 0 ships the structural primitive only. Per-tenant billing fields, IdP overrides, and explicit user-tenant membership land in follow-on slices.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"silo_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"silo_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Tenant {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        pub silo_id: ::uuid::Uuid,
+    }
+
+    impl Tenant {
+        pub fn builder() -> builder::Tenant {
             Default::default()
         }
     }
@@ -7808,6 +7903,68 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NewTenant {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewTenant {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NewTenant {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewTenant> for super::NewTenant {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewTenant,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewTenant> for NewTenant {
+            fn from(value: super::NewTenant) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewVpc {
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -9407,6 +9564,110 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct Tenant {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Tenant {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    silo_id: Err("no value supplied for silo_id".to_string()),
+                }
+            }
+        }
+
+        impl Tenant {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn silo_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.silo_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Tenant> for super::Tenant {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Tenant,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    name: value.name?,
+                    silo_id: value.silo_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Tenant> for Tenant {
+            fn from(value: super::Tenant) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    silo_id: Ok(value.silo_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct TokenResponse {
             access_expires_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -9915,6 +10176,26 @@ impl Client {
     #[doc = "Delete an SSH key. Returns 404 when the key does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}`\n\n```ignore\nlet response = client.delete_silo_ssh_key()\n    .silo_id(silo_id)\n    .ssh_key_id(ssh_key_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_ssh_key(&self) -> builder::DeleteSiloSshKey<'_> {
         builder::DeleteSiloSshKey::new(self)
+    }
+
+    #[doc = "List the tenants in a silo. Operator-facing surface; root\n\ncan administer tenants directly.\n\nSends a `GET` request to `/v2/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.list_silo_tenants()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    pub fn list_silo_tenants(&self) -> builder::ListSiloTenants<'_> {
+        builder::ListSiloTenants::new(self)
+    }
+
+    #[doc = "Create a tenant in a silo. Returns 409 if the tenant name is\n\nalready in use within the silo, 404 if the silo does not exist.\n\nSends a `POST` request to `/v2/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.create_silo_tenant()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_silo_tenant(&self) -> builder::CreateSiloTenant<'_> {
+        builder::CreateSiloTenant::new(self)
+    }
+
+    #[doc = "Read a single tenant. Returns 404 when the tenant does not\n\nexist or belongs to a different silo (cross-silo probes do not learn that the resource exists).\n\nSends a `GET` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.get_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn get_silo_tenant(&self) -> builder::GetSiloTenant<'_> {
+        builder::GetSiloTenant::new(self)
+    }
+
+    #[doc = "Delete a tenant. Returns 404 when the tenant does not exist\n\nor belongs to a different silo. Phase-0 deletion is permissive (does not check for child projects); the block-on-children guard belongs in a future cleanup.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.delete_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_silo_tenant(&self) -> builder::DeleteSiloTenant<'_> {
+        builder::DeleteSiloTenant::new(self)
     }
 
     #[doc = "List the projects inside a tenant\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.list_tenant_projects()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
@@ -12917,6 +13198,350 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silo_tenants`]\n\n[`Client::list_silo_tenants`]: super::Client::list_silo_tenants"]
+    #[derive(Debug, Clone)]
+    pub struct ListSiloTenants<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListSiloTenants<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/tenants`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Tenant>>, Error<types::Error>> {
+            let Self { client, silo_id } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/tenants",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silo_tenants",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_silo_tenant`]\n\n[`Client::create_silo_tenant`]: super::Client::create_silo_tenant"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSiloTenant<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewTenant, String>,
+    }
+
+    impl<'a> CreateSiloTenant<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewTenant>,
+            <V as std::convert::TryInto<types::NewTenant>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewTenant` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewTenant) -> types::builder::NewTenant,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/tenants`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Tenant>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewTenant::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/tenants",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_silo_tenant",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_silo_tenant`]\n\n[`Client::get_silo_tenant`]: super::Client::get_silo_tenant"]
+    #[derive(Debug, Clone)]
+    pub struct GetSiloTenant<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetSiloTenant<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Tenant>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/tenants/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_silo_tenant",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_silo_tenant`]\n\n[`Client::delete_silo_tenant`]: super::Client::delete_silo_tenant"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSiloTenant<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSiloTenant<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                tenant_id,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/tenants/{}",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_silo_tenant",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
