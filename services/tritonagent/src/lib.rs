@@ -31,8 +31,10 @@
 //! [`ApiKeyScope::Agent`]: tritond_client::types::ApiKeyScope::Agent
 //! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
 
+pub mod credentials;
 pub mod images;
 pub mod platform;
+pub mod registration;
 pub mod vmadm;
 pub mod zfs;
 

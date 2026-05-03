@@ -10,20 +10,36 @@
 //! Configuration is via `clap`-parsed args + env vars:
 //!
 //! * `--endpoint` / `TRITONAGENT_ENDPOINT` — tritond URL
-//! * `--api-key` / `TRITONAGENT_API_KEY` — Agent-scoped `tcadm_…` key
-//! * `--agent-id` / `TRITONAGENT_AGENT_ID` — defaults to hostname
+//! * `--credential-path` / `TRITONAGENT_CREDENTIAL_PATH` —
+//!   on-disk file holding the wire-form `tcadm_…` per-CN API key.
+//!   Default `/var/lib/tritonagent/credentials`.
+//! * `--sysinfo-bin` / `TRITONAGENT_SYSINFO_BIN` — path to the
+//!   SmartOS `sysinfo` binary. Default `/usr/bin/sysinfo`. Tests
+//!   stub this.
 //! * `--poll-interval-secs` / `TRITONAGENT_POLL_INTERVAL_SECS` —
 //!   default 5
+//! * `--dry-run` / `TRITONAGENT_DRY_RUN`
 //!
-//! API keys are sensitive; prefer the env var so the secret does
-//! not appear in `ps`.
+//! There is no longer an `--api-key` flag: on first boot the agent
+//! self-registers with tritond, prints a claim code on the console
+//! for an operator to approve, and persists the resulting per-CN
+//! API key to the credential file. Subsequent boots resume from
+//! disk without re-registering.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
-use tritonagent::AgentConfig;
+use tritond_cn_platform::smartos::Sysinfo;
+use tritonagent::{AgentConfig, credentials, registration};
+
+/// Maximum time the agent waits for an operator to approve the
+/// registration before giving up and exiting. Hard-coded at 1h
+/// because it is not user-tunable today and there is no value in
+/// making it env-configurable until ops have an actual ask.
+const REGISTER_TIMEOUT: Duration = Duration::from_secs(3600);
 
 #[derive(Debug, Parser)]
 #[command(
@@ -35,15 +51,26 @@ struct Cli {
     #[arg(long, env = "TRITONAGENT_ENDPOINT")]
     endpoint: String,
 
-    /// Agent-scoped API key (`tcadm_…`). Prefer the env var
-    /// so the secret is not visible in `ps`.
-    #[arg(long, env = "TRITONAGENT_API_KEY", hide_env_values = true)]
-    api_key: String,
+    /// Path to the on-disk credential file.
+    ///
+    /// On first boot, the agent self-registers with tritond and writes
+    /// the per-CN API key here. On subsequent boots, the agent reads
+    /// this file directly and skips registration.
+    #[arg(
+        long,
+        env = "TRITONAGENT_CREDENTIAL_PATH",
+        default_value_os_t = credentials::path_default(),
+    )]
+    credential_path: PathBuf,
 
-    /// Self-reported agent identity. Defaults to the host's
-    /// machine name.
-    #[arg(long, env = "TRITONAGENT_AGENT_ID")]
-    agent_id: Option<String>,
+    /// Path to the SmartOS `sysinfo` binary. Tests stub this with a
+    /// shell script that prints a fixture.
+    #[arg(
+        long,
+        env = "TRITONAGENT_SYSINFO_BIN",
+        default_value_t = String::from(tritond_cn_platform::smartos::sysinfo::SYSINFO_BIN),
+    )]
+    sysinfo_bin: String,
 
     /// Sleep between empty-queue polls.
     #[arg(long, env = "TRITONAGENT_POLL_INTERVAL_SECS", default_value_t = 5)]
@@ -75,17 +102,34 @@ async fn main() -> Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let cli = Cli::parse();
-    let agent_id = match cli.agent_id {
-        Some(id) => id,
-        None => hostname::get()
-            .context("read hostname")?
-            .to_string_lossy()
-            .into_owned(),
-    };
+
+    let sysinfo = Sysinfo::collect_from_path(&cli.sysinfo_bin)
+        .await
+        .with_context(|| format!("collect sysinfo from {}", cli.sysinfo_bin))?;
+    let server_uuid = sysinfo.uuid().ok_or_else(|| {
+        anyhow::anyhow!(
+            "sysinfo from {} did not include a UUID; agent identity is unknown",
+            cli.sysinfo_bin,
+        )
+    })?;
+
+    let api_key = registration::register_or_resume(
+        &cli.endpoint,
+        &sysinfo,
+        server_uuid,
+        &cli.credential_path,
+        REGISTER_TIMEOUT,
+    )
+    .await
+    .context("register or resume against tritond")?;
+
     let cfg = AgentConfig {
         endpoint: cli.endpoint,
-        api_key: cli.api_key,
-        agent_id,
+        api_key,
+        // claimed_by must be the server_uuid string — tritond's
+        // bound-key check pins each per-CN key to a specific CN
+        // identity, and that identity is the SmartOS server_uuid.
+        agent_id: server_uuid.to_string(),
         poll_interval: Duration::from_secs(cli.poll_interval_secs),
         dry_run: cli.dry_run,
     };
