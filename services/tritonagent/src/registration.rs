@@ -117,9 +117,7 @@ pub async fn register_or_resume(
         .body(register_req)
         .send()
         .await
-        .with_context(|| {
-            format!("POST {endpoint}/v2/agent/register (server_uuid={server_uuid})")
-        })?
+        .with_context(|| format!("POST {endpoint}/v2/agent/register (server_uuid={server_uuid})"))?
         .into_inner();
 
     let poll_token = response.poll_token;
@@ -295,9 +293,7 @@ async fn await_credential(
                 );
             }
             CnState::Disabled => {
-                anyhow::bail!(
-                    "CN registration was disabled by an operator before approval"
-                );
+                anyhow::bail!("CN registration was disabled by an operator before approval");
             }
             CnState::Pending => {
                 tokio::time::sleep(PENDING_RETRY_DELAY).await;

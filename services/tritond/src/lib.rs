@@ -35,15 +35,15 @@ use dropshot::{
     HttpServerStarter, Path, Query, RequestContext, TypedBody,
 };
 use tritond_api::{
-    AgentJobPath, ApiKeyCreated, ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest,
-    AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse,
-    ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath, CompleteJobRequest, HealthResponse,
-    InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
-    OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest, RegisterCnRequest,
-    RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse, SiloImagePath, SiloPath,
-    SiloProjectFloatingIpPath, SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath,
-    SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
-    SiloSshKeyPath, TokenResponse, TritondApi,
+    AgentJobPath, AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest,
+    AttachFloatingIpRequest, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
+    AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath,
+    CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig,
+    NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest,
+    RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse,
+    SiloImagePath, SiloPath, SiloProjectFloatingIpPath, SiloProjectInstanceDiskPath,
+    SiloProjectInstanceNicPath, SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath,
+    SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind,
@@ -2847,6 +2847,59 @@ impl TritondApi for TritondServiceImpl {
         }
     }
 
+    // ----- CN heartbeat / status (slice D) -----
+
+    async fn agent_heartbeat(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentHeartbeat,
+        )
+        .await?;
+        // Heartbeat REQUIRES a bound key — there's no other way
+        // to know which CN to attribute the ping to. Unbound
+        // keys (legacy operator-minted) get 403.
+        let server_uuid = require_bound_cn(&principal)?;
+        ctx.store
+            .update_cn_last_seen(server_uuid, chrono::Utc::now())
+            .await
+            .map_err(store_error_to_http)?;
+        // Heartbeat is a hot path; we deliberately don't audit
+        // every ping. The Cn record's `last_seen` is the
+        // observable signal an operator cares about.
+        Ok(HttpResponseOk(()))
+    }
+
+    async fn agent_status(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<AgentStatusRequest>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentStatus,
+        )
+        .await?;
+        let server_uuid = require_bound_cn(&principal)?;
+        let req = body.into_inner();
+        ctx.store
+            .update_cn_status(server_uuid, req.payload, chrono::Utc::now())
+            .await
+            .map_err(store_error_to_http)?;
+        // Status updates are also hot (~once per minute or
+        // when zoneevent fires); no per-update audit. A future
+        // slice may sample at low frequency for forensics.
+        Ok(HttpResponseOk(()))
+    }
+
     // ----- CN registration / approval (slice C) -----
 
     async fn agent_register(
@@ -3338,6 +3391,20 @@ async fn mint_and_attach_cn_credential(
         }
     };
     Ok(updated)
+}
+
+/// 403 if the request didn't come from a bound API key. Used
+/// by handlers that *only* make sense for a per-CN agent (the
+/// heartbeat / status endpoints), since there's no other way
+/// to know which CN to attribute the call to.
+fn require_bound_cn(principal: &crate::auth::Principal) -> Result<Uuid, HttpError> {
+    crate::auth::principal_bound_cn(principal).ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("Forbidden".to_string()),
+            ClientErrorStatusCode::FORBIDDEN,
+            "this endpoint requires a CN-bound api key (the per-CN keys minted by /v2/cn-approvals)".to_string(),
+        )
+    })
 }
 
 /// 403 if the job's `claimed_by` (which the agent set when

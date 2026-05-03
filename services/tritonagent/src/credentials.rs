@@ -145,19 +145,13 @@ pub fn save(path: &Path, plaintext: &str) -> Result<()> {
             .with_context(|| format!("fsync credential temp file {}", tmp_path.display()))?;
     }
 
-    fs::rename(&tmp_path, path).with_context(|| {
-        format!(
-            "rename {} -> {}",
-            tmp_path.display(),
-            path.display()
-        )
-    })?;
+    fs::rename(&tmp_path, path)
+        .with_context(|| format!("rename {} -> {}", tmp_path.display(), path.display()))?;
     // Belt-and-suspenders: re-apply 0600 after the rename. Opening
     // with `mode(0o600)` honours `umask`, so a permissive umask on
     // the agent's parent process could otherwise widen the file.
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
-        format!("set 0600 mode on credential file {}", path.display())
-    })?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("set 0600 mode on credential file {}", path.display()))?;
     Ok(())
 }
 

@@ -25,8 +25,8 @@ use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::Client;
 use tritond_client::types::{
-    ApproveCnRequest, ClaimJobRequest, CnState, LoginRequest, OpenAutoApproveRequest,
-    RegisterCnRequest,
+    AgentStatusRequest, ApproveCnRequest, ClaimJobRequest, CnState, LoginRequest,
+    OpenAutoApproveRequest, RegisterCnRequest,
 };
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
@@ -534,6 +534,185 @@ async fn bound_api_key_rejects_claim_for_other_cn() {
         .agent_claim_job()
         .body(ClaimJobRequest {
             claimed_by: "agent-A".to_string(),
+        })
+        .send()
+        .await
+        .unwrap_err();
+    assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    test.close().await;
+}
+
+/// Helper used by Slice D tests: walk register → approve → retrieve
+/// the bound API key for `cn_uuid`.
+async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) -> String {
+    let anon = test.anonymous_client();
+    let registered = anon
+        .agent_register()
+        .body(RegisterCnRequest {
+            server_uuid: cn_uuid,
+            hostname: hostname.to_string(),
+            admin_ip: None,
+            sysinfo: fixture_sysinfo(cn_uuid, hostname),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let session = root_session(test).await;
+    session
+        .approve_cn()
+        .body(ApproveCnRequest {
+            code: registered.claim_code.unwrap(),
+        })
+        .send()
+        .await
+        .unwrap();
+    anon.agent_register_status()
+        .poll_token(&registered.poll_token)
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .api_key
+        .expect("approval delivers a key")
+}
+
+#[tokio::test]
+async fn agent_heartbeat_updates_last_seen() {
+    let test = TestServer::start().await;
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-hb").await;
+    let agent = test.bearer_client(&api_key);
+
+    // Sanity: last_seen is currently `Some(...)` from registration
+    // (set on the register write). Capture it.
+    let session = root_session(&test).await;
+    let before = session
+        .get_cn()
+        .server_uuid(cn_uuid)
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .last_seen
+        .expect("registration sets last_seen");
+
+    // Wait a moment so the post-heartbeat timestamp is strictly later.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    agent.agent_heartbeat().send().await.unwrap();
+
+    let after = session
+        .get_cn()
+        .server_uuid(cn_uuid)
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .last_seen
+        .unwrap();
+    assert!(after > before, "heartbeat must bump last_seen");
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn agent_status_replaces_last_status_and_bumps_last_seen() {
+    let test = TestServer::start().await;
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-status").await;
+    let agent = test.bearer_client(&api_key);
+
+    let payload = serde_json::json!({
+        "vms": {
+            "11111111-1111-1111-1111-111111111111": {
+                "state": "running",
+                "brand": "joyent-minimal",
+            }
+        },
+        "zpoolStatus": {
+            "zones": { "bytes_available": 100, "bytes_used": 50 },
+        },
+        "meminfo": {
+            "availrmem_bytes": 1234,
+            "arcsize_bytes": 5678,
+            "total_bytes": 9999,
+        },
+        "timestamp": "2026-05-03T12:00:00Z",
+    });
+    agent
+        .agent_status()
+        .body(AgentStatusRequest {
+            payload: payload.clone(),
+        })
+        .send()
+        .await
+        .unwrap();
+
+    let session = root_session(&test).await;
+    let view = session
+        .get_cn()
+        .server_uuid(cn_uuid)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(view.last_status.as_ref().expect("status present"), &payload,);
+    assert!(view.last_seen.is_some());
+
+    // Posting a different payload replaces (not merges) the field.
+    let next_payload = serde_json::json!({"vms": {}, "round": 2});
+    agent
+        .agent_status()
+        .body(AgentStatusRequest {
+            payload: next_payload.clone(),
+        })
+        .send()
+        .await
+        .unwrap();
+    let view2 = session
+        .get_cn()
+        .server_uuid(cn_uuid)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(view2.last_status.as_ref().unwrap(), &next_payload);
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn unbound_agent_key_cannot_heartbeat_or_status() {
+    use tritond_client::types::{ApiKeyScope, NewApiKey};
+    let test = TestServer::start().await;
+    let session = root_session(&test).await;
+
+    // Operator mints a generic Agent-scoped key (NOT bound to any CN).
+    // This is the legacy path; bound keys come only from approval.
+    let secret = session
+        .create_api_key()
+        .body(NewApiKey {
+            description: "unbound-agent".to_string(),
+            scope: ApiKeyScope::Agent,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .secret;
+    let agent = test.bearer_client(&secret);
+
+    // Heartbeat: 403 (no bound CN).
+    let err = agent.agent_heartbeat().send().await.unwrap_err();
+    assert_eq!(err.status().unwrap().as_u16(), 403);
+
+    // Status: 403 too.
+    let err = agent
+        .agent_status()
+        .body(AgentStatusRequest {
+            payload: serde_json::json!({}),
         })
         .send()
         .await

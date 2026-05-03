@@ -1407,6 +1407,13 @@ pub struct Cn {
     /// against the manta-storage Phase 0 secrets engine.
     #[serde(default)]
     pub pending_credential: Option<String>,
+    /// Most recent status payload posted by the agent's
+    /// heartbeater (Slice D). Opaque to tritond — the agent
+    /// chooses the shape — but typically `{ vms, zpools,
+    /// meminfo, diskinfo, boot_time, timestamp }`. `None` until
+    /// the first status post lands.
+    #[serde(default)]
+    pub last_status: Option<serde_json::Value>,
 }
 
 /// Wire-safe view of a [`Cn`]: strips the transient plaintext
@@ -1426,6 +1433,9 @@ pub struct CnView {
     pub claim_code: Option<String>,
     pub claim_code_expires_at: Option<DateTime<Utc>>,
     pub bound_api_key_id: Option<Uuid>,
+    /// Last full status payload published by the agent
+    /// (vms / zpools / meminfo / disk_usage / boot_time blob).
+    pub last_status: Option<serde_json::Value>,
 }
 
 impl From<Cn> for CnView {
@@ -1442,6 +1452,7 @@ impl From<Cn> for CnView {
             claim_code: cn.claim_code.as_deref().map(format_claim_code),
             claim_code_expires_at: cn.claim_code_expires_at,
             bound_api_key_id: cn.bound_api_key_id,
+            last_status: cn.last_status,
         }
     }
 }

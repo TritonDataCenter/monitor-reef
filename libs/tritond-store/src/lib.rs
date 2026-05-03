@@ -728,11 +728,25 @@ pub trait Store: Send + Sync + 'static {
     /// and returns the updated record.
     async fn disable_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError>;
 
-    /// Update a CN's `last_seen` timestamp. Used by Slice D's
-    /// heartbeater.
+    /// Update a CN's `last_seen` timestamp. Used by the
+    /// heartbeater's lightweight ping endpoint.
     async fn update_cn_last_seen(
         &self,
         server_uuid: Uuid,
+        at: DateTime<Utc>,
+    ) -> Result<(), StoreError>;
+
+    /// Replace the agent-published status payload on a CN's
+    /// record and bump `last_seen`. Used by the heartbeater's
+    /// full status endpoint.
+    ///
+    /// The payload is opaque to the store — agents pick the
+    /// shape. Returns [`StoreError::NotFound`] if the CN does
+    /// not exist.
+    async fn update_cn_status(
+        &self,
+        server_uuid: Uuid,
+        payload: serde_json::Value,
         at: DateTime<Utc>,
     ) -> Result<(), StoreError>;
 

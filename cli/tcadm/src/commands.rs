@@ -1898,7 +1898,10 @@ pub async fn cn_list(
     }
     // Tab-separated table mirroring the existing `silo project vpc list`
     // approach: hand-rolled, no extra dependency, easy to grep / awk.
-    println!("{:<36}  {:<24}  {:<9}  {:<15}  REGISTERED_AT", "SERVER_UUID", "HOSTNAME", "STATE", "ADMIN_IP");
+    println!(
+        "{:<36}  {:<24}  {:<9}  {:<15}  REGISTERED_AT",
+        "SERVER_UUID", "HOSTNAME", "STATE", "ADMIN_IP"
+    );
     for cn in cns {
         println!(
             "{:<36}  {:<24}  {:<9}  {:<15}  {}",
@@ -2089,10 +2092,8 @@ pub async fn cn_auto_approve_status(
     if !status.is_success() {
         anyhow::bail!("get auto-approve window: {status}: {body}");
     }
-    let window: Option<tritond_client::types::AutoApproveWindow> =
-        serde_json::from_str(&body).with_context(|| {
-            format!("parse auto-approve window response (body={body:?})")
-        })?;
+    let window: Option<tritond_client::types::AutoApproveWindow> = serde_json::from_str(&body)
+        .with_context(|| format!("parse auto-approve window response (body={body:?})"))?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&window)?);

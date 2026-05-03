@@ -174,6 +174,18 @@ pub struct CompleteJobRequest {
     pub outcome: JobOutcome,
 }
 
+/// Request body for `POST /v2/agent/status`.
+///
+/// `payload` is opaque to tritond — agents pick the shape — but
+/// the Triton-classic shape is `{ vms, zpools, meminfo,
+/// diskinfo, boot_time, timestamp }`. Stored verbatim on the
+/// `Cn` record's `last_status` field; surfaced via
+/// `tcadm cn show`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct AgentStatusRequest {
+    pub payload: serde_json::Value,
+}
+
 /// Materialised view of everything the agent needs to act on a
 /// claimed [`ProvisioningJob`]. Returned by
 /// `GET /v2/agent/jobs/{job_id}/blueprint`.
@@ -658,6 +670,34 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentJobPath>,
     ) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError>;
+
+    /// Heartbeat from a bound agent. Lightweight ping — empty
+    /// body, just bumps `Cn.last_seen`. Auth: requires an API
+    /// key with [`tritond_store::ApiKeyScope::Agent`] AND a
+    /// `bound_to_cn` value (the per-CN keys minted at approval).
+    /// Unbound Agent keys (legacy operator-minted) get 403 since
+    /// there's no CN to attribute the heartbeat to.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/heartbeat",
+        tags = ["agent"],
+    }]
+    async fn agent_heartbeat(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
+
+    /// Full status sample from a bound agent. Replaces
+    /// `Cn.last_status` and bumps `last_seen`. Same auth shape
+    /// as `agent_heartbeat`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/status",
+        tags = ["agent"],
+    }]
+    async fn agent_status(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<AgentStatusRequest>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
 
     /// Self-register a compute node. Anonymous endpoint (no API
     /// key needed) — the agent has none until approval completes.

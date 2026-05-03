@@ -298,6 +298,12 @@ pub enum Action {
     /// response. The Agent scope is the *only* path to this
     /// data: it does not require silo-scoped tenant reads.
     AgentBlueprint,
+    /// Lightweight liveness ping from a bound agent. Bumps
+    /// `Cn.last_seen`. Body-less.
+    AgentHeartbeat,
+    /// Full agent status sample (vms / zpools / meminfo / etc.).
+    /// Replaces `Cn.last_status` + bumps `last_seen`.
+    AgentStatus,
     /// Anonymous self-registration of a compute node. Gated by
     /// the per-source-IP rate limiter, not by Cedar credentials —
     /// the agent has no key at this point in its lifecycle.
@@ -388,6 +394,8 @@ impl Action {
             Action::AgentClaim => "agent_claim",
             Action::AgentComplete => "agent_complete",
             Action::AgentBlueprint => "agent_blueprint",
+            Action::AgentHeartbeat => "agent_heartbeat",
+            Action::AgentStatus => "agent_status",
             Action::AgentRegister => "agent_register",
             Action::AgentRegisterStatus => "agent_register_status",
             Action::CnList => "cn_list",
@@ -767,7 +775,12 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
         ),
         ApiKeyScope::Agent => matches!(
             action,
-            Action::Health | Action::AgentClaim | Action::AgentComplete | Action::AgentBlueprint
+            Action::Health
+                | Action::AgentClaim
+                | Action::AgentComplete
+                | Action::AgentBlueprint
+                | Action::AgentHeartbeat
+                | Action::AgentStatus
         ),
         _ => false,
     }
@@ -834,13 +847,16 @@ fn is_read_action(action: Action) -> bool {
         | Action::FloatingIpDelete
         | Action::FloatingIpAttach
         | Action::FloatingIpDetach
-        // Agent actions are queue mutations or agent-only data
-        // reads; classified as writes so a ReadOnly key can't
-        // peek at jobs/blueprints. The Agent scope is the only
-        // way to authorise them — see `scope_allows_action`.
+        // Agent actions are queue mutations, agent-only data
+        // reads, or per-CN inventory writes; classified as
+        // writes so a ReadOnly key can't peek at jobs / blueprints
+        // / status. The Agent scope is the only way to authorise
+        // them — see `scope_allows_action`.
         | Action::AgentClaim
         | Action::AgentComplete
         | Action::AgentBlueprint
+        | Action::AgentHeartbeat
+        | Action::AgentStatus
         // Agent registration is anonymous (no key), but if a key
         // is somehow attached the scope check should reject it
         // outright — these aren't read actions, they create a CN

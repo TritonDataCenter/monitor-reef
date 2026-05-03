@@ -32,8 +32,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
-use tritond_cn_platform::smartos::Sysinfo;
 use tritonagent::{AgentConfig, credentials, registration};
+use tritond_cn_platform::smartos::Sysinfo;
 
 /// Maximum time the agent waits for an operator to approve the
 /// registration before giving up and exiting. Hard-coded at 1h

@@ -1517,6 +1517,7 @@ impl Store for MemStore {
                 poll_token: poll_token.clone(),
                 bound_api_key_id: None,
                 pending_credential: None,
+                last_status: None,
             };
             guard
                 .cn_server_uuid_by_claim_code
@@ -1554,6 +1555,7 @@ impl Store for MemStore {
             poll_token: poll_token.clone(),
             bound_api_key_id: None,
             pending_credential: None,
+            last_status: None,
         };
         if let Some(code) = &claim_code {
             guard
@@ -1713,6 +1715,22 @@ impl Store for MemStore {
             .cns_by_server_uuid
             .get_mut(&server_uuid)
             .ok_or(StoreError::NotFound)?;
+        cn.last_seen = Some(at);
+        Ok(())
+    }
+
+    async fn update_cn_status(
+        &self,
+        server_uuid: Uuid,
+        payload: serde_json::Value,
+        at: chrono::DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let cn = guard
+            .cns_by_server_uuid
+            .get_mut(&server_uuid)
+            .ok_or(StoreError::NotFound)?;
+        cn.last_status = Some(payload);
         cn.last_seen = Some(at);
         Ok(())
     }

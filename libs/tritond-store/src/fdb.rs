@@ -3612,6 +3612,7 @@ impl Store for FdbStore {
                                     poll_token: poll_token.clone(),
                                     bound_api_key_id: None,
                                     pending_credential: None,
+                                    last_status: None,
                                 };
                                 let value = serde_json::to_vec(&cn).map_err(|e| {
                                     FdbBindingError::CustomError(
@@ -3662,6 +3663,7 @@ impl Store for FdbStore {
                         poll_token: poll_token.clone(),
                         bound_api_key_id: None,
                         pending_credential: None,
+                        last_status: None,
                     };
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())
@@ -3984,6 +3986,49 @@ impl Store for FdbStore {
                     let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
                         FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
                     })?;
+                    cn.last_seen = Some(at);
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    Ok(Outcome::Updated)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated) => Ok(()),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn update_cn_status(
+        &self,
+        server_uuid: Uuid,
+        payload: serde_json::Value,
+        at: chrono::DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        enum Outcome {
+            Updated,
+            NotFound,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                let payload = payload.clone();
+                async move {
+                    let bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    cn.last_status = Some(payload);
                     cn.last_seen = Some(at);
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())

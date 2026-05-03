@@ -231,6 +231,36 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v2/agent/status`.\n\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/agent/status`.\\n\\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"payload\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"payload\": {}"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AgentStatusRequest {
+        pub payload: ::serde_json::Value,
+    }
+
+    impl AgentStatusRequest {
+        pub fn builder() -> builder::AgentStatusRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1083,6 +1113,9 @@ pub mod types {
     #[doc = "      ],"]
     #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
+    #[doc = "    \"last_status\": {"]
+    #[doc = "      \"description\": \"Last full status payload published by the agent (vms / zpools / meminfo / disk_usage / boot_time blob).\""]
+    #[doc = "    },"]
     #[doc = "    \"registered_at\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
@@ -1117,6 +1150,9 @@ pub mod types {
         pub hostname: ::std::string::String,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_seen: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[doc = "Last full status payload published by the agent (vms / zpools / meminfo / disk_usage / boot_time blob)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_status: ::std::option::Option<::serde_json::Value>,
         pub registered_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub server_uuid: ::uuid::Uuid,
         pub state: CnState,
@@ -4345,6 +4381,51 @@ pub mod types {
     #[doc = r" Types for composing complex structures."]
     pub mod builder {
         #[derive(Clone, Debug)]
+        pub struct AgentStatusRequest {
+            payload: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AgentStatusRequest {
+            fn default() -> Self {
+                Self {
+                    payload: Err("no value supplied for payload".to_string()),
+                }
+            }
+        }
+
+        impl AgentStatusRequest {
+            pub fn payload<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.payload = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for payload: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AgentStatusRequest> for super::AgentStatusRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AgentStatusRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    payload: value.payload?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AgentStatusRequest> for AgentStatusRequest {
+            fn from(value: super::AgentStatusRequest) -> Self {
+                Self {
+                    payload: Ok(value.payload),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ApiKeyCreated {
             bound_to_cn:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
@@ -5268,6 +5349,10 @@ pub mod types {
                 ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
+            last_status: ::std::result::Result<
+                ::std::option::Option<::serde_json::Value>,
+                ::std::string::String,
+            >,
             registered_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -5287,6 +5372,7 @@ pub mod types {
                     claim_code_expires_at: Ok(Default::default()),
                     hostname: Err("no value supplied for hostname".to_string()),
                     last_seen: Ok(Default::default()),
+                    last_status: Ok(Default::default()),
                     registered_at: Err("no value supplied for registered_at".to_string()),
                     server_uuid: Err("no value supplied for server_uuid".to_string()),
                     state: Err("no value supplied for state".to_string()),
@@ -5372,6 +5458,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for last_seen: {e}"));
                 self
             }
+            pub fn last_status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::serde_json::Value>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_status: {e}"));
+                self
+            }
             pub fn registered_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
@@ -5427,6 +5523,7 @@ pub mod types {
                     claim_code_expires_at: value.claim_code_expires_at?,
                     hostname: value.hostname?,
                     last_seen: value.last_seen?,
+                    last_status: value.last_status?,
                     registered_at: value.registered_at?,
                     server_uuid: value.server_uuid?,
                     state: value.state?,
@@ -5445,6 +5542,7 @@ pub mod types {
                     claim_code_expires_at: Ok(value.claim_code_expires_at),
                     hostname: Ok(value.hostname),
                     last_seen: Ok(value.last_seen),
+                    last_status: Ok(value.last_status),
                     registered_at: Ok(value.registered_at),
                     server_uuid: Ok(value.server_uuid),
                     state: Ok(value.state),
@@ -9617,6 +9715,11 @@ impl Client {
         builder::AgentClaimJob::new(self)
     }
 
+    #[doc = "Heartbeat from a bound agent. Lightweight ping — empty\n\nbody, just bumps `Cn.last_seen`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`] AND a `bound_to_cn` value (the per-CN keys minted at approval). Unbound Agent keys (legacy operator-minted) get 403 since there's no CN to attribute the heartbeat to.\n\nSends a `POST` request to `/v2/agent/heartbeat`\n\n```ignore\nlet response = client.agent_heartbeat()\n    .send()\n    .await;\n```"]
+    pub fn agent_heartbeat(&self) -> builder::AgentHeartbeat<'_> {
+        builder::AgentHeartbeat::new(self)
+    }
+
     #[doc = "Materialise the full blueprint the agent needs to act on\n\na claimed job — instance + image + NICs + disks + authorised SSH public keys, all in one response. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nSends a `GET` request to `/v2/agent/jobs/{job_id}/blueprint`\n\n```ignore\nlet response = client.agent_job_blueprint()\n    .job_id(job_id)\n    .send()\n    .await;\n```"]
     pub fn agent_job_blueprint(&self) -> builder::AgentJobBlueprint<'_> {
         builder::AgentJobBlueprint::new(self)
@@ -9635,6 +9738,11 @@ impl Client {
     #[doc = "Long-poll for the per-CN API key. Anonymous endpoint\n\nauthenticated only by holding the `poll_token` returned at registration. Tritond holds the connection open for up to ~30s waiting for state to flip from Pending to Approved (or for the auto-approve credential to be wired up); on timeout the agent re-polls.\n\nThe `api_key` field is populated **once** — on the first successful retrieval after approval. Subsequent calls return `state = Approved` with `api_key = None`.\n\nSends a `GET` request to `/v2/agent/register/status`\n\n```ignore\nlet response = client.agent_register_status()\n    .poll_token(poll_token)\n    .send()\n    .await;\n```"]
     pub fn agent_register_status(&self) -> builder::AgentRegisterStatus<'_> {
         builder::AgentRegisterStatus::new(self)
+    }
+
+    #[doc = "Full status sample from a bound agent. Replaces\n\n`Cn.last_status` and bumps `last_seen`. Same auth shape as `agent_heartbeat`.\n\nSends a `POST` request to `/v2/agent/status`\n\n```ignore\nlet response = client.agent_status()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_status(&self) -> builder::AgentStatus<'_> {
+        builder::AgentStatus::new(self)
     }
 
     #[doc = "Page through audit events. Returns at most `limit` events with\n\n`seq > after_seq` plus the current chain head.\n\nSends a `GET` request to `/v2/audit/events`\n\nArguments:\n- `after_seq`: Return events with `seq > after_seq`. Default 0 (start of chain).\n- `limit`: Maximum events to return. Default 100, max 1000.\n```ignore\nlet response = client.list_audit_events()\n    .after_seq(after_seq)\n    .limit(limit)\n    .send()\n    .await;\n```"]
@@ -10037,6 +10145,56 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::agent_heartbeat`]\n\n[`Client::agent_heartbeat`]: super::Client::agent_heartbeat"]
+    #[derive(Debug, Clone)]
+    pub struct AgentHeartbeat<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> AgentHeartbeat<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/heartbeat`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/agent/heartbeat", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_heartbeat",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::agent_job_blueprint`]\n\n[`Client::agent_job_blueprint`]: super::Client::agent_job_blueprint"]
     #[derive(Debug, Clone)]
     pub struct AgentJobBlueprint<'a> {
@@ -10346,6 +10504,86 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_register_status",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_status`]\n\n[`Client::agent_status`]: super::Client::agent_status"]
+    #[derive(Debug, Clone)]
+    pub struct AgentStatus<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::AgentStatusRequest, String>,
+    }
+
+    impl<'a> AgentStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::AgentStatusRequest>,
+            <V as std::convert::TryInto<types::AgentStatusRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `AgentStatusRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::AgentStatusRequest,
+                ) -> types::builder::AgentStatusRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/status`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::AgentStatusRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/status", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_status",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

@@ -44,6 +44,38 @@
         }
       }
     },
+    "/v2/agent/heartbeat": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Heartbeat from a bound agent. Lightweight ping — empty",
+        "description": "body, just bumps `Cn.last_seen`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`] AND a `bound_to_cn` value (the per-CN keys minted at approval). Unbound Agent keys (legacy operator-minted) get 403 since there's no CN to attribute the heartbeat to.",
+        "operationId": "agent_heartbeat",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/jobs/{job_id}/blueprint": {
       "get": {
         "tags": [
@@ -195,6 +227,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RegisterStatusResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/agent/status": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Full status sample from a bound agent. Replaces",
+        "description": "`Cn.last_status` and bumps `last_seen`. Same auth shape as `agent_heartbeat`.",
+        "operationId": "agent_status",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
                 }
               }
             }
@@ -3244,6 +3318,16 @@
           "v6"
         ]
       },
+      "AgentStatusRequest": {
+        "description": "Request body for `POST /v2/agent/status`.\n\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`.",
+        "type": "object",
+        "properties": {
+          "payload": {}
+        },
+        "required": [
+          "payload"
+        ]
+      },
       "ApiKeyCreated": {
         "description": "Response body for `POST /v2/auth/api-keys`.\n\n`secret` is the wire-form key. It is shown to the operator **once**; the server retains only a bcrypt hash.",
         "type": "object",
@@ -3616,6 +3700,10 @@
             "nullable": true,
             "type": "string",
             "format": "date-time"
+          },
+          "last_status": {
+            "nullable": true,
+            "description": "Last full status payload published by the agent (vms / zpools / meminfo / disk_usage / boot_time blob)."
           },
           "registered_at": {
             "type": "string",
