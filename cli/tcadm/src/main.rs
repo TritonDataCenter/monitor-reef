@@ -93,6 +93,11 @@ enum Commands {
         #[command(subcommand)]
         command: ApiKeyCommand,
     },
+    /// Manage compute-node registration and approvals.
+    Cn {
+        #[command(subcommand)]
+        command: CnCommand,
+    },
     /// Inspect and verify the audit log.
     Audit {
         #[command(subcommand)]
@@ -679,6 +684,85 @@ impl From<ApiKeyScopeArg> for tritond_client::types::ApiKeyScope {
     }
 }
 
+#[derive(Subcommand)]
+enum CnCommand {
+    /// List registered compute nodes, optionally filtered by state.
+    List {
+        /// Filter by state. One of `pending`, `approved`, `disabled`.
+        #[arg(long, value_enum)]
+        state: Option<CnStateArg>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a single CN by server_uuid.
+    Show {
+        server_uuid: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Approve a Pending CN by claim code (XXX-XXX or XXXXXX).
+    Approve {
+        /// Six-character claim code displayed on the CN's console.
+        code: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Disable a CN; revokes the bound API key.
+    Disable {
+        server_uuid: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Auto-approve window controls.
+    AutoApprove {
+        #[command(subcommand)]
+        command: AutoApproveCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AutoApproveCommand {
+    /// Read the current window (or null when none is open).
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Open or replace the auto-approve window.
+    Open {
+        /// How long to keep the window open. Server clamps to 24h.
+        #[arg(long)]
+        duration_secs: u64,
+        /// Maximum number of registrations to auto-approve before
+        /// the window closes early. Omit for time-bound only.
+        #[arg(long)]
+        count: Option<u64>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Close the window early. Idempotent.
+    Close,
+}
+
+/// CLI mirror of [`tritond_client::types::CnState`]. Kept separate so
+/// the clap-derived value-name uses kebab-case while the wire format
+/// stays snake_case.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum CnStateArg {
+    Pending,
+    Approved,
+    Disabled,
+}
+
+impl From<CnStateArg> for tritond_client::types::CnState {
+    fn from(arg: CnStateArg) -> Self {
+        match arg {
+            CnStateArg::Pending => tritond_client::types::CnState::Pending,
+            CnStateArg::Approved => tritond_client::types::CnState::Approved,
+            CnStateArg::Disabled => tritond_client::types::CnState::Disabled,
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -739,6 +823,42 @@ async fn main() -> Result<()> {
             ApiKeyCommand::Delete { api_key_id } => {
                 commands::api_key_delete(cli.endpoint, cli.api_key, api_key_id).await
             }
+        },
+        Commands::Cn { command } => match command {
+            CnCommand::List { state, json } => {
+                commands::cn_list(cli.endpoint, cli.api_key, state.map(Into::into), json).await
+            }
+            CnCommand::Show { server_uuid, json } => {
+                commands::cn_show(cli.endpoint, cli.api_key, server_uuid, json).await
+            }
+            CnCommand::Approve { code, json } => {
+                commands::cn_approve(cli.endpoint, cli.api_key, code, json).await
+            }
+            CnCommand::Disable { server_uuid, json } => {
+                commands::cn_disable(cli.endpoint, cli.api_key, server_uuid, json).await
+            }
+            CnCommand::AutoApprove { command } => match command {
+                AutoApproveCommand::Status { json } => {
+                    commands::cn_auto_approve_status(cli.endpoint, cli.api_key, json).await
+                }
+                AutoApproveCommand::Open {
+                    duration_secs,
+                    count,
+                    json,
+                } => {
+                    commands::cn_auto_approve_open(
+                        cli.endpoint,
+                        cli.api_key,
+                        duration_secs,
+                        count,
+                        json,
+                    )
+                    .await
+                }
+                AutoApproveCommand::Close => {
+                    commands::cn_auto_approve_close(cli.endpoint, cli.api_key).await
+                }
+            },
         },
         Commands::Audit { command } => match command {
             AuditCommand::List {

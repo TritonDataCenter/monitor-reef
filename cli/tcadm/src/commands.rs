@@ -1850,6 +1850,310 @@ fn read_password(from_stdin: bool) -> Result<String> {
     }
 }
 
+/// Wire-format label for a [`CnState`]. Matches the JSON serialisation
+/// (`pending`, `approved`, `disabled`) so operators see the same string
+/// they'd type into a `--state` filter or a JSON request body.
+fn cn_state_label(state: &tritond_client::types::CnState) -> &'static str {
+    match state {
+        tritond_client::types::CnState::Pending => "pending",
+        tritond_client::types::CnState::Approved => "approved",
+        tritond_client::types::CnState::Disabled => "disabled",
+    }
+}
+
+fn fmt_opt_ipv4(opt: &Option<std::net::Ipv4Addr>) -> String {
+    opt.as_ref()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+fn fmt_opt_ts(opt: &Option<chrono::DateTime<chrono::Utc>>) -> String {
+    opt.as_ref()
+        .map(|t| t.to_rfc3339())
+        .unwrap_or_else(|| "-".to_string())
+}
+
+/// List CNs, optionally filtered by state.
+pub async fn cn_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    state: Option<tritond_client::types::CnState>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_cns();
+    if let Some(s) = state {
+        req = req.state(s);
+    }
+    let cns = req.send().await.context("list cns")?.into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cns)?);
+        return Ok(());
+    }
+    if cns.is_empty() {
+        println!("(no compute nodes)");
+        return Ok(());
+    }
+    // Tab-separated table mirroring the existing `silo project vpc list`
+    // approach: hand-rolled, no extra dependency, easy to grep / awk.
+    println!("{:<36}  {:<24}  {:<9}  {:<15}  REGISTERED_AT", "SERVER_UUID", "HOSTNAME", "STATE", "ADMIN_IP");
+    for cn in cns {
+        println!(
+            "{:<36}  {:<24}  {:<9}  {:<15}  {}",
+            cn.server_uuid,
+            cn.hostname,
+            cn_state_label(&cn.state),
+            fmt_opt_ipv4(&cn.admin_ip),
+            cn.registered_at.to_rfc3339(),
+        );
+    }
+    Ok(())
+}
+
+/// Read a single CN by `server_uuid`.
+pub async fn cn_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    server_uuid: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let cn = client
+        .get_cn()
+        .server_uuid(server_uuid)
+        .send()
+        .await
+        .context("get cn")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cn)?);
+        return Ok(());
+    }
+    println!("Cn {}", cn.server_uuid);
+    println!("  state:            {}", cn_state_label(&cn.state));
+    println!("  hostname:         {}", cn.hostname);
+    println!("  admin_ip:         {}", fmt_opt_ipv4(&cn.admin_ip));
+    println!("  registered_at:    {}", cn.registered_at.to_rfc3339());
+    println!("  approved_at:      {}", fmt_opt_ts(&cn.approved_at));
+    println!("  last_seen:        {}", fmt_opt_ts(&cn.last_seen));
+    if let Some(code) = &cn.claim_code {
+        println!("  claim_code:       {code}");
+        println!(
+            "  claim_code_expires_at: {}",
+            fmt_opt_ts(&cn.claim_code_expires_at)
+        );
+    }
+    if let Some(key_id) = cn.bound_api_key_id {
+        println!("  bound_api_key_id: {key_id}");
+    }
+    println!("  sysinfo:");
+    // Pretty-print the nested sysinfo blob; indent each line by two
+    // spaces so it visually nests under the parent block.
+    let sysinfo_pretty = serde_json::to_string_pretty(&cn.sysinfo)?;
+    for line in sysinfo_pretty.lines() {
+        println!("    {line}");
+    }
+    Ok(())
+}
+
+/// Approve a Pending CN by claim code.
+///
+/// Note: the per-CN API key plaintext is **never** shown to the
+/// operator. It is delivered to the agent via the long-poll on
+/// `/v2/agent/register/status`. The operator only sees the bound key
+/// id so they can correlate audit events.
+pub async fn cn_approve(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    code: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let cn = client
+        .approve_cn()
+        .body(tritond_client::types::ApproveCnRequest { code })
+        .send()
+        .await
+        .context("approve cn")?
+        .into_inner();
+
+    if json_output {
+        // The wire shape is the redacted CnView; it never contains the
+        // plaintext API key, so emitting it as-is is safe.
+        println!("{}", serde_json::to_string_pretty(&cn)?);
+        return Ok(());
+    }
+    let key_id = cn
+        .bound_api_key_id
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| "(none)".to_string());
+    println!(
+        "Approved CN {}; bound api key id {}",
+        cn.server_uuid, key_id
+    );
+    Ok(())
+}
+
+/// Disable a CN; revokes the bound API key.
+pub async fn cn_disable(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    server_uuid: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let cn = client
+        .disable_cn()
+        .server_uuid(server_uuid)
+        .send()
+        .await
+        .context("disable cn")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cn)?);
+        return Ok(());
+    }
+    println!(
+        "Disabled CN {} (state={})",
+        cn.server_uuid,
+        cn_state_label(&cn.state)
+    );
+    Ok(())
+}
+
+fn print_auto_approve_window(w: &tritond_client::types::AutoApproveWindow) {
+    println!("  opened_at:       {}", w.opened_at.to_rfc3339());
+    println!("  expires_at:      {}", w.expires_at.to_rfc3339());
+    println!(
+        "  remaining_count: {}",
+        w.remaining_count
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(unlimited)".to_string())
+    );
+    println!("  opened_by:       {}", w.opened_by);
+}
+
+/// Read the current auto-approve window.
+///
+/// The trait surface returns `Option<AutoApproveWindow>` (so the wire
+/// is `null` when no window is open), but the OpenAPI spec — and
+/// therefore the generated client — only models the present case. To
+/// faithfully render both shapes without modifying the spec, we make
+/// the GET ourselves and parse the body as `Option<AutoApproveWindow>`.
+pub async fn cn_auto_approve_status(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+
+    // Build a reqwest client carrying the same bearer the generated
+    // client would carry. Mirrors `Session::client()` so the two paths
+    // are interchangeable from the server's perspective.
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(bearer) = &session.bearer {
+        let value = format!("Bearer {bearer}")
+            .parse()
+            .context("invalid bearer token characters")?;
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+    let http = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!("{}/v2/cn-auto-approve", session.endpoint);
+    // Match the api-version header that the generated client sends
+    // on every call so behaviour stays identical between this raw GET
+    // and the typed callers below.
+    let api_version = <tritond_client::Client as tritond_client::ClientInfo<()>>::api_version();
+    let response = http
+        .get(&url)
+        .header(reqwest::header::ACCEPT, "application/json")
+        .header("api-version", api_version)
+        .send()
+        .await
+        .with_context(|| format!("GET {url}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("read body from {url}"))?;
+    if !status.is_success() {
+        anyhow::bail!("get auto-approve window: {status}: {body}");
+    }
+    let window: Option<tritond_client::types::AutoApproveWindow> =
+        serde_json::from_str(&body).with_context(|| {
+            format!("parse auto-approve window response (body={body:?})")
+        })?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&window)?);
+        return Ok(());
+    }
+    match window {
+        None => println!("No window open."),
+        Some(w) => {
+            println!("Auto-approve window:");
+            print_auto_approve_window(&w);
+        }
+    }
+    Ok(())
+}
+
+/// Open (or replace) the auto-approve window.
+pub async fn cn_auto_approve_open(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    duration_secs: u64,
+    count: Option<u64>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let window = client
+        .open_auto_approve_window()
+        .body(tritond_client::types::OpenAutoApproveRequest {
+            duration_secs,
+            count,
+        })
+        .send()
+        .await
+        .context("open auto-approve window")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&window)?);
+    } else {
+        println!("Auto-approve window opened:");
+        print_auto_approve_window(&window);
+    }
+    Ok(())
+}
+
+/// Close the auto-approve window. Idempotent.
+pub async fn cn_auto_approve_close(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .close_auto_approve_window()
+        .send()
+        .await
+        .context("close auto-approve window")?;
+    println!("Auto-approve window closed.");
+    Ok(())
+}
+
 async fn exchange_password(endpoint: &str, username: &str, password: &str) -> Result<Tokens> {
     let client = Client::new(endpoint);
     let response: TokenResponse = client
