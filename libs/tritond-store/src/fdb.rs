@@ -226,16 +226,16 @@ impl FdbStore {
         format!("project/by_id/{id}").into_bytes()
     }
 
-    fn project_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
-        format!("project/by_silo/{silo_id}/{name}").into_bytes()
+    fn project_by_tenant_name_key(tenant_id: Uuid, name: &str) -> Vec<u8> {
+        format!("project/by_tenant/{tenant_id}/{name}").into_bytes()
     }
 
-    fn project_in_silo_key(silo_id: Uuid, project_id: Uuid) -> Vec<u8> {
-        format!("project/in_silo/{silo_id}/{project_id}").into_bytes()
+    fn project_in_tenant_key(tenant_id: Uuid, project_id: Uuid) -> Vec<u8> {
+        format!("project/in_tenant/{tenant_id}/{project_id}").into_bytes()
     }
 
-    fn project_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
-        format!("project/in_silo/{silo_id}/").into_bytes()
+    fn project_in_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
+        format!("project/in_tenant/{tenant_id}/").into_bytes()
     }
 
     fn vpc_by_id_key(id: Uuid) -> Vec<u8> {
@@ -971,10 +971,14 @@ impl Store for FdbStore {
         Ok(out)
     }
 
-    async fn create_project(&self, silo_id: Uuid, req: NewProject) -> Result<Project, StoreError> {
+    async fn create_project(
+        &self,
+        tenant_id: Uuid,
+        req: NewProject,
+    ) -> Result<Project, StoreError> {
         let project = Project {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             name: req.name,
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
@@ -982,18 +986,18 @@ impl Store for FdbStore {
         let value = serde_json::to_vec(&project)
             .map_err(|e| StoreError::Backend(format!("serialize project: {e}")))?;
         let by_id_key = Self::project_by_id_key(project.id);
-        let by_name_key = Self::project_by_silo_name_key(silo_id, &project.name);
-        let in_silo_key = Self::project_in_silo_key(silo_id, project.id);
-        let silo_check_key = Self::silo_by_id_key(silo_id);
+        let by_name_key = Self::project_by_tenant_name_key(tenant_id, &project.name);
+        let in_tenant_key = Self::project_in_tenant_key(tenant_id, project.id);
+        let tenant_check_key = Self::tenant_by_id_key(tenant_id);
         let id_str = project.id.to_string();
         let name_str = project.name.clone();
 
-        // Outcome distinguishes silo-missing from name-conflict so the
+        // Outcome distinguishes tenant-missing from name-conflict so the
         // single transaction can convey both into our caller's error
         // shape.
         enum Outcome {
             Created,
-            SiloMissing,
+            TenantMissing,
             NameTaken,
         }
 
@@ -1002,20 +1006,20 @@ impl Store for FdbStore {
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
                 let by_name_key = by_name_key.clone();
-                let in_silo_key = in_silo_key.clone();
-                let silo_check_key = silo_check_key.clone();
+                let in_tenant_key = in_tenant_key.clone();
+                let tenant_check_key = tenant_check_key.clone();
                 let value = value.clone();
                 let id_bytes = id_str.as_bytes().to_vec();
                 async move {
-                    if tr.get(&silo_check_key, false).await?.is_none() {
-                        return Ok(Outcome::SiloMissing);
+                    if tr.get(&tenant_check_key, false).await?.is_none() {
+                        return Ok(Outcome::TenantMissing);
                     }
                     if tr.get(&by_name_key, false).await?.is_some() {
                         return Ok(Outcome::NameTaken);
                     }
                     tr.set(&by_id_key, &value);
                     tr.set(&by_name_key, &id_bytes);
-                    tr.set(&in_silo_key, b"");
+                    tr.set(&in_tenant_key, b"");
                     Ok(Outcome::Created)
                 }
             })
@@ -1023,9 +1027,9 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Created) => Ok(project),
-            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::TenantMissing) => Err(StoreError::NotFound),
             Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
-                "project with name {name_str:?} already exists in silo {silo_id}"
+                "project with name {name_str:?} already exists in tenant {tenant_id}"
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
@@ -1038,8 +1042,8 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))
     }
 
-    async fn list_projects_in_silo(&self, silo_id: Uuid) -> Result<Vec<Project>, StoreError> {
-        let prefix = Self::project_in_silo_prefix(silo_id);
+    async fn list_projects_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Project>, StoreError> {
+        let prefix = Self::project_in_tenant_prefix(tenant_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
 
@@ -1084,7 +1088,7 @@ impl Store for FdbStore {
 
     async fn delete_project(&self, project_id: Uuid) -> Result<(), StoreError> {
         // Read the row outside the transaction so we know the
-        // silo_id + name to clear from the indices. Concurrent
+        // tenant_id + name to clear from the indices. Concurrent
         // delete shows up as Outcome::Vanished below.
         let by_id_key = Self::project_by_id_key(project_id);
         let bytes = match self.read_bytes(&by_id_key).await? {
@@ -1093,8 +1097,8 @@ impl Store for FdbStore {
         };
         let project: Project = serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
-        let by_name_key = Self::project_by_silo_name_key(project.silo_id, &project.name);
-        let in_silo_key = Self::project_in_silo_key(project.silo_id, project.id);
+        let by_name_key = Self::project_by_tenant_name_key(project.tenant_id, &project.name);
+        let in_tenant_key = Self::project_in_tenant_key(project.tenant_id, project.id);
 
         enum DelOut {
             Deleted,
@@ -1105,14 +1109,14 @@ impl Store for FdbStore {
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
                 let by_name_key = by_name_key.clone();
-                let in_silo_key = in_silo_key.clone();
+                let in_tenant_key = in_tenant_key.clone();
                 async move {
                     if tr.get(&by_id_key, false).await?.is_none() {
                         return Ok(DelOut::Vanished);
                     }
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
-                    tr.clear(&in_silo_key);
+                    tr.clear(&in_tenant_key);
                     Ok(DelOut::Deleted)
                 }
             })
@@ -1286,7 +1290,7 @@ impl Store for FdbStore {
 
     async fn create_vpc(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewVpc,
     ) -> Result<Vpc, StoreError> {
@@ -1296,7 +1300,7 @@ impl Store for FdbStore {
         // caller verbatim.
         enum Outcome {
             Created(Vpc),
-            ProjectMissingOrWrongSilo,
+            ProjectMissingOrWrongTenant,
             NameTaken,
             VniTaken,
         }
@@ -1308,7 +1312,7 @@ impl Store for FdbStore {
             let vni = rand::rng().random_range(VPC_VNI_RESERVED_CEILING..VPC_VNI_MAX);
             let candidate = Vpc {
                 id: Uuid::new_v4(),
-                silo_id,
+                tenant_id,
                 project_id,
                 name: req.name.clone(),
                 description: req.description.clone().unwrap_or_default(),
@@ -1336,20 +1340,20 @@ impl Store for FdbStore {
                     let id_bytes = id_str.as_bytes().to_vec();
                     let candidate = candidate.clone();
                     async move {
-                        // Project must exist and live in the silo the
-                        // caller claims. Silo mismatch surfaces as
+                        // Project must exist and live in the tenant the
+                        // caller claims. Tenant mismatch surfaces as
                         // NotFound (project is invisible to a foreign
-                        // silo).
+                        // tenant).
                         let project_bytes = match tr.get(&project_check_key, false).await? {
                             Some(b) => b,
-                            None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                            None => return Ok(Outcome::ProjectMissingOrWrongTenant),
                         };
                         let project: Project = match serde_json::from_slice(&project_bytes) {
                             Ok(p) => p,
-                            Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                            Err(_) => return Ok(Outcome::ProjectMissingOrWrongTenant),
                         };
-                        if project.silo_id != silo_id {
-                            return Ok(Outcome::ProjectMissingOrWrongSilo);
+                        if project.tenant_id != tenant_id {
+                            return Ok(Outcome::ProjectMissingOrWrongTenant);
                         }
                         if tr.get(&by_name_key, false).await?.is_some() {
                             return Ok(Outcome::NameTaken);
@@ -1368,7 +1372,7 @@ impl Store for FdbStore {
 
             match outcome {
                 Ok(Outcome::Created(vpc)) => return Ok(vpc),
-                Ok(Outcome::ProjectMissingOrWrongSilo) => return Err(StoreError::NotFound),
+                Ok(Outcome::ProjectMissingOrWrongTenant) => return Err(StoreError::NotFound),
                 Ok(Outcome::NameTaken) => {
                     return Err(StoreError::Conflict(format!(
                         "vpc with name {:?} already exists in project {project_id}",
@@ -1504,7 +1508,7 @@ impl Store for FdbStore {
 
     async fn create_subnet(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         req: NewSubnet,
@@ -1550,7 +1554,7 @@ impl Store for FdbStore {
                         Ok(v) => v,
                         Err(_) => return Ok(Outcome::VpcMissingOrWrongParent),
                     };
-                    if vpc.silo_id != silo_id || vpc.project_id != project_id {
+                    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
                         return Ok(Outcome::VpcMissingOrWrongParent);
                     }
 
@@ -1604,7 +1608,7 @@ impl Store for FdbStore {
 
                     let candidate = Subnet {
                         id: candidate_id,
-                        silo_id,
+                        tenant_id,
                         project_id,
                         vpc_id,
                         name: req.name.clone(),
@@ -2085,14 +2089,14 @@ impl Store for FdbStore {
 
     async fn put_quota(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewQuota,
     ) -> Result<Quota, StoreError> {
         let project_check_key = Self::project_by_id_key(project_id);
         let quota_key = Self::quota_by_project_key(project_id);
         let quota = Quota {
-            silo_id,
+            tenant_id,
             project_id,
             cpu_limit: req.cpu_limit,
             memory_bytes: req.memory_bytes,
@@ -2105,7 +2109,7 @@ impl Store for FdbStore {
 
         enum Outcome {
             Stored,
-            ProjectMissingOrWrongSilo,
+            ProjectMissingOrWrongTenant,
         }
 
         let outcome: Result<Outcome, FdbBindingError> = self
@@ -2117,14 +2121,14 @@ impl Store for FdbStore {
                 async move {
                     let project_bytes = match tr.get(&project_check_key, false).await? {
                         Some(b) => b,
-                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        None => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
                     let project: Project = match serde_json::from_slice(&project_bytes) {
                         Ok(p) => p,
-                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
-                    if project.silo_id != silo_id {
-                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    if project.tenant_id != tenant_id {
+                        return Ok(Outcome::ProjectMissingOrWrongTenant);
                     }
                     tr.set(&quota_key, &value);
                     Ok(Outcome::Stored)
@@ -2134,20 +2138,20 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Stored) => Ok(quota),
-            Ok(Outcome::ProjectMissingOrWrongSilo) => Err(StoreError::NotFound),
+            Ok(Outcome::ProjectMissingOrWrongTenant) => Err(StoreError::NotFound),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
 
-    async fn get_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
+    async fn get_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
         // Read project + quota inside a single transaction so the
-        // silo check is consistent with the read.
+        // tenant check is consistent with the read.
         let project_check_key = Self::project_by_id_key(project_id);
         let quota_key = Self::quota_by_project_key(project_id);
 
         enum Outcome {
             Found(Quota),
-            ProjectMissingOrWrongSilo,
+            ProjectMissingOrWrongTenant,
             QuotaUnset,
         }
 
@@ -2159,14 +2163,14 @@ impl Store for FdbStore {
                 async move {
                     let project_bytes = match tr.get(&project_check_key, false).await? {
                         Some(b) => b,
-                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        None => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
                     let project: Project = match serde_json::from_slice(&project_bytes) {
                         Ok(p) => p,
-                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
-                    if project.silo_id != silo_id {
-                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    if project.tenant_id != tenant_id {
+                        return Ok(Outcome::ProjectMissingOrWrongTenant);
                     }
                     let quota_bytes = match tr.get(&quota_key, false).await? {
                         Some(b) => b,
@@ -2183,20 +2187,20 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Found(q)) => Ok(q),
-            Ok(Outcome::ProjectMissingOrWrongSilo) | Ok(Outcome::QuotaUnset) => {
+            Ok(Outcome::ProjectMissingOrWrongTenant) | Ok(Outcome::QuotaUnset) => {
                 Err(StoreError::NotFound)
             }
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
 
-    async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
         let project_check_key = Self::project_by_id_key(project_id);
         let quota_key = Self::quota_by_project_key(project_id);
 
         enum Outcome {
             Deleted,
-            ProjectMissingOrWrongSilo,
+            ProjectMissingOrWrongTenant,
             QuotaUnset,
         }
 
@@ -2208,14 +2212,14 @@ impl Store for FdbStore {
                 async move {
                     let project_bytes = match tr.get(&project_check_key, false).await? {
                         Some(b) => b,
-                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        None => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
                     let project: Project = match serde_json::from_slice(&project_bytes) {
                         Ok(p) => p,
-                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
-                    if project.silo_id != silo_id {
-                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    if project.tenant_id != tenant_id {
+                        return Ok(Outcome::ProjectMissingOrWrongTenant);
                     }
                     if tr.get(&quota_key, false).await?.is_none() {
                         return Ok(Outcome::QuotaUnset);
@@ -2228,7 +2232,7 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Deleted) => Ok(()),
-            Ok(Outcome::ProjectMissingOrWrongSilo) | Ok(Outcome::QuotaUnset) => {
+            Ok(Outcome::ProjectMissingOrWrongTenant) | Ok(Outcome::QuotaUnset) => {
                 Err(StoreError::NotFound)
             }
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
@@ -2237,7 +2241,7 @@ impl Store for FdbStore {
 
     async fn create_instance(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
     ) -> Result<InstanceCreateResult, StoreError> {
@@ -2247,6 +2251,7 @@ impl Store for FdbStore {
         // delete of any referenced resource aborts cleanly; a
         // concurrent NIC create that would race for the same IP
         // is serialized by FDB's optimistic concurrency.
+        let tenant_check_key = Self::tenant_by_id_key(tenant_id);
         let project_check_key = Self::project_by_id_key(project_id);
         let image_check_key = Self::image_by_id_key(req.image_id);
         let subnet_check_key = Self::subnet_by_id_key(req.primary_subnet_id);
@@ -2320,7 +2325,8 @@ impl Store for FdbStore {
 
         enum Outcome {
             Created(Box<InstanceCreateResult>),
-            ProjectMissingOrWrongSilo,
+            TenantMissing,
+            ProjectMissingOrWrongTenant,
             ImageMissingOrWrongSilo,
             SubnetMissingOrWrongParent,
             SshKeyMissingOrWrongSilo,
@@ -2333,6 +2339,7 @@ impl Store for FdbStore {
         let outcome: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
+                let tenant_check_key = tenant_check_key.clone();
                 let project_check_key = project_check_key.clone();
                 let image_check_key = image_check_key.clone();
                 let subnet_check_key = subnet_check_key.clone();
@@ -2352,19 +2359,31 @@ impl Store for FdbStore {
                 let req = req_for_txn.clone();
                 let extra_plans = extra_plans.clone();
                 async move {
+                    // Tenant: needed for project ownership check + to
+                    // resolve the silo for image/ssh-key checks (those
+                    // resources stay silo-scoped in E-3).
+                    let tenant_bytes = match tr.get(&tenant_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::TenantMissing),
+                    };
+                    let tenant: Tenant = match serde_json::from_slice(&tenant_bytes) {
+                        Ok(t) => t,
+                        Err(_) => return Ok(Outcome::TenantMissing),
+                    };
+                    let silo_id = tenant.silo_id;
                     // Project
                     let project_bytes = match tr.get(&project_check_key, false).await? {
                         Some(b) => b,
-                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        None => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
                     let project: Project = match serde_json::from_slice(&project_bytes) {
                         Ok(p) => p,
-                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
-                    if project.silo_id != silo_id {
-                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    if project.tenant_id != tenant_id {
+                        return Ok(Outcome::ProjectMissingOrWrongTenant);
                     }
-                    // Image
+                    // Image (still silo-scoped in E-3)
                     let image_bytes = match tr.get(&image_check_key, false).await? {
                         Some(b) => b,
                         None => return Ok(Outcome::ImageMissingOrWrongSilo),
@@ -2385,10 +2404,10 @@ impl Store for FdbStore {
                         Ok(s) => s,
                         Err(_) => return Ok(Outcome::SubnetMissingOrWrongParent),
                     };
-                    if subnet.silo_id != silo_id || subnet.project_id != project_id {
+                    if subnet.tenant_id != tenant_id || subnet.project_id != project_id {
                         return Ok(Outcome::SubnetMissingOrWrongParent);
                     }
-                    // SSH keys
+                    // SSH keys (still silo-scoped in E-3)
                     for (_key_id, key_check_key) in &ssh_key_check_keys {
                         let key_bytes = match tr.get(key_check_key, false).await? {
                             Some(b) => b,
@@ -2468,7 +2487,7 @@ impl Store for FdbStore {
                     // generation (which is synchronous).
                     let nic = Nic {
                         id: nic_id,
-                        silo_id,
+                        tenant_id,
                         project_id,
                         instance_id,
                         vpc_id: subnet.vpc_id,
@@ -2484,7 +2503,7 @@ impl Store for FdbStore {
                     };
                     let instance = Instance {
                         id: instance_id,
-                        silo_id,
+                        tenant_id,
                         project_id,
                         name: req.name.clone(),
                         description: req.description.unwrap_or_default(),
@@ -2499,7 +2518,7 @@ impl Store for FdbStore {
                     };
                     let boot_disk = Disk {
                         id: disk_id,
-                        silo_id,
+                        tenant_id,
                         project_id,
                         instance_id,
                         name: "boot".to_string(),
@@ -2560,7 +2579,8 @@ impl Store for FdbStore {
                             Ok(s) => s,
                             Err(_) => return Ok(Outcome::SubnetMissingOrWrongParent),
                         };
-                        if extra_subnet.silo_id != silo_id || extra_subnet.project_id != project_id
+                        if extra_subnet.tenant_id != tenant_id
+                            || extra_subnet.project_id != project_id
                         {
                             return Ok(Outcome::SubnetMissingOrWrongParent);
                         }
@@ -2636,7 +2656,7 @@ impl Store for FdbStore {
                         };
                         let extra_nic = Nic {
                             id: plan.nic_id,
-                            silo_id,
+                            tenant_id,
                             project_id,
                             instance_id,
                             vpc_id: extra_subnet.vpc_id,
@@ -2678,7 +2698,8 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Created(both)) => Ok(*both),
-            Ok(Outcome::ProjectMissingOrWrongSilo)
+            Ok(Outcome::TenantMissing)
+            | Ok(Outcome::ProjectMissingOrWrongTenant)
             | Ok(Outcome::ImageMissingOrWrongSilo)
             | Ok(Outcome::SubnetMissingOrWrongParent)
             | Ok(Outcome::SshKeyMissingOrWrongSilo) => Err(StoreError::NotFound),
@@ -3101,7 +3122,7 @@ impl Store for FdbStore {
 
     async fn create_floating_ip(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
@@ -3121,7 +3142,7 @@ impl Store for FdbStore {
 
         enum Outcome {
             Created(Box<FloatingIp>),
-            ProjectMissingOrWrongSilo,
+            ProjectMissingOrWrongTenant,
             NameTaken,
             PoolExhausted,
         }
@@ -3141,17 +3162,17 @@ impl Store for FdbStore {
                 let id_bytes = id_str.as_bytes().to_vec();
                 let req = req_for_txn.clone();
                 async move {
-                    // Project + same-silo check.
+                    // Project + same-tenant check.
                     let project_bytes = match tr.get(&project_check_key, false).await? {
                         Some(b) => b,
-                        None => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        None => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
                     let project: Project = match serde_json::from_slice(&project_bytes) {
                         Ok(p) => p,
-                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongSilo),
+                        Err(_) => return Ok(Outcome::ProjectMissingOrWrongTenant),
                     };
-                    if project.silo_id != silo_id {
-                        return Ok(Outcome::ProjectMissingOrWrongSilo);
+                    if project.tenant_id != tenant_id {
+                        return Ok(Outcome::ProjectMissingOrWrongTenant);
                     }
                     // Name uniqueness.
                     if tr.get(&by_name_key, false).await?.is_some() {
@@ -3209,7 +3230,7 @@ impl Store for FdbStore {
                     let now = Utc::now();
                     let fip = FloatingIp {
                         id: fip_id,
-                        silo_id,
+                        tenant_id,
                         project_id,
                         name: req.name.clone(),
                         description: req.description.unwrap_or_default(),
@@ -3240,7 +3261,7 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Created(fip)) => Ok(*fip),
-            Ok(Outcome::ProjectMissingOrWrongSilo) => Err(StoreError::NotFound),
+            Ok(Outcome::ProjectMissingOrWrongTenant) => Err(StoreError::NotFound),
             Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
                 "floating ip with name {:?} already exists in project {project_id}",
                 req.name
@@ -3397,7 +3418,7 @@ impl Store for FdbStore {
                         Ok(n) => n,
                         Err(_) => return Ok(Out::NicMissingOrWrongParent),
                     };
-                    if nic.silo_id != fip.silo_id || nic.project_id != fip.project_id {
+                    if nic.tenant_id != fip.tenant_id || nic.project_id != fip.project_id {
                         return Ok(Out::NicMissingOrWrongParent);
                     }
                     fip.attached_to = Some(FloatingIpAttachment {

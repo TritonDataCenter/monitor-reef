@@ -188,25 +188,26 @@ pub trait Store: Send + Sync + 'static {
     async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError>;
 
     // ------------------------------------------------------------------
-    // Projects (silo-scoped)
+    // Projects (tenant-scoped)
     // ------------------------------------------------------------------
 
-    /// Create a project inside a silo. Returns
+    /// Create a project inside a tenant. Returns
     /// [`StoreError::Conflict`] if `name` is already in use within
-    /// the same silo. Returns [`StoreError::NotFound`] if the silo
-    /// itself doesn't exist (the caller is expected to have already
-    /// resolved silo existence via Cedar; the check here is a
-    /// defence-in-depth race guard).
-    async fn create_project(&self, silo_id: Uuid, req: NewProject) -> Result<Project, StoreError>;
+    /// the same tenant. Returns [`StoreError::NotFound`] if the
+    /// tenant itself doesn't exist (the caller is expected to have
+    /// already resolved tenant existence via Cedar; the check here
+    /// is a defence-in-depth race guard).
+    async fn create_project(&self, tenant_id: Uuid, req: NewProject)
+    -> Result<Project, StoreError>;
 
     /// Look up a project by id. Returns [`StoreError::NotFound`] when
-    /// no such project exists, regardless of silo.
+    /// no such project exists, regardless of tenant.
     async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError>;
 
-    /// List every project belonging to `silo_id`. Order is unspecified
-    /// for Phase 0e-c; pagination lands when the list grows beyond a
+    /// List every project belonging to `tenant_id`. Order is
+    /// unspecified; pagination lands when the list grows beyond a
     /// single response.
-    async fn list_projects_in_silo(&self, silo_id: Uuid) -> Result<Vec<Project>, StoreError>;
+    async fn list_projects_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Project>, StoreError>;
 
     /// Delete a project by id. Returns [`StoreError::NotFound`] if the
     /// id does not exist.
@@ -245,9 +246,9 @@ pub trait Store: Send + Sync + 'static {
     ///
     /// Invariants enforced by the implementation:
     ///
-    /// * The project must exist and `project.silo_id == silo_id`. A
-    ///   `silo_id` mismatch returns [`StoreError::NotFound`] (treating
-    ///   the project as invisible to the wrong silo).
+    /// * The project must exist and `project.tenant_id == tenant_id`.
+    ///   A `tenant_id` mismatch returns [`StoreError::NotFound`]
+    ///   (treating the project as invisible to the wrong tenant).
     /// * `name` must not collide with an existing VPC in the same
     ///   project — collision returns [`StoreError::Conflict`].
     /// * `vni` is server-assigned, drawn uniformly at random from
@@ -260,14 +261,14 @@ pub trait Store: Send + Sync + 'static {
     ///   does not re-validate.
     async fn create_vpc(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewVpc,
     ) -> Result<Vpc, StoreError>;
 
     /// Look up a VPC by id. Returns [`StoreError::NotFound`] when no
-    /// such VPC exists, regardless of silo or project. Handlers add
-    /// silo_id + project_id rechecks on top.
+    /// such VPC exists, regardless of tenant or project. Handlers add
+    /// tenant_id + project_id rechecks on top.
     async fn get_vpc(&self, vpc_id: Uuid) -> Result<Vpc, StoreError>;
 
     /// List every VPC belonging to `project_id`. Order is unspecified.
@@ -291,7 +292,7 @@ pub trait Store: Send + Sync + 'static {
     ///
     /// Invariants enforced by the implementation:
     ///
-    /// * The VPC must exist *and* `vpc.silo_id == silo_id` *and*
+    /// * The VPC must exist *and* `vpc.tenant_id == tenant_id` *and*
     ///   `vpc.project_id == project_id`. Any mismatch returns
     ///   [`StoreError::NotFound`] — the caller cannot tell whether
     ///   the VPC is in a different parent or doesn't exist at all,
@@ -310,14 +311,14 @@ pub trait Store: Send + Sync + 'static {
     ///   same VPC.
     async fn create_subnet(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         req: NewSubnet,
     ) -> Result<Subnet, StoreError>;
 
     /// Look up a subnet by id. Returns [`StoreError::NotFound`] when
-    /// no such subnet exists. Handlers add silo_id + project_id +
+    /// no such subnet exists. Handlers add tenant_id + project_id +
     /// vpc_id rechecks on top.
     async fn get_subnet(&self, subnet_id: Uuid) -> Result<Subnet, StoreError>;
 
@@ -404,23 +405,23 @@ pub trait Store: Send + Sync + 'static {
 
     /// Set (or replace) a project's quota record. Returns
     /// [`StoreError::NotFound`] if the project does not exist or
-    /// does not live in the supplied silo (cross-tenant probe
+    /// does not live in the supplied tenant (cross-tenant probe
     /// invariant).
     async fn put_quota(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewQuota,
     ) -> Result<Quota, StoreError>;
 
     /// Read a project's quota. Returns [`StoreError::NotFound`] if
-    /// the project does not exist, lives in a different silo, or
+    /// the project does not exist, lives in a different tenant, or
     /// has no quota set.
-    async fn get_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError>;
+    async fn get_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError>;
 
     /// Remove a project's quota (project becomes unlimited). Returns
     /// [`StoreError::NotFound`] if no quota was set.
-    async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError>;
+    async fn delete_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // Instances (project-scoped, with lifecycle state machine)
@@ -431,16 +432,19 @@ pub trait Store: Send + Sync + 'static {
     ///
     /// The store enforces structural invariants:
     ///
-    /// * Project exists and `project.silo_id == silo_id`. Mismatch
+    /// * Project exists and `project.tenant_id == tenant_id`. Mismatch
     ///   surfaces as [`StoreError::NotFound`] (cross-tenant probe
     ///   story).
-    /// * Image exists and `image.silo_id == silo_id`. A missing or
-    ///   wrong-silo image is [`StoreError::NotFound`].
+    /// * Image exists and lives in the silo derived from the
+    ///   tenant. A missing or wrong-silo image is
+    ///   [`StoreError::NotFound`]. (Images are still silo-scoped in
+    ///   E-3; E-4 will move them.)
     /// * Subnet exists and lives in this project (i.e.
-    ///   `subnet.silo_id == silo_id` and `subnet.project_id ==
+    ///   `subnet.tenant_id == tenant_id` and `subnet.project_id ==
     ///   project_id`). Otherwise [`StoreError::NotFound`].
-    /// * Each `ssh_key_id` exists and `silo_id` matches. Otherwise
-    ///   [`StoreError::NotFound`].
+    /// * Each `ssh_key_id` exists and lives in the silo derived from
+    ///   the tenant. Otherwise [`StoreError::NotFound`]. (SSH keys
+    ///   are still silo-scoped in E-3; G will move them.)
     /// * `name` is unique within the project. Collision →
     ///   [`StoreError::Conflict`].
     ///
@@ -457,7 +461,7 @@ pub trait Store: Send + Sync + 'static {
     /// `memory_bytes > 0` at the API edge.
     async fn create_instance(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
     ) -> Result<InstanceCreateResult, StoreError>;
@@ -513,7 +517,7 @@ pub trait Store: Send + Sync + 'static {
     // ------------------------------------------------------------------
 
     /// Look up a NIC by id. Returns [`StoreError::NotFound`] when
-    /// no such NIC exists. Handlers add silo + project + instance
+    /// no such NIC exists. Handlers add tenant + project + instance
     /// id rechecks on top.
     async fn get_nic(&self, nic_id: Uuid) -> Result<Nic, StoreError>;
 
@@ -527,7 +531,7 @@ pub trait Store: Send + Sync + 'static {
     // ------------------------------------------------------------------
 
     /// Look up a Disk by id. Returns [`StoreError::NotFound`] when
-    /// no such Disk exists. Handlers add silo + project + instance
+    /// no such Disk exists. Handlers add tenant + project + instance
     /// id rechecks on top.
     async fn get_disk(&self, disk_id: Uuid) -> Result<Disk, StoreError>;
 
@@ -545,7 +549,7 @@ pub trait Store: Send + Sync + 'static {
     ///
     /// Invariants:
     ///
-    /// * The project exists and `project.silo_id == silo_id`.
+    /// * The project exists and `project.tenant_id == tenant_id`.
     ///   Otherwise [`StoreError::NotFound`].
     /// * `name` is unique within the project. Collision →
     ///   [`StoreError::Conflict`].
@@ -556,12 +560,12 @@ pub trait Store: Send + Sync + 'static {
     /// (`attached_to == None`).
     async fn create_floating_ip(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError>;
 
-    /// Look up a FloatingIp by id. Handlers add silo + project
+    /// Look up a FloatingIp by id. Handlers add tenant + project
     /// rechecks on top.
     async fn get_floating_ip(&self, fip_id: Uuid) -> Result<FloatingIp, StoreError>;
 
@@ -579,7 +583,7 @@ pub trait Store: Send + Sync + 'static {
 
     /// Atomically attach a FloatingIp to a NIC, replacing any
     /// existing attachment. The target NIC must live in the same
-    /// silo + project as the FloatingIp; mismatch surfaces as
+    /// tenant + project as the FloatingIp; mismatch surfaces as
     /// [`StoreError::NotFound`].
     ///
     /// "Replace" semantics: if the FloatingIp was already attached

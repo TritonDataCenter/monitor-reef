@@ -224,8 +224,8 @@ async fn read_only_scope_blocks_silo_scoped_writes_with_404() {
 
     // ReadOnly: project_list (read) on a silo should succeed.
     let _ = scoped
-        .list_silo_projects()
-        .silo_id(silo.id)
+        .list_tenant_projects()
+        .tenant_id(silo.default_tenant_id)
         .send()
         .await
         .expect("ReadOnly key should list projects in a silo");
@@ -233,8 +233,8 @@ async fn read_only_scope_blocks_silo_scoped_writes_with_404() {
     // ReadOnly: project_create (write) must be denied as 404 since
     // the action is silo-scoped.
     let err = scoped
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(tritond_client::types::NewProject {
             name: "should-not-exist".to_string(),
             description: None,

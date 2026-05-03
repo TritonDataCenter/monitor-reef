@@ -270,8 +270,8 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
         .unwrap()
         .into_inner();
     let proj_a = root
-        .create_silo_project()
-        .silo_id(silo_a.id)
+        .create_tenant_project()
+        .tenant_id(silo_a.default_tenant_id)
         .body(NewProject {
             name: "p1".to_string(),
             description: None,
@@ -281,8 +281,8 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
         .unwrap()
         .into_inner();
     let proj_b = root
-        .create_silo_project()
-        .silo_id(silo_b.id)
+        .create_tenant_project()
+        .tenant_id(silo_b.default_tenant_id)
         .body(NewProject {
             name: "p1".to_string(),
             description: None,
@@ -294,7 +294,7 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
 
     let v_a = root
         .create_project_vpc()
-        .silo_id(silo_a.id)
+        .tenant_id(silo_a.default_tenant_id)
         .project_id(proj_a.id)
         .body(dual_stack("prod"))
         .send()
@@ -303,7 +303,7 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
         .into_inner();
     let v_b = root
         .create_project_vpc()
-        .silo_id(silo_b.id)
+        .tenant_id(silo_b.default_tenant_id)
         .project_id(proj_b.id)
         .body(dual_stack("prod")) // same name in different silo+project: ok
         .send()
@@ -317,7 +317,7 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
 
     let listed = root
         .list_project_vpcs()
-        .silo_id(silo_a.id)
+        .tenant_id(silo_a.default_tenant_id)
         .project_id(proj_a.id)
         .send()
         .await
@@ -328,7 +328,7 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
 
     let fetched = root
         .get_project_vpc()
-        .silo_id(silo_a.id)
+        .tenant_id(silo_a.default_tenant_id)
         .project_id(proj_a.id)
         .vpc_id(v_a.id)
         .send()
@@ -367,8 +367,8 @@ async fn federated_user_can_act_in_own_silo_only() {
         .unwrap()
         .into_inner();
     let alpha_proj = root
-        .create_silo_project()
-        .silo_id(silo_alpha.id)
+        .create_tenant_project()
+        .tenant_id(silo_alpha.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -378,8 +378,8 @@ async fn federated_user_can_act_in_own_silo_only() {
         .unwrap()
         .into_inner();
     let beta_proj = root
-        .create_silo_project()
-        .silo_id(silo_beta.id)
+        .create_tenant_project()
+        .tenant_id(silo_beta.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -407,20 +407,20 @@ async fn federated_user_can_act_in_own_silo_only() {
     // Alpha tenant → can create a VPC in alpha's project.
     let vpc = tenant
         .create_project_vpc()
-        .silo_id(silo_alpha.id)
+        .tenant_id(silo_alpha.default_tenant_id)
         .project_id(alpha_proj.id)
         .body(dual_stack("tenant-vpc"))
         .send()
         .await
         .expect("alpha-tenant should create a vpc in alpha")
         .into_inner();
-    assert_eq!(vpc.silo_id, silo_alpha.id);
+    assert_eq!(vpc.tenant_id, silo_alpha.default_tenant_id);
     assert_eq!(vpc.project_id, alpha_proj.id);
 
     // Same tenant → cannot create a VPC in beta's project. 404.
     let err = tenant
         .create_project_vpc()
-        .silo_id(silo_beta.id)
+        .tenant_id(silo_beta.default_tenant_id)
         .project_id(beta_proj.id)
         .body(dual_stack("intruder"))
         .send()
@@ -431,7 +431,7 @@ async fn federated_user_can_act_in_own_silo_only() {
     // Tenant lists in alpha → sees their VPC.
     let listed = tenant
         .list_project_vpcs()
-        .silo_id(silo_alpha.id)
+        .tenant_id(silo_alpha.default_tenant_id)
         .project_id(alpha_proj.id)
         .send()
         .await
@@ -443,7 +443,7 @@ async fn federated_user_can_act_in_own_silo_only() {
     // Tenant lists in beta → 404 (cross-silo).
     let err = tenant
         .list_project_vpcs()
-        .silo_id(silo_beta.id)
+        .tenant_id(silo_beta.default_tenant_id)
         .project_id(beta_proj.id)
         .send()
         .await
@@ -483,8 +483,8 @@ async fn cross_silo_get_returns_404_not_403() {
         .unwrap()
         .into_inner();
     let beta_proj = root
-        .create_silo_project()
-        .silo_id(silo_beta.id)
+        .create_tenant_project()
+        .tenant_id(silo_beta.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -495,7 +495,7 @@ async fn cross_silo_get_returns_404_not_403() {
         .into_inner();
     let beta_vpc = root
         .create_project_vpc()
-        .silo_id(silo_beta.id)
+        .tenant_id(silo_beta.default_tenant_id)
         .project_id(beta_proj.id)
         .body(dual_stack("secret"))
         .send()
@@ -521,7 +521,7 @@ async fn cross_silo_get_returns_404_not_403() {
     // — Cedar denies because alpha-tenant is not in beta. 404.
     let err = tenant
         .get_project_vpc()
-        .silo_id(silo_alpha.id)
+        .tenant_id(silo_alpha.default_tenant_id)
         .project_id(beta_proj.id)
         .vpc_id(beta_vpc.id)
         .send()
@@ -552,8 +552,8 @@ async fn cross_project_get_returns_404() {
         .unwrap()
         .into_inner();
     let proj_a = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "a".to_string(),
             description: None,
@@ -563,8 +563,8 @@ async fn cross_project_get_returns_404() {
         .unwrap()
         .into_inner();
     let proj_b = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "b".to_string(),
             description: None,
@@ -575,7 +575,7 @@ async fn cross_project_get_returns_404() {
         .into_inner();
     let vpc_in_a = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_a.id)
         .body(dual_stack("net"))
         .send()
@@ -585,7 +585,7 @@ async fn cross_project_get_returns_404() {
 
     let err = root
         .get_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_b.id) // wrong project for this vpc
         .vpc_id(vpc_in_a.id)
         .send()
@@ -595,7 +595,7 @@ async fn cross_project_get_returns_404() {
 
     let err = root
         .delete_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_b.id)
         .vpc_id(vpc_in_a.id)
         .send()
@@ -621,8 +621,8 @@ async fn same_vpc_name_in_different_projects_does_not_conflict() {
         .unwrap()
         .into_inner();
     let proj_a = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "a".to_string(),
             description: None,
@@ -632,8 +632,8 @@ async fn same_vpc_name_in_different_projects_does_not_conflict() {
         .unwrap()
         .into_inner();
     let proj_b = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "b".to_string(),
             description: None,
@@ -644,14 +644,14 @@ async fn same_vpc_name_in_different_projects_does_not_conflict() {
         .into_inner();
 
     root.create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_a.id)
         .body(ipv4_only("shared", "10.0.0.0/24"))
         .send()
         .await
         .expect("create in proj_a");
     root.create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_b.id)
         .body(ipv4_only("shared", "10.1.0.0/24"))
         .send()
@@ -676,8 +676,8 @@ async fn vpc_with_no_cidr_returns_400() {
         .unwrap()
         .into_inner();
     let proj = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -689,7 +689,7 @@ async fn vpc_with_no_cidr_returns_400() {
 
     let err = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj.id)
         .body(NewVpc {
             name: "nothing".to_string(),
@@ -724,7 +724,7 @@ async fn vpc_under_unknown_project_returns_404() {
     let fake_project = Uuid::new_v4();
     let err = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(fake_project)
         .body(dual_stack("ghost"))
         .send()
@@ -734,7 +734,7 @@ async fn vpc_under_unknown_project_returns_404() {
 
     let err = root
         .list_project_vpcs()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(fake_project)
         .send()
         .await
@@ -759,8 +759,8 @@ async fn anonymous_cannot_reach_vpc_endpoints() {
         .unwrap()
         .into_inner();
     let proj = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -773,7 +773,7 @@ async fn anonymous_cannot_reach_vpc_endpoints() {
     let anon = test.anonymous_client();
     let err = anon
         .list_project_vpcs()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj.id)
         .send()
         .await
@@ -782,7 +782,7 @@ async fn anonymous_cannot_reach_vpc_endpoints() {
 
     let err = anon
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj.id)
         .body(dual_stack("forbidden"))
         .send()

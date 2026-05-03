@@ -141,7 +141,7 @@ async fn wait_for_lifecycle(
     loop {
         let inst = client
             .get_project_instance()
-            .silo_id(silo_id)
+            .tenant_id(silo_id)
             .project_id(project_id)
             .instance_id(instance_id)
             .send()
@@ -162,7 +162,7 @@ async fn wait_for_lifecycle(
 const SETTLE: Duration = Duration::from_secs(5);
 
 struct Fixture {
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     image_id: Uuid,
     subnet_id: Uuid,
@@ -181,8 +181,8 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     let project = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -193,7 +193,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .into_inner();
     let vpc = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .body(NewVpc {
             name: "v".to_string(),
@@ -207,7 +207,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .into_inner();
     let subnet = root
         .create_vpc_subnet()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .vpc_id(vpc.id)
         .body(NewSubnet {
@@ -251,7 +251,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     Fixture {
-        silo_id: silo.id,
+        tenant_id: silo.default_tenant_id,
         project_id: project.id,
         image_id: image.id,
         subnet_id: subnet.id,
@@ -282,7 +282,7 @@ async fn allocate_v4_from_test_net_3_pool() {
 
     let fip = root
         .create_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
@@ -312,7 +312,7 @@ async fn allocate_v6_from_documentation_pool() {
 
     let fip = root
         .create_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(NewFloatingIp {
             name: "v6".to_string(),
@@ -338,7 +338,7 @@ async fn attach_replaces_existing_attachment_atomically() {
     // Two instances, two NICs, one FloatingIp.
     let inst_a = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
@@ -347,7 +347,7 @@ async fn attach_replaces_existing_attachment_atomically() {
         .into_inner();
     let inst_b = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "b"))
         .send()
@@ -356,7 +356,7 @@ async fn attach_replaces_existing_attachment_atomically() {
         .into_inner();
     let nic_a = root
         .list_instance_nics()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst_a.id)
         .send()
@@ -366,7 +366,7 @@ async fn attach_replaces_existing_attachment_atomically() {
         .clone();
     let nic_b = root
         .list_instance_nics()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst_b.id)
         .send()
@@ -376,7 +376,7 @@ async fn attach_replaces_existing_attachment_atomically() {
         .clone();
     let fip = root
         .create_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
@@ -390,7 +390,7 @@ async fn attach_replaces_existing_attachment_atomically() {
 
     let attached_a = root
         .attach_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .body(AttachFloatingIpRequest { nic_id: nic_a.id })
@@ -407,7 +407,7 @@ async fn attach_replaces_existing_attachment_atomically() {
     // semantics: a single observable state change.
     let attached_b = root
         .attach_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .body(AttachFloatingIpRequest { nic_id: nic_b.id })
@@ -432,7 +432,7 @@ async fn delete_while_attached_returns_409() {
     let fx = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
@@ -441,7 +441,7 @@ async fn delete_while_attached_returns_409() {
         .into_inner();
     let nic = root
         .list_instance_nics()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -451,7 +451,7 @@ async fn delete_while_attached_returns_409() {
         .clone();
     let fip = root
         .create_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
@@ -463,7 +463,7 @@ async fn delete_while_attached_returns_409() {
         .unwrap()
         .into_inner();
     root.attach_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .body(AttachFloatingIpRequest { nic_id: nic.id })
@@ -473,7 +473,7 @@ async fn delete_while_attached_returns_409() {
 
     let err = root
         .delete_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .send()
@@ -483,14 +483,14 @@ async fn delete_while_attached_returns_409() {
 
     // Detach + delete works.
     root.detach_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .send()
         .await
         .unwrap();
     root.delete_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .send()
@@ -507,7 +507,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
     let fx = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
@@ -516,7 +516,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         .into_inner();
     let nic = root
         .list_instance_nics()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -526,7 +526,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         .clone();
     let fip = root
         .create_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
@@ -538,7 +538,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         .unwrap()
         .into_inner();
     root.attach_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .body(AttachFloatingIpRequest { nic_id: nic.id })
@@ -548,17 +548,17 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
     let original_address = fip.address;
 
     // Run instance to Running, stop, wait Stopped, delete.
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
     root.stop_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
         .await
         .unwrap();
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
     root.delete_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -568,7 +568,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
     // The FloatingIp persists, just detached.
     let after = root
         .get_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .send()
@@ -594,7 +594,7 @@ async fn cross_project_attach_target_returns_404() {
     // Instance + NIC under project B.
     let inst_b = root
         .create_project_instance()
-        .silo_id(fx_b.silo_id)
+        .tenant_id(fx_b.tenant_id)
         .project_id(fx_b.project_id)
         .body(instance_req(&fx_b, "b"))
         .send()
@@ -603,7 +603,7 @@ async fn cross_project_attach_target_returns_404() {
         .into_inner();
     let nic_b = root
         .list_instance_nics()
-        .silo_id(fx_b.silo_id)
+        .tenant_id(fx_b.tenant_id)
         .project_id(fx_b.project_id)
         .instance_id(inst_b.id)
         .send()
@@ -614,7 +614,7 @@ async fn cross_project_attach_target_returns_404() {
     // FloatingIp under project A.
     let fip_a = root
         .create_project_floating_ip()
-        .silo_id(fx_a.silo_id)
+        .tenant_id(fx_a.tenant_id)
         .project_id(fx_a.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
@@ -631,7 +631,7 @@ async fn cross_project_attach_target_returns_404() {
     // silo + project matching the FloatingIp's).
     let err = root
         .attach_project_floating_ip()
-        .silo_id(fx_a.silo_id)
+        .tenant_id(fx_a.tenant_id)
         .project_id(fx_a.project_id)
         .floating_ip_id(fip_a.id)
         .body(AttachFloatingIpRequest { nic_id: nic_b.id })
@@ -650,7 +650,7 @@ async fn detach_is_idempotent() {
     let fx = build_fixture(&root).await;
     let fip = root
         .create_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
@@ -665,7 +665,7 @@ async fn detach_is_idempotent() {
     // Detach an already-detached IP — no error.
     let after = root
         .detach_project_floating_ip()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .floating_ip_id(fip.id)
         .send()

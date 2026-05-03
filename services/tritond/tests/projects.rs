@@ -248,8 +248,8 @@ async fn root_can_create_and_read_projects_in_any_silo() {
         .into_inner();
 
     let p_a = root
-        .create_silo_project()
-        .silo_id(silo_a.id)
+        .create_tenant_project()
+        .tenant_id(silo_a.default_tenant_id)
         .body(NewProject {
             name: "p1".to_string(),
             description: Some("alpha-side".to_string()),
@@ -259,8 +259,8 @@ async fn root_can_create_and_read_projects_in_any_silo() {
         .unwrap()
         .into_inner();
     let p_b = root
-        .create_silo_project()
-        .silo_id(silo_b.id)
+        .create_tenant_project()
+        .tenant_id(silo_b.default_tenant_id)
         .body(NewProject {
             name: "p1".to_string(), // same name in different silo: must succeed
             description: None,
@@ -272,8 +272,8 @@ async fn root_can_create_and_read_projects_in_any_silo() {
     assert_ne!(p_a.id, p_b.id);
 
     let listed_a = root
-        .list_silo_projects()
-        .silo_id(silo_a.id)
+        .list_tenant_projects()
+        .tenant_id(silo_a.default_tenant_id)
         .send()
         .await
         .unwrap()
@@ -330,8 +330,8 @@ async fn federated_user_can_act_in_own_silo_only() {
 
     // Tenant in alpha → can create a project in alpha.
     let proj = tenant
-        .create_silo_project()
-        .silo_id(silo_alpha.id)
+        .create_tenant_project()
+        .tenant_id(silo_alpha.default_tenant_id)
         .body(NewProject {
             name: "tenant-project".to_string(),
             description: None,
@@ -340,13 +340,13 @@ async fn federated_user_can_act_in_own_silo_only() {
         .await
         .expect("alpha-tenant should create a project in alpha")
         .into_inner();
-    assert_eq!(proj.silo_id, silo_alpha.id);
+    assert_eq!(proj.tenant_id, silo_alpha.default_tenant_id);
 
     // Same tenant → cannot create a project in beta. Must be 404
     // (cross-silo probe gets the same response as unknown silo).
     let err = tenant
-        .create_silo_project()
-        .silo_id(silo_beta.id)
+        .create_tenant_project()
+        .tenant_id(silo_beta.default_tenant_id)
         .body(NewProject {
             name: "intruder".to_string(),
             description: None,
@@ -358,8 +358,8 @@ async fn federated_user_can_act_in_own_silo_only() {
 
     // Tenant lists projects in alpha → sees the one they created.
     let listed = tenant
-        .list_silo_projects()
-        .silo_id(silo_alpha.id)
+        .list_tenant_projects()
+        .tenant_id(silo_alpha.default_tenant_id)
         .send()
         .await
         .unwrap()
@@ -369,8 +369,8 @@ async fn federated_user_can_act_in_own_silo_only() {
 
     // Tenant lists projects in beta → 404.
     let err = tenant
-        .list_silo_projects()
-        .silo_id(silo_beta.id)
+        .list_tenant_projects()
+        .tenant_id(silo_beta.default_tenant_id)
         .send()
         .await
         .expect_err("alpha-tenant must not enumerate beta");
@@ -410,8 +410,8 @@ async fn cross_silo_get_returns_404_not_403() {
         .unwrap()
         .into_inner();
     let beta_project = root
-        .create_silo_project()
-        .silo_id(silo_beta.id)
+        .create_tenant_project()
+        .tenant_id(silo_beta.default_tenant_id)
         .body(NewProject {
             name: "secret".to_string(),
             description: None,
@@ -439,8 +439,8 @@ async fn cross_silo_get_returns_404_not_403() {
     // because alpha-tenant is not in beta. The handler returns 404
     // even though beta_project.id is real and would resolve.
     let err = tenant
-        .get_silo_project()
-        .silo_id(silo_alpha.id)
+        .get_tenant_project()
+        .tenant_id(silo_alpha.default_tenant_id)
         .project_id(beta_project.id)
         .send()
         .await
@@ -468,8 +468,8 @@ async fn anonymous_cannot_reach_project_endpoints() {
 
     let anon = test.anonymous_client();
     let err = anon
-        .list_silo_projects()
-        .silo_id(silo.id)
+        .list_tenant_projects()
+        .tenant_id(silo.default_tenant_id)
         .send()
         .await
         .expect_err("anonymous list must be denied");

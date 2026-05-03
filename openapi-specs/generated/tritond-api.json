@@ -1287,1766 +1287,6 @@
         }
       }
     },
-    "/v2/silos/{silo_id}/projects": {
-      "get": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "List the projects inside a silo.",
-        "operationId": "list_silo_projects",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Project",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Project"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Create a project in a silo. Returns 409 if the project name",
-        "description": "is already in use within that silo.",
-        "operationId": "create_silo_project",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewProject"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Project"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}": {
-      "get": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Read a single project. Returns 404 when the project does not",
-        "description": "exist or belongs to a different silo (cross-silo probes do not learn that other silos exist).",
-        "operationId": "get_silo_project",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Project"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "projects"
-        ],
-        "summary": "Delete a project. Returns 404 when the project does not exist",
-        "description": "or belongs to a different silo.",
-        "operationId": "delete_silo_project",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/floating-ips": {
-      "get": {
-        "tags": [
-          "floating-ips"
-        ],
-        "summary": "List FloatingIps owned by a project.",
-        "operationId": "list_project_floating_ips",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FloatingIp",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FloatingIp"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "floating-ips"
-        ],
-        "summary": "Allocate a FloatingIp from the requested family's pool.",
-        "description": "Returns 409 if the name is already in use within the project. Returns 404 if the project does not exist or belongs to a different silo. The returned FloatingIp starts unattached.",
-        "operationId": "create_project_floating_ip",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewFloatingIp"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FloatingIp"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}": {
-      "get": {
-        "tags": [
-          "floating-ips"
-        ],
-        "summary": "Read a single FloatingIp. Returns 404 if the FloatingIp",
-        "description": "does not exist or belongs to a different silo or project.",
-        "operationId": "get_project_floating_ip",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "floating_ip_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FloatingIp"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "floating-ips"
-        ],
-        "summary": "Release a FloatingIp back to its pool. Returns 409 if the",
-        "description": "FloatingIp is currently attached (operator must detach first).",
-        "operationId": "delete_project_floating_ip",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "floating_ip_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach": {
-      "post": {
-        "tags": [
-          "floating-ips"
-        ],
-        "summary": "Atomically attach a FloatingIp to a NIC, replacing any",
-        "description": "existing attachment. The target NIC must live in the same silo + project as the FloatingIp; mismatch surfaces as 404.",
-        "operationId": "attach_project_floating_ip",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "floating_ip_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AttachFloatingIpRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FloatingIp"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach": {
-      "post": {
-        "tags": [
-          "floating-ips"
-        ],
-        "summary": "Detach a FloatingIp from its current NIC. Idempotent — a",
-        "description": "detach on an already-detached FloatingIp is a no-op that returns the current record.",
-        "operationId": "detach_project_floating_ip",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "floating_ip_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FloatingIp"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances": {
-      "get": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "List instances in a project.",
-        "operationId": "list_project_instances",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Instance",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Instance"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "Create an instance in a project.",
-        "description": "Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404 if any referenced resource (image, subnet, ssh-keys) does not exist or lives outside this silo/project. Returns 409 if the instance name is already taken in the project.\n\nPhase 0 ships synchronous lifecycle: the create handler transitions the new instance through Pending → Running before responding. A future slice introduces an async provisioning queue + stub executor; the API surface stays the same but tests will observe Pending-then-Running transitions instead of an instant Running.",
-        "operationId": "create_project_instance",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewInstance"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Instance"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}": {
-      "get": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "Read a single instance.",
-        "operationId": "get_project_instance",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Instance"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "Delete an instance. Returns 409 if the instance is not in",
-        "description": "a deletable state (must be Stopped or Failed); pass `?force=true` to override and delete from any state. Returns 404 if the instance does not exist or belongs to a different silo or project. The tritond record is cleared synchronously; the agent vmadm-deletes the SmartOS zone asynchronously via a `JobKind::Delete` job.",
-        "operationId": "delete_project_instance",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "query",
-            "name": "force",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks": {
-      "get": {
-        "tags": [
-          "disks"
-        ],
-        "summary": "List the Disks attached to an instance. Phase 0 produces",
-        "description": "exactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.",
-        "operationId": "list_instance_disks",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Disk",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Disk"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}": {
-      "get": {
-        "tags": [
-          "disks"
-        ],
-        "summary": "Read a single Disk. Returns 404 if the Disk does not exist",
-        "description": "or belongs to a different silo, project, or instance.",
-        "operationId": "get_instance_disk",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "disk_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics": {
-      "get": {
-        "tags": [
-          "nics"
-        ],
-        "summary": "List the NICs attached to an instance. Phase 0 produces",
-        "description": "exactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.",
-        "operationId": "list_instance_nics",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Nic",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Nic"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}": {
-      "get": {
-        "tags": [
-          "nics"
-        ],
-        "summary": "Read a single NIC. Returns 404 if the NIC does not exist or",
-        "description": "belongs to a different silo, project, or instance.",
-        "operationId": "get_instance_nic",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "nic_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Nic"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart": {
-      "post": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "Restart a running instance. Returns 409 if the instance is",
-        "description": "not in `Running` state.",
-        "operationId": "restart_project_instance",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Instance"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/start": {
-      "post": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "Start a stopped instance. Returns 409 if the instance is",
-        "description": "not in `Stopped` state.",
-        "operationId": "start_project_instance",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Instance"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/stop": {
-      "post": {
-        "tags": [
-          "instances"
-        ],
-        "summary": "Stop a running instance. Returns 409 if the instance is",
-        "description": "not in `Running` state.",
-        "operationId": "stop_project_instance",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instance_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Instance"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/quota": {
-      "get": {
-        "tags": [
-          "quotas"
-        ],
-        "summary": "Read a project's quota. Returns 404 when the project does",
-        "description": "not exist, lives in a different silo, or has no quota set (no record means \"unlimited\").",
-        "operationId": "get_project_quota",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Quota"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "quotas"
-        ],
-        "summary": "Set (or replace) the resource quota on a project. Returns",
-        "description": "404 when the project does not exist or belongs to a different silo. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.",
-        "operationId": "put_project_quota",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewQuota"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Quota"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "quotas"
-        ],
-        "summary": "Remove a project's quota (project becomes unlimited).",
-        "description": "Returns 404 when the project does not exist, lives in a different silo, or had no quota set.",
-        "operationId": "delete_project_quota",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/vpcs": {
-      "get": {
-        "tags": [
-          "vpcs"
-        ],
-        "summary": "List the VPCs inside a project. Returns 404 when the silo or",
-        "description": "project does not exist (or the project belongs to a different silo).",
-        "operationId": "list_project_vpcs",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Vpc",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Vpc"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "vpcs"
-        ],
-        "summary": "Create a VPC in a project. Returns 400 if neither `ipv4_block`",
-        "description": "nor `ipv6_block` is provided. Returns 409 if a VPC with the same name already exists in the project. The server assigns `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and `created_at`.",
-        "operationId": "create_project_vpc",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewVpc"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Vpc"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}": {
-      "get": {
-        "tags": [
-          "vpcs"
-        ],
-        "summary": "Read a single VPC. Returns 404 when the VPC does not exist or",
-        "description": "belongs to a different silo or project (cross-tenant probes do not learn that the resource exists).",
-        "operationId": "get_project_vpc",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "vpc_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Vpc"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "vpcs"
-        ],
-        "summary": "Delete a VPC. Returns 404 when the VPC does not exist or",
-        "description": "belongs to a different silo or project. Returns 409 if the VPC still has subnets attached — operators must clear subnets before deleting the parent VPC (Phase 0 has no cascade).",
-        "operationId": "delete_project_vpc",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "vpc_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
-      "get": {
-        "tags": [
-          "subnets"
-        ],
-        "summary": "List the subnets inside a VPC. Returns 404 when the silo,",
-        "description": "project, or VPC does not exist (or is in the wrong parent).",
-        "operationId": "list_vpc_subnets",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "vpc_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Subnet",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Subnet"
-                  }
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "subnets"
-        ],
-        "summary": "Create a subnet in a VPC. Returns 400 if neither",
-        "description": "`ipv4_block` nor `ipv6_block` is provided. Returns 409 if a subnet with the same name already exists in the VPC, if a CIDR is not contained in the parent VPC's matching-family CIDR, or if a CIDR overlaps an existing subnet's CIDR. The server assigns `id` and `created_at`.",
-        "operationId": "create_vpc_subnet",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "vpc_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewSubnet"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "successful creation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Subnet"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}": {
-      "get": {
-        "tags": [
-          "subnets"
-        ],
-        "summary": "Read a single subnet. Returns 404 when the subnet does not",
-        "description": "exist or belongs to a different silo, project, or VPC.",
-        "operationId": "get_vpc_subnet",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "subnet_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "vpc_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Subnet"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "subnets"
-        ],
-        "summary": "Delete a subnet. Returns 404 when the subnet does not exist",
-        "description": "or belongs to a different silo, project, or VPC.",
-        "operationId": "delete_vpc_subnet",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "subnet_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "vpc_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
     "/v2/silos/{silo_id}/ssh-keys": {
       "get": {
         "tags": [
@@ -3203,6 +1443,1766 @@
           {
             "in": "path",
             "name": "ssh_key_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "List the projects inside a tenant.",
+        "operationId": "list_tenant_projects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Project",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Create a project in a tenant. Returns 409 if the project",
+        "description": "name is already in use within that tenant.",
+        "operationId": "create_tenant_project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewProject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Read a single project. Returns 404 when the project does not",
+        "description": "exist or belongs to a different tenant (cross-tenant probes do not learn that other tenants exist).",
+        "operationId": "get_tenant_project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Delete a project. Returns 404 when the project does not exist",
+        "description": "or belongs to a different tenant.",
+        "operationId": "delete_tenant_project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips": {
+      "get": {
+        "tags": [
+          "floating-ips"
+        ],
+        "summary": "List FloatingIps owned by a project.",
+        "operationId": "list_project_floating_ips",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_FloatingIp",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FloatingIp"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "floating-ips"
+        ],
+        "summary": "Allocate a FloatingIp from the requested family's pool.",
+        "description": "Returns 409 if the name is already in use within the project. Returns 404 if the project does not exist or belongs to a different tenant. The returned FloatingIp starts unattached.",
+        "operationId": "create_project_floating_ip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewFloatingIp"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloatingIp"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}": {
+      "get": {
+        "tags": [
+          "floating-ips"
+        ],
+        "summary": "Read a single FloatingIp. Returns 404 if the FloatingIp",
+        "description": "does not exist or belongs to a different tenant or project.",
+        "operationId": "get_project_floating_ip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "floating_ip_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloatingIp"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "floating-ips"
+        ],
+        "summary": "Release a FloatingIp back to its pool. Returns 409 if the",
+        "description": "FloatingIp is currently attached (operator must detach first).",
+        "operationId": "delete_project_floating_ip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "floating_ip_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach": {
+      "post": {
+        "tags": [
+          "floating-ips"
+        ],
+        "summary": "Atomically attach a FloatingIp to a NIC, replacing any",
+        "description": "existing attachment. The target NIC must live in the same tenant + project as the FloatingIp; mismatch surfaces as 404.",
+        "operationId": "attach_project_floating_ip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "floating_ip_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachFloatingIpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloatingIp"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach": {
+      "post": {
+        "tags": [
+          "floating-ips"
+        ],
+        "summary": "Detach a FloatingIp from its current NIC. Idempotent — a",
+        "description": "detach on an already-detached FloatingIp is a no-op that returns the current record.",
+        "operationId": "detach_project_floating_ip",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "floating_ip_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloatingIp"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances": {
+      "get": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "List instances in a project.",
+        "operationId": "list_project_instances",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Instance",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Instance"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Create an instance in a project.",
+        "description": "Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404 if any referenced resource (image, subnet, ssh-keys) does not exist or lives outside this tenant/project (or, for image/ssh-key which remain silo-scoped in E-3, outside the tenant's silo). Returns 409 if the instance name is already taken in the project.\n\nPhase 0 ships synchronous lifecycle: the create handler transitions the new instance through Pending → Running before responding. A future slice introduces an async provisioning queue + stub executor; the API surface stays the same but tests will observe Pending-then-Running transitions instead of an instant Running.",
+        "operationId": "create_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewInstance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}": {
+      "get": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Read a single instance.",
+        "operationId": "get_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Delete an instance. Returns 409 if the instance is not in",
+        "description": "a deletable state (must be Stopped or Failed); pass `?force=true` to override and delete from any state. Returns 404 if the instance does not exist or belongs to a different tenant or project. The tritond record is cleared synchronously; the agent vmadm-deletes the SmartOS zone asynchronously via a `JobKind::Delete` job.",
+        "operationId": "delete_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks": {
+      "get": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "List the Disks attached to an instance. Phase 0 produces",
+        "description": "exactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.",
+        "operationId": "list_instance_disks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Disk",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Disk"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}": {
+      "get": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "Read a single Disk. Returns 404 if the Disk does not exist",
+        "description": "or belongs to a different tenant, project, or instance.",
+        "operationId": "get_instance_disk",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disk_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Disk"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics": {
+      "get": {
+        "tags": [
+          "nics"
+        ],
+        "summary": "List the NICs attached to an instance. Phase 0 produces",
+        "description": "exactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.",
+        "operationId": "list_instance_nics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Nic",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Nic"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}": {
+      "get": {
+        "tags": [
+          "nics"
+        ],
+        "summary": "Read a single NIC. Returns 404 if the NIC does not exist or",
+        "description": "belongs to a different tenant, project, or instance.",
+        "operationId": "get_instance_nic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "nic_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nic"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/restart": {
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Restart a running instance. Returns 409 if the instance is",
+        "description": "not in `Running` state.",
+        "operationId": "restart_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/start": {
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Start a stopped instance. Returns 409 if the instance is",
+        "description": "not in `Stopped` state.",
+        "operationId": "start_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/stop": {
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "Stop a running instance. Returns 409 if the instance is",
+        "description": "not in `Running` state.",
+        "operationId": "stop_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/quota": {
+      "get": {
+        "tags": [
+          "quotas"
+        ],
+        "summary": "Read a project's quota. Returns 404 when the project does",
+        "description": "not exist, lives in a different tenant, or has no quota set (no record means \"unlimited\").",
+        "operationId": "get_project_quota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quota"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "quotas"
+        ],
+        "summary": "Set (or replace) the resource quota on a project. Returns",
+        "description": "404 when the project does not exist or belongs to a different tenant. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.",
+        "operationId": "put_project_quota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewQuota"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quota"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "quotas"
+        ],
+        "summary": "Remove a project's quota (project becomes unlimited).",
+        "description": "Returns 404 when the project does not exist, lives in a different tenant, or had no quota set.",
+        "operationId": "delete_project_quota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs": {
+      "get": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "List the VPCs inside a project. Returns 404 when the tenant or",
+        "description": "project does not exist (or the project belongs to a different tenant).",
+        "operationId": "list_project_vpcs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Vpc",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vpc"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "Create a VPC in a project. Returns 400 if neither `ipv4_block`",
+        "description": "nor `ipv6_block` is provided. Returns 409 if a VPC with the same name already exists in the project. The server assigns `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and `created_at`.",
+        "operationId": "create_project_vpc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVpc"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vpc"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}": {
+      "get": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "Read a single VPC. Returns 404 when the VPC does not exist or",
+        "description": "belongs to a different tenant or project (cross-tenant probes do not learn that the resource exists).",
+        "operationId": "get_project_vpc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vpc"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "Delete a VPC. Returns 404 when the VPC does not exist or",
+        "description": "belongs to a different tenant or project. Returns 409 if the VPC still has subnets attached — operators must clear subnets before deleting the parent VPC (Phase 0 has no cascade).",
+        "operationId": "delete_project_vpc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
+      "get": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "List the subnets inside a VPC. Returns 404 when the tenant,",
+        "description": "project, or VPC does not exist (or is in the wrong parent).",
+        "operationId": "list_vpc_subnets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Subnet",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Subnet"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "Create a subnet in a VPC. Returns 400 if neither",
+        "description": "`ipv4_block` nor `ipv6_block` is provided. Returns 409 if a subnet with the same name already exists in the VPC, if a CIDR is not contained in the parent VPC's matching-family CIDR, or if a CIDR overlaps an existing subnet's CIDR. The server assigns `id` and `created_at`.",
+        "operationId": "create_vpc_subnet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSubnet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subnet"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}": {
+      "get": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "Read a single subnet. Returns 404 when the subnet does not",
+        "description": "exist or belongs to a different tenant, project, or VPC.",
+        "operationId": "get_vpc_subnet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subnet_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subnet"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "subnets"
+        ],
+        "summary": "Delete a subnet. Returns 404 when the subnet does not exist",
+        "description": "or belongs to a different tenant, project, or VPC.",
+        "operationId": "delete_vpc_subnet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subnet_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
             "required": true,
             "schema": {
               "type": "string",
@@ -3793,10 +3793,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "size_bytes": {
             "description": "Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size.",
             "type": "integer",
@@ -3809,6 +3805,10 @@
             "default": null,
             "type": "string",
             "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -3819,8 +3819,8 @@
           "kind",
           "name",
           "project_id",
-          "silo_id",
-          "size_bytes"
+          "size_bytes",
+          "tenant_id"
         ]
       },
       "DiskKind": {
@@ -3898,7 +3898,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
+          "tenant_id": {
             "type": "string",
             "format": "uuid"
           },
@@ -3914,7 +3914,7 @@
           "id",
           "name",
           "project_id",
-          "silo_id",
+          "tenant_id",
           "updated_at"
         ]
       },
@@ -4091,7 +4091,7 @@
             "format": "uuid"
           },
           "image_id": {
-            "description": "Boot image; must be in the same silo as the instance.",
+            "description": "Boot image; must be in the same silo as the instance's tenant. Images remain silo-scoped in E-3.",
             "type": "string",
             "format": "uuid"
           },
@@ -4116,10 +4116,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "ssh_key_ids": {
             "description": "SSH keys to inject into the instance's authorized_keys at first boot. Each key id must live in the same silo as the instance. May be empty (no key injection).",
             "type": "array",
@@ -4127,6 +4123,10 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
           },
           "updated_at": {
             "type": "string",
@@ -4144,8 +4144,8 @@
           "name",
           "primary_subnet_id",
           "project_id",
-          "silo_id",
           "ssh_key_ids",
+          "tenant_id",
           "updated_at"
         ]
       },
@@ -4588,7 +4588,7 @@
         ]
       },
       "NewInstance": {
-        "description": "Request body for creating an instance. The owning silo + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`.",
+        "description": "Request body for creating an instance. The owning tenant + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`.",
         "type": "object",
         "properties": {
           "cpu": {
@@ -4662,7 +4662,7 @@
         ]
       },
       "NewProject": {
-        "description": "Request body for creating a project. The owning silo comes from the URL path, not the body.",
+        "description": "Request body for creating a project. The owning tenant comes from the URL path, not the body.",
         "type": "object",
         "properties": {
           "description": {
@@ -4679,7 +4679,7 @@
         ]
       },
       "NewQuota": {
-        "description": "Request body for setting a project's quota. The owning silo and project come from the URL path. The server assigns `updated_at`.",
+        "description": "Request body for setting a project's quota. The owning tenant and project come from the URL path. The server assigns `updated_at`.",
         "type": "object",
         "properties": {
           "cpu_limit": {
@@ -4749,7 +4749,7 @@
         ]
       },
       "NewSubnet": {
-        "description": "Request body for creating a subnet. The owning silo, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
+        "description": "Request body for creating a subnet. The owning tenant, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
         "type": "object",
         "properties": {
           "description": {
@@ -4776,7 +4776,7 @@
         ]
       },
       "NewVpc": {
-        "description": "Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
+        "description": "Request body for creating a VPC. The owning tenant + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.",
         "type": "object",
         "properties": {
           "description": {
@@ -4841,11 +4841,11 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
+          "subnet_id": {
             "type": "string",
             "format": "uuid"
           },
-          "subnet_id": {
+          "tenant_id": {
             "type": "string",
             "format": "uuid"
           },
@@ -4861,8 +4861,8 @@
           "mac",
           "name",
           "project_id",
-          "silo_id",
           "subnet_id",
+          "tenant_id",
           "vpc_id"
         ]
       },
@@ -4991,7 +4991,7 @@
         ]
       },
       "Project": {
-        "description": "Sub-tenancy boundary inside a silo. Workload resources (instances, volumes, networks) eventually nest under projects. Phase 0e-c carries only the bare-minimum identifying fields; quota envelopes and per-project Cedar bindings come in later slices.",
+        "description": "Sub-tenancy boundary inside a tenant. Workload resources (instances, volumes, networks) nest under projects.\n\nE-3 re-parented projects from `silo_id` to `tenant_id`: the silo brand-level container owns one or more tenants; tenants own projects; projects own workloads. The owning silo, if needed, is derivable via [`Tenant::silo_id`].",
         "type": "object",
         "properties": {
           "created_at": {
@@ -5008,7 +5008,7 @@
           "name": {
             "type": "string"
           },
-          "silo_id": {
+          "tenant_id": {
             "type": "string",
             "format": "uuid"
           }
@@ -5018,7 +5018,7 @@
           "description",
           "id",
           "name",
-          "silo_id"
+          "tenant_id"
         ]
       },
       "ProvisioningBlueprint": {
@@ -5174,7 +5174,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
+          "tenant_id": {
             "type": "string",
             "format": "uuid"
           },
@@ -5189,7 +5189,7 @@
           "instance_limit",
           "memory_bytes",
           "project_id",
-          "silo_id",
+          "tenant_id",
           "updated_at"
         ]
       },
@@ -5389,7 +5389,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
+          "tenant_id": {
             "type": "string",
             "format": "uuid"
           },
@@ -5404,7 +5404,7 @@
           "id",
           "name",
           "project_id",
-          "silo_id",
+          "tenant_id",
           "vpc_id"
         ]
       },
@@ -5490,7 +5490,7 @@
         ]
       },
       "Vpc": {
-        "description": "Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.",
+        "description": "Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -5521,7 +5521,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "silo_id": {
+          "tenant_id": {
             "type": "string",
             "format": "uuid"
           },
@@ -5538,7 +5538,7 @@
           "id",
           "name",
           "project_id",
-          "silo_id",
+          "tenant_id",
           "vni"
         ]
       }

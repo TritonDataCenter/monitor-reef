@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{silo_id}/projects/{project_id}/quota` surface.
+//! `/v2/silos/{tenant_id}/projects/{project_id}/quota` surface.
 //!
 //! Exercises the singleton-per-project semantics:
 //!
@@ -16,7 +16,7 @@
 //! * DELETE on an unset quota → 404 (idempotent? no — explicit
 //!   "nothing to remove" surfaces).
 //! * Cross-silo PUT/GET/DELETE → 404 (defence-in-depth on
-//!   project_id, since the URL still has a silo_id).
+//!   project_id, since the URL still has a tenant_id).
 //! * Cross-project: each project's quota is independent; setting
 //!   one doesn't affect the other.
 
@@ -105,6 +105,9 @@ fn assert_status(err: progenitor_client::Error<tritond_client::types::Error>, wa
     assert_eq!(response.status().as_u16(), want);
 }
 
+/// Returns `(tenant_id, project_id)` — the tenant is the silo's
+/// default tenant created atomically with it (E-3 made projects
+/// tenant-scoped).
 async fn make_silo_and_project(root: &tritond_client::Client) -> (Uuid, Uuid) {
     let silo = root
         .create_silo()
@@ -117,8 +120,8 @@ async fn make_silo_and_project(root: &tritond_client::Client) -> (Uuid, Uuid) {
         .unwrap()
         .into_inner();
     let project = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -127,7 +130,7 @@ async fn make_silo_and_project(root: &tritond_client::Client) -> (Uuid, Uuid) {
         .await
         .unwrap()
         .into_inner();
-    (silo.id, project.id)
+    (silo.default_tenant_id, project.id)
 }
 
 fn standard_quota() -> NewQuota {
@@ -145,12 +148,12 @@ fn standard_quota() -> NewQuota {
 async fn quota_round_trip_within_project() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id) = make_silo_and_project(&root).await;
+    let (tenant_id, project_id) = make_silo_and_project(&root).await;
 
     // Initial GET → 404 (no quota set).
     let err = root
         .get_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -159,7 +162,7 @@ async fn quota_round_trip_within_project() {
 
     let quota = root
         .put_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(standard_quota())
         .send()
@@ -170,7 +173,7 @@ async fn quota_round_trip_within_project() {
 
     let read = root
         .get_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -183,7 +186,7 @@ async fn quota_round_trip_within_project() {
     req.cpu_limit = 32;
     let updated = root
         .put_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(req)
         .send()
@@ -193,14 +196,14 @@ async fn quota_round_trip_within_project() {
     assert_eq!(updated.cpu_limit, 32);
 
     root.delete_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
         .unwrap();
     let err = root
         .get_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -214,11 +217,11 @@ async fn quota_round_trip_within_project() {
 async fn delete_unset_quota_returns_404() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id) = make_silo_and_project(&root).await;
+    let (tenant_id, project_id) = make_silo_and_project(&root).await;
 
     let err = root
         .delete_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -248,7 +251,7 @@ async fn cross_silo_quota_put_returns_404() {
 
     let err = root
         .put_project_quota()
-        .silo_id(silo_b.id)
+        .tenant_id(silo_b.default_tenant_id)
         .project_id(project_id)
         .body(standard_quota())
         .send()
@@ -276,7 +279,7 @@ async fn quota_in_unknown_project_returns_404() {
 
     let err = root
         .put_project_quota()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(Uuid::new_v4())
         .body(standard_quota())
         .send()
@@ -302,8 +305,8 @@ async fn quotas_are_independent_per_project() {
         .unwrap()
         .into_inner();
     let proj_a = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "a".to_string(),
             description: None,
@@ -313,8 +316,8 @@ async fn quotas_are_independent_per_project() {
         .unwrap()
         .into_inner();
     let proj_b = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "b".to_string(),
             description: None,
@@ -327,7 +330,7 @@ async fn quotas_are_independent_per_project() {
     let mut req_a = standard_quota();
     req_a.cpu_limit = 8;
     root.put_project_quota()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_a.id)
         .body(req_a)
         .send()
@@ -337,7 +340,7 @@ async fn quotas_are_independent_per_project() {
     // proj_b still has no quota.
     let err = root
         .get_project_quota()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_b.id)
         .send()
         .await
@@ -347,7 +350,7 @@ async fn quotas_are_independent_per_project() {
     // proj_a's quota is the value we set.
     let read = root
         .get_project_quota()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(proj_a.id)
         .send()
         .await

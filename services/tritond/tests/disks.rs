@@ -140,7 +140,7 @@ async fn wait_for_lifecycle(
     loop {
         let inst = client
             .get_project_instance()
-            .silo_id(silo_id)
+            .tenant_id(silo_id)
             .project_id(project_id)
             .instance_id(instance_id)
             .send()
@@ -161,7 +161,7 @@ async fn wait_for_lifecycle(
 const SETTLE: Duration = Duration::from_secs(5);
 
 struct Fixture {
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     image_id: Uuid,
     subnet_id: Uuid,
@@ -180,8 +180,8 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     let project = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -192,7 +192,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .into_inner();
     let vpc = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .body(NewVpc {
             name: "v".to_string(),
@@ -206,7 +206,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .into_inner();
     let subnet = root
         .create_vpc_subnet()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .vpc_id(vpc.id)
         .body(NewSubnet {
@@ -250,7 +250,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     Fixture {
-        silo_id: silo.id,
+        tenant_id: silo.default_tenant_id,
         project_id: project.id,
         image_id: image.id,
         subnet_id: subnet.id,
@@ -280,7 +280,7 @@ async fn instance_create_produces_boot_disk_sized_to_image() {
     let fx = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
@@ -290,7 +290,7 @@ async fn instance_create_produces_boot_disk_sized_to_image() {
 
     let disks = root
         .list_instance_disks()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -315,7 +315,7 @@ async fn cross_instance_disk_get_returns_404() {
     let fx = build_fixture(&root).await;
     let inst_a = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
@@ -324,7 +324,7 @@ async fn cross_instance_disk_get_returns_404() {
         .into_inner();
     let inst_b = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "b"))
         .send()
@@ -333,7 +333,7 @@ async fn cross_instance_disk_get_returns_404() {
         .into_inner();
     let disks_a = root
         .list_instance_disks()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst_a.id)
         .send()
@@ -346,7 +346,7 @@ async fn cross_instance_disk_get_returns_404() {
     // defence-in-depth.
     let err = root
         .get_instance_disk()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst_b.id)
         .disk_id(disk_a.id)
@@ -365,7 +365,7 @@ async fn instance_delete_cascades_boot_disk() {
     let fx = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
@@ -374,7 +374,7 @@ async fn instance_delete_cascades_boot_disk() {
         .into_inner();
     let original_disk = root
         .list_instance_disks()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -383,17 +383,17 @@ async fn instance_delete_cascades_boot_disk() {
         .into_inner()[0]
         .clone();
 
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
     root.stop_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
         .await
         .unwrap();
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
     root.delete_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -403,7 +403,7 @@ async fn instance_delete_cascades_boot_disk() {
     // Boot disk is gone.
     let err = root
         .get_instance_disk()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .disk_id(original_disk.id)

@@ -135,22 +135,24 @@ pub struct IdpConfigView {
     pub audience: Option<String>,
 }
 
-/// Sub-tenancy boundary inside a silo. Workload resources
-/// (instances, volumes, networks) eventually nest under projects.
-/// Phase 0e-c carries only the bare-minimum identifying fields;
-/// quota envelopes and per-project Cedar bindings come in later
-/// slices.
+/// Sub-tenancy boundary inside a tenant. Workload resources
+/// (instances, volumes, networks) nest under projects.
+///
+/// E-3 re-parented projects from `silo_id` to `tenant_id`: the
+/// silo brand-level container owns one or more tenants; tenants
+/// own projects; projects own workloads. The owning silo, if
+/// needed, is derivable via [`Tenant::silo_id`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Project {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub name: String,
     pub description: String,
     pub created_at: DateTime<Utc>,
 }
 
-/// Request body for creating a project. The owning silo comes from
-/// the URL path, not the body.
+/// Request body for creating a project. The owning tenant comes
+/// from the URL path, not the body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewProject {
     pub name: String,
@@ -193,7 +195,7 @@ pub const VPC_VNI_RESERVED_CEILING: u32 = 4096;
 /// `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`.
 pub const VPC_VNI_MAX: u32 = 1 << 24;
 
-/// Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC
+/// Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC
 /// fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve
 /// VNI plus an optional primary IPv4 CIDR and optional primary IPv6
 /// CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or
@@ -203,7 +205,7 @@ pub const VPC_VNI_MAX: u32 = 1 << 24;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Vpc {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub name: String,
     pub description: String,
@@ -222,7 +224,7 @@ pub struct Vpc {
     pub created_at: DateTime<Utc>,
 }
 
-/// Request body for creating a VPC. The owning silo + project come
+/// Request body for creating a VPC. The owning tenant + project come
 /// from the URL path, not the body. The server assigns `id`, `vni`,
 /// and `created_at`. At least one of `ipv4_block` / `ipv6_block` must
 /// be `Some`; the API rejects requests with both `None`.
@@ -256,7 +258,7 @@ pub struct NewVpc {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Subnet {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub vpc_id: Uuid,
     pub name: String,
@@ -274,8 +276,8 @@ pub struct Subnet {
     pub created_at: DateTime<Utc>,
 }
 
-/// Request body for creating a subnet. The owning silo, project, and
-/// VPC come from the URL path. The server assigns `id` and
+/// Request body for creating a subnet. The owning tenant, project,
+/// and VPC come from the URL path. The server assigns `id` and
 /// `created_at`. At least one of `ipv4_block` / `ipv6_block` must be
 /// `Some`; the API rejects requests with both `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -727,7 +729,7 @@ mod derive_image_id_tests {
 /// counts are simple `u32`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Quota {
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     /// Maximum total vCPUs across all instances in the project.
     pub cpu_limit: u32,
@@ -742,8 +744,8 @@ pub struct Quota {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Request body for setting a project's quota. The owning silo and
-/// project come from the URL path. The server assigns `updated_at`.
+/// Request body for setting a project's quota. The owning tenant
+/// and project come from the URL path. The server assigns `updated_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewQuota {
     pub cpu_limit: u32,
@@ -857,11 +859,12 @@ pub enum LifecycleStateKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Instance {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub name: String,
     pub description: String,
-    /// Boot image; must be in the same silo as the instance.
+    /// Boot image; must be in the same silo as the instance's
+    /// tenant. Images remain silo-scoped in E-3.
     pub image_id: Uuid,
     /// Subnet the instance's primary NIC attaches to. Phase 0
     /// auto-creates a NIC at provisioning time; a future slice
@@ -881,7 +884,7 @@ pub struct Instance {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Request body for creating an instance. The owning silo +
+/// Request body for creating an instance. The owning tenant +
 /// project come from the URL path. The server assigns `id`,
 /// initial `lifecycle`, `created_at`, and `updated_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1093,7 +1096,7 @@ pub enum JobOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Nic {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub instance_id: Uuid,
     pub vpc_id: Uuid,
@@ -1233,7 +1236,7 @@ pub struct InstanceCreateResult {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Disk {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub instance_id: Uuid,
     pub name: String,
@@ -1322,7 +1325,7 @@ pub struct FloatingIpAttachment {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FloatingIp {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub name: String,
     pub description: String,

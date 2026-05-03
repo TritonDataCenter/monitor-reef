@@ -1318,8 +1318,8 @@ pub mod types {
     #[doc = "    \"kind\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
-    #[doc = "    \"size_bytes\""]
+    #[doc = "    \"size_bytes\","]
+    #[doc = "    \"tenant_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created_at\": {"]
@@ -1347,10 +1347,6 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
-    #[doc = "    },"]
     #[doc = "    \"size_bytes\": {"]
     #[doc = "      \"description\": \"Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -1363,6 +1359,10 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -1380,12 +1380,12 @@ pub mod types {
         pub kind: DiskKind,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
         #[doc = "Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size."]
         pub size_bytes: u64,
         #[doc = "Image the boot disk was sourced from. `Some` for `Boot` disks that came from a registered image; `None` for blank `Data` disks (Phase 0 has no callers that produce `None`, but the type allows it for the multi-disk slice)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub source_image_id: ::std::option::Option<::uuid::Uuid>,
+        pub tenant_id: ::uuid::Uuid,
     }
 
     impl Disk {
@@ -1544,7 +1544,7 @@ pub mod types {
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
+    #[doc = "    \"tenant_id\","]
     #[doc = "    \"updated_at\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -1586,7 +1586,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
+    #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -1612,7 +1612,7 @@ pub mod types {
         pub id: ::uuid::Uuid,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
         pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
@@ -1932,8 +1932,8 @@ pub mod types {
     #[doc = "    \"name\","]
     #[doc = "    \"primary_subnet_id\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
     #[doc = "    \"ssh_key_ids\","]
+    #[doc = "    \"tenant_id\","]
     #[doc = "    \"updated_at\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -1955,7 +1955,7 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"image_id\": {"]
-    #[doc = "      \"description\": \"Boot image; must be in the same silo as the instance.\","]
+    #[doc = "      \"description\": \"Boot image; must be in the same silo as the instance's tenant. Images remain silo-scoped in E-3.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -1980,10 +1980,6 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
-    #[doc = "    },"]
     #[doc = "    \"ssh_key_ids\": {"]
     #[doc = "      \"description\": \"SSH keys to inject into the instance's authorized_keys at first boot. Each key id must live in the same silo as the instance. May be empty (no key injection).\","]
     #[doc = "      \"type\": \"array\","]
@@ -1991,6 +1987,10 @@ pub mod types {
     #[doc = "        \"type\": \"string\","]
     #[doc = "        \"format\": \"uuid\""]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"updated_at\": {"]
     #[doc = "      \"type\": \"string\","]
@@ -2009,7 +2009,7 @@ pub mod types {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
-        #[doc = "Boot image; must be in the same silo as the instance."]
+        #[doc = "Boot image; must be in the same silo as the instance's tenant. Images remain silo-scoped in E-3."]
         pub image_id: ::uuid::Uuid,
         pub lifecycle: LifecycleState,
         #[doc = "Memory budget in bytes."]
@@ -2018,9 +2018,9 @@ pub mod types {
         #[doc = "Subnet the instance's primary NIC attaches to. Phase 0 auto-creates a NIC at provisioning time; a future slice adds explicit NIC records that operators can manage separately. Subnet must live in a VPC inside this project."]
         pub primary_subnet_id: ::uuid::Uuid,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
         #[doc = "SSH keys to inject into the instance's authorized_keys at first boot. Each key id must live in the same silo as the instance. May be empty (no key injection)."]
         pub ssh_key_ids: ::std::vec::Vec<::uuid::Uuid>,
+        pub tenant_id: ::uuid::Uuid,
         pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
@@ -2716,13 +2716,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for creating an instance. The owning silo + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`."]
+    #[doc = "Request body for creating an instance. The owning tenant + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for creating an instance. The owning silo + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`.\","]
+    #[doc = "  \"description\": \"Request body for creating an instance. The owning tenant + project come from the URL path. The server assigns `id`, initial `lifecycle`, `created_at`, and `updated_at`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"cpu\","]
@@ -2845,13 +2845,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for creating a project. The owning silo comes from the URL path, not the body."]
+    #[doc = "Request body for creating a project. The owning tenant comes from the URL path, not the body."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for creating a project. The owning silo comes from the URL path, not the body.\","]
+    #[doc = "  \"description\": \"Request body for creating a project. The owning tenant comes from the URL path, not the body.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\""]
@@ -2885,13 +2885,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for setting a project's quota. The owning silo and project come from the URL path. The server assigns `updated_at`."]
+    #[doc = "Request body for setting a project's quota. The owning tenant and project come from the URL path. The server assigns `updated_at`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for setting a project's quota. The owning silo and project come from the URL path. The server assigns `updated_at`.\","]
+    #[doc = "  \"description\": \"Request body for setting a project's quota. The owning tenant and project come from the URL path. The server assigns `updated_at`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"cpu_limit\","]
@@ -3025,13 +3025,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for creating a subnet. The owning silo, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`."]
+    #[doc = "Request body for creating a subnet. The owning tenant, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for creating a subnet. The owning silo, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.\","]
+    #[doc = "  \"description\": \"Request body for creating a subnet. The owning tenant, project, and VPC come from the URL path. The server assigns `id` and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\""]
@@ -3081,13 +3081,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`."]
+    #[doc = "Request body for creating a VPC. The owning tenant + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for creating a VPC. The owning silo + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.\","]
+    #[doc = "  \"description\": \"Request body for creating a VPC. The owning tenant + project come from the URL path, not the body. The server assigns `id`, `vni`, and `created_at`. At least one of `ipv4_block` / `ipv6_block` must be `Some`; the API rejects requests with both `None`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\""]
@@ -3152,8 +3152,8 @@ pub mod types {
     #[doc = "    \"mac\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
     #[doc = "    \"subnet_id\","]
+    #[doc = "    \"tenant_id\","]
     #[doc = "    \"vpc_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -3196,11 +3196,11 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
+    #[doc = "    \"subnet_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"subnet_id\": {"]
+    #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -3229,8 +3229,8 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub primary_ipv6: ::std::option::Option<::std::net::Ipv6Addr>,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
         pub subnet_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
         pub vpc_id: ::uuid::Uuid,
     }
 
@@ -3424,20 +3424,20 @@ pub mod types {
         ServerError { message: ::std::string::String },
     }
 
-    #[doc = "Sub-tenancy boundary inside a silo. Workload resources (instances, volumes, networks) eventually nest under projects. Phase 0e-c carries only the bare-minimum identifying fields; quota envelopes and per-project Cedar bindings come in later slices."]
+    #[doc = "Sub-tenancy boundary inside a tenant. Workload resources (instances, volumes, networks) nest under projects.\n\nE-3 re-parented projects from `silo_id` to `tenant_id`: the silo brand-level container owns one or more tenants; tenants own projects; projects own workloads. The owning silo, if needed, is derivable via [`Tenant::silo_id`]."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Sub-tenancy boundary inside a silo. Workload resources (instances, volumes, networks) eventually nest under projects. Phase 0e-c carries only the bare-minimum identifying fields; quota envelopes and per-project Cedar bindings come in later slices.\","]
+    #[doc = "  \"description\": \"Sub-tenancy boundary inside a tenant. Workload resources (instances, volumes, networks) nest under projects.\\n\\nE-3 re-parented projects from `silo_id` to `tenant_id`: the silo brand-level container owns one or more tenants; tenants own projects; projects own workloads. The owning silo, if needed, is derivable via [`Tenant::silo_id`].\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
     #[doc = "    \"description\","]
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
-    #[doc = "    \"silo_id\""]
+    #[doc = "    \"tenant_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created_at\": {"]
@@ -3454,7 +3454,7 @@ pub mod types {
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
+    #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
@@ -3470,7 +3470,7 @@ pub mod types {
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
         pub name: ::std::string::String,
-        pub silo_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
     }
 
     impl Project {
@@ -3701,7 +3701,7 @@ pub mod types {
     #[doc = "    \"instance_limit\","]
     #[doc = "    \"memory_bytes\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
+    #[doc = "    \"tenant_id\","]
     #[doc = "    \"updated_at\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -3733,7 +3733,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
+    #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -3758,7 +3758,7 @@ pub mod types {
         #[doc = "Maximum total memory across all instances in the project, in bytes."]
         pub memory_bytes: u64,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
         pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
@@ -4099,7 +4099,7 @@ pub mod types {
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
+    #[doc = "    \"tenant_id\","]
     #[doc = "    \"vpc_id\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -4135,7 +4135,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
+    #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -4162,7 +4162,7 @@ pub mod types {
         pub ipv6_block: ::std::option::Option<::std::string::String>,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
         pub vpc_id: ::uuid::Uuid,
     }
 
@@ -4296,13 +4296,13 @@ pub mod types {
         },
     }
 
-    #[doc = "Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices."]
+    #[doc = "Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Tenant VPC. Project-scoped (Phase 1 URL shape). Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.\","]
+    #[doc = "  \"description\": \"Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -4310,7 +4310,7 @@ pub mod types {
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
-    #[doc = "    \"silo_id\","]
+    #[doc = "    \"tenant_id\","]
     #[doc = "    \"vni\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -4346,7 +4346,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
+    #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -4375,7 +4375,7 @@ pub mod types {
         pub ipv6_block: ::std::option::Option<::std::string::String>,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
-        pub silo_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
         #[doc = "Geneve Virtual Network Identifier. Server-assigned at create time, drawn from `[VPC_VNI_RESERVED_CEILING, VPC_VNI_MAX)`, unique rack-wide."]
         pub vni: u32,
     }
@@ -5616,10 +5616,10 @@ pub mod types {
             kind: ::std::result::Result<super::DiskKind, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             size_bytes: ::std::result::Result<u64, ::std::string::String>,
             source_image_id:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
         impl ::std::default::Default for Disk {
@@ -5632,9 +5632,9 @@ pub mod types {
                     kind: Err("no value supplied for kind".to_string()),
                     name: Err("no value supplied for name".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
                     size_bytes: Err("no value supplied for size_bytes".to_string()),
                     source_image_id: Ok(Default::default()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                 }
             }
         }
@@ -5710,16 +5710,6 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.silo_id = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
-                self
-            }
             pub fn size_bytes<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<u64>,
@@ -5740,6 +5730,16 @@ pub mod types {
                 });
                 self
             }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<Disk> for super::Disk {
@@ -5753,9 +5753,9 @@ pub mod types {
                     kind: value.kind?,
                     name: value.name?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
                     size_bytes: value.size_bytes?,
                     source_image_id: value.source_image_id?,
+                    tenant_id: value.tenant_id?,
                 })
             }
         }
@@ -5770,9 +5770,9 @@ pub mod types {
                     kind: Ok(value.kind),
                     name: Ok(value.name),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
                     size_bytes: Ok(value.size_bytes),
                     source_image_id: Ok(value.source_image_id),
+                    tenant_id: Ok(value.tenant_id),
                 }
             }
         }
@@ -5868,7 +5868,7 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             updated_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -5885,7 +5885,7 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                     updated_at: Err("no value supplied for updated_at".to_string()),
                 }
             }
@@ -5962,14 +5962,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
+            pub fn tenant_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
                 T::Error: ::std::fmt::Display,
             {
-                self.silo_id = value
+                self.tenant_id = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
             pub fn updated_at<T>(mut self, value: T) -> Self
@@ -5997,7 +5997,7 @@ pub mod types {
                     id: value.id?,
                     name: value.name?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
+                    tenant_id: value.tenant_id?,
                     updated_at: value.updated_at?,
                 })
             }
@@ -6013,7 +6013,7 @@ pub mod types {
                     id: Ok(value.id),
                     name: Ok(value.name),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
+                    tenant_id: Ok(value.tenant_id),
                     updated_at: Ok(value.updated_at),
                 }
             }
@@ -6515,9 +6515,9 @@ pub mod types {
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             primary_subnet_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             ssh_key_ids:
                 ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             updated_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -6537,8 +6537,8 @@ pub mod types {
                     name: Err("no value supplied for name".to_string()),
                     primary_subnet_id: Err("no value supplied for primary_subnet_id".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
                     ssh_key_ids: Err("no value supplied for ssh_key_ids".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                     updated_at: Err("no value supplied for updated_at".to_string()),
                 }
             }
@@ -6645,16 +6645,6 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.silo_id = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
-                self
-            }
             pub fn ssh_key_ids<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
@@ -6663,6 +6653,16 @@ pub mod types {
                 self.ssh_key_ids = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for ssh_key_ids: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
             pub fn updated_at<T>(mut self, value: T) -> Self
@@ -6693,8 +6693,8 @@ pub mod types {
                     name: value.name?,
                     primary_subnet_id: value.primary_subnet_id?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
                     ssh_key_ids: value.ssh_key_ids?,
+                    tenant_id: value.tenant_id?,
                     updated_at: value.updated_at?,
                 })
             }
@@ -6713,8 +6713,8 @@ pub mod types {
                     name: Ok(value.name),
                     primary_subnet_id: Ok(value.primary_subnet_id),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
                     ssh_key_ids: Ok(value.ssh_key_ids),
+                    tenant_id: Ok(value.tenant_id),
                     updated_at: Ok(value.updated_at),
                 }
             }
@@ -7922,8 +7922,8 @@ pub mod types {
                 ::std::string::String,
             >,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             subnet_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
@@ -7938,8 +7938,8 @@ pub mod types {
                     primary_ipv4: Ok(Default::default()),
                     primary_ipv6: Ok(Default::default()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
                     subnet_id: Err("no value supplied for subnet_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                     vpc_id: Err("no value supplied for vpc_id".to_string()),
                 }
             }
@@ -8026,16 +8026,6 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.silo_id = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
-                self
-            }
             pub fn subnet_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -8044,6 +8034,16 @@ pub mod types {
                 self.subnet_id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for subnet_id: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
             pub fn vpc_id<T>(mut self, value: T) -> Self
@@ -8070,8 +8070,8 @@ pub mod types {
                     primary_ipv4: value.primary_ipv4?,
                     primary_ipv6: value.primary_ipv6?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
                     subnet_id: value.subnet_id?,
+                    tenant_id: value.tenant_id?,
                     vpc_id: value.vpc_id?,
                 })
             }
@@ -8088,8 +8088,8 @@ pub mod types {
                     primary_ipv4: Ok(value.primary_ipv4),
                     primary_ipv6: Ok(value.primary_ipv6),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
                     subnet_id: Ok(value.subnet_id),
+                    tenant_id: Ok(value.tenant_id),
                     vpc_id: Ok(value.vpc_id),
                 }
             }
@@ -8163,7 +8163,7 @@ pub mod types {
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
         impl ::std::default::Default for Project {
@@ -8173,7 +8173,7 @@ pub mod types {
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                 }
             }
         }
@@ -8219,14 +8219,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
+            pub fn tenant_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
                 T::Error: ::std::fmt::Display,
             {
-                self.silo_id = value
+                self.tenant_id = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
         }
@@ -8241,7 +8241,7 @@ pub mod types {
                     description: value.description?,
                     id: value.id?,
                     name: value.name?,
-                    silo_id: value.silo_id?,
+                    tenant_id: value.tenant_id?,
                 })
             }
         }
@@ -8253,7 +8253,7 @@ pub mod types {
                     description: Ok(value.description),
                     id: Ok(value.id),
                     name: Ok(value.name),
-                    silo_id: Ok(value.silo_id),
+                    tenant_id: Ok(value.tenant_id),
                 }
             }
         }
@@ -8575,7 +8575,7 @@ pub mod types {
             instance_limit: ::std::result::Result<u32, ::std::string::String>,
             memory_bytes: ::std::result::Result<u64, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             updated_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
@@ -8590,7 +8590,7 @@ pub mod types {
                     instance_limit: Err("no value supplied for instance_limit".to_string()),
                     memory_bytes: Err("no value supplied for memory_bytes".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                     updated_at: Err("no value supplied for updated_at".to_string()),
                 }
             }
@@ -8647,14 +8647,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
+            pub fn tenant_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
                 T::Error: ::std::fmt::Display,
             {
-                self.silo_id = value
+                self.tenant_id = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
             pub fn updated_at<T>(mut self, value: T) -> Self
@@ -8680,7 +8680,7 @@ pub mod types {
                     instance_limit: value.instance_limit?,
                     memory_bytes: value.memory_bytes?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
+                    tenant_id: value.tenant_id?,
                     updated_at: value.updated_at?,
                 })
             }
@@ -8694,7 +8694,7 @@ pub mod types {
                     instance_limit: Ok(value.instance_limit),
                     memory_bytes: Ok(value.memory_bytes),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
+                    tenant_id: Ok(value.tenant_id),
                     updated_at: Ok(value.updated_at),
                 }
             }
@@ -9258,7 +9258,7 @@ pub mod types {
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
@@ -9272,7 +9272,7 @@ pub mod types {
                     ipv6_block: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                     vpc_id: Err("no value supplied for vpc_id".to_string()),
                 }
             }
@@ -9349,14 +9349,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
+            pub fn tenant_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
                 T::Error: ::std::fmt::Display,
             {
-                self.silo_id = value
+                self.tenant_id = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
             pub fn vpc_id<T>(mut self, value: T) -> Self
@@ -9384,7 +9384,7 @@ pub mod types {
                     ipv6_block: value.ipv6_block?,
                     name: value.name?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
+                    tenant_id: value.tenant_id?,
                     vpc_id: value.vpc_id?,
                 })
             }
@@ -9400,7 +9400,7 @@ pub mod types {
                     ipv6_block: Ok(value.ipv6_block),
                     name: Ok(value.name),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
+                    tenant_id: Ok(value.tenant_id),
                     vpc_id: Ok(value.vpc_id),
                 }
             }
@@ -9517,7 +9517,7 @@ pub mod types {
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             vni: ::std::result::Result<u32, ::std::string::String>,
         }
 
@@ -9531,7 +9531,7 @@ pub mod types {
                     ipv6_block: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
                     vni: Err("no value supplied for vni".to_string()),
                 }
             }
@@ -9608,14 +9608,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
+            pub fn tenant_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
                 T::Error: ::std::fmt::Display,
             {
-                self.silo_id = value
+                self.tenant_id = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
                 self
             }
             pub fn vni<T>(mut self, value: T) -> Self
@@ -9641,7 +9641,7 @@ pub mod types {
                     ipv6_block: value.ipv6_block?,
                     name: value.name?,
                     project_id: value.project_id?,
-                    silo_id: value.silo_id?,
+                    tenant_id: value.tenant_id?,
                     vni: value.vni?,
                 })
             }
@@ -9657,7 +9657,7 @@ pub mod types {
                     ipv6_block: Ok(value.ipv6_block),
                     name: Ok(value.name),
                     project_id: Ok(value.project_id),
-                    silo_id: Ok(value.silo_id),
+                    tenant_id: Ok(value.tenant_id),
                     vni: Ok(value.vni),
                 }
             }
@@ -9897,166 +9897,6 @@ impl Client {
         builder::DeleteSiloImage::new(self)
     }
 
-    #[doc = "List the projects inside a silo\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects`\n\n```ignore\nlet response = client.list_silo_projects()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
-    pub fn list_silo_projects(&self) -> builder::ListSiloProjects<'_> {
-        builder::ListSiloProjects::new(self)
-    }
-
-    #[doc = "Create a project in a silo. Returns 409 if the project name\n\nis already in use within that silo.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects`\n\n```ignore\nlet response = client.create_silo_project()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn create_silo_project(&self) -> builder::CreateSiloProject<'_> {
-        builder::CreateSiloProject::new(self)
-    }
-
-    #[doc = "Read a single project. Returns 404 when the project does not\n\nexist or belongs to a different silo (cross-silo probes do not learn that other silos exist).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}`\n\n```ignore\nlet response = client.get_silo_project()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn get_silo_project(&self) -> builder::GetSiloProject<'_> {
-        builder::GetSiloProject::new(self)
-    }
-
-    #[doc = "Delete a project. Returns 404 when the project does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}`\n\n```ignore\nlet response = client.delete_silo_project()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_silo_project(&self) -> builder::DeleteSiloProject<'_> {
-        builder::DeleteSiloProject::new(self)
-    }
-
-    #[doc = "List FloatingIps owned by a project\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.list_project_floating_ips()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn list_project_floating_ips(&self) -> builder::ListProjectFloatingIps<'_> {
-        builder::ListProjectFloatingIps::new(self)
-    }
-
-    #[doc = "Allocate a FloatingIp from the requested family's pool\n\nReturns 409 if the name is already in use within the project. Returns 404 if the project does not exist or belongs to a different silo. The returned FloatingIp starts unattached.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.create_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn create_project_floating_ip(&self) -> builder::CreateProjectFloatingIp<'_> {
-        builder::CreateProjectFloatingIp::new(self)
-    }
-
-    #[doc = "Read a single FloatingIp. Returns 404 if the FloatingIp\n\ndoes not exist or belongs to a different silo or project.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.get_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
-    pub fn get_project_floating_ip(&self) -> builder::GetProjectFloatingIp<'_> {
-        builder::GetProjectFloatingIp::new(self)
-    }
-
-    #[doc = "Release a FloatingIp back to its pool. Returns 409 if the\n\nFloatingIp is currently attached (operator must detach first).\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.delete_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_project_floating_ip(&self) -> builder::DeleteProjectFloatingIp<'_> {
-        builder::DeleteProjectFloatingIp::new(self)
-    }
-
-    #[doc = "Atomically attach a FloatingIp to a NIC, replacing any\n\nexisting attachment. The target NIC must live in the same silo + project as the FloatingIp; mismatch surfaces as 404.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`\n\n```ignore\nlet response = client.attach_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn attach_project_floating_ip(&self) -> builder::AttachProjectFloatingIp<'_> {
-        builder::AttachProjectFloatingIp::new(self)
-    }
-
-    #[doc = "Detach a FloatingIp from its current NIC. Idempotent — a\n\ndetach on an already-detached FloatingIp is a no-op that returns the current record.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`\n\n```ignore\nlet response = client.detach_project_floating_ip()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
-    pub fn detach_project_floating_ip(&self) -> builder::DetachProjectFloatingIp<'_> {
-        builder::DetachProjectFloatingIp::new(self)
-    }
-
-    #[doc = "List instances in a project\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances`\n\n```ignore\nlet response = client.list_project_instances()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn list_project_instances(&self) -> builder::ListProjectInstances<'_> {
-        builder::ListProjectInstances::new(self)
-    }
-
-    #[doc = "Create an instance in a project\n\nReturns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404 if any referenced resource (image, subnet, ssh-keys) does not exist or lives outside this silo/project. Returns 409 if the instance name is already taken in the project.\n\nPhase 0 ships synchronous lifecycle: the create handler transitions the new instance through Pending → Running before responding. A future slice introduces an async provisioning queue + stub executor; the API surface stays the same but tests will observe Pending-then-Running transitions instead of an instant Running.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances`\n\n```ignore\nlet response = client.create_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn create_project_instance(&self) -> builder::CreateProjectInstance<'_> {
-        builder::CreateProjectInstance::new(self)
-    }
-
-    #[doc = "Read a single instance\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.get_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
-    pub fn get_project_instance(&self) -> builder::GetProjectInstance<'_> {
-        builder::GetProjectInstance::new(self)
-    }
-
-    #[doc = "Delete an instance. Returns 409 if the instance is not in\n\na deletable state (must be Stopped or Failed); pass `?force=true` to override and delete from any state. Returns 404 if the instance does not exist or belongs to a different silo or project. The tritond record is cleared synchronously; the agent vmadm-deletes the SmartOS zone asynchronously via a `JobKind::Delete` job.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.delete_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .force(force)\n    .send()\n    .await;\n```"]
-    pub fn delete_project_instance(&self) -> builder::DeleteProjectInstance<'_> {
-        builder::DeleteProjectInstance::new(self)
-    }
-
-    #[doc = "List the Disks attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks`\n\n```ignore\nlet response = client.list_instance_disks()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
-    pub fn list_instance_disks(&self) -> builder::ListInstanceDisks<'_> {
-        builder::ListInstanceDisks::new(self)
-    }
-
-    #[doc = "Read a single Disk. Returns 404 if the Disk does not exist\n\nor belongs to a different silo, project, or instance.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`\n\n```ignore\nlet response = client.get_instance_disk()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .disk_id(disk_id)\n    .send()\n    .await;\n```"]
-    pub fn get_instance_disk(&self) -> builder::GetInstanceDisk<'_> {
-        builder::GetInstanceDisk::new(self)
-    }
-
-    #[doc = "List the NICs attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`\n\n```ignore\nlet response = client.list_instance_nics()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
-    pub fn list_instance_nics(&self) -> builder::ListInstanceNics<'_> {
-        builder::ListInstanceNics::new(self)
-    }
-
-    #[doc = "Read a single NIC. Returns 404 if the NIC does not exist or\n\nbelongs to a different silo, project, or instance.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}`\n\n```ignore\nlet response = client.get_instance_nic()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .nic_id(nic_id)\n    .send()\n    .await;\n```"]
-    pub fn get_instance_nic(&self) -> builder::GetInstanceNic<'_> {
-        builder::GetInstanceNic::new(self)
-    }
-
-    #[doc = "Restart a running instance. Returns 409 if the instance is\n\nnot in `Running` state.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart`\n\n```ignore\nlet response = client.restart_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
-    pub fn restart_project_instance(&self) -> builder::RestartProjectInstance<'_> {
-        builder::RestartProjectInstance::new(self)
-    }
-
-    #[doc = "Start a stopped instance. Returns 409 if the instance is\n\nnot in `Stopped` state.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/start`\n\n```ignore\nlet response = client.start_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
-    pub fn start_project_instance(&self) -> builder::StartProjectInstance<'_> {
-        builder::StartProjectInstance::new(self)
-    }
-
-    #[doc = "Stop a running instance. Returns 409 if the instance is\n\nnot in `Running` state.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/stop`\n\n```ignore\nlet response = client.stop_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
-    pub fn stop_project_instance(&self) -> builder::StopProjectInstance<'_> {
-        builder::StopProjectInstance::new(self)
-    }
-
-    #[doc = "Read a project's quota. Returns 404 when the project does\n\nnot exist, lives in a different silo, or has no quota set (no record means \"unlimited\").\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.get_project_quota()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn get_project_quota(&self) -> builder::GetProjectQuota<'_> {
-        builder::GetProjectQuota::new(self)
-    }
-
-    #[doc = "Set (or replace) the resource quota on a project. Returns\n\n404 when the project does not exist or belongs to a different silo. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.\n\nSends a `PUT` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.put_project_quota()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn put_project_quota(&self) -> builder::PutProjectQuota<'_> {
-        builder::PutProjectQuota::new(self)
-    }
-
-    #[doc = "Remove a project's quota (project becomes unlimited)\n\nReturns 404 when the project does not exist, lives in a different silo, or had no quota set.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.delete_project_quota()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_project_quota(&self) -> builder::DeleteProjectQuota<'_> {
-        builder::DeleteProjectQuota::new(self)
-    }
-
-    #[doc = "List the VPCs inside a project. Returns 404 when the silo or\n\nproject does not exist (or the project belongs to a different silo).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
-    pub fn list_project_vpcs(&self) -> builder::ListProjectVpcs<'_> {
-        builder::ListProjectVpcs::new(self)
-    }
-
-    #[doc = "Create a VPC in a project. Returns 400 if neither `ipv4_block`\n\nnor `ipv6_block` is provided. Returns 409 if a VPC with the same name already exists in the project. The server assigns `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and `created_at`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.create_project_vpc()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn create_project_vpc(&self) -> builder::CreateProjectVpc<'_> {
-        builder::CreateProjectVpc::new(self)
-    }
-
-    #[doc = "Read a single VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different silo or project (cross-tenant probes do not learn that the resource exists).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.get_project_vpc()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
-    pub fn get_project_vpc(&self) -> builder::GetProjectVpc<'_> {
-        builder::GetProjectVpc::new(self)
-    }
-
-    #[doc = "Delete a VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different silo or project. Returns 409 if the VPC still has subnets attached — operators must clear subnets before deleting the parent VPC (Phase 0 has no cascade).\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_project_vpc()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_project_vpc(&self) -> builder::DeleteProjectVpc<'_> {
-        builder::DeleteProjectVpc::new(self)
-    }
-
-    #[doc = "List the subnets inside a VPC. Returns 404 when the silo\n\nproject, or VPC does not exist (or is in the wrong parent).\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.list_vpc_subnets()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
-    pub fn list_vpc_subnets(&self) -> builder::ListVpcSubnets<'_> {
-        builder::ListVpcSubnets::new(self)
-    }
-
-    #[doc = "Create a subnet in a VPC. Returns 400 if neither\n\n`ipv4_block` nor `ipv6_block` is provided. Returns 409 if a subnet with the same name already exists in the VPC, if a CIDR is not contained in the parent VPC's matching-family CIDR, or if a CIDR overlaps an existing subnet's CIDR. The server assigns `id` and `created_at`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.create_vpc_subnet()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn create_vpc_subnet(&self) -> builder::CreateVpcSubnet<'_> {
-        builder::CreateVpcSubnet::new(self)
-    }
-
-    #[doc = "Read a single subnet. Returns 404 when the subnet does not\n\nexist or belongs to a different silo, project, or VPC.\n\nSends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.get_vpc_subnet()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
-    pub fn get_vpc_subnet(&self) -> builder::GetVpcSubnet<'_> {
-        builder::GetVpcSubnet::new(self)
-    }
-
-    #[doc = "Delete a subnet. Returns 404 when the subnet does not exist\n\nor belongs to a different silo, project, or VPC.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.delete_vpc_subnet()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_vpc_subnet(&self) -> builder::DeleteVpcSubnet<'_> {
-        builder::DeleteVpcSubnet::new(self)
-    }
-
     #[doc = "List the SSH keys registered in a silo's catalog\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_ssh_keys(&self) -> builder::ListSiloSshKeys<'_> {
         builder::ListSiloSshKeys::new(self)
@@ -10075,6 +9915,166 @@ impl Client {
     #[doc = "Delete an SSH key. Returns 404 when the key does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}`\n\n```ignore\nlet response = client.delete_silo_ssh_key()\n    .silo_id(silo_id)\n    .ssh_key_id(ssh_key_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_ssh_key(&self) -> builder::DeleteSiloSshKey<'_> {
         builder::DeleteSiloSshKey::new(self)
+    }
+
+    #[doc = "List the projects inside a tenant\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.list_tenant_projects()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn list_tenant_projects(&self) -> builder::ListTenantProjects<'_> {
+        builder::ListTenantProjects::new(self)
+    }
+
+    #[doc = "Create a project in a tenant. Returns 409 if the project\n\nname is already in use within that tenant.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.create_tenant_project()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_tenant_project(&self) -> builder::CreateTenantProject<'_> {
+        builder::CreateTenantProject::new(self)
+    }
+
+    #[doc = "Read a single project. Returns 404 when the project does not\n\nexist or belongs to a different tenant (cross-tenant probes do not learn that other tenants exist).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}`\n\n```ignore\nlet response = client.get_tenant_project()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn get_tenant_project(&self) -> builder::GetTenantProject<'_> {
+        builder::GetTenantProject::new(self)
+    }
+
+    #[doc = "Delete a project. Returns 404 when the project does not exist\n\nor belongs to a different tenant.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}`\n\n```ignore\nlet response = client.delete_tenant_project()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_tenant_project(&self) -> builder::DeleteTenantProject<'_> {
+        builder::DeleteTenantProject::new(self)
+    }
+
+    #[doc = "List FloatingIps owned by a project\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.list_project_floating_ips()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_floating_ips(&self) -> builder::ListProjectFloatingIps<'_> {
+        builder::ListProjectFloatingIps::new(self)
+    }
+
+    #[doc = "Allocate a FloatingIp from the requested family's pool\n\nReturns 409 if the name is already in use within the project. Returns 404 if the project does not exist or belongs to a different tenant. The returned FloatingIp starts unattached.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips`\n\n```ignore\nlet response = client.create_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_floating_ip(&self) -> builder::CreateProjectFloatingIp<'_> {
+        builder::CreateProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Read a single FloatingIp. Returns 404 if the FloatingIp\n\ndoes not exist or belongs to a different tenant or project.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.get_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_floating_ip(&self) -> builder::GetProjectFloatingIp<'_> {
+        builder::GetProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Release a FloatingIp back to its pool. Returns 409 if the\n\nFloatingIp is currently attached (operator must detach first).\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`\n\n```ignore\nlet response = client.delete_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_floating_ip(&self) -> builder::DeleteProjectFloatingIp<'_> {
+        builder::DeleteProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Atomically attach a FloatingIp to a NIC, replacing any\n\nexisting attachment. The target NIC must live in the same tenant + project as the FloatingIp; mismatch surfaces as 404.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`\n\n```ignore\nlet response = client.attach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn attach_project_floating_ip(&self) -> builder::AttachProjectFloatingIp<'_> {
+        builder::AttachProjectFloatingIp::new(self)
+    }
+
+    #[doc = "Detach a FloatingIp from its current NIC. Idempotent — a\n\ndetach on an already-detached FloatingIp is a no-op that returns the current record.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`\n\n```ignore\nlet response = client.detach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
+    pub fn detach_project_floating_ip(&self) -> builder::DetachProjectFloatingIp<'_> {
+        builder::DetachProjectFloatingIp::new(self)
+    }
+
+    #[doc = "List instances in a project\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances`\n\n```ignore\nlet response = client.list_project_instances()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_instances(&self) -> builder::ListProjectInstances<'_> {
+        builder::ListProjectInstances::new(self)
+    }
+
+    #[doc = "Create an instance in a project\n\nReturns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404 if any referenced resource (image, subnet, ssh-keys) does not exist or lives outside this tenant/project (or, for image/ssh-key which remain silo-scoped in E-3, outside the tenant's silo). Returns 409 if the instance name is already taken in the project.\n\nPhase 0 ships synchronous lifecycle: the create handler transitions the new instance through Pending → Running before responding. A future slice introduces an async provisioning queue + stub executor; the API surface stays the same but tests will observe Pending-then-Running transitions instead of an instant Running.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances`\n\n```ignore\nlet response = client.create_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_instance(&self) -> builder::CreateProjectInstance<'_> {
+        builder::CreateProjectInstance::new(self)
+    }
+
+    #[doc = "Read a single instance\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.get_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_instance(&self) -> builder::GetProjectInstance<'_> {
+        builder::GetProjectInstance::new(self)
+    }
+
+    #[doc = "Delete an instance. Returns 409 if the instance is not in\n\na deletable state (must be Stopped or Failed); pass `?force=true` to override and delete from any state. Returns 404 if the instance does not exist or belongs to a different tenant or project. The tritond record is cleared synchronously; the agent vmadm-deletes the SmartOS zone asynchronously via a `JobKind::Delete` job.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.delete_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .force(force)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_instance(&self) -> builder::DeleteProjectInstance<'_> {
+        builder::DeleteProjectInstance::new(self)
+    }
+
+    #[doc = "List the Disks attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks`\n\n```ignore\nlet response = client.list_instance_disks()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn list_instance_disks(&self) -> builder::ListInstanceDisks<'_> {
+        builder::ListInstanceDisks::new(self)
+    }
+
+    #[doc = "Read a single Disk. Returns 404 if the Disk does not exist\n\nor belongs to a different tenant, project, or instance.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`\n\n```ignore\nlet response = client.get_instance_disk()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .disk_id(disk_id)\n    .send()\n    .await;\n```"]
+    pub fn get_instance_disk(&self) -> builder::GetInstanceDisk<'_> {
+        builder::GetInstanceDisk::new(self)
+    }
+
+    #[doc = "List the NICs attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics`\n\n```ignore\nlet response = client.list_instance_nics()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn list_instance_nics(&self) -> builder::ListInstanceNics<'_> {
+        builder::ListInstanceNics::new(self)
+    }
+
+    #[doc = "Read a single NIC. Returns 404 if the NIC does not exist or\n\nbelongs to a different tenant, project, or instance.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}`\n\n```ignore\nlet response = client.get_instance_nic()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .nic_id(nic_id)\n    .send()\n    .await;\n```"]
+    pub fn get_instance_nic(&self) -> builder::GetInstanceNic<'_> {
+        builder::GetInstanceNic::new(self)
+    }
+
+    #[doc = "Restart a running instance. Returns 409 if the instance is\n\nnot in `Running` state.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/restart`\n\n```ignore\nlet response = client.restart_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn restart_project_instance(&self) -> builder::RestartProjectInstance<'_> {
+        builder::RestartProjectInstance::new(self)
+    }
+
+    #[doc = "Start a stopped instance. Returns 409 if the instance is\n\nnot in `Stopped` state.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/start`\n\n```ignore\nlet response = client.start_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn start_project_instance(&self) -> builder::StartProjectInstance<'_> {
+        builder::StartProjectInstance::new(self)
+    }
+
+    #[doc = "Stop a running instance. Returns 409 if the instance is\n\nnot in `Running` state.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/stop`\n\n```ignore\nlet response = client.stop_project_instance()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn stop_project_instance(&self) -> builder::StopProjectInstance<'_> {
+        builder::StopProjectInstance::new(self)
+    }
+
+    #[doc = "Read a project's quota. Returns 404 when the project does\n\nnot exist, lives in a different tenant, or has no quota set (no record means \"unlimited\").\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.get_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_quota(&self) -> builder::GetProjectQuota<'_> {
+        builder::GetProjectQuota::new(self)
+    }
+
+    #[doc = "Set (or replace) the resource quota on a project. Returns\n\n404 when the project does not exist or belongs to a different tenant. The server assigns `updated_at`. Quotas are not enforced in Phase 0; the record is stored for the eventual instance-create flow to consult.\n\nSends a `PUT` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.put_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_project_quota(&self) -> builder::PutProjectQuota<'_> {
+        builder::PutProjectQuota::new(self)
+    }
+
+    #[doc = "Remove a project's quota (project becomes unlimited)\n\nReturns 404 when the project does not exist, lives in a different tenant, or had no quota set.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`\n\n```ignore\nlet response = client.delete_project_quota()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_quota(&self) -> builder::DeleteProjectQuota<'_> {
+        builder::DeleteProjectQuota::new(self)
+    }
+
+    #[doc = "List the VPCs inside a project. Returns 404 when the tenant or\n\nproject does not exist (or the project belongs to a different tenant).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_vpcs(&self) -> builder::ListProjectVpcs<'_> {
+        builder::ListProjectVpcs::new(self)
+    }
+
+    #[doc = "Create a VPC in a project. Returns 400 if neither `ipv4_block`\n\nnor `ipv6_block` is provided. Returns 409 if a VPC with the same name already exists in the project. The server assigns `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and `created_at`.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.create_project_vpc()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_vpc(&self) -> builder::CreateProjectVpc<'_> {
+        builder::CreateProjectVpc::new(self)
+    }
+
+    #[doc = "Read a single VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different tenant or project (cross-tenant probes do not learn that the resource exists).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.get_project_vpc()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn get_project_vpc(&self) -> builder::GetProjectVpc<'_> {
+        builder::GetProjectVpc::new(self)
+    }
+
+    #[doc = "Delete a VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different tenant or project. Returns 409 if the VPC still has subnets attached — operators must clear subnets before deleting the parent VPC (Phase 0 has no cascade).\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_project_vpc()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_project_vpc(&self) -> builder::DeleteProjectVpc<'_> {
+        builder::DeleteProjectVpc::new(self)
+    }
+
+    #[doc = "List the subnets inside a VPC. Returns 404 when the tenant\n\nproject, or VPC does not exist (or is in the wrong parent).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.list_vpc_subnets()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn list_vpc_subnets(&self) -> builder::ListVpcSubnets<'_> {
+        builder::ListVpcSubnets::new(self)
+    }
+
+    #[doc = "Create a subnet in a VPC. Returns 400 if neither\n\n`ipv4_block` nor `ipv6_block` is provided. Returns 409 if a subnet with the same name already exists in the VPC, if a CIDR is not contained in the parent VPC's matching-family CIDR, or if a CIDR overlaps an existing subnet's CIDR. The server assigns `id` and `created_at`.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.create_vpc_subnet()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_vpc_subnet(&self) -> builder::CreateVpcSubnet<'_> {
+        builder::CreateVpcSubnet::new(self)
+    }
+
+    #[doc = "Read a single subnet. Returns 404 when the subnet does not\n\nexist or belongs to a different tenant, project, or VPC.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.get_vpc_subnet()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
+    pub fn get_vpc_subnet(&self) -> builder::GetVpcSubnet<'_> {
+        builder::GetVpcSubnet::new(self)
+    }
+
+    #[doc = "Delete a subnet. Returns 404 when the subnet does not exist\n\nor belongs to a different tenant, project, or VPC.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.delete_vpc_subnet()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_subnet(&self) -> builder::DeleteVpcSubnet<'_> {
+        builder::DeleteVpcSubnet::new(self)
     }
 }
 
@@ -12591,3328 +12591,6 @@ pub mod builder {
         }
     }
 
-    #[doc = "Builder for [`Client::list_silo_projects`]\n\n[`Client::list_silo_projects`]: super::Client::list_silo_projects"]
-    #[derive(Debug, Clone)]
-    pub struct ListSiloProjects<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListSiloProjects<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Project>>, Error<types::Error>> {
-            let Self { client, silo_id } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_silo_projects",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::create_silo_project`]\n\n[`Client::create_silo_project`]: super::Client::create_silo_project"]
-    #[derive(Debug, Clone)]
-    pub struct CreateSiloProject<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewProject, String>,
-    }
-
-    impl<'a> CreateSiloProject<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewProject>,
-            <V as std::convert::TryInto<types::NewProject>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewProject` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewProject) -> types::builder::NewProject,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Project>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewProject::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "create_silo_project",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_silo_project`]\n\n[`Client::get_silo_project`]: super::Client::get_silo_project"]
-    #[derive(Debug, Clone)]
-    pub struct GetSiloProject<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetSiloProject<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Project>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_silo_project",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_silo_project`]\n\n[`Client::delete_silo_project`]: super::Client::delete_silo_project"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteSiloProject<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteSiloProject<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_silo_project",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::list_project_floating_ips`]\n\n[`Client::list_project_floating_ips`]: super::Client::list_project_floating_ips"]
-    #[derive(Debug, Clone)]
-    pub struct ListProjectFloatingIps<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListProjectFloatingIps<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FloatingIp>>, Error<types::Error>>
-        {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/floating-ips",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_project_floating_ips",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::create_project_floating_ip`]\n\n[`Client::create_project_floating_ip`]: super::Client::create_project_floating_ip"]
-    #[derive(Debug, Clone)]
-    pub struct CreateProjectFloatingIp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewFloatingIp, String>,
-    }
-
-    impl<'a> CreateProjectFloatingIp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewFloatingIp>,
-            <V as std::convert::TryInto<types::NewFloatingIp>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewFloatingIp` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewFloatingIp) -> types::builder::NewFloatingIp,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewFloatingIp::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/floating-ips",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "create_project_floating_ip",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_project_floating_ip`]\n\n[`Client::get_project_floating_ip`]: super::Client::get_project_floating_ip"]
-    #[derive(Debug, Clone)]
-    pub struct GetProjectFloatingIp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        floating_ip_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetProjectFloatingIp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn floating_ip_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.floating_ip_id = value.try_into().map_err(|_| {
-                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
-            });
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                floating_ip_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/floating-ips/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&floating_ip_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_project_floating_ip",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_project_floating_ip`]\n\n[`Client::delete_project_floating_ip`]: super::Client::delete_project_floating_ip"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteProjectFloatingIp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        floating_ip_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteProjectFloatingIp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn floating_ip_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.floating_ip_id = value.try_into().map_err(|_| {
-                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
-            });
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                floating_ip_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/floating-ips/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&floating_ip_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_project_floating_ip",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::attach_project_floating_ip`]\n\n[`Client::attach_project_floating_ip`]: super::Client::attach_project_floating_ip"]
-    #[derive(Debug, Clone)]
-    pub struct AttachProjectFloatingIp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        floating_ip_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::AttachFloatingIpRequest, String>,
-    }
-
-    impl<'a> AttachProjectFloatingIp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn floating_ip_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.floating_ip_id = value.try_into().map_err(|_| {
-                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
-            });
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::AttachFloatingIpRequest>,
-            <V as std::convert::TryInto<types::AttachFloatingIpRequest>>::Error: std::fmt::Display,
-        {
-            self.body = value.try_into().map(From::from).map_err(|s| {
-                format!(
-                    "conversion to `AttachFloatingIpRequest` for body failed: {}",
-                    s
-                )
-            });
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(
-                    types::builder::AttachFloatingIpRequest,
-                ) -> types::builder::AttachFloatingIpRequest,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                floating_ip_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| {
-                    types::AttachFloatingIpRequest::try_from(v).map_err(|e| e.to_string())
-                })
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/floating-ips/{}/attach",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&floating_ip_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "attach_project_floating_ip",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::detach_project_floating_ip`]\n\n[`Client::detach_project_floating_ip`]: super::Client::detach_project_floating_ip"]
-    #[derive(Debug, Clone)]
-    pub struct DetachProjectFloatingIp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        floating_ip_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DetachProjectFloatingIp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn floating_ip_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.floating_ip_id = value.try_into().map_err(|_| {
-                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
-            });
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                floating_ip_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/floating-ips/{}/detach",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&floating_ip_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "detach_project_floating_ip",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::list_project_instances`]\n\n[`Client::list_project_instances`]: super::Client::list_project_instances"]
-    #[derive(Debug, Clone)]
-    pub struct ListProjectInstances<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListProjectInstances<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Instance>>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_project_instances",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::create_project_instance`]\n\n[`Client::create_project_instance`]: super::Client::create_project_instance"]
-    #[derive(Debug, Clone)]
-    pub struct CreateProjectInstance<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewInstance, String>,
-    }
-
-    impl<'a> CreateProjectInstance<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewInstance>,
-            <V as std::convert::TryInto<types::NewInstance>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewInstance` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewInstance) -> types::builder::NewInstance,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewInstance::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "create_project_instance",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_project_instance`]\n\n[`Client::get_project_instance`]: super::Client::get_project_instance"]
-    #[derive(Debug, Clone)]
-    pub struct GetProjectInstance<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetProjectInstance<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_project_instance",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_project_instance`]\n\n[`Client::delete_project_instance`]: super::Client::delete_project_instance"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteProjectInstance<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-        force: Result<Option<bool>, String>,
-    }
-
-    impl<'a> DeleteProjectInstance<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-                force: Ok(None),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        pub fn force<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<bool>,
-        {
-            self.force = value
-                .try_into()
-                .map(Some)
-                .map_err(|_| "conversion to `bool` for force failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-                force,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let force = force.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .query(&progenitor_client::QueryParam::new("force", &force))
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_project_instance",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::list_instance_disks`]\n\n[`Client::list_instance_disks`]: super::Client::list_instance_disks"]
-    #[derive(Debug, Clone)]
-    pub struct ListInstanceDisks<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListInstanceDisks<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Disk>>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/disks",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_instance_disks",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_instance_disk`]\n\n[`Client::get_instance_disk`]: super::Client::get_instance_disk"]
-    #[derive(Debug, Clone)]
-    pub struct GetInstanceDisk<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-        disk_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetInstanceDisk<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-                disk_id: Err("disk_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        pub fn disk_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.disk_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for disk_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-                disk_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let disk_id = disk_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/disks/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-                encode_path(&disk_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_instance_disk",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::list_instance_nics`]\n\n[`Client::list_instance_nics`]: super::Client::list_instance_nics"]
-    #[derive(Debug, Clone)]
-    pub struct ListInstanceNics<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListInstanceNics<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Nic>>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/nics",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_instance_nics",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_instance_nic`]\n\n[`Client::get_instance_nic`]: super::Client::get_instance_nic"]
-    #[derive(Debug, Clone)]
-    pub struct GetInstanceNic<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-        nic_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetInstanceNic<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-                nic_id: Err("nic_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        pub fn nic_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.nic_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for nic_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Nic>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-                nic_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let nic_id = nic_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/nics/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-                encode_path(&nic_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_instance_nic",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::restart_project_instance`]\n\n[`Client::restart_project_instance`]: super::Client::restart_project_instance"]
-    #[derive(Debug, Clone)]
-    pub struct RestartProjectInstance<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> RestartProjectInstance<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/restart",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "restart_project_instance",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::start_project_instance`]\n\n[`Client::start_project_instance`]: super::Client::start_project_instance"]
-    #[derive(Debug, Clone)]
-    pub struct StartProjectInstance<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> StartProjectInstance<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/start`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/start",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "start_project_instance",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::stop_project_instance`]\n\n[`Client::stop_project_instance`]: super::Client::stop_project_instance"]
-    #[derive(Debug, Clone)]
-    pub struct StopProjectInstance<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        instance_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> StopProjectInstance<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                instance_id: Err("instance_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn instance_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.instance_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/stop`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                instance_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/instances/{}/stop",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&instance_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "stop_project_instance",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_project_quota`]\n\n[`Client::get_project_quota`]: super::Client::get_project_quota"]
-    #[derive(Debug, Clone)]
-    pub struct GetProjectQuota<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetProjectQuota<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/quota",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_project_quota",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::put_project_quota`]\n\n[`Client::put_project_quota`]: super::Client::put_project_quota"]
-    #[derive(Debug, Clone)]
-    pub struct PutProjectQuota<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewQuota, String>,
-    }
-
-    impl<'a> PutProjectQuota<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewQuota>,
-            <V as std::convert::TryInto<types::NewQuota>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewQuota` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewQuota) -> types::builder::NewQuota,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `PUT` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewQuota::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/quota",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .put(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "put_project_quota",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_project_quota`]\n\n[`Client::delete_project_quota`]: super::Client::delete_project_quota"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteProjectQuota<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteProjectQuota<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/quota`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/quota",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_project_quota",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::list_project_vpcs`]\n\n[`Client::list_project_vpcs`]: super::Client::list_project_vpcs"]
-    #[derive(Debug, Clone)]
-    pub struct ListProjectVpcs<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListProjectVpcs<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Vpc>>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_project_vpcs",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::create_project_vpc`]\n\n[`Client::create_project_vpc`]: super::Client::create_project_vpc"]
-    #[derive(Debug, Clone)]
-    pub struct CreateProjectVpc<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewVpc, String>,
-    }
-
-    impl<'a> CreateProjectVpc<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewVpc>,
-            <V as std::convert::TryInto<types::NewVpc>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewVpc` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewVpc) -> types::builder::NewVpc,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewVpc::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "create_project_vpc",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_project_vpc`]\n\n[`Client::get_project_vpc`]: super::Client::get_project_vpc"]
-    #[derive(Debug, Clone)]
-    pub struct GetProjectVpc<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        vpc_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetProjectVpc<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                vpc_id: Err("vpc_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn vpc_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.vpc_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                vpc_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&vpc_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_project_vpc",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_project_vpc`]\n\n[`Client::delete_project_vpc`]: super::Client::delete_project_vpc"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteProjectVpc<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        vpc_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteProjectVpc<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                vpc_id: Err("vpc_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn vpc_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.vpc_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                vpc_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&vpc_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_project_vpc",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::list_vpc_subnets`]\n\n[`Client::list_vpc_subnets`]: super::Client::list_vpc_subnets"]
-    #[derive(Debug, Clone)]
-    pub struct ListVpcSubnets<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        vpc_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> ListVpcSubnets<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                vpc_id: Err("vpc_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn vpc_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.vpc_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Subnet>>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                vpc_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs/{}/subnets",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&vpc_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "list_vpc_subnets",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::create_vpc_subnet`]\n\n[`Client::create_vpc_subnet`]: super::Client::create_vpc_subnet"]
-    #[derive(Debug, Clone)]
-    pub struct CreateVpcSubnet<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        vpc_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewSubnet, String>,
-    }
-
-    impl<'a> CreateVpcSubnet<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                vpc_id: Err("vpc_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn vpc_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.vpc_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewSubnet>,
-            <V as std::convert::TryInto<types::NewSubnet>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewSubnet` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewSubnet) -> types::builder::NewSubnet,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                vpc_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewSubnet::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs/{}/subnets",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&vpc_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "create_vpc_subnet",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_vpc_subnet`]\n\n[`Client::get_vpc_subnet`]: super::Client::get_vpc_subnet"]
-    #[derive(Debug, Clone)]
-    pub struct GetVpcSubnet<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        vpc_id: Result<::uuid::Uuid, String>,
-        subnet_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetVpcSubnet<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                vpc_id: Err("vpc_id was not initialized".to_string()),
-                subnet_id: Err("subnet_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn vpc_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.vpc_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
-            self
-        }
-
-        pub fn subnet_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.subnet_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for subnet_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                vpc_id,
-                subnet_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
-            let subnet_id = subnet_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs/{}/subnets/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&vpc_id.to_string()),
-                encode_path(&subnet_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_vpc_subnet",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_vpc_subnet`]\n\n[`Client::delete_vpc_subnet`]: super::Client::delete_vpc_subnet"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteVpcSubnet<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        project_id: Result<::uuid::Uuid, String>,
-        vpc_id: Result<::uuid::Uuid, String>,
-        subnet_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteVpcSubnet<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                project_id: Err("project_id was not initialized".to_string()),
-                vpc_id: Err("vpc_id was not initialized".to_string()),
-                subnet_id: Err("subnet_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn project_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.project_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
-            self
-        }
-
-        pub fn vpc_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.vpc_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
-            self
-        }
-
-        pub fn subnet_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.subnet_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for subnet_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                project_id,
-                vpc_id,
-                subnet_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let project_id = project_id.map_err(Error::InvalidRequest)?;
-            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
-            let subnet_id = subnet_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/projects/{}/vpcs/{}/subnets/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&project_id.to_string()),
-                encode_path(&vpc_id.to_string()),
-                encode_path(&subnet_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_vpc_subnet",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
     #[doc = "Builder for [`Client::list_silo_ssh_keys`]\n\n[`Client::list_silo_ssh_keys`]: super::Client::list_silo_ssh_keys"]
     #[derive(Debug, Clone)]
     pub struct ListSiloSshKeys<'a> {
@@ -16239,6 +12917,3328 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_tenant_projects`]\n\n[`Client::list_tenant_projects`]: super::Client::list_tenant_projects"]
+    #[derive(Debug, Clone)]
+    pub struct ListTenantProjects<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListTenantProjects<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Project>>, Error<types::Error>> {
+            let Self { client, tenant_id } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_tenant_projects",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_tenant_project`]\n\n[`Client::create_tenant_project`]: super::Client::create_tenant_project"]
+    #[derive(Debug, Clone)]
+    pub struct CreateTenantProject<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewProject, String>,
+    }
+
+    impl<'a> CreateTenantProject<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewProject>,
+            <V as std::convert::TryInto<types::NewProject>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewProject` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewProject) -> types::builder::NewProject,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Project>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewProject::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_tenant_project",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_tenant_project`]\n\n[`Client::get_tenant_project`]: super::Client::get_tenant_project"]
+    #[derive(Debug, Clone)]
+    pub struct GetTenantProject<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetTenantProject<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Project>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_tenant_project",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_tenant_project`]\n\n[`Client::delete_tenant_project`]: super::Client::delete_tenant_project"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteTenantProject<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteTenantProject<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_tenant_project",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_project_floating_ips`]\n\n[`Client::list_project_floating_ips`]: super::Client::list_project_floating_ips"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectFloatingIps<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectFloatingIps<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::FloatingIp>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/floating-ips",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_floating_ips",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_floating_ip`]\n\n[`Client::create_project_floating_ip`]: super::Client::create_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewFloatingIp, String>,
+    }
+
+    impl<'a> CreateProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewFloatingIp>,
+            <V as std::convert::TryInto<types::NewFloatingIp>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewFloatingIp` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewFloatingIp) -> types::builder::NewFloatingIp,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewFloatingIp::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/floating-ips",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_floating_ip`]\n\n[`Client::get_project_floating_ip`]: super::Client::get_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                floating_ip_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/floating-ips/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_floating_ip`]\n\n[`Client::delete_project_floating_ip`]: super::Client::delete_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                floating_ip_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/floating-ips/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::attach_project_floating_ip`]\n\n[`Client::attach_project_floating_ip`]: super::Client::attach_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct AttachProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::AttachFloatingIpRequest, String>,
+    }
+
+    impl<'a> AttachProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::AttachFloatingIpRequest>,
+            <V as std::convert::TryInto<types::AttachFloatingIpRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `AttachFloatingIpRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::AttachFloatingIpRequest,
+                ) -> types::builder::AttachFloatingIpRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                floating_ip_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::AttachFloatingIpRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/floating-ips/{}/attach",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "attach_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::detach_project_floating_ip`]\n\n[`Client::detach_project_floating_ip`]: super::Client::detach_project_floating_ip"]
+    #[derive(Debug, Clone)]
+    pub struct DetachProjectFloatingIp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        floating_ip_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DetachProjectFloatingIp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                floating_ip_id: Err("floating_ip_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn floating_ip_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.floating_ip_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for floating_ip_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FloatingIp>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                floating_ip_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let floating_ip_id = floating_ip_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/floating-ips/{}/detach",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&floating_ip_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "detach_project_floating_ip",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_project_instances`]\n\n[`Client::list_project_instances`]: super::Client::list_project_instances"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectInstances<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectInstances<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Instance>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_instances",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_instance`]\n\n[`Client::create_project_instance`]: super::Client::create_project_instance"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectInstance<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewInstance, String>,
+    }
+
+    impl<'a> CreateProjectInstance<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewInstance>,
+            <V as std::convert::TryInto<types::NewInstance>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewInstance` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewInstance) -> types::builder::NewInstance,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewInstance::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_instance",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_instance`]\n\n[`Client::get_project_instance`]: super::Client::get_project_instance"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectInstance<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectInstance<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_instance",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_instance`]\n\n[`Client::delete_project_instance`]: super::Client::delete_project_instance"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectInstance<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        force: Result<Option<bool>, String>,
+    }
+
+    impl<'a> DeleteProjectInstance<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                force: Ok(None),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn force<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.force = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for force failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+                force,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let force = force.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("force", &force))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_instance",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_instance_disks`]\n\n[`Client::list_instance_disks`]: super::Client::list_instance_disks"]
+    #[derive(Debug, Clone)]
+    pub struct ListInstanceDisks<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListInstanceDisks<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Disk>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/disks",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_instance_disks",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_instance_disk`]\n\n[`Client::get_instance_disk`]: super::Client::get_instance_disk"]
+    #[derive(Debug, Clone)]
+    pub struct GetInstanceDisk<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        disk_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetInstanceDisk<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                disk_id: Err("disk_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn disk_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.disk_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for disk_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+                disk_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let disk_id = disk_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/disks/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+                encode_path(&disk_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_instance_disk",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_instance_nics`]\n\n[`Client::list_instance_nics`]: super::Client::list_instance_nics"]
+    #[derive(Debug, Clone)]
+    pub struct ListInstanceNics<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListInstanceNics<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Nic>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/nics",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_instance_nics",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_instance_nic`]\n\n[`Client::get_instance_nic`]: super::Client::get_instance_nic"]
+    #[derive(Debug, Clone)]
+    pub struct GetInstanceNic<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        nic_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetInstanceNic<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                nic_id: Err("nic_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn nic_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.nic_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for nic_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Nic>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+                nic_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let nic_id = nic_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/nics/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+                encode_path(&nic_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_instance_nic",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::restart_project_instance`]\n\n[`Client::restart_project_instance`]: super::Client::restart_project_instance"]
+    #[derive(Debug, Clone)]
+    pub struct RestartProjectInstance<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> RestartProjectInstance<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/restart`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/restart",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "restart_project_instance",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::start_project_instance`]\n\n[`Client::start_project_instance`]: super::Client::start_project_instance"]
+    #[derive(Debug, Clone)]
+    pub struct StartProjectInstance<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> StartProjectInstance<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/start`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/start",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "start_project_instance",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::stop_project_instance`]\n\n[`Client::stop_project_instance`]: super::Client::stop_project_instance"]
+    #[derive(Debug, Clone)]
+    pub struct StopProjectInstance<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> StopProjectInstance<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/stop`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Instance>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/stop",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "stop_project_instance",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_quota`]\n\n[`Client::get_project_quota`]: super::Client::get_project_quota"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectQuota<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectQuota<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/quota",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_quota",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::put_project_quota`]\n\n[`Client::put_project_quota`]: super::Client::put_project_quota"]
+    #[derive(Debug, Clone)]
+    pub struct PutProjectQuota<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewQuota, String>,
+    }
+
+    impl<'a> PutProjectQuota<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewQuota>,
+            <V as std::convert::TryInto<types::NewQuota>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewQuota` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewQuota) -> types::builder::NewQuota,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Quota>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewQuota::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/quota",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_project_quota",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_quota`]\n\n[`Client::delete_project_quota`]: super::Client::delete_project_quota"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectQuota<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteProjectQuota<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/quota`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/quota",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_quota",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_project_vpcs`]\n\n[`Client::list_project_vpcs`]: super::Client::list_project_vpcs"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectVpcs<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectVpcs<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Vpc>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_vpcs",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_vpc`]\n\n[`Client::create_project_vpc`]: super::Client::create_project_vpc"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectVpc<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewVpc, String>,
+    }
+
+    impl<'a> CreateProjectVpc<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewVpc>,
+            <V as std::convert::TryInto<types::NewVpc>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewVpc` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewVpc) -> types::builder::NewVpc,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewVpc::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_project_vpc`]\n\n[`Client::get_project_vpc`]: super::Client::get_project_vpc"]
+    #[derive(Debug, Clone)]
+    pub struct GetProjectVpc<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetProjectVpc<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_project_vpc`]\n\n[`Client::delete_project_vpc`]: super::Client::delete_project_vpc"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteProjectVpc<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteProjectVpc<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_vpc_subnets`]\n\n[`Client::list_vpc_subnets`]: super::Client::list_vpc_subnets"]
+    #[derive(Debug, Clone)]
+    pub struct ListVpcSubnets<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListVpcSubnets<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Subnet>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/subnets",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_vpc_subnets",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_vpc_subnet`]\n\n[`Client::create_vpc_subnet`]: super::Client::create_vpc_subnet"]
+    #[derive(Debug, Clone)]
+    pub struct CreateVpcSubnet<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewSubnet, String>,
+    }
+
+    impl<'a> CreateVpcSubnet<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSubnet>,
+            <V as std::convert::TryInto<types::NewSubnet>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSubnet` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewSubnet) -> types::builder::NewSubnet,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewSubnet::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/subnets",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_vpc_subnet",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_vpc_subnet`]\n\n[`Client::get_vpc_subnet`]: super::Client::get_vpc_subnet"]
+    #[derive(Debug, Clone)]
+    pub struct GetVpcSubnet<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        subnet_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetVpcSubnet<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                subnet_id: Err("subnet_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn subnet_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.subnet_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for subnet_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                subnet_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let subnet_id = subnet_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/subnets/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&subnet_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_vpc_subnet",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_subnet`]\n\n[`Client::delete_vpc_subnet`]: super::Client::delete_vpc_subnet"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcSubnet<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        subnet_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteVpcSubnet<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                subnet_id: Err("subnet_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn subnet_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.subnet_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for subnet_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                subnet_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let subnet_id = subnet_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/subnets/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&subnet_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_subnet",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

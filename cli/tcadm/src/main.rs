@@ -103,10 +103,17 @@ enum Commands {
         #[command(subcommand)]
         command: AuditCommand,
     },
-    /// Manage per-silo identity-provider configuration.
+    /// Manage silo-scoped resources (IdP, SSH keys, images).
     Silo {
         #[command(subcommand)]
         command: SiloCommand,
+    },
+    /// Manage tenant-scoped resources (projects, VPCs, instances,
+    /// quotas, floating IPs). Re-parented from `silo project ...`
+    /// in slice E-3.
+    Tenant {
+        #[command(subcommand)]
+        command: TenantCommand,
     },
 }
 
@@ -117,11 +124,6 @@ enum SiloCommand {
         #[command(subcommand)]
         command: SiloIdpCommand,
     },
-    /// Manage projects inside a silo.
-    Project {
-        #[command(subcommand)]
-        command: SiloProjectCommand,
-    },
     /// Manage SSH keys registered in the silo's catalog.
     SshKey {
         #[command(subcommand)]
@@ -131,6 +133,15 @@ enum SiloCommand {
     Image {
         #[command(subcommand)]
         command: SiloImageCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TenantCommand {
+    /// Manage projects inside a tenant.
+    Project {
+        #[command(subcommand)]
+        command: TenantProjectCommand,
     },
 }
 
@@ -219,16 +230,16 @@ enum SiloSshKeyCommand {
 }
 
 #[derive(Subcommand)]
-enum SiloProjectCommand {
+enum TenantProjectCommand {
     /// List projects in the silo.
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         #[arg(long)]
         json: bool,
     },
     /// Create a new project.
     Create {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         #[arg(long)]
         name: String,
         #[arg(long, default_value = "")]
@@ -238,48 +249,48 @@ enum SiloProjectCommand {
     },
     /// Read a single project.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         json: bool,
     },
     /// Delete a project.
-    Delete { silo_id: Uuid, project_id: Uuid },
+    Delete { tenant_id: Uuid, project_id: Uuid },
     /// Manage VPCs inside a project.
     Vpc {
         #[command(subcommand)]
-        command: SiloProjectVpcCommand,
+        command: TenantProjectVpcCommand,
     },
     /// Manage instances inside a project.
     Instance {
         #[command(subcommand)]
-        command: SiloProjectInstanceCommand,
+        command: TenantProjectInstanceCommand,
     },
     /// Manage the project's resource quota.
     Quota {
         #[command(subcommand)]
-        command: SiloProjectQuotaCommand,
+        command: TenantProjectQuotaCommand,
     },
     /// Manage floating IPs (project-scoped, allocated from a fleet
     /// pool, attachable to any NIC in the project).
     FloatingIp {
         #[command(subcommand)]
-        command: SiloProjectFloatingIpCommand,
+        command: TenantProjectFloatingIpCommand,
     },
 }
 
 #[derive(Subcommand)]
-enum SiloProjectFloatingIpCommand {
+enum TenantProjectFloatingIpCommand {
     /// List floating IPs in the project.
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         json: bool,
     },
     /// Allocate a new floating IP from the fleet pool.
     Create {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         name: String,
@@ -293,7 +304,7 @@ enum SiloProjectFloatingIpCommand {
     },
     /// Read a single floating IP.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         floating_ip_id: Uuid,
         #[arg(long)]
@@ -302,14 +313,14 @@ enum SiloProjectFloatingIpCommand {
     /// Release a floating IP back to its pool. Returns 409 if
     /// currently attached.
     Delete {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         floating_ip_id: Uuid,
     },
     /// Attach a floating IP to a NIC. Replace semantics — if the
     /// IP was already attached elsewhere, it swaps atomically.
     Attach {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         floating_ip_id: Uuid,
         #[arg(long)]
@@ -319,7 +330,7 @@ enum SiloProjectFloatingIpCommand {
     },
     /// Detach a floating IP. Idempotent.
     Detach {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         floating_ip_id: Uuid,
         #[arg(long)]
@@ -328,17 +339,17 @@ enum SiloProjectFloatingIpCommand {
 }
 
 #[derive(Subcommand)]
-enum SiloProjectInstanceCommand {
+enum TenantProjectInstanceCommand {
     /// List instances in the project.
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         json: bool,
     },
     /// Create a new instance.
     Create {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         name: String,
@@ -360,7 +371,7 @@ enum SiloProjectInstanceCommand {
     },
     /// Read a single instance.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         #[arg(long)]
@@ -368,13 +379,13 @@ enum SiloProjectInstanceCommand {
     },
     /// Delete an instance (must be Stopped or Failed).
     Delete {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
     },
     /// Start a Stopped instance.
     Start {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         #[arg(long)]
@@ -382,7 +393,7 @@ enum SiloProjectInstanceCommand {
     },
     /// Stop a Running instance.
     Stop {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         #[arg(long)]
@@ -390,7 +401,7 @@ enum SiloProjectInstanceCommand {
     },
     /// Restart a Running instance.
     Restart {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         #[arg(long)]
@@ -399,20 +410,20 @@ enum SiloProjectInstanceCommand {
     /// Inspect NICs attached to an instance.
     Nic {
         #[command(subcommand)]
-        command: SiloProjectInstanceNicCommand,
+        command: TenantProjectInstanceNicCommand,
     },
     /// Inspect disks attached to an instance.
     Disk {
         #[command(subcommand)]
-        command: SiloProjectInstanceDiskCommand,
+        command: TenantProjectInstanceDiskCommand,
     },
 }
 
 #[derive(Subcommand)]
-enum SiloProjectInstanceDiskCommand {
+enum TenantProjectInstanceDiskCommand {
     /// List the disks attached to an instance.
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         #[arg(long)]
@@ -420,7 +431,7 @@ enum SiloProjectInstanceDiskCommand {
     },
     /// Read a single disk.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         disk_id: Uuid,
@@ -430,11 +441,11 @@ enum SiloProjectInstanceDiskCommand {
 }
 
 #[derive(Subcommand)]
-enum SiloProjectInstanceNicCommand {
+enum TenantProjectInstanceNicCommand {
     /// List the NICs attached to an instance (Phase 0 ships exactly
     /// one — the auto-created `primary` NIC).
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         #[arg(long)]
@@ -442,7 +453,7 @@ enum SiloProjectInstanceNicCommand {
     },
     /// Read a single NIC.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         instance_id: Uuid,
         nic_id: Uuid,
@@ -452,10 +463,10 @@ enum SiloProjectInstanceNicCommand {
 }
 
 #[derive(Subcommand)]
-enum SiloProjectQuotaCommand {
+enum TenantProjectQuotaCommand {
     /// Set (or replace) the project's quota.
     Set {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         cpu_limit: u32,
@@ -470,20 +481,20 @@ enum SiloProjectQuotaCommand {
     },
     /// Read the project's quota.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         json: bool,
     },
     /// Remove the project's quota (project becomes unlimited).
-    Delete { silo_id: Uuid, project_id: Uuid },
+    Delete { tenant_id: Uuid, project_id: Uuid },
 }
 
 #[derive(Subcommand)]
-enum SiloProjectVpcCommand {
+enum TenantProjectVpcCommand {
     /// List VPCs in a project.
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         json: bool,
@@ -491,7 +502,7 @@ enum SiloProjectVpcCommand {
     /// Create a new VPC in a project. At least one of `--ipv4-block`
     /// and `--ipv6-block` must be provided.
     Create {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         #[arg(long)]
         name: String,
@@ -508,7 +519,7 @@ enum SiloProjectVpcCommand {
     },
     /// Read a single VPC.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         #[arg(long)]
@@ -516,22 +527,22 @@ enum SiloProjectVpcCommand {
     },
     /// Delete a VPC.
     Delete {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
     },
     /// Manage subnets inside a VPC.
     Subnet {
         #[command(subcommand)]
-        command: SiloProjectVpcSubnetCommand,
+        command: TenantProjectVpcSubnetCommand,
     },
 }
 
 #[derive(Subcommand)]
-enum SiloProjectVpcSubnetCommand {
+enum TenantProjectVpcSubnetCommand {
     /// List subnets in a VPC.
     List {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         #[arg(long)]
@@ -542,7 +553,7 @@ enum SiloProjectVpcSubnetCommand {
     /// contained in the parent VPC's same-family CIDR and must not
     /// overlap an existing subnet.
     Create {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         #[arg(long)]
@@ -560,7 +571,7 @@ enum SiloProjectVpcSubnetCommand {
     },
     /// Read a single subnet.
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         subnet_id: Uuid,
@@ -569,7 +580,7 @@ enum SiloProjectVpcSubnetCommand {
     },
     /// Delete a subnet.
     Delete {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         subnet_id: Uuid,
@@ -902,533 +913,6 @@ async fn main() -> Result<()> {
                     commands::silo_idp_delete(cli.endpoint, cli.api_key, silo_id).await
                 }
             },
-            SiloCommand::Project { command } => match command {
-                SiloProjectCommand::List { silo_id, json } => {
-                    commands::silo_project_list(cli.endpoint, cli.api_key, silo_id, json).await
-                }
-                SiloProjectCommand::Create {
-                    silo_id,
-                    name,
-                    description,
-                    json,
-                } => {
-                    commands::silo_project_create(
-                        cli.endpoint,
-                        cli.api_key,
-                        silo_id,
-                        name,
-                        description,
-                        json,
-                    )
-                    .await
-                }
-                SiloProjectCommand::Get {
-                    silo_id,
-                    project_id,
-                    json,
-                } => {
-                    commands::silo_project_get(cli.endpoint, cli.api_key, silo_id, project_id, json)
-                        .await
-                }
-                SiloProjectCommand::Delete {
-                    silo_id,
-                    project_id,
-                } => {
-                    commands::silo_project_delete(cli.endpoint, cli.api_key, silo_id, project_id)
-                        .await
-                }
-                SiloProjectCommand::Instance { command } => match command {
-                    SiloProjectInstanceCommand::List {
-                        silo_id,
-                        project_id,
-                        json,
-                    } => {
-                        commands::silo_project_instance_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Create {
-                        silo_id,
-                        project_id,
-                        name,
-                        description,
-                        image_id,
-                        primary_subnet_id,
-                        ssh_key_ids,
-                        cpu,
-                        memory_bytes,
-                        json,
-                    } => {
-                        commands::silo_project_instance_create(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            name,
-                            description,
-                            image_id,
-                            primary_subnet_id,
-                            ssh_key_ids,
-                            cpu,
-                            memory_bytes,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Get {
-                        silo_id,
-                        project_id,
-                        instance_id,
-                        json,
-                    } => {
-                        commands::silo_project_instance_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Delete {
-                        silo_id,
-                        project_id,
-                        instance_id,
-                    } => {
-                        commands::silo_project_instance_delete(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            instance_id,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Start {
-                        silo_id,
-                        project_id,
-                        instance_id,
-                        json,
-                    } => {
-                        commands::silo_project_instance_lifecycle(
-                            cli.endpoint,
-                            cli.api_key,
-                            "start",
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Stop {
-                        silo_id,
-                        project_id,
-                        instance_id,
-                        json,
-                    } => {
-                        commands::silo_project_instance_lifecycle(
-                            cli.endpoint,
-                            cli.api_key,
-                            "stop",
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Restart {
-                        silo_id,
-                        project_id,
-                        instance_id,
-                        json,
-                    } => {
-                        commands::silo_project_instance_lifecycle(
-                            cli.endpoint,
-                            cli.api_key,
-                            "restart",
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectInstanceCommand::Disk { command } => match command {
-                        SiloProjectInstanceDiskCommand::List {
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            json,
-                        } => {
-                            commands::silo_project_instance_disk_list(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                instance_id,
-                                json,
-                            )
-                            .await
-                        }
-                        SiloProjectInstanceDiskCommand::Get {
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            disk_id,
-                            json,
-                        } => {
-                            commands::silo_project_instance_disk_get(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                instance_id,
-                                disk_id,
-                                json,
-                            )
-                            .await
-                        }
-                    },
-                    SiloProjectInstanceCommand::Nic { command } => match command {
-                        SiloProjectInstanceNicCommand::List {
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            json,
-                        } => {
-                            commands::silo_project_instance_nic_list(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                instance_id,
-                                json,
-                            )
-                            .await
-                        }
-                        SiloProjectInstanceNicCommand::Get {
-                            silo_id,
-                            project_id,
-                            instance_id,
-                            nic_id,
-                            json,
-                        } => {
-                            commands::silo_project_instance_nic_get(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                instance_id,
-                                nic_id,
-                                json,
-                            )
-                            .await
-                        }
-                    },
-                },
-                SiloProjectCommand::Quota { command } => match command {
-                    SiloProjectQuotaCommand::Set {
-                        silo_id,
-                        project_id,
-                        cpu_limit,
-                        memory_bytes,
-                        disk_bytes,
-                        instance_limit,
-                        json,
-                    } => {
-                        commands::silo_project_quota_set(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            cpu_limit,
-                            memory_bytes,
-                            disk_bytes,
-                            instance_limit,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectQuotaCommand::Get {
-                        silo_id,
-                        project_id,
-                        json,
-                    } => {
-                        commands::silo_project_quota_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectQuotaCommand::Delete {
-                        silo_id,
-                        project_id,
-                    } => {
-                        commands::silo_project_quota_delete(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                        )
-                        .await
-                    }
-                },
-                SiloProjectCommand::FloatingIp { command } => match command {
-                    SiloProjectFloatingIpCommand::List {
-                        silo_id,
-                        project_id,
-                        json,
-                    } => {
-                        commands::silo_project_floating_ip_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectFloatingIpCommand::Create {
-                        silo_id,
-                        project_id,
-                        name,
-                        description,
-                        family,
-                        json,
-                    } => {
-                        commands::silo_project_floating_ip_create(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            name,
-                            description,
-                            family,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectFloatingIpCommand::Get {
-                        silo_id,
-                        project_id,
-                        floating_ip_id,
-                        json,
-                    } => {
-                        commands::silo_project_floating_ip_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            floating_ip_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectFloatingIpCommand::Delete {
-                        silo_id,
-                        project_id,
-                        floating_ip_id,
-                    } => {
-                        commands::silo_project_floating_ip_delete(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            floating_ip_id,
-                        )
-                        .await
-                    }
-                    SiloProjectFloatingIpCommand::Attach {
-                        silo_id,
-                        project_id,
-                        floating_ip_id,
-                        nic_id,
-                        json,
-                    } => {
-                        commands::silo_project_floating_ip_attach(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            floating_ip_id,
-                            nic_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectFloatingIpCommand::Detach {
-                        silo_id,
-                        project_id,
-                        floating_ip_id,
-                        json,
-                    } => {
-                        commands::silo_project_floating_ip_detach(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            floating_ip_id,
-                            json,
-                        )
-                        .await
-                    }
-                },
-                SiloProjectCommand::Vpc { command } => match command {
-                    SiloProjectVpcCommand::List {
-                        silo_id,
-                        project_id,
-                        json,
-                    } => {
-                        commands::silo_project_vpc_list(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectVpcCommand::Create {
-                        silo_id,
-                        project_id,
-                        name,
-                        description,
-                        ipv4_block,
-                        ipv6_block,
-                        json,
-                    } => {
-                        commands::silo_project_vpc_create(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            name,
-                            description,
-                            ipv4_block,
-                            ipv6_block,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectVpcCommand::Get {
-                        silo_id,
-                        project_id,
-                        vpc_id,
-                        json,
-                    } => {
-                        commands::silo_project_vpc_get(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        )
-                        .await
-                    }
-                    SiloProjectVpcCommand::Delete {
-                        silo_id,
-                        project_id,
-                        vpc_id,
-                    } => {
-                        commands::silo_project_vpc_delete(
-                            cli.endpoint,
-                            cli.api_key,
-                            silo_id,
-                            project_id,
-                            vpc_id,
-                        )
-                        .await
-                    }
-                    SiloProjectVpcCommand::Subnet { command } => match command {
-                        SiloProjectVpcSubnetCommand::List {
-                            silo_id,
-                            project_id,
-                            vpc_id,
-                            json,
-                        } => {
-                            commands::silo_project_vpc_subnet_list(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                vpc_id,
-                                json,
-                            )
-                            .await
-                        }
-                        SiloProjectVpcSubnetCommand::Create {
-                            silo_id,
-                            project_id,
-                            vpc_id,
-                            name,
-                            description,
-                            ipv4_block,
-                            ipv6_block,
-                            json,
-                        } => {
-                            commands::silo_project_vpc_subnet_create(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                vpc_id,
-                                name,
-                                description,
-                                ipv4_block,
-                                ipv6_block,
-                                json,
-                            )
-                            .await
-                        }
-                        SiloProjectVpcSubnetCommand::Get {
-                            silo_id,
-                            project_id,
-                            vpc_id,
-                            subnet_id,
-                            json,
-                        } => {
-                            commands::silo_project_vpc_subnet_get(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                vpc_id,
-                                subnet_id,
-                                json,
-                            )
-                            .await
-                        }
-                        SiloProjectVpcSubnetCommand::Delete {
-                            silo_id,
-                            project_id,
-                            vpc_id,
-                            subnet_id,
-                        } => {
-                            commands::silo_project_vpc_subnet_delete(
-                                cli.endpoint,
-                                cli.api_key,
-                                silo_id,
-                                project_id,
-                                vpc_id,
-                                subnet_id,
-                            )
-                            .await
-                        }
-                    },
-                },
-            },
             SiloCommand::SshKey { command } => match command {
                 SiloSshKeyCommand::List { silo_id, json } => {
                     commands::silo_ssh_key_list(cli.endpoint, cli.api_key, silo_id, json).await
@@ -1512,6 +996,535 @@ async fn main() -> Result<()> {
                 SiloImageCommand::Delete { silo_id, image_id } => {
                     commands::silo_image_delete(cli.endpoint, cli.api_key, silo_id, image_id).await
                 }
+            },
+        },
+        Commands::Tenant { command } => match command {
+            TenantCommand::Project { command } => match command {
+                TenantProjectCommand::List { tenant_id, json } => {
+                    commands::tenant_project_list(cli.endpoint, cli.api_key, tenant_id, json).await
+                }
+                TenantProjectCommand::Create {
+                    tenant_id,
+                    name,
+                    description,
+                    json,
+                } => {
+                    commands::tenant_project_create(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        name,
+                        description,
+                        json,
+                    )
+                    .await
+                }
+                TenantProjectCommand::Get {
+                    tenant_id,
+                    project_id,
+                    json,
+                } => {
+                    commands::tenant_project_get(cli.endpoint, cli.api_key, tenant_id, project_id, json)
+                        .await
+                }
+                TenantProjectCommand::Delete {
+                    tenant_id,
+                    project_id,
+                } => {
+                    commands::tenant_project_delete(cli.endpoint, cli.api_key, tenant_id, project_id)
+                        .await
+                }
+                TenantProjectCommand::Instance { command } => match command {
+                    TenantProjectInstanceCommand::List {
+                        tenant_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::tenant_project_instance_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Create {
+                        tenant_id,
+                        project_id,
+                        name,
+                        description,
+                        image_id,
+                        primary_subnet_id,
+                        ssh_key_ids,
+                        cpu,
+                        memory_bytes,
+                        json,
+                    } => {
+                        commands::tenant_project_instance_create(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            name,
+                            description,
+                            image_id,
+                            primary_subnet_id,
+                            ssh_key_ids,
+                            cpu,
+                            memory_bytes,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Get {
+                        tenant_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::tenant_project_instance_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Delete {
+                        tenant_id,
+                        project_id,
+                        instance_id,
+                    } => {
+                        commands::tenant_project_instance_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Start {
+                        tenant_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::tenant_project_instance_lifecycle(
+                            cli.endpoint,
+                            cli.api_key,
+                            "start",
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Stop {
+                        tenant_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::tenant_project_instance_lifecycle(
+                            cli.endpoint,
+                            cli.api_key,
+                            "stop",
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Restart {
+                        tenant_id,
+                        project_id,
+                        instance_id,
+                        json,
+                    } => {
+                        commands::tenant_project_instance_lifecycle(
+                            cli.endpoint,
+                            cli.api_key,
+                            "restart",
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectInstanceCommand::Disk { command } => match command {
+                        TenantProjectInstanceDiskCommand::List {
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        } => {
+                            commands::tenant_project_instance_disk_list(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                instance_id,
+                                json,
+                            )
+                            .await
+                        }
+                        TenantProjectInstanceDiskCommand::Get {
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            disk_id,
+                            json,
+                        } => {
+                            commands::tenant_project_instance_disk_get(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                instance_id,
+                                disk_id,
+                                json,
+                            )
+                            .await
+                        }
+                    },
+                    TenantProjectInstanceCommand::Nic { command } => match command {
+                        TenantProjectInstanceNicCommand::List {
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            json,
+                        } => {
+                            commands::tenant_project_instance_nic_list(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                instance_id,
+                                json,
+                            )
+                            .await
+                        }
+                        TenantProjectInstanceNicCommand::Get {
+                            tenant_id,
+                            project_id,
+                            instance_id,
+                            nic_id,
+                            json,
+                        } => {
+                            commands::tenant_project_instance_nic_get(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                instance_id,
+                                nic_id,
+                                json,
+                            )
+                            .await
+                        }
+                    },
+                },
+                TenantProjectCommand::Quota { command } => match command {
+                    TenantProjectQuotaCommand::Set {
+                        tenant_id,
+                        project_id,
+                        cpu_limit,
+                        memory_bytes,
+                        disk_bytes,
+                        instance_limit,
+                        json,
+                    } => {
+                        commands::tenant_project_quota_set(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            cpu_limit,
+                            memory_bytes,
+                            disk_bytes,
+                            instance_limit,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectQuotaCommand::Get {
+                        tenant_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::tenant_project_quota_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectQuotaCommand::Delete {
+                        tenant_id,
+                        project_id,
+                    } => {
+                        commands::tenant_project_quota_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                        )
+                        .await
+                    }
+                },
+                TenantProjectCommand::FloatingIp { command } => match command {
+                    TenantProjectFloatingIpCommand::List {
+                        tenant_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::tenant_project_floating_ip_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectFloatingIpCommand::Create {
+                        tenant_id,
+                        project_id,
+                        name,
+                        description,
+                        family,
+                        json,
+                    } => {
+                        commands::tenant_project_floating_ip_create(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            name,
+                            description,
+                            family,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectFloatingIpCommand::Get {
+                        tenant_id,
+                        project_id,
+                        floating_ip_id,
+                        json,
+                    } => {
+                        commands::tenant_project_floating_ip_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            floating_ip_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectFloatingIpCommand::Delete {
+                        tenant_id,
+                        project_id,
+                        floating_ip_id,
+                    } => {
+                        commands::tenant_project_floating_ip_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            floating_ip_id,
+                        )
+                        .await
+                    }
+                    TenantProjectFloatingIpCommand::Attach {
+                        tenant_id,
+                        project_id,
+                        floating_ip_id,
+                        nic_id,
+                        json,
+                    } => {
+                        commands::tenant_project_floating_ip_attach(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            floating_ip_id,
+                            nic_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectFloatingIpCommand::Detach {
+                        tenant_id,
+                        project_id,
+                        floating_ip_id,
+                        json,
+                    } => {
+                        commands::tenant_project_floating_ip_detach(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            floating_ip_id,
+                            json,
+                        )
+                        .await
+                    }
+                },
+                TenantProjectCommand::Vpc { command } => match command {
+                    TenantProjectVpcCommand::List {
+                        tenant_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::tenant_project_vpc_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectVpcCommand::Create {
+                        tenant_id,
+                        project_id,
+                        name,
+                        description,
+                        ipv4_block,
+                        ipv6_block,
+                        json,
+                    } => {
+                        commands::tenant_project_vpc_create(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            name,
+                            description,
+                            ipv4_block,
+                            ipv6_block,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectVpcCommand::Get {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    } => {
+                        commands::tenant_project_vpc_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectVpcCommand::Delete {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                    } => {
+                        commands::tenant_project_vpc_delete(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                        )
+                        .await
+                    }
+                    TenantProjectVpcCommand::Subnet { command } => match command {
+                        TenantProjectVpcSubnetCommand::List {
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        } => {
+                            commands::tenant_project_vpc_subnet_list(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                vpc_id,
+                                json,
+                            )
+                            .await
+                        }
+                        TenantProjectVpcSubnetCommand::Create {
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            name,
+                            description,
+                            ipv4_block,
+                            ipv6_block,
+                            json,
+                        } => {
+                            commands::tenant_project_vpc_subnet_create(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                vpc_id,
+                                name,
+                                description,
+                                ipv4_block,
+                                ipv6_block,
+                                json,
+                            )
+                            .await
+                        }
+                        TenantProjectVpcSubnetCommand::Get {
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            subnet_id,
+                            json,
+                        } => {
+                            commands::tenant_project_vpc_subnet_get(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                vpc_id,
+                                subnet_id,
+                                json,
+                            )
+                            .await
+                        }
+                        TenantProjectVpcSubnetCommand::Delete {
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            subnet_id,
+                        } => {
+                            commands::tenant_project_vpc_subnet_delete(
+                                cli.endpoint,
+                                cli.api_key,
+                                tenant_id,
+                                project_id,
+                                vpc_id,
+                                subnet_id,
+                            )
+                            .await
+                        }
+                    },
+                },
             },
         },
     }

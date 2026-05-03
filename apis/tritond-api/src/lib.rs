@@ -346,28 +346,36 @@ pub struct OpenAutoApproveRequest {
     pub count: Option<u64>,
 }
 
-/// Path parameters for endpoints that operate on a single project
-/// inside a silo.
+/// Path parameters for endpoints that operate on a single tenant.
+/// Used by the project-list / project-create endpoints rooted at
+/// `/v2/tenants/{tenant_id}/projects`.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectPath {
-    pub silo_id: Uuid,
+pub struct TenantPath {
+    pub tenant_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single project
+/// inside a tenant.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantProjectPath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
 }
 
 /// Path parameters for endpoints that operate on a single VPC inside a
-/// project inside a silo.
+/// project inside a tenant.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectVpcPath {
-    pub silo_id: Uuid,
+pub struct TenantProjectVpcPath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub vpc_id: Uuid,
 }
 
 /// Path parameters for endpoints that operate on a single subnet
-/// inside a VPC inside a project inside a silo.
+/// inside a VPC inside a project inside a tenant.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectVpcSubnetPath {
-    pub silo_id: Uuid,
+pub struct TenantProjectVpcSubnetPath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub vpc_id: Uuid,
     pub subnet_id: Uuid,
@@ -390,10 +398,10 @@ pub struct SiloImagePath {
 }
 
 /// Path parameters for endpoints that operate on a single instance
-/// inside a project inside a silo.
+/// inside a project inside a tenant.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectInstancePath {
-    pub silo_id: Uuid,
+pub struct TenantProjectInstancePath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub instance_id: Uuid,
 }
@@ -401,8 +409,8 @@ pub struct SiloProjectInstancePath {
 /// Path parameters for endpoints that operate on a single NIC
 /// belonging to an instance.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectInstanceNicPath {
-    pub silo_id: Uuid,
+pub struct TenantProjectInstanceNicPath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub instance_id: Uuid,
     pub nic_id: Uuid,
@@ -411,8 +419,8 @@ pub struct SiloProjectInstanceNicPath {
 /// Path parameters for endpoints that operate on a single Disk
 /// belonging to an instance.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectInstanceDiskPath {
-    pub silo_id: Uuid,
+pub struct TenantProjectInstanceDiskPath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub instance_id: Uuid,
     pub disk_id: Uuid,
@@ -421,8 +429,8 @@ pub struct SiloProjectInstanceDiskPath {
 /// Path parameters for endpoints that operate on a single
 /// FloatingIp inside a project.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloProjectFloatingIpPath {
-    pub silo_id: Uuid,
+pub struct TenantProjectFloatingIpPath {
+    pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub floating_ip_id: Uuid,
 }
@@ -881,66 +889,66 @@ pub trait TritondApi {
         path: Path<SiloPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List the projects inside a silo.
+    /// List the projects inside a tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects",
+        path = "/v2/tenants/{tenant_id}/projects",
         tags = ["projects"],
     }]
-    async fn list_silo_projects(
+    async fn list_tenant_projects(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantPath>,
     ) -> Result<HttpResponseOk<Vec<Project>>, HttpError>;
 
-    /// Create a project in a silo. Returns 409 if the project name
-    /// is already in use within that silo.
+    /// Create a project in a tenant. Returns 409 if the project
+    /// name is already in use within that tenant.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects",
+        path = "/v2/tenants/{tenant_id}/projects",
         tags = ["projects"],
     }]
-    async fn create_silo_project(
+    async fn create_tenant_project(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantPath>,
         body: TypedBody<NewProject>,
     ) -> Result<HttpResponseCreated<Project>, HttpError>;
 
     /// Read a single project. Returns 404 when the project does not
-    /// exist or belongs to a different silo (cross-silo probes do not
-    /// learn that other silos exist).
+    /// exist or belongs to a different tenant (cross-tenant probes do
+    /// not learn that other tenants exist).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}",
         tags = ["projects"],
     }]
-    async fn get_silo_project(
+    async fn get_tenant_project(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Project>, HttpError>;
 
     /// Delete a project. Returns 404 when the project does not exist
-    /// or belongs to a different silo.
+    /// or belongs to a different tenant.
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/projects/{project_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}",
         tags = ["projects"],
     }]
-    async fn delete_silo_project(
+    async fn delete_tenant_project(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List the VPCs inside a project. Returns 404 when the silo or
+    /// List the VPCs inside a project. Returns 404 when the tenant or
     /// project does not exist (or the project belongs to a different
-    /// silo).
+    /// tenant).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs",
         tags = ["vpcs"],
     }]
     async fn list_project_vpcs(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Vpc>>, HttpError>;
 
     /// Create a VPC in a project. Returns 400 if neither `ipv4_block`
@@ -950,52 +958,52 @@ pub trait TritondApi {
     /// `created_at`.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs",
         tags = ["vpcs"],
     }]
     async fn create_project_vpc(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewVpc>,
     ) -> Result<HttpResponseCreated<Vpc>, HttpError>;
 
     /// Read a single VPC. Returns 404 when the VPC does not exist or
-    /// belongs to a different silo or project (cross-tenant probes
+    /// belongs to a different tenant or project (cross-tenant probes
     /// do not learn that the resource exists).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}",
         tags = ["vpcs"],
     }]
     async fn get_project_vpc(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vpc>, HttpError>;
 
     /// Delete a VPC. Returns 404 when the VPC does not exist or
-    /// belongs to a different silo or project. Returns 409 if the
+    /// belongs to a different tenant or project. Returns 409 if the
     /// VPC still has subnets attached — operators must clear subnets
     /// before deleting the parent VPC (Phase 0 has no cascade).
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}",
         tags = ["vpcs"],
     }]
     async fn delete_project_vpc(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List the subnets inside a VPC. Returns 404 when the silo,
+    /// List the subnets inside a VPC. Returns 404 when the tenant,
     /// project, or VPC does not exist (or is in the wrong parent).
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
         tags = ["subnets"],
     }]
     async fn list_vpc_subnets(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError>;
 
     /// Create a subnet in a VPC. Returns 400 if neither
@@ -1006,37 +1014,37 @@ pub trait TritondApi {
     /// server assigns `id` and `created_at`.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
         tags = ["subnets"],
     }]
     async fn create_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
         body: TypedBody<NewSubnet>,
     ) -> Result<HttpResponseCreated<Subnet>, HttpError>;
 
     /// Read a single subnet. Returns 404 when the subnet does not
-    /// exist or belongs to a different silo, project, or VPC.
+    /// exist or belongs to a different tenant, project, or VPC.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
         tags = ["subnets"],
     }]
     async fn get_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcSubnetPath>,
+        path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseOk<Subnet>, HttpError>;
 
     /// Delete a subnet. Returns 404 when the subnet does not exist
-    /// or belongs to a different silo, project, or VPC.
+    /// or belongs to a different tenant, project, or VPC.
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
         tags = ["subnets"],
     }]
     async fn delete_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcSubnetPath>,
+        path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List the SSH keys registered in a silo's catalog.
@@ -1167,63 +1175,65 @@ pub trait TritondApi {
 
     /// Set (or replace) the resource quota on a project. Returns
     /// 404 when the project does not exist or belongs to a
-    /// different silo. The server assigns `updated_at`. Quotas
+    /// different tenant. The server assigns `updated_at`. Quotas
     /// are not enforced in Phase 0; the record is stored for the
     /// eventual instance-create flow to consult.
     #[endpoint {
         method = PUT,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/quota",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/quota",
         tags = ["quotas"],
     }]
     async fn put_project_quota(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewQuota>,
     ) -> Result<HttpResponseOk<Quota>, HttpError>;
 
     /// Read a project's quota. Returns 404 when the project does
-    /// not exist, lives in a different silo, or has no quota set
+    /// not exist, lives in a different tenant, or has no quota set
     /// (no record means "unlimited").
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/quota",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/quota",
         tags = ["quotas"],
     }]
     async fn get_project_quota(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Quota>, HttpError>;
 
     /// Remove a project's quota (project becomes unlimited).
     /// Returns 404 when the project does not exist, lives in a
-    /// different silo, or had no quota set.
+    /// different tenant, or had no quota set.
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/quota",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/quota",
         tags = ["quotas"],
     }]
     async fn delete_project_quota(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List instances in a project.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances",
         tags = ["instances"],
     }]
     async fn list_project_instances(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
     /// Create an instance in a project.
     ///
     /// Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404
     /// if any referenced resource (image, subnet, ssh-keys) does
-    /// not exist or lives outside this silo/project. Returns 409
-    /// if the instance name is already taken in the project.
+    /// not exist or lives outside this tenant/project (or, for
+    /// image/ssh-key which remain silo-scoped in E-3, outside the
+    /// tenant's silo). Returns 409 if the instance name is already
+    /// taken in the project.
     ///
     /// Phase 0 ships synchronous lifecycle: the create handler
     /// transitions the new instance through Pending → Running
@@ -1233,41 +1243,41 @@ pub trait TritondApi {
     /// transitions instead of an instant Running.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances",
         tags = ["instances"],
     }]
     async fn create_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewInstance>,
     ) -> Result<HttpResponseCreated<Instance>, HttpError>;
 
     /// Read a single instance.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}",
         tags = ["instances"],
     }]
     async fn get_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
     /// Delete an instance. Returns 409 if the instance is not in
     /// a deletable state (must be Stopped or Failed); pass
     /// `?force=true` to override and delete from any state.
     /// Returns 404 if the instance does not exist or belongs to
-    /// a different silo or project. The tritond record is cleared
+    /// a different tenant or project. The tritond record is cleared
     /// synchronously; the agent vmadm-deletes the SmartOS zone
     /// asynchronously via a `JobKind::Delete` job.
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}",
         tags = ["instances"],
     }]
     async fn delete_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
         query: Query<InstanceDeleteQuery>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
@@ -1275,36 +1285,36 @@ pub trait TritondApi {
     /// not in `Stopped` state.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/start",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/start",
         tags = ["instances"],
     }]
     async fn start_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
     /// Stop a running instance. Returns 409 if the instance is
     /// not in `Running` state.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/stop",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/stop",
         tags = ["instances"],
     }]
     async fn stop_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
     /// Restart a running instance. Returns 409 if the instance is
     /// not in `Running` state.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/restart",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/restart",
         tags = ["instances"],
     }]
     async fn restart_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
     /// List the NICs attached to an instance. Phase 0 produces
@@ -1312,24 +1322,24 @@ pub trait TritondApi {
     /// adds NIC attach/detach.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics",
         tags = ["nics"],
     }]
     async fn list_instance_nics(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError>;
 
     /// Read a single NIC. Returns 404 if the NIC does not exist or
-    /// belongs to a different silo, project, or instance.
+    /// belongs to a different tenant, project, or instance.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}",
         tags = ["nics"],
     }]
     async fn get_instance_nic(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstanceNicPath>,
+        path: Path<TenantProjectInstanceNicPath>,
     ) -> Result<HttpResponseOk<Nic>, HttpError>;
 
     /// List the Disks attached to an instance. Phase 0 produces
@@ -1337,63 +1347,63 @@ pub trait TritondApi {
     /// attach lands as a follow-on slice.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks",
         tags = ["disks"],
     }]
     async fn list_instance_disks(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError>;
 
     /// Read a single Disk. Returns 404 if the Disk does not exist
-    /// or belongs to a different silo, project, or instance.
+    /// or belongs to a different tenant, project, or instance.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}",
         tags = ["disks"],
     }]
     async fn get_instance_disk(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstanceDiskPath>,
+        path: Path<TenantProjectInstanceDiskPath>,
     ) -> Result<HttpResponseOk<Disk>, HttpError>;
 
     /// List FloatingIps owned by a project.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips",
         tags = ["floating-ips"],
     }]
     async fn list_project_floating_ips(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<FloatingIp>>, HttpError>;
 
     /// Allocate a FloatingIp from the requested family's pool.
     /// Returns 409 if the name is already in use within the
     /// project. Returns 404 if the project does not exist or
-    /// belongs to a different silo. The returned FloatingIp
+    /// belongs to a different tenant. The returned FloatingIp
     /// starts unattached.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips",
         tags = ["floating-ips"],
     }]
     async fn create_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewFloatingIp>,
     ) -> Result<HttpResponseCreated<FloatingIp>, HttpError>;
 
     /// Read a single FloatingIp. Returns 404 if the FloatingIp
-    /// does not exist or belongs to a different silo or project.
+    /// does not exist or belongs to a different tenant or project.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
         tags = ["floating-ips"],
     }]
     async fn get_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
 
     /// Release a FloatingIp back to its pool. Returns 409 if the
@@ -1401,25 +1411,25 @@ pub trait TritondApi {
     /// first).
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
         tags = ["floating-ips"],
     }]
     async fn delete_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// Atomically attach a FloatingIp to a NIC, replacing any
     /// existing attachment. The target NIC must live in the same
-    /// silo + project as the FloatingIp; mismatch surfaces as 404.
+    /// tenant + project as the FloatingIp; mismatch surfaces as 404.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/attach",
         tags = ["floating-ips"],
     }]
     async fn attach_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
         body: TypedBody<AttachFloatingIpRequest>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
 
@@ -1428,11 +1438,11 @@ pub trait TritondApi {
     /// returns the current record.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach",
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach",
         tags = ["floating-ips"],
     }]
     async fn detach_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
 }

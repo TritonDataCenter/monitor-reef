@@ -62,9 +62,9 @@ struct Inner {
     system_keys: HashMap<SystemKey, Vec<u8>>,
     idp_configs_by_silo: HashMap<Uuid, IdpConfig>,
     projects_by_id: HashMap<Uuid, Project>,
-    /// `(silo_id, name)` → project_id index for the within-silo
+    /// `(tenant_id, name)` → project_id index for the within-tenant
     /// uniqueness check.
-    project_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
+    project_id_by_tenant_name: HashMap<(Uuid, String), Uuid>,
     tenants_by_id: HashMap<Uuid, Tenant>,
     /// `(silo_id, name)` → tenant_id index for the within-silo
     /// uniqueness check.
@@ -385,26 +385,30 @@ impl Store for MemStore {
             .collect())
     }
 
-    async fn create_project(&self, silo_id: Uuid, req: NewProject) -> Result<Project, StoreError> {
+    async fn create_project(
+        &self,
+        tenant_id: Uuid,
+        req: NewProject,
+    ) -> Result<Project, StoreError> {
         let mut guard = self.inner.write().await;
-        if !guard.silos_by_id.contains_key(&silo_id) {
+        if !guard.tenants_by_id.contains_key(&tenant_id) {
             return Err(StoreError::NotFound);
         }
-        let key = (silo_id, req.name.clone());
-        if guard.project_id_by_silo_name.contains_key(&key) {
+        let key = (tenant_id, req.name.clone());
+        if guard.project_id_by_tenant_name.contains_key(&key) {
             return Err(StoreError::Conflict(format!(
-                "project with name {:?} already exists in silo {silo_id}",
+                "project with name {:?} already exists in tenant {tenant_id}",
                 req.name
             )));
         }
         let project = Project {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
             created_at: Utc::now(),
         };
-        guard.project_id_by_silo_name.insert(key, project.id);
+        guard.project_id_by_tenant_name.insert(key, project.id);
         guard.projects_by_id.insert(project.id, project.clone());
         Ok(project)
     }
@@ -418,12 +422,12 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)
     }
 
-    async fn list_projects_in_silo(&self, silo_id: Uuid) -> Result<Vec<Project>, StoreError> {
+    async fn list_projects_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Project>, StoreError> {
         let guard = self.inner.read().await;
         Ok(guard
             .projects_by_id
             .values()
-            .filter(|p| p.silo_id == silo_id)
+            .filter(|p| p.tenant_id == tenant_id)
             .cloned()
             .collect())
     }
@@ -435,8 +439,8 @@ impl Store for MemStore {
             .remove(&project_id)
             .ok_or(StoreError::NotFound)?;
         guard
-            .project_id_by_silo_name
-            .remove(&(project.silo_id, project.name));
+            .project_id_by_tenant_name
+            .remove(&(project.tenant_id, project.name));
         Ok(())
     }
 
@@ -501,20 +505,20 @@ impl Store for MemStore {
 
     async fn create_vpc(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewVpc,
     ) -> Result<Vpc, StoreError> {
         let mut guard = self.inner.write().await;
 
-        // Project must exist and live in the right silo. A silo
+        // Project must exist and live in the right tenant. A tenant
         // mismatch surfaces as NotFound (project is invisible to a
-        // foreign silo).
+        // foreign tenant).
         let project = guard
             .projects_by_id
             .get(&project_id)
             .ok_or(StoreError::NotFound)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(StoreError::NotFound);
         }
 
@@ -541,7 +545,7 @@ impl Store for MemStore {
 
         let vpc = Vpc {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             project_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
@@ -601,17 +605,17 @@ impl Store for MemStore {
 
     async fn create_subnet(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         vpc_id: Uuid,
         req: NewSubnet,
     ) -> Result<Subnet, StoreError> {
         let mut guard = self.inner.write().await;
 
-        // VPC must exist and live under the right silo+project. Any
+        // VPC must exist and live under the right tenant+project. Any
         // mismatch surfaces as NotFound (cross-tenant probe story).
         let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
-        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
             return Err(StoreError::NotFound);
         }
         let vpc = vpc.clone();
@@ -639,7 +643,7 @@ impl Store for MemStore {
 
         let subnet = Subnet {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             project_id,
             vpc_id,
             name: req.name.clone(),
@@ -828,7 +832,7 @@ impl Store for MemStore {
 
     async fn put_quota(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewQuota,
     ) -> Result<Quota, StoreError> {
@@ -837,11 +841,11 @@ impl Store for MemStore {
             .projects_by_id
             .get(&project_id)
             .ok_or(StoreError::NotFound)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(StoreError::NotFound);
         }
         let quota = Quota {
-            silo_id,
+            tenant_id,
             project_id,
             cpu_limit: req.cpu_limit,
             memory_bytes: req.memory_bytes,
@@ -853,13 +857,13 @@ impl Store for MemStore {
         Ok(quota)
     }
 
-    async fn get_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
+    async fn get_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<Quota, StoreError> {
         let guard = self.inner.read().await;
         let project = guard
             .projects_by_id
             .get(&project_id)
             .ok_or(StoreError::NotFound)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(StoreError::NotFound);
         }
         guard
@@ -871,22 +875,30 @@ impl Store for MemStore {
 
     async fn create_instance(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewInstance,
     ) -> Result<InstanceCreateResult, StoreError> {
         let mut guard = self.inner.write().await;
 
-        // Project must exist and be in the named silo.
+        // Project must exist and be in the named tenant.
         let project = guard
             .projects_by_id
             .get(&project_id)
             .ok_or(StoreError::NotFound)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(StoreError::NotFound);
         }
 
-        // Image must exist and be in the same silo.
+        // Resolve the owning silo via the tenant; image + ssh-key are
+        // still silo-scoped in E-3.
+        let silo_id = guard
+            .tenants_by_id
+            .get(&tenant_id)
+            .ok_or(StoreError::NotFound)?
+            .silo_id;
+
+        // Image must exist and be in the silo.
         let image = guard
             .images_by_id
             .get(&req.image_id)
@@ -896,17 +908,17 @@ impl Store for MemStore {
         }
         let image = image.clone();
 
-        // Subnet must exist and live under this same silo+project.
+        // Subnet must exist and live under this same tenant+project.
         let subnet = guard
             .subnets_by_id
             .get(&req.primary_subnet_id)
             .ok_or(StoreError::NotFound)?;
-        if subnet.silo_id != silo_id || subnet.project_id != project_id {
+        if subnet.tenant_id != tenant_id || subnet.project_id != project_id {
             return Err(StoreError::NotFound);
         }
         let subnet = subnet.clone();
 
-        // Each ssh-key id must exist and live in the same silo.
+        // Each ssh-key id must exist and live in the silo.
         for key_id in &req.ssh_key_ids {
             let key = guard
                 .ssh_keys_by_id
@@ -955,7 +967,7 @@ impl Store for MemStore {
         let mut rng = rand::rng();
         let nic = Nic {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             project_id,
             instance_id,
             vpc_id: subnet.vpc_id,
@@ -968,7 +980,7 @@ impl Store for MemStore {
         };
         let instance = Instance {
             id: instance_id,
-            silo_id,
+            tenant_id,
             project_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
@@ -983,7 +995,7 @@ impl Store for MemStore {
         };
         let boot_disk = Disk {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             project_id,
             instance_id,
             name: "boot".to_string(),
@@ -1011,7 +1023,7 @@ impl Store for MemStore {
                 .subnets_by_id
                 .get(&spec.subnet_id)
                 .ok_or(StoreError::NotFound)?;
-            if extra_subnet.silo_id != silo_id || extra_subnet.project_id != project_id {
+            if extra_subnet.tenant_id != tenant_id || extra_subnet.project_id != project_id {
                 return Err(StoreError::NotFound);
             }
             let extra_subnet = extra_subnet.clone();
@@ -1051,7 +1063,7 @@ impl Store for MemStore {
             };
             nic_records.push(Nic {
                 id: Uuid::new_v4(),
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_id,
                 vpc_id: extra_subnet.vpc_id,
@@ -1255,7 +1267,7 @@ impl Store for MemStore {
 
     async fn create_floating_ip(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         project_id: Uuid,
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
@@ -1264,7 +1276,7 @@ impl Store for MemStore {
             .projects_by_id
             .get(&project_id)
             .ok_or(StoreError::NotFound)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(StoreError::NotFound);
         }
         let name_key = (project_id, req.name.clone());
@@ -1301,7 +1313,7 @@ impl Store for MemStore {
         let now = Utc::now();
         let fip = FloatingIp {
             id: Uuid::new_v4(),
-            silo_id,
+            tenant_id,
             project_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
@@ -1381,20 +1393,20 @@ impl Store for MemStore {
         target_nic_id: Uuid,
     ) -> Result<FloatingIp, StoreError> {
         let mut guard = self.inner.write().await;
-        // Snapshot fip's silo+project so we can validate the NIC.
-        let (fip_silo, fip_project) = {
+        // Snapshot fip's tenant+project so we can validate the NIC.
+        let (fip_tenant, fip_project) = {
             let fip = guard
                 .floating_ips_by_id
                 .get(&fip_id)
                 .ok_or(StoreError::NotFound)?;
-            (fip.silo_id, fip.project_id)
+            (fip.tenant_id, fip.project_id)
         };
-        // NIC must exist and live under the same silo+project.
+        // NIC must exist and live under the same tenant+project.
         let nic = guard
             .nics_by_id
             .get(&target_nic_id)
             .ok_or(StoreError::NotFound)?;
-        if nic.silo_id != fip_silo || nic.project_id != fip_project {
+        if nic.tenant_id != fip_tenant || nic.project_id != fip_project {
             return Err(StoreError::NotFound);
         }
         let nic_instance_id = nic.instance_id;
@@ -1423,13 +1435,13 @@ impl Store for MemStore {
         Ok(fip.clone())
     }
 
-    async fn delete_quota(&self, silo_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_quota(&self, tenant_id: Uuid, project_id: Uuid) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
         let project = guard
             .projects_by_id
             .get(&project_id)
             .ok_or(StoreError::NotFound)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(StoreError::NotFound);
         }
         guard
@@ -2163,7 +2175,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn project_round_trip_within_silo() {
+    async fn project_round_trip_within_tenant() {
         let store = MemStore::new();
         let silo = store
             .create_silo(NewSilo {
@@ -2172,10 +2184,11 @@ mod tests {
             })
             .await
             .unwrap();
+        let tenant_id = silo.default_tenant_id;
 
         let p = store
             .create_project(
-                silo.id,
+                tenant_id,
                 NewProject {
                     name: "alpha".to_string(),
                     description: Some("first".to_string()),
@@ -2183,12 +2196,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(p.silo_id, silo.id);
+        assert_eq!(p.tenant_id, tenant_id);
 
         let fetched = store.get_project(p.id).await.unwrap();
         assert_eq!(fetched, p);
 
-        let listed = store.list_projects_in_silo(silo.id).await.unwrap();
+        let listed = store.list_projects_in_tenant(tenant_id).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, p.id);
 
@@ -2201,7 +2214,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn duplicate_project_name_within_silo_conflicts() {
+    async fn duplicate_project_name_within_tenant_conflicts() {
         let store = MemStore::new();
         let silo = store
             .create_silo(NewSilo {
@@ -2210,9 +2223,10 @@ mod tests {
             })
             .await
             .unwrap();
+        let tenant_id = silo.default_tenant_id;
         store
             .create_project(
-                silo.id,
+                tenant_id,
                 NewProject {
                     name: "alpha".to_string(),
                     description: None,
@@ -2222,19 +2236,19 @@ mod tests {
             .unwrap();
         let err = store
             .create_project(
-                silo.id,
+                tenant_id,
                 NewProject {
                     name: "alpha".to_string(),
                     description: None,
                 },
             )
             .await
-            .expect_err("duplicate within silo conflicts");
+            .expect_err("duplicate within tenant conflicts");
         assert!(matches!(err, StoreError::Conflict(_)));
     }
 
     #[tokio::test]
-    async fn same_project_name_in_different_silos_does_not_conflict() {
+    async fn same_project_name_in_different_tenants_does_not_conflict() {
         let store = MemStore::new();
         let a = store
             .create_silo(NewSilo {
@@ -2252,7 +2266,7 @@ mod tests {
             .unwrap();
         store
             .create_project(
-                a.id,
+                a.default_tenant_id,
                 NewProject {
                     name: "shared".to_string(),
                     description: None,
@@ -2262,18 +2276,18 @@ mod tests {
             .unwrap();
         store
             .create_project(
-                b.id,
+                b.default_tenant_id,
                 NewProject {
                     name: "shared".to_string(),
                     description: None,
                 },
             )
             .await
-            .expect("same name across silos must be allowed");
+            .expect("same name across tenants must be allowed");
     }
 
     #[tokio::test]
-    async fn create_project_in_unknown_silo_is_not_found() {
+    async fn create_project_in_unknown_tenant_is_not_found() {
         let store = MemStore::new();
         let err = store
             .create_project(
@@ -2284,7 +2298,7 @@ mod tests {
                 },
             )
             .await
-            .expect_err("unknown silo should be not-found");
+            .expect_err("unknown tenant should be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 
@@ -2478,7 +2492,11 @@ mod tests {
         s.parse().expect("test fixture must be a valid CIDR")
     }
 
-    async fn make_silo_and_project(store: &MemStore) -> (Uuid, Uuid) {
+    /// Returns `(tenant_id, tenant_id, project_id)` so callers that
+    /// still need silo_id (e.g. silo-scoped image / ssh-key
+    /// fixtures) can keep their wiring while project-scoped work
+    /// uses tenant_id.
+    async fn make_silo_and_project(store: &MemStore) -> (Uuid, Uuid, Uuid) {
         let silo = store
             .create_silo(NewSilo {
                 name: format!("silo-{}", Uuid::new_v4()),
@@ -2488,7 +2506,7 @@ mod tests {
             .unwrap();
         let project = store
             .create_project(
-                silo.id,
+                silo.default_tenant_id,
                 NewProject {
                     name: "default".to_string(),
                     description: None,
@@ -2496,17 +2514,17 @@ mod tests {
             )
             .await
             .unwrap();
-        (silo.id, project.id)
+        (silo.id, silo.default_tenant_id, project.id)
     }
 
     #[tokio::test]
     async fn vpc_round_trip_within_project() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
 
         let vpc = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "prod".to_string(),
@@ -2517,7 +2535,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(vpc.silo_id, silo_id);
+        assert_eq!(vpc.tenant_id, tenant_id);
         assert_eq!(vpc.project_id, project_id);
         assert!(vpc.vni >= VPC_VNI_RESERVED_CEILING && vpc.vni < VPC_VNI_MAX);
         assert_eq!(vpc.ipv4_block, Some(ipv4_cidr("10.0.0.0/24")));
@@ -2541,11 +2559,11 @@ mod tests {
     #[tokio::test]
     async fn vpc_ipv4_only_and_ipv6_only_round_trip() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
 
         let v4 = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "v4".to_string(),
@@ -2561,7 +2579,7 @@ mod tests {
 
         let v6 = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "v6".to_string(),
@@ -2580,10 +2598,10 @@ mod tests {
     #[tokio::test]
     async fn duplicate_vpc_name_within_project_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "alpha".to_string(),
@@ -2596,7 +2614,7 @@ mod tests {
             .unwrap();
         let err = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "alpha".to_string(),
@@ -2620,9 +2638,10 @@ mod tests {
             })
             .await
             .unwrap();
+        let tenant_id = silo.default_tenant_id;
         let p1 = store
             .create_project(
-                silo.id,
+                tenant_id,
                 NewProject {
                     name: "alpha".to_string(),
                     description: None,
@@ -2632,7 +2651,7 @@ mod tests {
             .unwrap();
         let p2 = store
             .create_project(
-                silo.id,
+                tenant_id,
                 NewProject {
                     name: "beta".to_string(),
                     description: None,
@@ -2642,7 +2661,7 @@ mod tests {
             .unwrap();
         store
             .create_vpc(
-                silo.id,
+                tenant_id,
                 p1.id,
                 NewVpc {
                     name: "shared".to_string(),
@@ -2655,7 +2674,7 @@ mod tests {
             .unwrap();
         store
             .create_vpc(
-                silo.id,
+                tenant_id,
                 p2.id,
                 NewVpc {
                     name: "shared".to_string(),
@@ -2680,7 +2699,7 @@ mod tests {
             .unwrap();
         let err = store
             .create_vpc(
-                silo.id,
+                silo.default_tenant_id,
                 Uuid::new_v4(),
                 NewVpc {
                     name: "orphan".to_string(),
@@ -2695,7 +2714,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_vpc_with_project_in_wrong_silo_is_not_found() {
+    async fn create_vpc_with_project_in_wrong_tenant_is_not_found() {
         let store = MemStore::new();
         let silo_a = store
             .create_silo(NewSilo {
@@ -2713,7 +2732,7 @@ mod tests {
             .unwrap();
         let project = store
             .create_project(
-                silo_a.id,
+                silo_a.default_tenant_id,
                 NewProject {
                     name: "owned-by-a".to_string(),
                     description: None,
@@ -2722,10 +2741,10 @@ mod tests {
             .await
             .unwrap();
 
-        // Caller claims silo_b but the project lives in silo_a.
+        // Caller claims silo_b's tenant but the project lives in silo_a's.
         let err = store
             .create_vpc(
-                silo_b.id,
+                silo_b.default_tenant_id,
                 project.id,
                 NewVpc {
                     name: "wrong".to_string(),
@@ -2735,15 +2754,16 @@ mod tests {
                 },
             )
             .await
-            .expect_err("project-in-wrong-silo should be not-found");
+            .expect_err("project-in-wrong-tenant should be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 
-    async fn make_silo_project_vpc(store: &MemStore) -> (Uuid, Uuid, Vpc) {
-        let (silo_id, project_id) = make_silo_and_project(store).await;
+    /// Returns `(silo_id, tenant_id, project_id, vpc)`.
+    async fn make_silo_project_vpc(store: &MemStore) -> (Uuid, Uuid, Uuid, Vpc) {
+        let (silo_id, tenant_id, project_id) = make_silo_and_project(store).await;
         let vpc = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "vpc1".to_string(),
@@ -2754,17 +2774,17 @@ mod tests {
             )
             .await
             .unwrap();
-        (silo_id, project_id, vpc)
+        (silo_id, tenant_id, project_id, vpc)
     }
 
     #[tokio::test]
     async fn subnet_round_trip_within_vpc() {
         let store = MemStore::new();
-        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
 
         let subnet = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2776,7 +2796,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(subnet.silo_id, silo_id);
+        assert_eq!(subnet.tenant_id, tenant_id);
         assert_eq!(subnet.project_id, project_id);
         assert_eq!(subnet.vpc_id, vpc.id);
 
@@ -2798,12 +2818,12 @@ mod tests {
     #[tokio::test]
     async fn subnet_cidr_must_be_contained_in_vpc() {
         let store = MemStore::new();
-        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
 
         // 10.1.0.0/24 is NOT inside the vpc's 10.0.0.0/16.
         let err = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2821,11 +2841,11 @@ mod tests {
     #[tokio::test]
     async fn subnet_ipv4_in_ipv6_only_vpc_is_conflict() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         // IPv6-only VPC (no ipv4_block).
         let vpc = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "v6only".to_string(),
@@ -2839,7 +2859,7 @@ mod tests {
 
         let err = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2857,11 +2877,11 @@ mod tests {
     #[tokio::test]
     async fn subnet_overlap_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
 
         store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2877,7 +2897,7 @@ mod tests {
         // 10.0.0.128/25 overlaps the existing 10.0.0.0/24.
         let err = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2895,10 +2915,10 @@ mod tests {
     #[tokio::test]
     async fn subnet_name_unique_within_vpc() {
         let store = MemStore::new();
-        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
         store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2912,7 +2932,7 @@ mod tests {
             .unwrap();
         let err = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -2930,10 +2950,10 @@ mod tests {
     #[tokio::test]
     async fn create_subnet_in_unknown_vpc_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         let err = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 Uuid::new_v4(),
                 NewSubnet {
@@ -2951,10 +2971,10 @@ mod tests {
     #[tokio::test]
     async fn create_subnet_under_vpc_in_wrong_project_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, project_id_a, vpc) = make_silo_project_vpc(&store).await;
+        let (_silo_id, tenant_id, project_id_a, vpc) = make_silo_project_vpc(&store).await;
         let project_b = store
             .create_project(
-                silo_id,
+                tenant_id,
                 NewProject {
                     name: "other".to_string(),
                     description: None,
@@ -2967,7 +2987,7 @@ mod tests {
         // Caller claims project_b but the vpc lives in project_a.
         let err = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_b.id,
                 vpc.id,
                 NewSubnet {
@@ -2985,10 +3005,10 @@ mod tests {
     #[tokio::test]
     async fn delete_vpc_with_subnets_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
         let subnet = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -3015,10 +3035,10 @@ mod tests {
     #[tokio::test]
     async fn delete_vpc_frees_vni_and_name() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         let vpc = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "ephemeral".to_string(),
@@ -3035,7 +3055,7 @@ mod tests {
         // Same name now reusable.
         let recreated = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "ephemeral".to_string(),
@@ -3310,33 +3330,33 @@ mod tests {
     #[tokio::test]
     async fn quota_round_trip_within_project() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
 
         // No quota set initially.
         let err = store
-            .get_quota(silo_id, project_id)
+            .get_quota(tenant_id, project_id)
             .await
             .expect_err("unset quota is not-found");
         assert!(matches!(err, StoreError::NotFound));
 
         let quota = store
-            .put_quota(silo_id, project_id, quota_req())
+            .put_quota(tenant_id, project_id, quota_req())
             .await
             .unwrap();
         assert_eq!(quota.cpu_limit, 16);
 
-        let read = store.get_quota(silo_id, project_id).await.unwrap();
+        let read = store.get_quota(tenant_id, project_id).await.unwrap();
         assert_eq!(read.cpu_limit, 16);
 
         // Re-PUT replaces.
         let mut req = quota_req();
         req.cpu_limit = 32;
-        let updated = store.put_quota(silo_id, project_id, req).await.unwrap();
+        let updated = store.put_quota(tenant_id, project_id, req).await.unwrap();
         assert_eq!(updated.cpu_limit, 32);
 
-        store.delete_quota(silo_id, project_id).await.unwrap();
+        store.delete_quota(tenant_id, project_id).await.unwrap();
         let err = store
-            .get_quota(silo_id, project_id)
+            .get_quota(tenant_id, project_id)
             .await
             .expect_err("post-delete is not-found");
         assert!(matches!(err, StoreError::NotFound));
@@ -3345,16 +3365,16 @@ mod tests {
     #[tokio::test]
     async fn quota_in_unknown_project_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, _) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, _project_id) = make_silo_and_project(&store).await;
         let err = store
-            .put_quota(silo_id, Uuid::new_v4(), quota_req())
+            .put_quota(tenant_id, Uuid::new_v4(), quota_req())
             .await
             .expect_err("unknown project should be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 
     #[tokio::test]
-    async fn quota_with_project_in_wrong_silo_is_not_found() {
+    async fn quota_with_project_in_wrong_tenant_is_not_found() {
         let store = MemStore::new();
         let silo_a = store
             .create_silo(NewSilo {
@@ -3372,7 +3392,7 @@ mod tests {
             .unwrap();
         let project = store
             .create_project(
-                silo_a.id,
+                silo_a.default_tenant_id,
                 NewProject {
                     name: "p".to_string(),
                     description: None,
@@ -3381,22 +3401,25 @@ mod tests {
             .await
             .unwrap();
 
-        // Caller claims silo_b but project lives in silo_a.
+        // Caller claims silo_b's tenant but project lives in silo_a's.
         let err = store
-            .put_quota(silo_b.id, project.id, quota_req())
+            .put_quota(silo_b.default_tenant_id, project.id, quota_req())
             .await
-            .expect_err("project-in-wrong-silo should be not-found");
+            .expect_err("project-in-wrong-tenant should be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 
-    /// Build a full silo+project+vpc+subnet+image+ssh-key tree
+    /// Build a full silo+tenant+project+vpc+subnet+image+ssh-key tree
     /// suitable for instance-create tests. Returns
-    /// `(silo_id, project_id, image_id, subnet_id, ssh_key_id)`.
+    /// `(tenant_id, project_id, image_id, subnet_id, ssh_key_id)`.
+    /// Image and SSH key creates internally use the silo derived
+    /// from the tenant since those resources are still silo-scoped
+    /// in E-3.
     async fn make_instance_fixture(store: &MemStore) -> (Uuid, Uuid, Uuid, Uuid, Uuid) {
-        let (silo_id, project_id, vpc) = make_silo_project_vpc(store).await;
+        let (silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(store).await;
         let subnet = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -3420,7 +3443,7 @@ mod tests {
             )
             .await
             .unwrap();
-        (silo_id, project_id, image.id, subnet.id, ssh_key.id)
+        (tenant_id, project_id, image.id, subnet.id, ssh_key.id)
     }
 
     fn instance_req(name: &str, image_id: Uuid, subnet_id: Uuid, ssh_key_id: Uuid) -> NewInstance {
@@ -3439,18 +3462,18 @@ mod tests {
     #[tokio::test]
     async fn instance_round_trip_within_project() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
 
         let InstanceCreateResult { instance, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
             .await
             .unwrap();
-        assert_eq!(instance.silo_id, silo_id);
+        assert_eq!(instance.tenant_id, tenant_id);
         assert_eq!(instance.project_id, project_id);
         assert_eq!(instance.lifecycle, LifecycleState::Pending);
 
@@ -3464,7 +3487,7 @@ mod tests {
     #[tokio::test]
     async fn instance_with_image_in_other_silo_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, project_id, _, subnet_id, ssh_key_id) = make_instance_fixture(&store).await;
+        let (tenant_id, project_id, _, subnet_id, ssh_key_id) = make_instance_fixture(&store).await;
         // Image registered in a *different* silo.
         let other_silo = store
             .create_silo(NewSilo {
@@ -3479,7 +3502,7 @@ mod tests {
             .unwrap();
         let err = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("bad", foreign_image.id, subnet_id, ssh_key_id),
             )
@@ -3491,11 +3514,11 @@ mod tests {
     #[tokio::test]
     async fn instance_with_subnet_in_other_project_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, _, ssh_key_id) = make_instance_fixture(&store).await;
+        let (tenant_id, project_id, image_id, _, ssh_key_id) = make_instance_fixture(&store).await;
         // Second project + subnet in same silo.
         let other_project = store
             .create_project(
-                silo_id,
+                tenant_id,
                 NewProject {
                     name: "other".to_string(),
                     description: None,
@@ -3505,7 +3528,7 @@ mod tests {
             .unwrap();
         let other_vpc = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 other_project.id,
                 NewVpc {
                     name: "v".to_string(),
@@ -3518,7 +3541,7 @@ mod tests {
             .unwrap();
         let foreign_subnet = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 other_project.id,
                 other_vpc.id,
                 NewSubnet {
@@ -3532,7 +3555,7 @@ mod tests {
             .unwrap();
         let err = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("bad", image_id, foreign_subnet.id, ssh_key_id),
             )
@@ -3544,11 +3567,11 @@ mod tests {
     #[tokio::test]
     async fn duplicate_instance_name_within_project_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3556,7 +3579,7 @@ mod tests {
             .unwrap();
         let err = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3568,11 +3591,11 @@ mod tests {
     #[tokio::test]
     async fn lifecycle_transition_cas_succeeds_on_match() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { instance, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3596,11 +3619,11 @@ mod tests {
     #[tokio::test]
     async fn lifecycle_transition_cas_conflicts_on_mismatch() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { instance, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3621,11 +3644,11 @@ mod tests {
     #[tokio::test]
     async fn lifecycle_kind_failed_matches_any_reason() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { instance, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3658,11 +3681,11 @@ mod tests {
     #[tokio::test]
     async fn delete_running_instance_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { instance, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3698,11 +3721,11 @@ mod tests {
     #[tokio::test]
     async fn delete_failed_instance_succeeds() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { instance, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3727,7 +3750,7 @@ mod tests {
     #[tokio::test]
     async fn instance_create_returns_primary_nic_with_ip_and_mac() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult {
             instance,
@@ -3735,7 +3758,7 @@ mod tests {
             disks: _disks,
         } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3769,7 +3792,7 @@ mod tests {
     #[tokio::test]
     async fn delete_instance_cascades_to_nic_and_frees_ip() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult {
             instance,
@@ -3777,7 +3800,7 @@ mod tests {
             disks: _disks,
         } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3807,7 +3830,7 @@ mod tests {
         // freed IP (lowest free is the one we just released).
         let InstanceCreateResult { nics: new_nics, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web2", image_id, subnet_id, ssh_key_id),
             )
@@ -3819,10 +3842,10 @@ mod tests {
     #[tokio::test]
     async fn dual_stack_subnet_allocates_v4_and_v6() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         let vpc = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_id,
                 NewVpc {
                     name: "vpc1".to_string(),
@@ -3835,7 +3858,7 @@ mod tests {
             .unwrap();
         let subnet = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc.id,
                 NewSubnet {
@@ -3861,7 +3884,7 @@ mod tests {
             .unwrap();
         let InstanceCreateResult { nics, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image.id, subnet.id, key.id),
             )
@@ -3875,13 +3898,13 @@ mod tests {
     #[tokio::test]
     async fn instance_create_returns_boot_disk_sized_to_image() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult {
             instance, disks, ..
         } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3905,13 +3928,13 @@ mod tests {
     #[tokio::test]
     async fn delete_instance_cascades_to_boot_disk() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult {
             instance, disks, ..
         } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("web", image_id, subnet_id, ssh_key_id),
             )
@@ -3946,9 +3969,9 @@ mod tests {
     #[tokio::test]
     async fn floating_ip_v4_allocates_from_pool() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         let fip = store
-            .create_floating_ip(silo_id, project_id, fip_req("public", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_id, fip_req("public", AddressFamily::V4))
             .await
             .unwrap();
         match fip.address {
@@ -3965,9 +3988,9 @@ mod tests {
     #[tokio::test]
     async fn floating_ip_v6_allocates_from_pool() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         let fip = store
-            .create_floating_ip(silo_id, project_id, fip_req("v6", AddressFamily::V6))
+            .create_floating_ip(tenant_id, project_id, fip_req("v6", AddressFamily::V6))
             .await
             .unwrap();
         match fip.address {
@@ -3984,13 +4007,13 @@ mod tests {
     #[tokio::test]
     async fn duplicate_floating_ip_name_within_project_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id) = make_silo_and_project(&store).await;
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
         store
-            .create_floating_ip(silo_id, project_id, fip_req("public", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_id, fip_req("public", AddressFamily::V4))
             .await
             .unwrap();
         let err = store
-            .create_floating_ip(silo_id, project_id, fip_req("public", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_id, fip_req("public", AddressFamily::V4))
             .await
             .expect_err("duplicate name within project must conflict");
         assert!(matches!(err, StoreError::Conflict(_)));
@@ -3999,12 +4022,12 @@ mod tests {
     #[tokio::test]
     async fn attach_replaces_existing_attachment() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         // Two instances, two NICs.
         let InstanceCreateResult { nics: nics_a, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("a", image_id, subnet_id, ssh_key_id),
             )
@@ -4012,14 +4035,14 @@ mod tests {
             .unwrap();
         let InstanceCreateResult { nics: nics_b, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("b", image_id, subnet_id, ssh_key_id),
             )
             .await
             .unwrap();
         let fip = store
-            .create_floating_ip(silo_id, project_id, fip_req("p", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_id, fip_req("p", AddressFamily::V4))
             .await
             .unwrap();
 
@@ -4046,18 +4069,18 @@ mod tests {
     #[tokio::test]
     async fn delete_attached_floating_ip_conflicts() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { nics, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("a", image_id, subnet_id, ssh_key_id),
             )
             .await
             .unwrap();
         let fip = store
-            .create_floating_ip(silo_id, project_id, fip_req("p", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_id, fip_req("p", AddressFamily::V4))
             .await
             .unwrap();
         store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
@@ -4076,18 +4099,18 @@ mod tests {
     #[tokio::test]
     async fn instance_delete_detaches_floating_ip_but_does_not_release() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let InstanceCreateResult { instance, nics, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("a", image_id, subnet_id, ssh_key_id),
             )
             .await
             .unwrap();
         let fip = store
-            .create_floating_ip(silo_id, project_id, fip_req("p", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_id, fip_req("p", AddressFamily::V4))
             .await
             .unwrap();
         store.attach_floating_ip(fip.id, nics[0].id).await.unwrap();
@@ -4114,13 +4137,13 @@ mod tests {
     #[tokio::test]
     async fn instance_with_extra_nic_allocates_per_subnet() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, primary_subnet, ssh_key_id) =
+        let (tenant_id, project_id, image_id, primary_subnet, ssh_key_id) =
             make_instance_fixture(&store).await;
         // A second subnet in the same project for the extra NIC.
         let vpc_id = store.get_subnet(primary_subnet).await.unwrap().vpc_id;
         let second = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_id,
                 vpc_id,
                 NewSubnet {
@@ -4138,7 +4161,7 @@ mod tests {
             name: "data".to_string(),
         }];
         let result = store
-            .create_instance(silo_id, project_id, req)
+            .create_instance(tenant_id, project_id, req)
             .await
             .unwrap();
         assert_eq!(result.nics.len(), 2, "expected primary + one extra");
@@ -4157,7 +4180,7 @@ mod tests {
     #[tokio::test]
     async fn instance_extra_nic_duplicate_name_is_rejected() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, primary_subnet, ssh_key_id) =
+        let (tenant_id, project_id, image_id, primary_subnet, ssh_key_id) =
             make_instance_fixture(&store).await;
         let mut req = instance_req("dup", image_id, primary_subnet, ssh_key_id);
         req.extra_nics = vec![NewInstanceNic {
@@ -4166,18 +4189,18 @@ mod tests {
             name: "primary".to_string(),
         }];
         let err = store
-            .create_instance(silo_id, project_id, req)
+            .create_instance(tenant_id, project_id, req)
             .await
             .expect_err("duplicate NIC name must conflict");
         assert!(matches!(err, StoreError::Conflict(_)));
     }
 
     #[tokio::test]
-    async fn instance_extra_nic_in_wrong_silo_is_not_found() {
+    async fn instance_extra_nic_in_wrong_tenant_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, primary_subnet, ssh_key_id) =
+        let (tenant_id, project_id, image_id, primary_subnet, ssh_key_id) =
             make_instance_fixture(&store).await;
-        // A subnet in a *different* silo+project.
+        // A subnet in a *different* tenant+project (different silo too).
         let other_silo = store
             .create_silo(NewSilo {
                 name: "other".to_string(),
@@ -4185,9 +4208,10 @@ mod tests {
             })
             .await
             .unwrap();
+        let other_tenant = other_silo.default_tenant_id;
         let other_project = store
             .create_project(
-                other_silo.id,
+                other_tenant,
                 NewProject {
                     name: "p".to_string(),
                     description: None,
@@ -4197,7 +4221,7 @@ mod tests {
             .unwrap();
         let other_vpc = store
             .create_vpc(
-                other_silo.id,
+                other_tenant,
                 other_project.id,
                 NewVpc {
                     name: "v".to_string(),
@@ -4210,7 +4234,7 @@ mod tests {
             .unwrap();
         let other_subnet = store
             .create_subnet(
-                other_silo.id,
+                other_tenant,
                 other_project.id,
                 other_vpc.id,
                 NewSubnet {
@@ -4228,20 +4252,20 @@ mod tests {
             name: "alien".to_string(),
         }];
         let err = store
-            .create_instance(silo_id, project_id, req)
+            .create_instance(tenant_id, project_id, req)
             .await
-            .expect_err("extra NIC subnet outside silo+project must NotFound");
+            .expect_err("extra NIC subnet outside tenant+project must NotFound");
         assert!(matches!(err, StoreError::NotFound));
     }
 
     #[tokio::test]
     async fn delete_instance_in_pending_is_rejected_without_force() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let created = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("doomed", image_id, subnet_id, ssh_key_id),
             )
@@ -4259,11 +4283,11 @@ mod tests {
     #[tokio::test]
     async fn delete_instance_force_overrides_state_gate() {
         let store = MemStore::new();
-        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
             make_instance_fixture(&store).await;
         let created = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_id,
                 instance_req("force-delete-me", image_id, subnet_id, ssh_key_id),
             )
@@ -4283,11 +4307,14 @@ mod tests {
     #[tokio::test]
     async fn cross_project_attach_target_is_not_found() {
         let store = MemStore::new();
-        let (silo_id, project_a, image_a, subnet_a, ssh_a) = make_instance_fixture(&store).await;
-        // Second project + its own fixture in the same silo.
+        let (tenant_id, project_a, image_a, subnet_a, ssh_a) = make_instance_fixture(&store).await;
+        // Resolve the silo via the tenant for the still-silo-scoped
+        // image and ssh-key fixtures.
+        let silo_id = store.get_tenant(tenant_id).await.unwrap().silo_id;
+        // Second project + its own fixture in the same tenant.
         let project_b = store
             .create_project(
-                silo_id,
+                tenant_id,
                 NewProject {
                     name: "other".to_string(),
                     description: None,
@@ -4297,7 +4324,7 @@ mod tests {
             .unwrap();
         let vpc_b = store
             .create_vpc(
-                silo_id,
+                tenant_id,
                 project_b.id,
                 NewVpc {
                     name: "v".to_string(),
@@ -4310,7 +4337,7 @@ mod tests {
             .unwrap();
         let subnet_b = store
             .create_subnet(
-                silo_id,
+                tenant_id,
                 project_b.id,
                 vpc_b.id,
                 NewSubnet {
@@ -4336,7 +4363,7 @@ mod tests {
             .unwrap();
         let InstanceCreateResult { nics: nics_b, .. } = store
             .create_instance(
-                silo_id,
+                tenant_id,
                 project_b.id,
                 instance_req("b", image_b.id, subnet_b.id, key_b.id),
             )
@@ -4345,7 +4372,7 @@ mod tests {
 
         // Allocate the FloatingIp under project A.
         let fip = store
-            .create_floating_ip(silo_id, project_a, fip_req("p", AddressFamily::V4))
+            .create_floating_ip(tenant_id, project_a, fip_req("p", AddressFamily::V4))
             .await
             .unwrap();
         let _ = (image_a, subnet_a, ssh_a);

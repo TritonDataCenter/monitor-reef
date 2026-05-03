@@ -50,19 +50,18 @@ use crate::audit::AuditService;
 
 /// Embedded Cedar policy bundle.
 ///
-/// Three rules, ordered by specificity:
+/// Four rules, ordered by specificity:
 ///
 /// * Anonymous callers can hit `health`, `login`, and `refresh`.
 /// * Authenticated operators with `is_root == true` can perform any
 ///   action (the bootstrap-root path).
-/// * Tenant members can perform a hand-curated set of
-///   silo-scoped actions when `principal.silo_id ==
-///   resource.silo_id`. The actions in this rule are still
-///   silo-scoped today (E-2 only re-parented the principal to a
-///   tenant; resources move under tenant in E-3). Future slices
-///   will add tenant-scoped resource gates that read
-///   `principal.tenant_id`. Adding a new tenant-facing action
-///   means appending it to the action list in this rule.
+/// * Silo members can perform actions on resources that remain
+///   silo-scoped after E-3 (SSH keys, images, IdP). Gated by
+///   `principal.silo_id == resource.silo_id`.
+/// * Tenant members can perform actions on the tenant-scoped
+///   workload graph (project, VPC, subnet, instance, NIC, disk,
+///   floating IP, quota). Gated by `principal.tenant_id ==
+///   resource.tenant_id`.
 ///
 /// Every other access falls through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
@@ -88,6 +87,26 @@ permit(
     principal has is_root && principal.is_root == true
 };
 
+@id("silo-member-allows-silo-scoped-actions")
+permit(
+    principal,
+    action in [
+        Action::"ssh_key_list",
+        Action::"ssh_key_create",
+        Action::"ssh_key_get",
+        Action::"ssh_key_delete",
+        Action::"image_list",
+        Action::"image_create",
+        Action::"image_get",
+        Action::"image_delete"
+    ],
+    resource
+) when {
+    principal has silo_id &&
+    resource has silo_id &&
+    principal.silo_id == resource.silo_id
+};
+
 @id("tenant-member-allows-tenant-scoped-actions")
 permit(
     principal,
@@ -104,14 +123,6 @@ permit(
         Action::"subnet_create",
         Action::"subnet_get",
         Action::"subnet_delete",
-        Action::"ssh_key_list",
-        Action::"ssh_key_create",
-        Action::"ssh_key_get",
-        Action::"ssh_key_delete",
-        Action::"image_list",
-        Action::"image_create",
-        Action::"image_get",
-        Action::"image_delete",
         Action::"quota_set",
         Action::"quota_get",
         Action::"quota_delete",
@@ -135,9 +146,9 @@ permit(
     ],
     resource
 ) when {
-    principal has silo_id &&
-    resource has silo_id &&
-    principal.silo_id == resource.silo_id
+    principal has tenant_id &&
+    resource has tenant_id &&
+    principal.tenant_id == resource.tenant_id
 };
 "#;
 
@@ -756,6 +767,41 @@ impl AuthService {
         }
     }
 
+    /// Evaluate the policy against a `Tenant::"<tenant_id>"`
+    /// resource carrying a `tenant_id` attribute, so the
+    /// tenant-membership rule can fire. Returns `Ok(())` on
+    /// permit; on deny, returns **404 Not Found** rather than 403
+    /// — a tenant member hitting another tenant's resources
+    /// should not learn that the other tenant exists.
+    ///
+    /// The cross-tenant 404 invariant is strictly stricter than
+    /// the cross-silo invariant: a request gated here will refuse
+    /// to confirm the target tenant's existence even when the
+    /// caller and the target live in the same silo.
+    pub fn authorize_in_tenant(
+        &self,
+        principal: &Principal,
+        action: Action,
+        tenant_id: Uuid,
+    ) -> Result<(), HttpError> {
+        if !principal_scope_allows(principal, action) {
+            return Err(not_found_in_tenant());
+        }
+        let resource_uid = EntityUid::from_str(&format!("Tenant::\"{tenant_id}\""))
+            .map_err(|e| HttpError::for_internal_error(format!("tenant resource uid: {e}")))?;
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "tenant_id".to_string(),
+            RestrictedExpression::new_string(tenant_id.to_string()),
+        );
+        let resource_entity = Entity::new(resource_uid.clone(), attrs, HashSet::new())
+            .map_err(|e| HttpError::for_internal_error(format!("tenant resource entity: {e}")))?;
+        match self.evaluate(principal, action, resource_uid, resource_entity)? {
+            CedarDecision::Allow => Ok(()),
+            CedarDecision::Deny => Err(not_found_in_tenant()),
+        }
+    }
+
     fn evaluate(
         &self,
         principal: &Principal,
@@ -1078,10 +1124,22 @@ fn not_found_in_silo() -> HttpError {
     )
 }
 
+/// Cross-tenant deny: return 404 so cross-tenant probes can't
+/// enumerate tenants. Strictly stricter than [`not_found_in_silo`]:
+/// even two tenants in the same silo cannot see each other.
+fn not_found_in_tenant() -> HttpError {
+    HttpError::for_client_error(
+        Some("NotFound".to_string()),
+        ClientErrorStatusCode::NOT_FOUND,
+        "not found".to_string(),
+    )
+}
+
 /// Silo-scoped variant of [`authenticate_and_authorize`]. The Cedar
-/// resource is `Silo::"<silo_id>"` so the `silo-member-allows-silo-
-/// scoped-tenant-actions` rule can fire; deny returns **404** rather
-/// than 403 so cross-tenant probes can't enumerate silos.
+/// resource is `Silo::"<silo_id>"` so the silo-member rule can fire;
+/// deny returns **404** rather than 403 so cross-silo probes can't
+/// enumerate silos. Used for resources that remain silo-scoped after
+/// E-3 (SSH keys, images, IdP config).
 pub async fn authenticate_and_authorize_in_silo<C>(
     rqctx: &RequestContext<C>,
     auth: &AuthService,
@@ -1097,6 +1155,42 @@ where
     let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await?;
     let request_id = Uuid::parse_str(&rqctx.request_id).ok();
     match auth.authorize_in_silo(&principal, action, silo_id) {
+        Ok(()) => {
+            audit
+                .record_decision(&principal, action, request_id, AuditDecision::Allow)
+                .await;
+            Ok(principal)
+        }
+        Err(http_err) => {
+            audit
+                .record_decision(&principal, action, request_id, AuditDecision::Deny)
+                .await;
+            Err(http_err)
+        }
+    }
+}
+
+/// Tenant-scoped variant of [`authenticate_and_authorize`]. The
+/// Cedar resource is `Tenant::"<tenant_id>"` so the tenant-member
+/// rule can fire; deny returns **404** rather than 403 so
+/// cross-tenant probes can't enumerate tenants. Used for the
+/// project-rooted workload graph (project, VPC, subnet, instance,
+/// NIC, disk, floating IP, quota).
+pub async fn authenticate_and_authorize_in_tenant<C>(
+    rqctx: &RequestContext<C>,
+    auth: &AuthService,
+    audit: &AuditService,
+    store: &Arc<dyn Store>,
+    action: Action,
+    tenant_id: Uuid,
+) -> Result<Principal, HttpError>
+where
+    C: dropshot::ServerContext,
+{
+    let bearer = extract_bearer(rqctx);
+    let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await?;
+    let request_id = Uuid::parse_str(&rqctx.request_id).ok();
+    match auth.authorize_in_tenant(&principal, action, tenant_id) {
         Ok(()) => {
             audit
                 .record_decision(&principal, action, request_id, AuditDecision::Allow)

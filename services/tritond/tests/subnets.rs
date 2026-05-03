@@ -7,7 +7,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 //! End-to-end tests for the
-//! `/v2/silos/{silo_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`
+//! `/v2/silos/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`
 //! surface.
 //!
 //! Mirrors `tests/vpcs.rs`: same in-process tritond fixture + stub
@@ -232,8 +232,10 @@ fn assert_status(err: progenitor_client::Error<tritond_client::types::Error>, wa
 }
 
 /// Convenience: create silo + project + a dual-stack VPC with a
-/// /16 IPv4 block and /48 IPv6 block. Returns `(silo_id, project_id,
+/// /16 IPv4 block and /48 IPv6 block. Returns `(tenant_id, project_id,
 /// vpc_id)`.
+/// Returns `(tenant_id, project_id, vpc_id)`. The tenant_id is the
+/// silo's default tenant (E-3 made projects tenant-scoped).
 async fn make_silo_project_vpc(root: &tritond_client::Client) -> (Uuid, Uuid, Uuid) {
     let silo = root
         .create_silo()
@@ -246,8 +248,8 @@ async fn make_silo_project_vpc(root: &tritond_client::Client) -> (Uuid, Uuid, Uu
         .unwrap()
         .into_inner();
     let project = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -258,7 +260,7 @@ async fn make_silo_project_vpc(root: &tritond_client::Client) -> (Uuid, Uuid, Uu
         .into_inner();
     let vpc = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .body(NewVpc {
             name: "vpc1".to_string(),
@@ -270,7 +272,7 @@ async fn make_silo_project_vpc(root: &tritond_client::Client) -> (Uuid, Uuid, Uu
         .await
         .unwrap()
         .into_inner();
-    (silo.id, project.id, vpc.id)
+    (silo.default_tenant_id, project.id, vpc.id)
 }
 
 fn dual_stack_subnet(name: &str, v4: &str, v6: &str) -> NewSubnet {
@@ -297,11 +299,11 @@ fn ipv4_only_subnet(name: &str, v4: &str) -> NewSubnet {
 async fn root_can_create_and_read_subnets_in_any_vpc() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
 
     let subnet = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(dual_stack_subnet("web", "10.0.1.0/24", "fd00:0:0:1::/64"))
@@ -309,7 +311,7 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(subnet.silo_id, silo_id);
+    assert_eq!(subnet.tenant_id, tenant_id);
     assert_eq!(subnet.project_id, project_id);
     assert_eq!(subnet.vpc_id, vpc_id);
     assert_eq!(subnet.ipv4_block.as_deref(), Some("10.0.1.0/24"));
@@ -317,7 +319,7 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
 
     let listed = root
         .list_vpc_subnets()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()
@@ -329,7 +331,7 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
 
     let fetched = root
         .get_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .subnet_id(subnet.id)
@@ -346,12 +348,12 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
 async fn subnet_cidr_outside_vpc_block_returns_409() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
 
     // VPC's ipv4_block is 10.0.0.0/16. 10.1.0.0/24 is outside.
     let err = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(ipv4_only_subnet("out", "10.1.0.0/24"))
@@ -367,10 +369,10 @@ async fn subnet_cidr_outside_vpc_block_returns_409() {
 async fn overlapping_subnet_returns_409() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
 
     root.create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(ipv4_only_subnet("first", "10.0.0.0/24"))
@@ -380,7 +382,7 @@ async fn overlapping_subnet_returns_409() {
 
     let err = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(ipv4_only_subnet("overlap", "10.0.0.128/25"))
@@ -408,8 +410,8 @@ async fn ipv4_subnet_in_ipv6_only_vpc_returns_409() {
         .unwrap()
         .into_inner();
     let project = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -420,7 +422,7 @@ async fn ipv4_subnet_in_ipv6_only_vpc_returns_409() {
         .into_inner();
     let vpc = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .body(NewVpc {
             name: "v6only".to_string(),
@@ -435,7 +437,7 @@ async fn ipv4_subnet_in_ipv6_only_vpc_returns_409() {
 
     let err = root
         .create_vpc_subnet()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .vpc_id(vpc.id)
         .body(ipv4_only_subnet("wrong-family", "10.0.0.0/24"))
@@ -451,11 +453,11 @@ async fn ipv4_subnet_in_ipv6_only_vpc_returns_409() {
 async fn subnet_with_no_cidr_returns_400() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
 
     let err = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(NewSubnet {
@@ -476,10 +478,10 @@ async fn subnet_with_no_cidr_returns_400() {
 async fn duplicate_subnet_name_within_vpc_returns_409() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
 
     root.create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(ipv4_only_subnet("alpha", "10.0.1.0/24"))
@@ -488,7 +490,7 @@ async fn duplicate_subnet_name_within_vpc_returns_409() {
         .unwrap();
     let err = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(ipv4_only_subnet("alpha", "10.0.2.0/24"))
@@ -507,10 +509,10 @@ async fn cross_vpc_subnet_get_returns_404() {
     // Cedar would otherwise allow same-silo same-project access).
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_a) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_a) = make_silo_project_vpc(&root).await;
     let vpc_b = root
         .create_project_vpc()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(NewVpc {
             name: "vpc2".to_string(),
@@ -524,7 +526,7 @@ async fn cross_vpc_subnet_get_returns_404() {
         .into_inner();
     let subnet = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_a)
         .body(ipv4_only_subnet("net", "10.0.0.0/24"))
@@ -535,7 +537,7 @@ async fn cross_vpc_subnet_get_returns_404() {
 
     let err = root
         .get_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_b.id) // wrong vpc for this subnet
         .subnet_id(subnet.id)
@@ -546,7 +548,7 @@ async fn cross_vpc_subnet_get_returns_404() {
 
     let err = root
         .delete_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_b.id)
         .subnet_id(subnet.id)
@@ -562,10 +564,10 @@ async fn cross_vpc_subnet_get_returns_404() {
 async fn delete_vpc_with_subnets_returns_409() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
     let subnet = root
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(ipv4_only_subnet("occupant", "10.0.1.0/24"))
@@ -576,7 +578,7 @@ async fn delete_vpc_with_subnets_returns_409() {
 
     let err = root
         .delete_project_vpc()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()
@@ -586,7 +588,7 @@ async fn delete_vpc_with_subnets_returns_409() {
 
     // Clear the subnet, then the VPC delete succeeds.
     root.delete_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .subnet_id(subnet.id)
@@ -594,7 +596,7 @@ async fn delete_vpc_with_subnets_returns_409() {
         .await
         .unwrap();
     root.delete_project_vpc()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()
@@ -633,8 +635,8 @@ async fn federated_user_cross_silo_subnet_create_returns_404() {
         .unwrap()
         .into_inner();
     let beta_proj = root
-        .create_silo_project()
-        .silo_id(silo_beta.id)
+        .create_tenant_project()
+        .tenant_id(silo_beta.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -645,7 +647,7 @@ async fn federated_user_cross_silo_subnet_create_returns_404() {
         .into_inner();
     let beta_vpc = root
         .create_project_vpc()
-        .silo_id(silo_beta.id)
+        .tenant_id(silo_beta.default_tenant_id)
         .project_id(beta_proj.id)
         .body(NewVpc {
             name: "betav".to_string(),
@@ -674,7 +676,7 @@ async fn federated_user_cross_silo_subnet_create_returns_404() {
 
     let err = tenant
         .create_vpc_subnet()
-        .silo_id(silo_beta.id)
+        .tenant_id(silo_beta.default_tenant_id)
         .project_id(beta_proj.id)
         .vpc_id(beta_vpc.id)
         .body(ipv4_only_subnet("intruder", "10.0.0.0/24"))
@@ -691,12 +693,12 @@ async fn federated_user_cross_silo_subnet_create_returns_404() {
 async fn anonymous_cannot_reach_subnet_endpoints() {
     let test = TestServer::start().await;
     let root = test.root_client();
-    let (silo_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
 
     let anon = test.anonymous_client();
     let err = anon
         .list_vpc_subnets()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()

@@ -118,7 +118,7 @@ fn fresh_pubkey() -> String {
 /// Bring up a full fixture: silo + project + vpc + subnet + image
 /// + ssh key. Returns ids for use in instance-create tests.
 struct Fixture {
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     image_id: Uuid,
     subnet_id: Uuid,
@@ -137,8 +137,8 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     let project = root
-        .create_silo_project()
-        .silo_id(silo.id)
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
         .body(NewProject {
             name: "p".to_string(),
             description: None,
@@ -149,7 +149,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .into_inner();
     let vpc = root
         .create_project_vpc()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .body(NewVpc {
             name: "v".to_string(),
@@ -163,7 +163,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .into_inner();
     let subnet = root
         .create_vpc_subnet()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .vpc_id(vpc.id)
         .body(NewSubnet {
@@ -207,7 +207,7 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     Fixture {
-        silo_id: silo.id,
+        tenant_id: silo.default_tenant_id,
         project_id: project.id,
         image_id: image.id,
         subnet_id: subnet.id,
@@ -247,7 +247,7 @@ fn lifecycle_state(state: &LifecycleState) -> &'static str {
 /// 50ms; tests typically settle in 100-200ms with worker_threads=4.
 async fn wait_for_lifecycle(
     client: &tritond_client::Client,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     expected: &str,
@@ -257,7 +257,7 @@ async fn wait_for_lifecycle(
     loop {
         let inst = client
             .get_project_instance()
-            .silo_id(silo_id)
+            .tenant_id(tenant_id)
             .project_id(project_id)
             .instance_id(instance_id)
             .send()
@@ -291,7 +291,7 @@ async fn instance_create_settles_at_running_via_queue() {
 
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
@@ -301,11 +301,11 @@ async fn instance_create_settles_at_running_via_queue() {
     // Create handler returns Pending; the stub provisioner drives
     // Pending → Provisioning → Running asynchronously.
     assert_eq!(lifecycle_state(&inst.lifecycle), "Pending");
-    assert_eq!(inst.silo_id, fx.silo_id);
+    assert_eq!(inst.tenant_id, fx.tenant_id);
     assert_eq!(inst.project_id, fx.project_id);
 
     let settled =
-        wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+        wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
     assert_eq!(lifecycle_state(&settled.lifecycle), "Running");
 
     test.close().await;
@@ -318,20 +318,20 @@ async fn instance_lifecycle_start_stop_restart() {
     let fx = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
         .await
         .unwrap()
         .into_inner();
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
     // Running → Stopping → Stopped (handler returns Stopping; agent
     // drives the rest).
     let stop_response = root
         .stop_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -339,14 +339,14 @@ async fn instance_lifecycle_start_stop_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(lifecycle_state(&stop_response.lifecycle), "Stopping");
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
 
     // Stop while already stopped → 409 (CAS rejects). NB: there's a
     // brief window during Stopping where the CAS would also reject;
     // we guard the test by waiting for Stopped first.
     let err = root
         .stop_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -358,7 +358,7 @@ async fn instance_lifecycle_start_stop_restart() {
     // drives Pending → Provisioning → Running).
     let start_response = root
         .start_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -366,13 +366,13 @@ async fn instance_lifecycle_start_stop_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(lifecycle_state(&start_response.lifecycle), "Pending");
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
     // Restart: handler returns Stopping; agent drives the full
     // restart cycle Stopping → Pending → Provisioning → Running.
     let restart_response = root
         .restart_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -380,7 +380,7 @@ async fn instance_lifecycle_start_stop_restart() {
         .unwrap()
         .into_inner();
     assert_eq!(lifecycle_state(&restart_response.lifecycle), "Stopping");
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
     test.close().await;
 }
@@ -392,18 +392,18 @@ async fn delete_running_instance_returns_409() {
     let fx = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
         .await
         .unwrap()
         .into_inner();
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Running", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Running", SETTLE).await;
 
     let err = root
         .delete_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -413,15 +413,15 @@ async fn delete_running_instance_returns_409() {
 
     // Stop, wait for it to settle, then delete works.
     root.stop_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
         .await
         .unwrap();
-    wait_for_lifecycle(&root, fx.silo_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
+    wait_for_lifecycle(&root, fx.tenant_id, fx.project_id, inst.id, "Stopped", SETTLE).await;
     root.delete_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .instance_id(inst.id)
         .send()
@@ -441,7 +441,7 @@ async fn zero_cpu_or_memory_returns_400() {
     req.cpu = 0;
     let err = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(req)
         .send()
@@ -453,7 +453,7 @@ async fn zero_cpu_or_memory_returns_400() {
     req.memory_bytes = 0;
     let err = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(req)
         .send()
@@ -504,7 +504,7 @@ async fn cross_silo_image_returns_404() {
     req.image_id = foreign_image.id;
     let err = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(req)
         .send()
@@ -523,7 +523,7 @@ async fn cross_silo_get_returns_404() {
     let fx_b = build_fixture(&root).await;
     let inst = root
         .create_project_instance()
-        .silo_id(fx_a.silo_id)
+        .tenant_id(fx_a.tenant_id)
         .project_id(fx_a.project_id)
         .body(instance_req(&fx_a, "web"))
         .send()
@@ -535,7 +535,7 @@ async fn cross_silo_get_returns_404() {
     // defence-in-depth 404.
     let err = root
         .get_project_instance()
-        .silo_id(fx_b.silo_id)
+        .tenant_id(fx_b.tenant_id)
         .project_id(fx_b.project_id)
         .instance_id(inst.id)
         .send()
@@ -552,7 +552,7 @@ async fn duplicate_instance_name_within_project_returns_409() {
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     root.create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
@@ -560,7 +560,7 @@ async fn duplicate_instance_name_within_project_returns_409() {
         .unwrap();
     let err = root
         .create_project_instance()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
@@ -579,7 +579,7 @@ async fn anonymous_cannot_reach_instance_endpoints() {
     let anon = test.anonymous_client();
     let err = anon
         .list_project_instances()
-        .silo_id(fx.silo_id)
+        .tenant_id(fx.tenant_id)
         .project_id(fx.project_id)
         .send()
         .await

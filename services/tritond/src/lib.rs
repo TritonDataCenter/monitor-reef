@@ -41,9 +41,9 @@ use tritond_api::{
     CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig,
     NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest,
     RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse,
-    SiloImagePath, SiloPath, SiloProjectFloatingIpPath, SiloProjectInstanceDiskPath,
-    SiloProjectInstanceNicPath, SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath,
-    SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse, TritondApi,
+    SiloImagePath, SiloPath, SiloSshKeyPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind,
@@ -65,7 +65,7 @@ use uuid::Uuid;
 use crate::audit::AuditService;
 use crate::auth::{
     Action, AuthService, authenticate_and_authorize, authenticate_and_authorize_in_silo,
-    require_authenticated,
+    authenticate_and_authorize_in_tenant, require_authenticated,
 };
 use crate::rate_limit::{IpRateLimiter, LoginRateLimiter};
 
@@ -861,48 +861,48 @@ impl TritondApi for TritondServiceImpl {
         Ok(HttpResponseDeleted())
     }
 
-    async fn list_silo_projects(
+    async fn list_tenant_projects(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantPath>,
     ) -> Result<HttpResponseOk<Vec<Project>>, HttpError> {
         let ctx = rqctx.context();
-        let silo_id = path.into_inner().silo_id;
-        authenticate_and_authorize_in_silo(
+        let tenant_id = path.into_inner().tenant_id;
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::ProjectList,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let projects = ctx
             .store
-            .list_projects_in_silo(silo_id)
+            .list_projects_in_tenant(tenant_id)
             .await
             .map_err(store_error_to_http)?;
         Ok(HttpResponseOk(projects))
     }
 
-    async fn create_silo_project(
+    async fn create_tenant_project(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantPath>,
         body: TypedBody<NewProject>,
     ) -> Result<HttpResponseCreated<Project>, HttpError> {
         let ctx = rqctx.context();
-        let silo_id = path.into_inner().silo_id;
-        let principal = authenticate_and_authorize_in_silo(
+        let tenant_id = path.into_inner().tenant_id;
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::ProjectCreate,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
-        match ctx.store.create_project(silo_id, req).await {
+        match ctx.store.create_project(tenant_id, req).await {
             Ok(project) => {
                 ctx.audit
                     .record_mutation(
@@ -914,7 +914,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Project::\"{}\"", project.id)),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "name": project.name,
                         }),
                     )
@@ -937,22 +937,22 @@ impl TritondApi for TritondServiceImpl {
         }
     }
 
-    async fn get_silo_project(
+    async fn get_tenant_project(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Project>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::ProjectGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let project = ctx
@@ -961,9 +961,9 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         // Project found globally — confirm it actually belongs to the
-        // path's silo. Cross-silo lookups (would-be probes) get the
-        // same 404 as a missing project.
-        if project.silo_id != silo_id {
+        // path's tenant. Cross-tenant lookups (would-be probes) get
+        // the same 404 as a missing project.
+        if project.tenant_id != tenant_id {
             return Err(HttpError::for_client_error(
                 Some("NotFound".to_string()),
                 ClientErrorStatusCode::NOT_FOUND,
@@ -973,34 +973,34 @@ impl TritondApi for TritondServiceImpl {
         Ok(HttpResponseOk(project))
     }
 
-    async fn delete_silo_project(
+    async fn delete_tenant_project(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::ProjectDelete,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
 
-        // Confirm silo membership before deleting; cross-silo deletes
-        // get a 404 like cross-silo gets.
+        // Confirm tenant membership before deleting; cross-tenant
+        // deletes get a 404 like cross-tenant gets.
         let project = ctx
             .store
             .get_project(project_id)
             .await
             .map_err(store_error_to_http)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(HttpError::for_client_error(
                 Some("NotFound".to_string()),
                 ClientErrorStatusCode::NOT_FOUND,
@@ -1020,7 +1020,7 @@ impl TritondApi for TritondServiceImpl {
                 AuditOutcome::Success {
                     resource: Some(format!("Project::\"{project_id}\"")),
                 },
-                serde_json::json!({ "silo_id": silo_id }),
+                serde_json::json!({ "tenant_id": tenant_id }),
             )
             .await;
         Ok(HttpResponseDeleted())
@@ -1028,25 +1028,25 @@ impl TritondApi for TritondServiceImpl {
 
     async fn list_project_vpcs(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Vpc>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::VpcList,
-            silo_id,
+            tenant_id,
         )
         .await?;
 
-        // Verify the project actually lives in the path's silo. A
-        // project_id that names some other silo's project is treated
+        // Verify the project actually lives in the path's tenant. A
+        // project_id that names some other tenant's project is treated
         // as not-found; this stops cross-tenant enumeration via the
         // VPC list endpoint.
         let project = ctx
@@ -1054,7 +1054,7 @@ impl TritondApi for TritondServiceImpl {
             .get_project(project_id)
             .await
             .map_err(store_error_to_http)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(not_found());
         }
         let vpcs = ctx
@@ -1067,21 +1067,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn create_project_vpc(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewVpc>,
     ) -> Result<HttpResponseCreated<Vpc>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::VpcCreate,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -1102,7 +1102,7 @@ impl TritondApi for TritondServiceImpl {
                     request_id,
                     None,
                     outcome,
-                    serde_json::json!({ "silo_id": silo_id, "project_id": project_id }),
+                    serde_json::json!({ "tenant_id": tenant_id, "project_id": project_id }),
                 )
                 .await;
             return Err(HttpError::for_bad_request(
@@ -1111,7 +1111,7 @@ impl TritondApi for TritondServiceImpl {
             ));
         }
 
-        match ctx.store.create_vpc(silo_id, project_id, req).await {
+        match ctx.store.create_vpc(tenant_id, project_id, req).await {
             Ok(vpc) => {
                 ctx.audit
                     .record_mutation(
@@ -1123,7 +1123,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Vpc::\"{}\"", vpc.id)),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                             "name": vpc.name,
                             "vni": vpc.vni,
@@ -1150,21 +1150,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_project_vpc(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vpc>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectVpcPath {
-            silo_id,
+        let TenantProjectVpcPath {
+            tenant_id,
             project_id,
             vpc_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::VpcGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let vpc = ctx
@@ -1176,7 +1176,7 @@ impl TritondApi for TritondServiceImpl {
         // silo and the path's project. Mismatch on either dimension is
         // a 404 so cross-tenant probes don't learn the resource exists
         // somewhere else.
-        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
             return Err(not_found());
         }
         Ok(HttpResponseOk(vpc))
@@ -1184,21 +1184,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn delete_project_vpc(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectVpcPath {
-            silo_id,
+        let TenantProjectVpcPath {
+            tenant_id,
             project_id,
             vpc_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::VpcDelete,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -1209,7 +1209,7 @@ impl TritondApi for TritondServiceImpl {
             .get_vpc(vpc_id)
             .await
             .map_err(store_error_to_http)?;
-        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
             return Err(not_found());
         }
         match ctx.store.delete_vpc(vpc_id).await {
@@ -1224,7 +1224,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Vpc::\"{vpc_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                         }),
                     )
@@ -1249,21 +1249,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn list_vpc_subnets(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectVpcPath {
-            silo_id,
+        let TenantProjectVpcPath {
+            tenant_id,
             project_id,
             vpc_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::SubnetList,
-            silo_id,
+            tenant_id,
         )
         .await?;
 
@@ -1276,7 +1276,7 @@ impl TritondApi for TritondServiceImpl {
             .get_vpc(vpc_id)
             .await
             .map_err(store_error_to_http)?;
-        if vpc.silo_id != silo_id || vpc.project_id != project_id {
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
             return Err(not_found());
         }
         let subnets = ctx
@@ -1289,22 +1289,22 @@ impl TritondApi for TritondServiceImpl {
 
     async fn create_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcPath>,
+        path: Path<TenantProjectVpcPath>,
         body: TypedBody<NewSubnet>,
     ) -> Result<HttpResponseCreated<Subnet>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectVpcPath {
-            silo_id,
+        let TenantProjectVpcPath {
+            tenant_id,
             project_id,
             vpc_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::SubnetCreate,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -1326,7 +1326,7 @@ impl TritondApi for TritondServiceImpl {
                     None,
                     outcome,
                     serde_json::json!({
-                        "silo_id": silo_id,
+                        "tenant_id": tenant_id,
                         "project_id": project_id,
                         "vpc_id": vpc_id,
                     }),
@@ -1340,7 +1340,7 @@ impl TritondApi for TritondServiceImpl {
 
         match ctx
             .store
-            .create_subnet(silo_id, project_id, vpc_id, req)
+            .create_subnet(tenant_id, project_id, vpc_id, req)
             .await
         {
             Ok(subnet) => {
@@ -1354,7 +1354,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Subnet::\"{}\"", subnet.id)),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                             "vpc_id": vpc_id,
                             "name": subnet.name,
@@ -1381,22 +1381,22 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcSubnetPath>,
+        path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseOk<Subnet>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectVpcSubnetPath {
-            silo_id,
+        let TenantProjectVpcSubnetPath {
+            tenant_id,
             project_id,
             vpc_id,
             subnet_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::SubnetGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let subnet = ctx
@@ -1405,7 +1405,10 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         // Defence-in-depth: subnet must live in path silo + project + vpc.
-        if subnet.silo_id != silo_id || subnet.project_id != project_id || subnet.vpc_id != vpc_id {
+        if subnet.tenant_id != tenant_id
+            || subnet.project_id != project_id
+            || subnet.vpc_id != vpc_id
+        {
             return Err(not_found());
         }
         Ok(HttpResponseOk(subnet))
@@ -1413,22 +1416,22 @@ impl TritondApi for TritondServiceImpl {
 
     async fn delete_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectVpcSubnetPath>,
+        path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectVpcSubnetPath {
-            silo_id,
+        let TenantProjectVpcSubnetPath {
+            tenant_id,
             project_id,
             vpc_id,
             subnet_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::SubnetDelete,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -1438,7 +1441,10 @@ impl TritondApi for TritondServiceImpl {
             .get_subnet(subnet_id)
             .await
             .map_err(store_error_to_http)?;
-        if subnet.silo_id != silo_id || subnet.project_id != project_id || subnet.vpc_id != vpc_id {
+        if subnet.tenant_id != tenant_id
+            || subnet.project_id != project_id
+            || subnet.vpc_id != vpc_id
+        {
             return Err(not_found());
         }
         ctx.store
@@ -1455,7 +1461,7 @@ impl TritondApi for TritondServiceImpl {
                     resource: Some(format!("Subnet::\"{subnet_id}\"")),
                 },
                 serde_json::json!({
-                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
                     "project_id": project_id,
                     "vpc_id": vpc_id,
                 }),
@@ -1921,27 +1927,27 @@ impl TritondApi for TritondServiceImpl {
 
     async fn put_project_quota(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewQuota>,
     ) -> Result<HttpResponseOk<Quota>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::QuotaSet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
 
-        match ctx.store.put_quota(silo_id, project_id, req).await {
+        match ctx.store.put_quota(tenant_id, project_id, req).await {
             Ok(quota) => {
                 ctx.audit
                     .record_mutation(
@@ -1953,7 +1959,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Quota::\"{project_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                             "cpu_limit": quota.cpu_limit,
                             "memory_bytes": quota.memory_bytes,
@@ -1982,25 +1988,25 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_project_quota(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Quota>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::QuotaGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let quota = ctx
             .store
-            .get_quota(silo_id, project_id)
+            .get_quota(tenant_id, project_id)
             .await
             .map_err(store_error_to_http)?;
         Ok(HttpResponseOk(quota))
@@ -2008,25 +2014,25 @@ impl TritondApi for TritondServiceImpl {
 
     async fn delete_project_quota(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::QuotaDelete,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
 
-        match ctx.store.delete_quota(silo_id, project_id).await {
+        match ctx.store.delete_quota(tenant_id, project_id).await {
             Ok(()) => {
                 ctx.audit
                     .record_mutation(
@@ -2038,7 +2044,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Quota::\"{project_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                         }),
                     )
@@ -2063,20 +2069,20 @@ impl TritondApi for TritondServiceImpl {
 
     async fn list_project_instances(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::InstanceList,
-            silo_id,
+            tenant_id,
         )
         .await?;
         // Project must exist + be in this silo (matches the
@@ -2086,7 +2092,7 @@ impl TritondApi for TritondServiceImpl {
             .get_project(project_id)
             .await
             .map_err(store_error_to_http)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(not_found());
         }
         let instances = ctx
@@ -2099,21 +2105,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn create_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewInstance>,
     ) -> Result<HttpResponseCreated<Instance>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::InstanceCreate,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -2127,7 +2133,7 @@ impl TritondApi for TritondServiceImpl {
                 Action::InstanceCreate,
                 request_id,
                 "cpu must be greater than zero",
-                serde_json::json!({ "silo_id": silo_id, "project_id": project_id }),
+                serde_json::json!({ "tenant_id": tenant_id, "project_id": project_id }),
             )
             .await);
         }
@@ -2138,12 +2144,12 @@ impl TritondApi for TritondServiceImpl {
                 Action::InstanceCreate,
                 request_id,
                 "memory_bytes must be greater than zero",
-                serde_json::json!({ "silo_id": silo_id, "project_id": project_id }),
+                serde_json::json!({ "tenant_id": tenant_id, "project_id": project_id }),
             )
             .await);
         }
 
-        let instance = match ctx.store.create_instance(silo_id, project_id, req).await {
+        let instance = match ctx.store.create_instance(tenant_id, project_id, req).await {
             Ok(result) => result.instance,
             Err(e) => {
                 ctx.audit
@@ -2205,7 +2211,7 @@ impl TritondApi for TritondServiceImpl {
                     resource: Some(format!("Instance::\"{}\"", instance.id)),
                 },
                 serde_json::json!({
-                    "silo_id": silo_id,
+                    "tenant_id": tenant_id,
                     "project_id": project_id,
                     "name": instance.name,
                     "image_id": instance.image_id,
@@ -2218,21 +2224,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectInstancePath {
-            silo_id,
+        let TenantProjectInstancePath {
+            tenant_id,
             project_id,
             instance_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::InstanceGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let instance = ctx
@@ -2240,7 +2246,7 @@ impl TritondApi for TritondServiceImpl {
             .get_instance(instance_id)
             .await
             .map_err(store_error_to_http)?;
-        if instance.silo_id != silo_id || instance.project_id != project_id {
+        if instance.tenant_id != tenant_id || instance.project_id != project_id {
             return Err(not_found());
         }
         Ok(HttpResponseOk(instance))
@@ -2248,23 +2254,23 @@ impl TritondApi for TritondServiceImpl {
 
     async fn delete_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
         query: Query<InstanceDeleteQuery>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectInstancePath {
-            silo_id,
+        let TenantProjectInstancePath {
+            tenant_id,
             project_id,
             instance_id,
         } = path.into_inner();
         let force = query.into_inner().force;
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::InstanceDelete,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -2274,7 +2280,7 @@ impl TritondApi for TritondServiceImpl {
             .get_instance(instance_id)
             .await
             .map_err(store_error_to_http)?;
-        if instance.silo_id != silo_id || instance.project_id != project_id {
+        if instance.tenant_id != tenant_id || instance.project_id != project_id {
             return Err(not_found());
         }
         match ctx.store.delete_instance(instance_id, force).await {
@@ -2289,7 +2295,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("Instance::\"{instance_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                         }),
                     )
@@ -2332,7 +2338,7 @@ impl TritondApi for TritondServiceImpl {
 
     async fn start_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
         // Stopped → Pending; agent then drives Pending → Provisioning
         // → Running. The response shows Pending; clients poll for
@@ -2350,7 +2356,7 @@ impl TritondApi for TritondServiceImpl {
 
     async fn stop_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
         // Running → Stopping; agent then drives Stopping → Stopped.
         instance_lifecycle_transition(
@@ -2366,7 +2372,7 @@ impl TritondApi for TritondServiceImpl {
 
     async fn restart_project_instance(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
         // Running → Stopping; agent then drives the full restart
         // cycle Stopping → Pending → Provisioning → Running.
@@ -2383,21 +2389,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn list_instance_nics(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectInstancePath {
-            silo_id,
+        let TenantProjectInstancePath {
+            tenant_id,
             project_id,
             instance_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::NicList,
-            silo_id,
+            tenant_id,
         )
         .await?;
         // Defence-in-depth: instance must live in path's silo+project.
@@ -2406,7 +2412,7 @@ impl TritondApi for TritondServiceImpl {
             .get_instance(instance_id)
             .await
             .map_err(store_error_to_http)?;
-        if instance.silo_id != silo_id || instance.project_id != project_id {
+        if instance.tenant_id != tenant_id || instance.project_id != project_id {
             return Err(not_found());
         }
         let nics = ctx
@@ -2419,22 +2425,22 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_instance_nic(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstanceNicPath>,
+        path: Path<TenantProjectInstanceNicPath>,
     ) -> Result<HttpResponseOk<Nic>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectInstanceNicPath {
-            silo_id,
+        let TenantProjectInstanceNicPath {
+            tenant_id,
             project_id,
             instance_id,
             nic_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::NicGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let nic = ctx
@@ -2443,7 +2449,9 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         // Defence-in-depth: NIC must live under all three path levels.
-        if nic.silo_id != silo_id || nic.project_id != project_id || nic.instance_id != instance_id
+        if nic.tenant_id != tenant_id
+            || nic.project_id != project_id
+            || nic.instance_id != instance_id
         {
             return Err(not_found());
         }
@@ -2452,21 +2460,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn list_instance_disks(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstancePath>,
+        path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectInstancePath {
-            silo_id,
+        let TenantProjectInstancePath {
+            tenant_id,
             project_id,
             instance_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::DiskList,
-            silo_id,
+            tenant_id,
         )
         .await?;
         // Defence-in-depth: instance must live in path silo+project.
@@ -2475,7 +2483,7 @@ impl TritondApi for TritondServiceImpl {
             .get_instance(instance_id)
             .await
             .map_err(store_error_to_http)?;
-        if instance.silo_id != silo_id || instance.project_id != project_id {
+        if instance.tenant_id != tenant_id || instance.project_id != project_id {
             return Err(not_found());
         }
         let disks = ctx
@@ -2488,22 +2496,22 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_instance_disk(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectInstanceDiskPath>,
+        path: Path<TenantProjectInstanceDiskPath>,
     ) -> Result<HttpResponseOk<Disk>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectInstanceDiskPath {
-            silo_id,
+        let TenantProjectInstanceDiskPath {
+            tenant_id,
             project_id,
             instance_id,
             disk_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::DiskGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let disk = ctx
@@ -2512,7 +2520,7 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         // Defence-in-depth on all three parent ids.
-        if disk.silo_id != silo_id
+        if disk.tenant_id != tenant_id
             || disk.project_id != project_id
             || disk.instance_id != instance_id
         {
@@ -2523,20 +2531,20 @@ impl TritondApi for TritondServiceImpl {
 
     async fn list_project_floating_ips(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<FloatingIp>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::FloatingIpList,
-            silo_id,
+            tenant_id,
         )
         .await?;
         // Defence-in-depth: project must live in path's silo.
@@ -2545,7 +2553,7 @@ impl TritondApi for TritondServiceImpl {
             .get_project(project_id)
             .await
             .map_err(store_error_to_http)?;
-        if project.silo_id != silo_id {
+        if project.tenant_id != tenant_id {
             return Err(not_found());
         }
         let fips = ctx
@@ -2558,27 +2566,31 @@ impl TritondApi for TritondServiceImpl {
 
     async fn create_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectPath>,
+        path: Path<TenantProjectPath>,
         body: TypedBody<NewFloatingIp>,
     ) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectPath {
-            silo_id,
+        let TenantProjectPath {
+            tenant_id,
             project_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::FloatingIpCreate,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
 
-        match ctx.store.create_floating_ip(silo_id, project_id, req).await {
+        match ctx
+            .store
+            .create_floating_ip(tenant_id, project_id, req)
+            .await
+        {
             Ok(fip) => {
                 ctx.audit
                     .record_mutation(
@@ -2590,7 +2602,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("FloatingIp::\"{}\"", fip.id)),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                             "name": fip.name,
                             "address": fip.address.to_string(),
@@ -2617,21 +2629,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn get_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectFloatingIpPath {
-            silo_id,
+        let TenantProjectFloatingIpPath {
+            tenant_id,
             project_id,
             floating_ip_id,
         } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::FloatingIpGet,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let fip = ctx
@@ -2639,7 +2651,7 @@ impl TritondApi for TritondServiceImpl {
             .get_floating_ip(floating_ip_id)
             .await
             .map_err(store_error_to_http)?;
-        if fip.silo_id != silo_id || fip.project_id != project_id {
+        if fip.tenant_id != tenant_id || fip.project_id != project_id {
             return Err(not_found());
         }
         Ok(HttpResponseOk(fip))
@@ -2647,21 +2659,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn delete_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectFloatingIpPath {
-            silo_id,
+        let TenantProjectFloatingIpPath {
+            tenant_id,
             project_id,
             floating_ip_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::FloatingIpDelete,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -2673,7 +2685,7 @@ impl TritondApi for TritondServiceImpl {
             .get_floating_ip(floating_ip_id)
             .await
             .map_err(store_error_to_http)?;
-        if fip.silo_id != silo_id || fip.project_id != project_id {
+        if fip.tenant_id != tenant_id || fip.project_id != project_id {
             return Err(not_found());
         }
         match ctx.store.delete_floating_ip(floating_ip_id).await {
@@ -2688,7 +2700,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                         }),
                     )
@@ -2713,22 +2725,22 @@ impl TritondApi for TritondServiceImpl {
 
     async fn attach_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
         body: TypedBody<AttachFloatingIpRequest>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectFloatingIpPath {
-            silo_id,
+        let TenantProjectFloatingIpPath {
+            tenant_id,
             project_id,
             floating_ip_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::FloatingIpAttach,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -2740,7 +2752,7 @@ impl TritondApi for TritondServiceImpl {
             .get_floating_ip(floating_ip_id)
             .await
             .map_err(store_error_to_http)?;
-        if fip.silo_id != silo_id || fip.project_id != project_id {
+        if fip.tenant_id != tenant_id || fip.project_id != project_id {
             return Err(not_found());
         }
         match ctx
@@ -2759,7 +2771,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                             "nic_id": req.nic_id,
                         }),
@@ -2785,21 +2797,21 @@ impl TritondApi for TritondServiceImpl {
 
     async fn detach_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloProjectFloatingIpPath>,
+        path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
         let ctx = rqctx.context();
-        let SiloProjectFloatingIpPath {
-            silo_id,
+        let TenantProjectFloatingIpPath {
+            tenant_id,
             project_id,
             floating_ip_id,
         } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let principal = authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::FloatingIpDetach,
-            silo_id,
+            tenant_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
@@ -2809,7 +2821,7 @@ impl TritondApi for TritondServiceImpl {
             .get_floating_ip(floating_ip_id)
             .await
             .map_err(store_error_to_http)?;
-        if fip.silo_id != silo_id || fip.project_id != project_id {
+        if fip.tenant_id != tenant_id || fip.project_id != project_id {
             return Err(not_found());
         }
         match ctx.store.detach_floating_ip(floating_ip_id).await {
@@ -2824,7 +2836,7 @@ impl TritondApi for TritondServiceImpl {
                             resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
                         },
                         serde_json::json!({
-                            "silo_id": silo_id,
+                            "tenant_id": tenant_id,
                             "project_id": project_id,
                         }),
                     )
@@ -3476,31 +3488,31 @@ impl JobKindTemplate {
 /// slice can move CAS+enqueue into a single FDB transaction.
 async fn instance_lifecycle_transition(
     rqctx: RequestContext<ApiContext>,
-    path: Path<SiloProjectInstancePath>,
+    path: Path<TenantProjectInstancePath>,
     action: Action,
     expected_from: &[LifecycleStateKind],
     to: LifecycleState,
     enqueue: Option<JobKindTemplate>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
     let ctx = rqctx.context();
-    let SiloProjectInstancePath {
-        silo_id,
+    let TenantProjectInstancePath {
+        tenant_id,
         project_id,
         instance_id,
     } = path.into_inner();
-    let principal = authenticate_and_authorize_in_silo(
-        &rqctx, &ctx.auth, &ctx.audit, &ctx.store, action, silo_id,
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx, &ctx.auth, &ctx.audit, &ctx.store, action, tenant_id,
     )
     .await?;
     let request_id = parse_request_id(&rqctx);
 
-    // Defence-in-depth on silo+project before we try to transition.
+    // Defence-in-depth on tenant+project before we try to transition.
     let instance = ctx
         .store
         .get_instance(instance_id)
         .await
         .map_err(store_error_to_http)?;
-    if instance.silo_id != silo_id || instance.project_id != project_id {
+    if instance.tenant_id != tenant_id || instance.project_id != project_id {
         return Err(not_found());
     }
 
@@ -3557,7 +3569,7 @@ async fn instance_lifecycle_transition(
                 resource: Some(format!("Instance::\"{instance_id}\"")),
             },
             serde_json::json!({
-                "silo_id": silo_id,
+                "tenant_id": tenant_id,
                 "project_id": project_id,
                 "to_state": format!("{:?}", to.kind()),
             }),

@@ -406,17 +406,17 @@ pub async fn silo_idp_delete(
 }
 
 /// List the projects in a silo.
-pub async fn silo_project_list(
+pub async fn tenant_project_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let projects = client
-        .list_silo_projects()
-        .silo_id(silo_id)
+        .list_tenant_projects()
+        .tenant_id(tenant_id)
         .send()
         .await
         .context("list projects")?
@@ -436,10 +436,10 @@ pub async fn silo_project_list(
 }
 
 /// Create a new project in a silo.
-pub async fn silo_project_create(
+pub async fn tenant_project_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     name: String,
     description: String,
     json_output: bool,
@@ -447,8 +447,8 @@ pub async fn silo_project_create(
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let project = client
-        .create_silo_project()
-        .silo_id(silo_id)
+        .create_tenant_project()
+        .tenant_id(tenant_id)
         .body(tritond_client::types::NewProject {
             name,
             description: Some(description),
@@ -460,7 +460,7 @@ pub async fn silo_project_create(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&project)?);
     } else {
-        println!("Created project {} in silo {silo_id}", project.id);
+        println!("Created project {} in silo {tenant_id}", project.id);
         println!("  name:        {}", project.name);
         println!("  description: {}", project.description);
         println!("  created:     {}", project.created_at);
@@ -469,18 +469,18 @@ pub async fn silo_project_create(
 }
 
 /// Read a single project.
-pub async fn silo_project_get(
+pub async fn tenant_project_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let project = client
-        .get_silo_project()
-        .silo_id(silo_id)
+        .get_tenant_project()
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -489,7 +489,7 @@ pub async fn silo_project_get(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&project)?);
     } else {
-        println!("Project {} in silo {silo_id}", project.id);
+        println!("Project {} in silo {tenant_id}", project.id);
         println!("  name:        {}", project.name);
         println!("  description: {}", project.description);
         println!("  created:     {}", project.created_at);
@@ -514,10 +514,10 @@ fn print_instance(i: &tritond_client::types::Instance) {
 }
 
 /// List instances in a project.
-pub async fn silo_project_instance_list(
+pub async fn tenant_project_instance_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
@@ -525,7 +525,7 @@ pub async fn silo_project_instance_list(
     let client = session.client()?;
     let instances = client
         .list_project_instances()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -556,10 +556,10 @@ pub async fn silo_project_instance_list(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_instance_create(
+pub async fn tenant_project_instance_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     name: String,
     description: String,
@@ -574,7 +574,7 @@ pub async fn silo_project_instance_create(
     let client = session.client()?;
     let instance = client
         .create_project_instance()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(tritond_client::types::NewInstance {
             name,
@@ -604,10 +604,10 @@ pub async fn silo_project_instance_create(
 }
 
 /// Read a single instance.
-pub async fn silo_project_instance_get(
+pub async fn tenant_project_instance_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     json_output: bool,
@@ -616,7 +616,7 @@ pub async fn silo_project_instance_get(
     let client = session.client()?;
     let instance = client
         .get_project_instance()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .instance_id(instance_id)
         .send()
@@ -632,10 +632,10 @@ pub async fn silo_project_instance_get(
 }
 
 /// Delete an instance.
-pub async fn silo_project_instance_delete(
+pub async fn tenant_project_instance_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
 ) -> Result<()> {
@@ -643,7 +643,7 @@ pub async fn silo_project_instance_delete(
     let client = session.client()?;
     client
         .delete_project_instance()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .instance_id(instance_id)
         .send()
@@ -674,10 +674,10 @@ fn print_floating_ip(f: &tritond_client::types::FloatingIp) {
 }
 
 /// List FloatingIps in a project.
-pub async fn silo_project_floating_ip_list(
+pub async fn tenant_project_floating_ip_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
@@ -685,7 +685,7 @@ pub async fn silo_project_floating_ip_list(
     let client = session.client()?;
     let fips = client
         .list_project_floating_ips()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -713,10 +713,10 @@ pub async fn silo_project_floating_ip_list(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_floating_ip_create(
+pub async fn tenant_project_floating_ip_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     name: String,
     description: String,
@@ -732,7 +732,7 @@ pub async fn silo_project_floating_ip_create(
     let client = session.client()?;
     let fip = client
         .create_project_floating_ip()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(tritond_client::types::NewFloatingIp {
             name,
@@ -753,10 +753,10 @@ pub async fn silo_project_floating_ip_create(
 }
 
 /// Read a single FloatingIp.
-pub async fn silo_project_floating_ip_get(
+pub async fn tenant_project_floating_ip_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     floating_ip_id: Uuid,
     json_output: bool,
@@ -765,7 +765,7 @@ pub async fn silo_project_floating_ip_get(
     let client = session.client()?;
     let fip = client
         .get_project_floating_ip()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .floating_ip_id(floating_ip_id)
         .send()
@@ -781,10 +781,10 @@ pub async fn silo_project_floating_ip_get(
 }
 
 /// Release a FloatingIp.
-pub async fn silo_project_floating_ip_delete(
+pub async fn tenant_project_floating_ip_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     floating_ip_id: Uuid,
 ) -> Result<()> {
@@ -792,7 +792,7 @@ pub async fn silo_project_floating_ip_delete(
     let client = session.client()?;
     client
         .delete_project_floating_ip()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .floating_ip_id(floating_ip_id)
         .send()
@@ -806,10 +806,10 @@ pub async fn silo_project_floating_ip_delete(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_floating_ip_attach(
+pub async fn tenant_project_floating_ip_attach(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     floating_ip_id: Uuid,
     nic_id: Uuid,
@@ -819,7 +819,7 @@ pub async fn silo_project_floating_ip_attach(
     let client = session.client()?;
     let fip = client
         .attach_project_floating_ip()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .floating_ip_id(floating_ip_id)
         .body(tritond_client::types::AttachFloatingIpRequest { nic_id })
@@ -836,10 +836,10 @@ pub async fn silo_project_floating_ip_attach(
 }
 
 /// Detach a FloatingIp.
-pub async fn silo_project_floating_ip_detach(
+pub async fn tenant_project_floating_ip_detach(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     floating_ip_id: Uuid,
     json_output: bool,
@@ -848,7 +848,7 @@ pub async fn silo_project_floating_ip_detach(
     let client = session.client()?;
     let fip = client
         .detach_project_floating_ip()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .floating_ip_id(floating_ip_id)
         .send()
@@ -864,10 +864,10 @@ pub async fn silo_project_floating_ip_detach(
 }
 
 /// List the disks attached to an instance.
-pub async fn silo_project_instance_disk_list(
+pub async fn tenant_project_instance_disk_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     json_output: bool,
@@ -876,7 +876,7 @@ pub async fn silo_project_instance_disk_list(
     let client = session.client()?;
     let disks = client
         .list_instance_disks()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .instance_id(instance_id)
         .send()
@@ -907,10 +907,10 @@ pub async fn silo_project_instance_disk_list(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_instance_disk_get(
+pub async fn tenant_project_instance_disk_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     disk_id: Uuid,
@@ -920,7 +920,7 @@ pub async fn silo_project_instance_disk_get(
     let client = session.client()?;
     let disk = client
         .get_instance_disk()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .instance_id(instance_id)
         .disk_id(disk_id)
@@ -948,10 +948,10 @@ pub async fn silo_project_instance_disk_get(
 }
 
 /// List the NICs attached to an instance.
-pub async fn silo_project_instance_nic_list(
+pub async fn tenant_project_instance_nic_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     json_output: bool,
@@ -960,7 +960,7 @@ pub async fn silo_project_instance_nic_list(
     let client = session.client()?;
     let nics = client
         .list_instance_nics()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .instance_id(instance_id)
         .send()
@@ -993,10 +993,10 @@ pub async fn silo_project_instance_nic_list(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_instance_nic_get(
+pub async fn tenant_project_instance_nic_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     nic_id: Uuid,
@@ -1006,7 +1006,7 @@ pub async fn silo_project_instance_nic_get(
     let client = session.client()?;
     let nic = client
         .get_instance_nic()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .instance_id(instance_id)
         .nic_id(nic_id)
@@ -1041,11 +1041,11 @@ pub async fn silo_project_instance_nic_get(
 
 /// Drive a lifecycle transition (start/stop/restart). Single function
 /// for all three so the dispatch table in main.rs stays terse.
-pub async fn silo_project_instance_lifecycle(
+pub async fn tenant_project_instance_lifecycle(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
     transition: &str,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     instance_id: Uuid,
     json_output: bool,
@@ -1055,7 +1055,7 @@ pub async fn silo_project_instance_lifecycle(
     let instance = match transition {
         "start" => client
             .start_project_instance()
-            .silo_id(silo_id)
+            .tenant_id(tenant_id)
             .project_id(project_id)
             .instance_id(instance_id)
             .send()
@@ -1064,7 +1064,7 @@ pub async fn silo_project_instance_lifecycle(
             .into_inner(),
         "stop" => client
             .stop_project_instance()
-            .silo_id(silo_id)
+            .tenant_id(tenant_id)
             .project_id(project_id)
             .instance_id(instance_id)
             .send()
@@ -1073,7 +1073,7 @@ pub async fn silo_project_instance_lifecycle(
             .into_inner(),
         "restart" => client
             .restart_project_instance()
-            .silo_id(silo_id)
+            .tenant_id(tenant_id)
             .project_id(project_id)
             .instance_id(instance_id)
             .send()
@@ -1094,10 +1094,10 @@ pub async fn silo_project_instance_lifecycle(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_quota_set(
+pub async fn tenant_project_quota_set(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     cpu_limit: u32,
     memory_bytes: u64,
@@ -1109,7 +1109,7 @@ pub async fn silo_project_quota_set(
     let client = session.client()?;
     let quota = client
         .put_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(tritond_client::types::NewQuota {
             cpu_limit,
@@ -1135,10 +1135,10 @@ pub async fn silo_project_quota_set(
 }
 
 /// Read a project's quota.
-pub async fn silo_project_quota_get(
+pub async fn tenant_project_quota_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
@@ -1146,7 +1146,7 @@ pub async fn silo_project_quota_get(
     let client = session.client()?;
     let quota = client
         .get_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -1166,17 +1166,17 @@ pub async fn silo_project_quota_get(
 }
 
 /// Remove a project's quota.
-pub async fn silo_project_quota_delete(
+pub async fn tenant_project_quota_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     client
         .delete_project_quota()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -1186,22 +1186,22 @@ pub async fn silo_project_quota_delete(
 }
 
 /// Delete a project.
-pub async fn silo_project_delete(
+pub async fn tenant_project_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     client
-        .delete_silo_project()
-        .silo_id(silo_id)
+        .delete_tenant_project()
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
         .context("delete project")?;
-    println!("Deleted project {project_id} from silo {silo_id}");
+    println!("Deleted project {project_id} from silo {tenant_id}");
     Ok(())
 }
 
@@ -1210,10 +1210,10 @@ fn fmt_opt_cidr(opt: Option<&String>) -> &str {
 }
 
 /// List the VPCs in a project.
-pub async fn silo_project_vpc_list(
+pub async fn tenant_project_vpc_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
@@ -1221,7 +1221,7 @@ pub async fn silo_project_vpc_list(
     let client = session.client()?;
     let vpcs = client
         .list_project_vpcs()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .send()
         .await
@@ -1252,10 +1252,10 @@ pub async fn silo_project_vpc_list(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_vpc_create(
+pub async fn tenant_project_vpc_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     name: String,
     description: String,
@@ -1270,7 +1270,7 @@ pub async fn silo_project_vpc_create(
     let client = session.client()?;
     let vpc = client
         .create_project_vpc()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .body(tritond_client::types::NewVpc {
             name,
@@ -1297,10 +1297,10 @@ pub async fn silo_project_vpc_create(
 }
 
 /// Read a single VPC.
-pub async fn silo_project_vpc_get(
+pub async fn tenant_project_vpc_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     vpc_id: Uuid,
     json_output: bool,
@@ -1309,7 +1309,7 @@ pub async fn silo_project_vpc_get(
     let client = session.client()?;
     let vpc = client
         .get_project_vpc()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()
@@ -1331,10 +1331,10 @@ pub async fn silo_project_vpc_get(
 }
 
 /// Delete a VPC.
-pub async fn silo_project_vpc_delete(
+pub async fn tenant_project_vpc_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     vpc_id: Uuid,
 ) -> Result<()> {
@@ -1342,7 +1342,7 @@ pub async fn silo_project_vpc_delete(
     let client = session.client()?;
     client
         .delete_project_vpc()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()
@@ -1353,10 +1353,10 @@ pub async fn silo_project_vpc_delete(
 }
 
 /// List the subnets in a VPC.
-pub async fn silo_project_vpc_subnet_list(
+pub async fn tenant_project_vpc_subnet_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     vpc_id: Uuid,
     json_output: bool,
@@ -1365,7 +1365,7 @@ pub async fn silo_project_vpc_subnet_list(
     let client = session.client()?;
     let subnets = client
         .list_vpc_subnets()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .send()
@@ -1396,10 +1396,10 @@ pub async fn silo_project_vpc_subnet_list(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_vpc_subnet_create(
+pub async fn tenant_project_vpc_subnet_create(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     vpc_id: Uuid,
     name: String,
@@ -1415,7 +1415,7 @@ pub async fn silo_project_vpc_subnet_create(
     let client = session.client()?;
     let subnet = client
         .create_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .body(tritond_client::types::NewSubnet {
@@ -1451,10 +1451,10 @@ pub async fn silo_project_vpc_subnet_create(
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_project_vpc_subnet_get(
+pub async fn tenant_project_vpc_subnet_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     vpc_id: Uuid,
     subnet_id: Uuid,
@@ -1464,7 +1464,7 @@ pub async fn silo_project_vpc_subnet_get(
     let client = session.client()?;
     let subnet = client
         .get_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .subnet_id(subnet_id)
@@ -1492,10 +1492,10 @@ pub async fn silo_project_vpc_subnet_get(
 }
 
 /// Delete a subnet.
-pub async fn silo_project_vpc_subnet_delete(
+pub async fn tenant_project_vpc_subnet_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     project_id: Uuid,
     vpc_id: Uuid,
     subnet_id: Uuid,
@@ -1504,7 +1504,7 @@ pub async fn silo_project_vpc_subnet_delete(
     let client = session.client()?;
     client
         .delete_vpc_subnet()
-        .silo_id(silo_id)
+        .tenant_id(tenant_id)
         .project_id(project_id)
         .vpc_id(vpc_id)
         .subnet_id(subnet_id)

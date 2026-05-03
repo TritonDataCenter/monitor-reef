@@ -365,7 +365,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
     let project = test
         .store
         .create_project(
-            silo.id,
+            silo.default_tenant_id,
             tritond_store::NewProject {
                 name: "p1".to_string(),
                 description: None,
@@ -394,7 +394,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
     let vpc = test
         .store
         .create_vpc(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             tritond_store::NewVpc {
                 name: "v1".to_string(),
@@ -408,7 +408,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
     let subnet = test
         .store
         .create_subnet(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             vpc.id,
             tritond_store::NewSubnet {
@@ -423,7 +423,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
     let created = test
         .store
         .create_instance(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             tritond_store::NewInstance {
                 name: "lifecycle-test".to_string(),
@@ -609,7 +609,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
     let project = test
         .store
         .create_project(
-            silo.id,
+            silo.default_tenant_id,
             tritond_store::NewProject {
                 name: "p1".to_string(),
                 description: None,
@@ -638,7 +638,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
     let vpc = test
         .store
         .create_vpc(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             tritond_store::NewVpc {
                 name: "v1".to_string(),
@@ -652,7 +652,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
     let subnet = test
         .store
         .create_subnet(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             vpc.id,
             tritond_store::NewSubnet {
@@ -667,7 +667,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
     let created = test
         .store
         .create_instance(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             tritond_store::NewInstance {
                 name: "to-delete".to_string(),
@@ -711,7 +711,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
     let session = test.bearer_client(&token.access_token);
     session
         .delete_project_instance()
-        .silo_id(silo.id)
+        .tenant_id(silo.default_tenant_id)
         .project_id(project.id)
         .instance_id(instance_id)
         .send()
@@ -790,7 +790,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
     let project = test
         .store
         .create_project(
-            silo.id,
+            silo.default_tenant_id,
             tritond_store::NewProject {
                 name: "p1".to_string(),
                 description: None,
@@ -819,7 +819,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
     let vpc = test
         .store
         .create_vpc(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             tritond_store::NewVpc {
                 name: "v1".to_string(),
@@ -833,7 +833,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
     let subnet = test
         .store
         .create_subnet(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             vpc.id,
             tritond_store::NewSubnet {
@@ -848,7 +848,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
     let created = test
         .store
         .create_instance(
-            silo.id,
+            silo.default_tenant_id,
             project.id,
             tritond_store::NewInstance {
                 name: "fails".to_string(),

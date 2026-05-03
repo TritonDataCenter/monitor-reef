@@ -245,7 +245,7 @@ pub(crate) fn build_create_payload(blueprint: &ProvisioningBlueprint) -> Result<
         // tritond instance + tenancy without a separate registry.
         "tags": {
             "tritond.instance_id": instance.id.to_string(),
-            "tritond.silo_id": instance.silo_id.to_string(),
+            "tritond.tenant_id": instance.tenant_id.to_string(),
             "tritond.project_id": instance.project_id.to_string(),
         },
         "nics": nics_json,
@@ -320,6 +320,7 @@ mod tests {
     fn sample_blueprint() -> ProvisioningBlueprint {
         let inst_id = fixture_uuid(0xa1);
         let silo = fixture_uuid(0xb2);
+        let tenant = fixture_uuid(0xb3);
         let project = fixture_uuid(0xc3);
         let subnet = fixture_uuid(0xd4);
         let vpc = fixture_uuid(0xe5);
@@ -329,7 +330,7 @@ mod tests {
         let now = Utc::now();
         let instance = Instance {
             id: inst_id,
-            silo_id: silo,
+            tenant_id: tenant,
             project_id: project,
             name: "smoke-zone".to_string(),
             description: String::new(),
@@ -357,7 +358,7 @@ mod tests {
         };
         let nic = Nic {
             id: fixture_uuid(0x11),
-            silo_id: silo,
+            tenant_id: tenant,
             project_id: project,
             instance_id: inst_id,
             vpc_id: vpc,
