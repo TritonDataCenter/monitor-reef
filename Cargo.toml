@@ -22,6 +22,7 @@ members = [
     "libs/triton-auth",
     "libs/tritond-audit",
     "libs/tritond-auth",
+    "libs/tritond-cn-platform",
     "libs/tritond-image-manifest",
     "libs/tritond-store",
     "client-generator",
@@ -116,6 +117,7 @@ indicatif = "0.18"
 # ipnetwork's schemars feature.
 ipnetwork = { version = "0.21", default-features = false, features = ["serde"] }
 md-5 = "0.10"
+notify = "8.2"
 openapiv3 = "2.0"
 p256 = { version = "0.13", features = ["ecdsa"] }
 p384 = { version = "0.13", features = ["ecdsa"] }
@@ -203,6 +205,7 @@ tritond-api = { path = "apis/tritond-api" }
 tritond-audit = { path = "libs/tritond-audit" }
 tritond-auth = { path = "libs/tritond-auth" }
 tritond-client = { path = "clients/internal/tritond-client" }
+tritond-cn-platform = { path = "libs/tritond-cn-platform" }
 tritond-image-manifest = { path = "libs/tritond-image-manifest" }
 tritond-store = { path = "libs/tritond-store" }
 tritonagent = { path = "services/tritonagent" }
