@@ -162,9 +162,7 @@ async fn write_imgadm_manifest(image: &Image) -> Result<()> {
     // an ISO-8601 instant. Use the image record's created_at if
     // present-day formatting is preferred; for v0 just stamp
     // "now" — it's only used by `imgadm list` ordering.
-    let published_at = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
+    let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let manifest = serde_json::json!({
         "manifest": {
             "v": 2,
@@ -192,8 +190,8 @@ async fn write_imgadm_manifest(image: &Image) -> Result<()> {
         "zpool": "zones",
         "source": "tritond"
     });
-    let body = serde_json::to_vec_pretty(&manifest)
-        .context("serialise synthetic imgadm manifest")?;
+    let body =
+        serde_json::to_vec_pretty(&manifest).context("serialise synthetic imgadm manifest")?;
     fs::write(&path, &body)
         .await
         .with_context(|| format!("write {path}"))?;

@@ -2183,7 +2183,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
-    #[doc = "      \"description\": \"Optional UUID to pin for the new image. When `Some`, the store uses this value instead of generating a fresh UUID — useful when an operator wants tritond's image id to equal the corresponding `imgadm` UUID on every CN, so the per-CN agent can pass it straight through to `vmadm create`. The store rejects the create with [`StoreError::Conflict`] if the id is already in use.\","]
+    #[doc = "      \"description\": \"Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `sha256` via [`derive_image_id`] — same content always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -2223,7 +2223,7 @@ pub mod types {
     pub struct NewImage {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
-        #[doc = "Optional UUID to pin for the new image. When `Some`, the store uses this value instead of generating a fresh UUID — useful when an operator wants tritond's image id to equal the corresponding `imgadm` UUID on every CN, so the per-CN agent can pass it straight through to `vmadm create`. The store rejects the create with [`StoreError::Conflict`] if the id is already in use."]
+        #[doc = "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `sha256` via [`derive_image_id`] — same content always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub id: ::std::option::Option<::uuid::Uuid>,
         pub name: ::std::string::String,
@@ -8131,7 +8131,7 @@ impl Client {
         builder::GetProjectInstance::new(self)
     }
 
-    #[doc = "Delete an instance. Returns 409 if the instance is not in\n\na deletable state (must be Stopped or Failed). Returns 404 if the instance does not exist or belongs to a different silo or project.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.delete_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    #[doc = "Delete an instance. Returns 409 if the instance is not in\n\na deletable state (must be Stopped or Failed); pass `?force=true` to override and delete from any state. Returns 404 if the instance does not exist or belongs to a different silo or project. The tritond record is cleared synchronously; the agent vmadm-deletes the SmartOS zone asynchronously via a `JobKind::Delete` job.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`\n\n```ignore\nlet response = client.delete_project_instance()\n    .silo_id(silo_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .force(force)\n    .send()\n    .await;\n```"]
     pub fn delete_project_instance(&self) -> builder::DeleteProjectInstance<'_> {
         builder::DeleteProjectInstance::new(self)
     }
@@ -11198,6 +11198,7 @@ pub mod builder {
         silo_id: Result<::uuid::Uuid, String>,
         project_id: Result<::uuid::Uuid, String>,
         instance_id: Result<::uuid::Uuid, String>,
+        force: Result<Option<bool>, String>,
     }
 
     impl<'a> DeleteProjectInstance<'a> {
@@ -11207,6 +11208,7 @@ pub mod builder {
                 silo_id: Err("silo_id was not initialized".to_string()),
                 project_id: Err("project_id was not initialized".to_string()),
                 instance_id: Err("instance_id was not initialized".to_string()),
+                force: Ok(None),
             }
         }
 
@@ -11240,6 +11242,17 @@ pub mod builder {
             self
         }
 
+        pub fn force<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.force = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for force failed".to_string());
+            self
+        }
+
         #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}`"]
         pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
             let Self {
@@ -11247,10 +11260,12 @@ pub mod builder {
                 silo_id,
                 project_id,
                 instance_id,
+                force,
             } = self;
             let silo_id = silo_id.map_err(Error::InvalidRequest)?;
             let project_id = project_id.map_err(Error::InvalidRequest)?;
             let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let force = force.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/v2/silos/{}/projects/{}/instances/{}",
                 client.baseurl,
@@ -11271,6 +11286,7 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("force", &force))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {

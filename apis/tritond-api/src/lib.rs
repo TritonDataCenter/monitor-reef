@@ -112,6 +112,19 @@ pub struct AgentJobPath {
     pub job_id: Uuid,
 }
 
+/// Optional `?force=true` query parameter on
+/// `DELETE /v2/silos/.../instances/{id}`. Default is `false`,
+/// which preserves the "must be Stopped or Failed first" gate.
+/// Operators set `force=true` to delete an instance from any
+/// state — useful when an instance is wedged in `Pending` /
+/// `Provisioning` / `Stopping` and the operator needs to clean
+/// up without driving each stuck transition by hand.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InstanceDeleteQuery {
+    #[serde(default)]
+    pub force: bool,
+}
+
 /// Request body for `POST /v2/agent/jobs/claim`.
 ///
 /// `claimed_by` is the agent's own identity — used by the store as
@@ -912,9 +925,12 @@ pub trait TritondApi {
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
     /// Delete an instance. Returns 409 if the instance is not in
-    /// a deletable state (must be Stopped or Failed). Returns 404
-    /// if the instance does not exist or belongs to a different
-    /// silo or project.
+    /// a deletable state (must be Stopped or Failed); pass
+    /// `?force=true` to override and delete from any state.
+    /// Returns 404 if the instance does not exist or belongs to
+    /// a different silo or project. The tritond record is cleared
+    /// synchronously; the agent vmadm-deletes the SmartOS zone
+    /// asynchronously via a `JobKind::Delete` job.
     #[endpoint {
         method = DELETE,
         path = "/v2/silos/{silo_id}/projects/{project_id}/instances/{instance_id}",
@@ -923,6 +939,7 @@ pub trait TritondApi {
     async fn delete_project_instance(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstancePath>,
+        query: Query<InstanceDeleteQuery>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// Start a stopped instance. Returns 409 if the instance is

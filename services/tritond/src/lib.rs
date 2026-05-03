@@ -23,6 +23,7 @@ pub mod auth;
 pub mod bootstrap;
 pub mod provisioner;
 pub mod rate_limit;
+pub mod sweeper;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -36,11 +37,11 @@ use dropshot::{
 use tritond_api::{
     AgentJobPath, ApiKeyCreated, ApiKeyPath, AttachFloatingIpRequest, AuditEventList,
     AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest,
-    ClaimJobResponse, CompleteJobRequest, HealthResponse, LoginRequest, NewApiKey, NewIdpConfig,
-    ProvisioningBlueprint, RefreshRequest, SiloImagePath, SiloPath, SiloProjectFloatingIpPath,
-    SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath, SiloProjectInstancePath,
-    SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath, SiloSshKeyPath, TokenResponse,
-    TritondApi,
+    ClaimJobResponse, CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest,
+    NewApiKey, NewIdpConfig, ProvisioningBlueprint, RefreshRequest, SiloImagePath, SiloPath,
+    SiloProjectFloatingIpPath, SiloProjectInstanceDiskPath, SiloProjectInstanceNicPath,
+    SiloProjectInstancePath, SiloProjectPath, SiloProjectVpcPath, SiloProjectVpcSubnetPath,
+    SiloSshKeyPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind,
         JobOutcome, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
@@ -83,6 +84,21 @@ pub struct ApiContext {
     /// test sets this so a real `tritonagent` (or its test stand-in)
     /// can claim jobs without racing the stub. Defaults to `true`.
     pub spawn_in_process_provisioner: bool,
+    /// Stale-claim sweeper config. When `Some(...)`,
+    /// [`start_server_with_context`] spawns the sweeper task
+    /// from [`crate::sweeper::spawn`] with the given interval +
+    /// staleness threshold. Defaults to `None` so test contexts
+    /// don't get an unexpected background task that would
+    /// interfere with explicit job-state assertions.
+    pub sweeper: Option<SweeperConfig>,
+}
+
+/// Cadence and staleness threshold for the
+/// [`crate::sweeper`] background task. See module docs.
+#[derive(Debug, Clone, Copy)]
+pub struct SweeperConfig {
+    pub interval: std::time::Duration,
+    pub stale_after: std::time::Duration,
 }
 
 impl ApiContext {
@@ -93,7 +109,18 @@ impl ApiContext {
             audit,
             login_rate_limiter: Arc::new(LoginRateLimiter::new()),
             spawn_in_process_provisioner: true,
+            sweeper: None,
         }
+    }
+
+    /// Enable the stale-claim sweeper at the given cadence.
+    /// Used by `main` (env-driven) and by integration tests
+    /// that want to exercise sweeper behavior with tight
+    /// thresholds. Defaults to `None`.
+    #[must_use]
+    pub fn with_sweeper(mut self, cfg: SweeperConfig) -> Self {
+        self.sweeper = Some(cfg);
+        self
     }
 
     /// Disable the in-process stub provisioner — the agent
@@ -2078,6 +2105,7 @@ impl TritondApi for TritondServiceImpl {
     async fn delete_project_instance(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloProjectInstancePath>,
+        query: Query<InstanceDeleteQuery>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
         let SiloProjectInstancePath {
@@ -2085,6 +2113,7 @@ impl TritondApi for TritondServiceImpl {
             project_id,
             instance_id,
         } = path.into_inner();
+        let force = query.into_inner().force;
         let principal = authenticate_and_authorize_in_silo(
             &rqctx,
             &ctx.auth,
@@ -2104,7 +2133,7 @@ impl TritondApi for TritondServiceImpl {
         if instance.silo_id != silo_id || instance.project_id != project_id {
             return Err(not_found());
         }
-        match ctx.store.delete_instance(instance_id).await {
+        match ctx.store.delete_instance(instance_id, force).await {
             Ok(()) => {
                 ctx.audit
                     .record_mutation(
@@ -2982,7 +3011,7 @@ async fn drive_lifecycle_for_claim(store: &dyn Store, job: &ProvisioningJob) {
 /// failed before its claim-time advance still lands in Failed
 /// rather than getting stuck. CAS failures (instance deleted
 /// out from under the job, lifecycle drift) are logged.
-async fn drive_lifecycle_for_complete(
+pub(crate) async fn drive_lifecycle_for_complete(
     store: &dyn Store,
     job: &ProvisioningJob,
     outcome: &JobOutcome,
@@ -3189,6 +3218,20 @@ pub async fn start_server_with_context(
     // `ApiContext::without_in_process_provisioner`.
     if context.spawn_in_process_provisioner {
         let _provisioner = provisioner::spawn(Arc::clone(&context.store));
+    }
+
+    // The sweeper runs alongside the in-process stub or a real
+    // agent — its job is to reap claims that *no* worker
+    // completed (agent crash, partition). Configurable per
+    // [`ApiContext::with_sweeper`]; tests typically leave it
+    // off for deterministic state.
+    if let Some(sw) = context.sweeper {
+        let _sweeper = sweeper::spawn(
+            Arc::clone(&context.store),
+            Arc::clone(&context.audit),
+            sw.interval,
+            sw.stale_after,
+        );
     }
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)

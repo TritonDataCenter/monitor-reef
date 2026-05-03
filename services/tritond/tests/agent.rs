@@ -494,6 +494,93 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
     test.close().await;
 }
 
+/// The sweeper reaps an InProgress job whose claim is older
+/// than the configured threshold: the job moves to
+/// `Failed { reason: "agent claimed but never completed; reaped
+/// by sweeper" }` and the instance lifecycle is driven to
+/// `Failed`. Uses very short interval + threshold so the test
+/// completes in seconds.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sweeper_reaps_stale_inprogress_job() {
+    use tritond::SweeperConfig;
+    use std::time::Duration;
+
+    let store: Arc<dyn Store> = Arc::new(MemStore::new());
+    let user = User {
+        id: Uuid::new_v4(),
+        username: "root".to_string(),
+        password_hash: hash_password(&RedactedString::from(ROOT_PASSWORD))
+            .await
+            .unwrap(),
+        is_root: true,
+        created_at: Utc::now(),
+        silo_id: None,
+        federation: None,
+    };
+    store.create_user(user).await.unwrap();
+    let auth = Arc::new(AuthService::new(JwtKey::generate()).unwrap());
+    let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
+    let context = ApiContext::new(Arc::clone(&store), auth, audit)
+        .without_in_process_provisioner()
+        // Sweep aggressively: every 200ms, anything older than
+        // 500ms is stale. The test asserts the sweeper acted
+        // within ~3s.
+        .with_sweeper(SweeperConfig {
+            interval: Duration::from_millis(200),
+            stale_after: Duration::from_millis(500),
+        });
+    let server = start_server_with_context("127.0.0.1:0", context)
+        .await
+        .unwrap();
+    let test = TestServer { server, store };
+
+    // Enqueue + claim a Provision job so it's InProgress with a
+    // claimed_at timestamp.
+    let phantom_instance = Uuid::new_v4();
+    let queued = test
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: phantom_instance,
+            },
+        })
+        .await
+        .unwrap();
+    let claimed = test
+        .store
+        .claim_next_job("crashed-agent")
+        .await
+        .unwrap();
+    assert_eq!(claimed.id, queued.id);
+    assert!(matches!(claimed.status, tritond_store::JobStatus::InProgress));
+
+    // Wait for the sweeper to do its thing. Threshold + interval
+    // = 700ms; give it a generous 3s for tokio scheduling jitter.
+    let mut final_status = claimed.status.clone();
+    for _ in 0..30 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let j = test.store.get_job(queued.id).await.unwrap();
+        if matches!(
+            j.status.kind(),
+            tritond_store::JobStatusKind::Failed | tritond_store::JobStatusKind::Completed
+        ) {
+            final_status = j.status;
+            break;
+        }
+    }
+    match final_status {
+        tritond_store::JobStatus::Failed { reason } => {
+            assert!(
+                reason.contains("sweeper"),
+                "Failed reason should mention sweeper, got {reason}",
+            );
+        }
+        other => panic!("expected Failed after sweep, got {other:?}"),
+    }
+
+    test.close().await;
+}
+
 /// Instance delete enqueues a `JobKind::Delete` job *in
 /// addition to* clearing the tritond record. The agent then
 /// gets to claim it and drive vmadm-delete on its own host.

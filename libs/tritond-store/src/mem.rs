@@ -914,7 +914,7 @@ impl Store for MemStore {
             .collect())
     }
 
-    async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_instance(&self, instance_id: Uuid, force: bool) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
         // Snapshot just the data we need so the lifecycle check
         // doesn't hold a borrow over the subsequent `remove`.
@@ -929,14 +929,16 @@ impl Store for MemStore {
                 instance.name.clone(),
             )
         };
-        let deletable = matches!(
-            lifecycle_kind,
-            LifecycleStateKind::Stopped | LifecycleStateKind::Failed
-        );
-        if !deletable {
-            return Err(StoreError::Conflict(format!(
-                "instance {instance_id} is not deletable in state {lifecycle_kind:?}; stop it first"
-            )));
+        if !force {
+            let deletable = matches!(
+                lifecycle_kind,
+                LifecycleStateKind::Stopped | LifecycleStateKind::Failed
+            );
+            if !deletable {
+                return Err(StoreError::Conflict(format!(
+                    "instance {instance_id} is not deletable in state {lifecycle_kind:?}; stop it first or pass ?force=true"
+                )));
+            }
         }
 
         // Cascade: collect NIC ids, then drop each NIC + free its
@@ -1268,6 +1270,21 @@ impl Store for MemStore {
         };
         guard.jobs_by_id.insert(job.id, job.clone());
         Ok(job)
+    }
+
+    async fn list_stale_claims(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<ProvisioningJob>, StoreError> {
+        let guard = self.inner.read().await;
+        let stale = guard
+            .jobs_by_id
+            .values()
+            .filter(|j| matches!(j.status.kind(), JobStatusKind::InProgress))
+            .filter(|j| j.claimed_at.is_some_and(|t| t < cutoff))
+            .cloned()
+            .collect();
+        Ok(stale)
     }
 
     async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError> {
@@ -2947,7 +2964,7 @@ mod tests {
             .unwrap();
 
         let err = store
-            .delete_instance(instance.id)
+            .delete_instance(instance.id, false)
             .await
             .expect_err("delete while running must conflict");
         assert!(matches!(err, StoreError::Conflict(_)));
@@ -2961,7 +2978,7 @@ mod tests {
             )
             .await
             .unwrap();
-        store.delete_instance(instance.id).await.unwrap();
+        store.delete_instance(instance.id, false).await.unwrap();
     }
 
     #[tokio::test]
@@ -2988,7 +3005,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .delete_instance(instance.id)
+            .delete_instance(instance.id, false)
             .await
             .expect("Failed instance is deletable");
     }
@@ -3063,7 +3080,7 @@ mod tests {
             )
             .await
             .unwrap();
-        store.delete_instance(instance.id).await.unwrap();
+        store.delete_instance(instance.id, false).await.unwrap();
 
         // NIC record is gone.
         let err = store
@@ -3195,7 +3212,7 @@ mod tests {
             )
             .await
             .unwrap();
-        store.delete_instance(instance.id).await.unwrap();
+        store.delete_instance(instance.id, false).await.unwrap();
 
         let err = store
             .get_disk(boot_id)
@@ -3371,13 +3388,59 @@ mod tests {
             )
             .await
             .unwrap();
-        store.delete_instance(instance.id).await.unwrap();
+        store.delete_instance(instance.id, false).await.unwrap();
 
         // FloatingIp still exists, just detached.
         let after = store.get_floating_ip(fip.id).await.unwrap();
         assert!(after.attached_to.is_none(), "should auto-detach");
         assert_eq!(after.address, original_address, "address preserved");
         assert_eq!(after.project_id, project_id, "project ownership preserved");
+    }
+
+    #[tokio::test]
+    async fn delete_instance_in_pending_is_rejected_without_force() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let created = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("doomed", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let id = created.instance.id;
+        let err = store
+            .delete_instance(id, false)
+            .await
+            .expect_err("Pending state must reject default delete");
+        assert!(matches!(err, StoreError::Conflict(_)));
+        assert!(store.get_instance(id).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn delete_instance_force_overrides_state_gate() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let created = store
+            .create_instance(
+                silo_id,
+                project_id,
+                instance_req("force-delete-me", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let id = created.instance.id;
+        store
+            .delete_instance(id, true)
+            .await
+            .expect("force delete must succeed regardless of state");
+        assert!(matches!(
+            store.get_instance(id).await,
+            Err(StoreError::NotFound)
+        ));
     }
 
     #[tokio::test]

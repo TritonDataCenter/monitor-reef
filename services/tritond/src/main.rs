@@ -19,6 +19,10 @@
 //!   this when a real `tritonagent` is running against this
 //!   tritond, so the queue is drained by the agent and not by
 //!   the stub.
+//! * `TRITOND_SWEEPER_INTERVAL_SECS` — cadence for the
+//!   stale-claim sweeper. Default 60.
+//! * `TRITOND_STALE_CLAIM_THRESHOLD_SECS` — how old a claim
+//!   must be before the sweeper reaps it. Default 600 (10 min).
 //!
 //! Startup runs [`tritond::bootstrap::ensure`] which mints the JWT
 //! signing key and the root operator on first run, then loads them on
@@ -29,9 +33,13 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use tracing::info;
+use std::time::Duration;
+
 use tritond::audit::AuditService;
 use tritond::auth::AuthService;
-use tritond::{ApiContext, DEFAULT_BIND_ADDRESS, VERSION, bootstrap, start_server_with_context};
+use tritond::{
+    ApiContext, DEFAULT_BIND_ADDRESS, SweeperConfig, VERSION, bootstrap, start_server_with_context,
+};
 use tritond_audit::{Chain, MemChain};
 use tritond_store::{MemStore, Store};
 
@@ -58,6 +66,19 @@ async fn main() -> Result<()> {
         info!("disabling in-process stub provisioner; expecting external tritonagent");
         context = context.without_in_process_provisioner();
     }
+    let sweeper_interval =
+        env_secs("TRITOND_SWEEPER_INTERVAL_SECS").unwrap_or(Duration::from_secs(60));
+    let stale_after =
+        env_secs("TRITOND_STALE_CLAIM_THRESHOLD_SECS").unwrap_or(Duration::from_secs(600));
+    info!(
+        sweeper_interval_secs = sweeper_interval.as_secs(),
+        stale_after_secs = stale_after.as_secs(),
+        "enabling stale-claim sweeper",
+    );
+    context = context.with_sweeper(SweeperConfig {
+        interval: sweeper_interval,
+        stale_after,
+    });
 
     info!(version = VERSION, %bind_address, "tritond starting");
 
@@ -75,6 +96,14 @@ fn env_flag(name: &str) -> bool {
         std::env::var(name).ok().as_deref(),
         Some("1") | Some("true") | Some("True") | Some("TRUE")
     )
+}
+
+/// Parse `name` as `Duration::from_secs`. Returns `None` when
+/// the var is unset or unparseable; lets callers fall back to a
+/// hardcoded default.
+fn env_secs(name: &str) -> Option<Duration> {
+    let raw = std::env::var(name).ok()?;
+    raw.parse::<u64>().ok().map(Duration::from_secs)
 }
 
 #[cfg(feature = "foundationdb")]

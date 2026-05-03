@@ -446,7 +446,13 @@ pub trait Store: Send + Sync + 'static {
     /// is removed, its IPv4 / IPv6 allocations freed back to the
     /// parent subnet's pool, every disk record is removed, all in
     /// the same transaction.
-    async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError>;
+    /// Delete an instance and cascade its NICs, Disks, and any
+    /// FloatingIp attachments. The store enforces the
+    /// "deletable lifecycle" rule (Stopped or Failed only) by
+    /// default; pass `force = true` to skip the gate, used by
+    /// the `?force=true` operator override on the
+    /// `instance_delete` HTTP handler.
+    async fn delete_instance(&self, instance_id: Uuid, force: bool) -> Result<(), StoreError>;
 
     /// Atomic compare-and-set on an instance's lifecycle. Reads the
     /// current state; if its discriminant is in `expected_from`,
@@ -564,6 +570,21 @@ pub trait Store: Send + Sync + 'static {
     /// (monotonic, FIFO order), and `created_at`. Initial status
     /// is [`JobStatus::Pending`].
     async fn enqueue_job(&self, req: NewJob) -> Result<ProvisioningJob, StoreError>;
+
+    /// Return every job currently in [`JobStatus::InProgress`]
+    /// whose `claimed_at` is older than `now - cutoff`. Used by
+    /// the tritond stale-claim sweeper to identify jobs an
+    /// agent claimed but never completed (agent crashed, host
+    /// rebooted, network partition); the sweeper then transitions
+    /// those jobs to terminal `Failed` so the operator-visible
+    /// state catches up.
+    ///
+    /// Implementations may scan the entire job table; Phase 0
+    /// queue sizes are small enough that we accept the cost.
+    async fn list_stale_claims(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<ProvisioningJob>, StoreError>;
 
     /// Atomically claim the next Pending job (lowest `seq`),
     /// transitioning it to [`JobStatus::InProgress`] and stamping

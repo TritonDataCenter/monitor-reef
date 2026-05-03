@@ -2299,7 +2299,7 @@ impl Store for FdbStore {
         Ok(out)
     }
 
-    async fn delete_instance(&self, instance_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_instance(&self, instance_id: Uuid, force: bool) -> Result<(), StoreError> {
         let by_id_key = Self::instance_by_id_key(instance_id);
         let nic_prefix = Self::nic_in_instance_prefix(instance_id);
         let (nic_begin, nic_end) = prefix_range(&nic_prefix);
@@ -2330,7 +2330,7 @@ impl Store for FdbStore {
                         Ok(i) => i,
                         Err(_) => return Ok(Outcome::Vanished),
                     };
-                    if !instance.lifecycle.is_deletable() {
+                    if !force && !instance.lifecycle.is_deletable() {
                         return Ok(Outcome::NotDeletable(instance.lifecycle.kind()));
                     }
                     let by_name_key = format!(
@@ -3052,6 +3052,45 @@ impl Store for FdbStore {
             })
             .await;
         outcome.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn list_stale_claims(
+        &self,
+        cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<ProvisioningJob>, StoreError> {
+        // Scan every job and filter — Phase 0 has no by-status
+        // index. The hot path is `claim_next_job` (which does
+        // have its own pending index); the sweeper runs once a
+        // minute and queue sizes are small enough that a full
+        // scan is cheap.
+        let prefix = b"job/by_id/".to_vec();
+        let (begin, end) = prefix_range(&prefix);
+
+        let raws: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let stale = raws
+            .into_iter()
+            .filter_map(|b| serde_json::from_slice::<ProvisioningJob>(&b).ok())
+            .filter(|j| matches!(j.status.kind(), JobStatusKind::InProgress))
+            .filter(|j| j.claimed_at.is_some_and(|t| t < cutoff))
+            .collect();
+        Ok(stale)
     }
 
     async fn claim_next_job(&self, claimed_by: &str) -> Result<ProvisioningJob, StoreError> {
