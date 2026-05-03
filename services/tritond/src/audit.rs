@@ -196,6 +196,7 @@ mod tests {
         let principal = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: false,
+            tenant_id: None,
             silo_id: None,
             scope: None,
             bound_cn: None,

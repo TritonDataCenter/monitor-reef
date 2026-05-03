@@ -38,7 +38,7 @@ impl TestServer {
                 .unwrap(),
             is_root: true,
             created_at: Utc::now(),
-            silo_id: None,
+            tenant_id: None,
             federation: None,
         };
         store.create_user(user).await.unwrap();

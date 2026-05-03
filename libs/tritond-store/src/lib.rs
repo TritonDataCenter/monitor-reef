@@ -39,9 +39,8 @@ pub use types::{
     NewImage, NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
     NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet,
     SystemKey, TRITOND_IMAGE_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
-    derive_image_id, format_claim_code, generate_claim_code, generate_poll_token,
-    normalize_claim_code,
+    VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, format_claim_code, generate_claim_code,
+    generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -147,9 +146,15 @@ pub trait Store: Send + Sync + 'static {
     // ------------------------------------------------------------------
 
     /// Look up a user by their `(silo_id, issuer, subject)` triple.
-    /// Returns [`StoreError::NotFound`] if no user matches; the auth
-    /// middleware uses that to JIT-create the row on first OIDC
-    /// login.
+    /// The IdP is silo-scoped (a silo owns its IdP), so the
+    /// federation index stays silo-keyed even though the returned
+    /// [`User`] now carries [`User::tenant_id`] (resolved to the
+    /// silo's [`Silo::default_tenant_id`] at JIT-create time)
+    /// rather than a direct `silo_id`.
+    ///
+    /// Returns [`StoreError::NotFound`] if no user matches; the
+    /// auth middleware uses that to JIT-create the row on first
+    /// OIDC login.
     async fn get_user_by_federation(
         &self,
         silo_id: Uuid,

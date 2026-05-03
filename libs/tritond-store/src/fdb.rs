@@ -512,31 +512,59 @@ fn prefix_range(prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
 #[async_trait]
 impl Store for FdbStore {
     async fn create_silo(&self, req: NewSilo) -> Result<Silo, StoreError> {
-        let silo = Silo {
+        // Atomic two-record write: create the silo and its default
+        // tenant in a single FDB transaction so a federated login
+        // can never race with silo creation and observe a
+        // tenant-less silo.
+        let silo_id = Uuid::new_v4();
+        let now = Utc::now();
+        let tenant = Tenant {
             id: Uuid::new_v4(),
+            silo_id,
+            name: "default".to_string(),
+            description: format!("Default tenant for silo {}", req.name),
+            created_at: now,
+        };
+        let silo = Silo {
+            id: silo_id,
             name: req.name,
             description: req.description.unwrap_or_default(),
-            created_at: Utc::now(),
+            default_tenant_id: tenant.id,
+            created_at: now,
         };
-        let value = serde_json::to_vec(&silo)
+        let silo_value = serde_json::to_vec(&silo)
             .map_err(|e| StoreError::Backend(format!("serialize silo: {e}")))?;
-        let by_id_key = Self::silo_by_id_key(silo.id);
-        let by_name_key = Self::silo_by_name_key(&silo.name);
-        let id_str = silo.id.to_string();
+        let tenant_value = serde_json::to_vec(&tenant)
+            .map_err(|e| StoreError::Backend(format!("serialize tenant: {e}")))?;
+        let silo_by_id_key = Self::silo_by_id_key(silo.id);
+        let silo_by_name_key = Self::silo_by_name_key(&silo.name);
+        let tenant_by_id_key = Self::tenant_by_id_key(tenant.id);
+        let tenant_by_name_key = Self::tenant_by_silo_name_key(silo_id, &tenant.name);
+        let tenant_in_silo_key = Self::tenant_in_silo_key(silo_id, tenant.id);
+        let silo_id_str = silo.id.to_string();
+        let tenant_id_str = tenant.id.to_string();
 
         let outcome: Result<CreateOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let value = value.clone();
-                let id_bytes = id_str.as_bytes().to_vec();
+                let silo_by_id_key = silo_by_id_key.clone();
+                let silo_by_name_key = silo_by_name_key.clone();
+                let tenant_by_id_key = tenant_by_id_key.clone();
+                let tenant_by_name_key = tenant_by_name_key.clone();
+                let tenant_in_silo_key = tenant_in_silo_key.clone();
+                let silo_value = silo_value.clone();
+                let tenant_value = tenant_value.clone();
+                let silo_id_bytes = silo_id_str.as_bytes().to_vec();
+                let tenant_id_bytes = tenant_id_str.as_bytes().to_vec();
                 async move {
-                    if tr.get(&by_name_key, false).await?.is_some() {
+                    if tr.get(&silo_by_name_key, false).await?.is_some() {
                         return Ok(CreateOutcome::NameTaken);
                     }
-                    tr.set(&by_id_key, &value);
-                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&silo_by_id_key, &silo_value);
+                    tr.set(&silo_by_name_key, &silo_id_bytes);
+                    tr.set(&tenant_by_id_key, &tenant_value);
+                    tr.set(&tenant_by_name_key, &tenant_id_bytes);
+                    tr.set(&tenant_in_silo_key, b"");
                     Ok(CreateOutcome::Created)
                 }
             })
@@ -567,12 +595,20 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
         let by_id_key = Self::user_by_id_key(user.id);
         let by_name_key = Self::user_by_name_key(&user.username);
-        let federation_key = match (user.silo_id, user.federation.as_ref()) {
-            (Some(silo_id), Some(fed)) => Some(Self::user_federation_key(
-                silo_id,
-                &fed.issuer,
-                &fed.subject,
-            )),
+        // Federation index is keyed by (silo_id, issuer, subject) —
+        // the IdP belongs to the silo, not the tenant. Resolve the
+        // user's tenant outside the transaction so we can derive
+        // the owning silo. This is a defensive read; a missing
+        // tenant for a federated user is a programming error.
+        let federation_key = match (user.tenant_id, user.federation.as_ref()) {
+            (Some(tenant_id), Some(fed)) => {
+                let tenant = self.get_tenant(tenant_id).await?;
+                Some(Self::user_federation_key(
+                    tenant.silo_id,
+                    &fed.issuer,
+                    &fed.subject,
+                ))
+            }
             _ => None,
         };
         let id_str = user.id.to_string();
@@ -4876,12 +4912,17 @@ mod tenant_tests {
         }
     }
 
-    /// Drop a silo row + by_name index. Best-effort cleanup.
+    /// Drop a silo row + by_name index, plus the default tenant
+    /// that was created atomically with the silo. Best-effort cleanup.
     async fn purge_silo(store: &FdbStore, silo_id: Uuid) {
         let by_id = FdbStore::silo_by_id_key(silo_id);
         if let Ok(Some(bytes)) = store.read_bytes(&by_id).await
             && let Ok(s) = serde_json::from_slice::<Silo>(&bytes)
         {
+            // Clean up the default tenant first so the silo's
+            // tenant_in_silo index also gets cleared.
+            purge_tenant(store, s.default_tenant_id).await;
+
             let by_name = FdbStore::silo_by_name_key(&s.name);
             let _ = store
                 .db

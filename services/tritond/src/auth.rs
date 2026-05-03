@@ -55,10 +55,14 @@ use crate::audit::AuditService;
 /// * Anonymous callers can hit `health`, `login`, and `refresh`.
 /// * Authenticated operators with `is_root == true` can perform any
 ///   action (the bootstrap-root path).
-/// * Federated users in a silo can perform a hand-curated set of
-///   tenant-scoped actions when `principal.silo_id ==
-///   resource.silo_id`. Adding a new tenant-facing action means
-///   appending it to the action list in this rule.
+/// * Tenant members can perform a hand-curated set of
+///   silo-scoped actions when `principal.silo_id ==
+///   resource.silo_id`. The actions in this rule are still
+///   silo-scoped today (E-2 only re-parented the principal to a
+///   tenant; resources move under tenant in E-3). Future slices
+///   will add tenant-scoped resource gates that read
+///   `principal.tenant_id`. Adding a new tenant-facing action
+///   means appending it to the action list in this rule.
 ///
 /// Every other access falls through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
@@ -84,7 +88,7 @@ permit(
     principal has is_root && principal.is_root == true
 };
 
-@id("silo-member-allows-silo-scoped-tenant-actions")
+@id("tenant-member-allows-tenant-scoped-actions")
 permit(
     principal,
     action in [
@@ -143,15 +147,30 @@ permit(
 pub enum Principal {
     /// Authenticated operator or federated user. `is_root` is true
     /// for the bootstrap operator and any other cluster-wide
-    /// account; `silo_id` is `Some(...)` for federated users (and,
-    /// in future, for silo-scoped admin operators). `scope` is
-    /// `Some(...)` only when the request authenticated via an API
-    /// key that carries an explicit permission scope; password-auth
-    /// (JWT) and OIDC paths set this to `None`, meaning "no
-    /// extra restriction beyond what Cedar already enforces."
+    /// account; `tenant_id` is `Some(...)` for federated users
+    /// (and, in future, for tenant-scoped admin operators).
+    /// `silo_id` is the silo derived from `tenant_id` at auth time
+    /// via a [`Tenant`] lookup, kept as a separate cached field so
+    /// existing silo-gating Cedar rules keep working until E-3
+    /// re-parents resources under tenants. `scope` is `Some(...)`
+    /// only when the request authenticated via an API key that
+    /// carries an explicit permission scope; password-auth (JWT)
+    /// and OIDC paths set this to `None`, meaning "no extra
+    /// restriction beyond what Cedar already enforces."
     Operator {
         user_id: Uuid,
         is_root: bool,
+        /// Tenant the user belongs to. `None` for cluster-wide
+        /// (root) operators. Source of truth for tenant
+        /// membership; `silo_id` below is a cached derivation.
+        tenant_id: Option<Uuid>,
+        /// Silo derived from `tenant_id` at auth time via a
+        /// `Tenant.silo_id` lookup. Cached on the principal so
+        /// Cedar can gate on silo without a second store
+        /// round-trip. `None` for cluster-wide operators *and*
+        /// for the (defensive) case where the tenant lookup
+        /// failed — the latter is treated as "no silo
+        /// membership," denying silo-scoped actions.
         silo_id: Option<Uuid>,
         scope: Option<ApiKeyScope>,
         /// CN binding from the presenting API key, if any. Set
@@ -203,12 +222,19 @@ impl Principal {
     }
 
     /// Cedar entity carrying the principal's attributes (`is_root`
-    /// for bootstrap-style accounts, `silo_id` for silo-scoped ones).
+    /// for bootstrap-style accounts; `silo_id` and `tenant_id` for
+    /// scoped ones). Both `silo_id` and `tenant_id` are emitted
+    /// when present so the silo-gating rules carried over from
+    /// E-1/E-2 keep firing while future tenant-scoped rules can
+    /// also read `principal.tenant_id`.
     fn entity(&self) -> Result<Entity> {
         let uid = self.entity_uid()?;
         let mut attrs: HashMap<String, RestrictedExpression> = HashMap::new();
         if let Principal::Operator {
-            is_root, silo_id, ..
+            is_root,
+            silo_id,
+            tenant_id,
+            ..
         } = self
         {
             attrs.insert(
@@ -219,6 +245,12 @@ impl Principal {
                 attrs.insert(
                     "silo_id".to_string(),
                     RestrictedExpression::new_string(silo_id.to_string()),
+                );
+            }
+            if let Some(tenant_id) = tenant_id {
+                attrs.insert(
+                    "tenant_id".to_string(),
+                    RestrictedExpression::new_string(tenant_id.to_string()),
                 );
             }
         }
@@ -480,15 +512,19 @@ impl AuthService {
         // configured silo IdPs.
         match verify(&self.jwt_key, token, TokenKind::Access) {
             Ok(claims) => match store.get_user_by_id(claims.sub).await {
-                Ok(user) => Ok(Principal::Operator {
-                    user_id: user.id,
-                    is_root: user.is_root,
-                    silo_id: user.silo_id,
-                    // JWT-authenticated principals carry the user's
-                    // full permissions; scope only applies to API keys.
-                    scope: None,
-                    bound_cn: None,
-                }),
+                Ok(user) => {
+                    let silo_id = derive_silo_id(store, &user).await?;
+                    Ok(Principal::Operator {
+                        user_id: user.id,
+                        is_root: user.is_root,
+                        tenant_id: user.tenant_id,
+                        silo_id,
+                        // JWT-authenticated principals carry the user's
+                        // full permissions; scope only applies to API keys.
+                        scope: None,
+                        bound_cn: None,
+                    })
+                }
                 Err(StoreError::NotFound) => Ok(Principal::Anonymous),
                 Err(e) => {
                     warn!(error = %e, "store failure while resolving JWT principal");
@@ -541,6 +577,17 @@ impl AuthService {
         };
 
         // JIT user lookup or create for this (silo, issuer, subject).
+        // Federated users land in the silo's default tenant (E-2);
+        // a follow-on slice will let operators move users between
+        // tenants in the same silo. Read the silo first so we have
+        // its `default_tenant_id`.
+        let silo = match store.get_silo(silo_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(error = %e, %silo_id, "store failure resolving silo for federated login");
+                return Err(AuthError::Backend(e));
+            }
+        };
         let user = match store
             .get_user_by_federation(silo_id, &claims.issuer, &claims.subject)
             .await
@@ -556,7 +603,7 @@ impl AuthService {
                     password_hash: String::new(),
                     is_root: false,
                     created_at: Utc::now(),
-                    silo_id: Some(silo_id),
+                    tenant_id: Some(silo.default_tenant_id),
                     federation: Some(Federation {
                         issuer: claims.issuer.clone(),
                         subject: claims.subject.clone(),
@@ -586,10 +633,12 @@ impl AuthService {
             }
         };
 
+        let derived_silo_id = derive_silo_id(store, &user).await?;
         Ok(Principal::Operator {
             user_id: user.id,
             is_root: user.is_root,
-            silo_id: user.silo_id,
+            tenant_id: user.tenant_id,
+            silo_id: derived_silo_id,
             // OIDC-authenticated principals carry the user's full
             // permissions; scope only applies to API keys.
             scope: None,
@@ -624,20 +673,24 @@ impl AuthService {
             return Ok(Principal::Anonymous);
         }
         match store.get_user_by_id(record.user_id).await {
-            Ok(user) => Ok(Principal::Operator {
-                user_id: user.id,
-                is_root: user.is_root,
-                silo_id: user.silo_id,
-                // The API key's scope rides along on the principal so
-                // [`AuthService::authorize`] can gate per-action without
-                // a second store round-trip. `Full` falls through as
-                // "no extra restriction" — see [`scope_allows_action`].
-                scope: Some(record.scope),
-                // Per-CN binding (set by the registration approval
-                // flow). Handlers under `/v2/agent/*` enforce that
-                // the request's CN identity matches this value.
-                bound_cn: record.bound_to_cn,
-            }),
+            Ok(user) => {
+                let silo_id = derive_silo_id(store, &user).await?;
+                Ok(Principal::Operator {
+                    user_id: user.id,
+                    is_root: user.is_root,
+                    tenant_id: user.tenant_id,
+                    silo_id,
+                    // The API key's scope rides along on the principal so
+                    // [`AuthService::authorize`] can gate per-action without
+                    // a second store round-trip. `Full` falls through as
+                    // "no extra restriction" — see [`scope_allows_action`].
+                    scope: Some(record.scope),
+                    // Per-CN binding (set by the registration approval
+                    // flow). Handlers under `/v2/agent/*` enforce that
+                    // the request's CN identity matches this value.
+                    bound_cn: record.bound_to_cn,
+                })
+            }
             Err(StoreError::NotFound) => Ok(Principal::Anonymous),
             Err(e) => {
                 warn!(error = %e, "store failure while resolving api-key user");
@@ -733,6 +786,40 @@ impl AuthService {
             .authorizer
             .is_authorized(&request, &self.policy_set, &entities);
         Ok(response.decision())
+    }
+}
+
+/// Resolve the owning silo for a user by looking up their tenant.
+///
+/// * Returns `Ok(None)` for cluster-wide accounts (root operator) —
+///   `user.tenant_id` is `None`, so there is no silo to derive.
+/// * Returns `Ok(Some(silo_id))` for tenant-scoped users when the
+///   tenant lookup succeeds.
+/// * Returns `Ok(None)` (with a logged warning) if `user.tenant_id`
+///   is `Some` but the tenant is missing — defensive against an
+///   orphaned user row that can't actually happen during normal
+///   operation. Treating it as "no silo membership" denies any
+///   silo-scoped action, which is the safe default.
+/// * Returns [`AuthError::Backend`] on any other store failure so
+///   the caller surfaces a 5xx instead of silently downgrading.
+async fn derive_silo_id(store: &dyn Store, user: &User) -> Result<Option<Uuid>, AuthError> {
+    let Some(tenant_id) = user.tenant_id else {
+        return Ok(None);
+    };
+    match store.get_tenant(tenant_id).await {
+        Ok(tenant) => Ok(Some(tenant.silo_id)),
+        Err(StoreError::NotFound) => {
+            warn!(
+                user_id = %user.id,
+                %tenant_id,
+                "user references missing tenant; silo membership cannot be derived"
+            );
+            Ok(None)
+        }
+        Err(e) => {
+            warn!(error = %e, "store failure while resolving user tenant");
+            Err(AuthError::Backend(e))
+        }
     }
 }
 
@@ -1058,6 +1145,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            tenant_id: None,
             silo_id: None,
             scope: None,
             bound_cn: None,
@@ -1079,6 +1167,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: false,
+            tenant_id: None,
             silo_id: None,
             scope: None,
             bound_cn: None,
@@ -1096,6 +1185,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::ReadOnly),
             bound_cn: None,
@@ -1120,6 +1210,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::AuditOnly),
             bound_cn: None,
@@ -1144,7 +1235,7 @@ mod tests {
             password_hash: "$2y$12$dummy".to_string(),
             is_root: true,
             created_at: chrono::Utc::now(),
-            silo_id: None,
+            tenant_id: None,
             federation: None,
         };
         let user_id = user.id;

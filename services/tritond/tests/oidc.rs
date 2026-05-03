@@ -200,7 +200,7 @@ impl TestServer {
                 .unwrap(),
             is_root: true,
             created_at: Utc::now(),
-            silo_id: None,
+            tenant_id: None,
             federation: None,
         };
         store.create_user(user).await.unwrap();
@@ -346,13 +346,17 @@ async fn first_oidc_login_jit_creates_federated_user_and_second_reuses() {
     };
     assert_eq!(response.status().as_u16(), 403);
 
-    // The JIT user must exist in the store now.
+    // The JIT user must exist in the store now, and must land in
+    // the silo's default tenant (E-2 federation behaviour).
     let jit = test
         .store
         .get_user_by_federation(silo.id, idp.issuer(), "tenant-42")
         .await
         .expect("JIT user should have been created");
-    assert_eq!(jit.silo_id, Some(silo.id));
+    assert_eq!(jit.tenant_id, Some(silo.default_tenant_id));
+    // Sanity: the default tenant resolves back to this silo.
+    let tenant = test.store.get_tenant(silo.default_tenant_id).await.unwrap();
+    assert_eq!(tenant.silo_id, silo.id);
     let jit_id = jit.id;
 
     // 3) A second login with a fresh token from the same subject

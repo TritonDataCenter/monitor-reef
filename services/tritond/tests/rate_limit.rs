@@ -44,7 +44,7 @@ async fn build_rate_limited_server() -> dropshot::HttpServer<ApiContext> {
             .unwrap(),
         is_root: true,
         created_at: Utc::now(),
-        silo_id: None,
+        tenant_id: None,
         federation: None,
     };
     store.create_user(user).await.unwrap();
@@ -120,7 +120,7 @@ async fn rate_limit_audits_throttle_event() {
             .unwrap(),
         is_root: true,
         created_at: Utc::now(),
-        silo_id: None,
+        tenant_id: None,
         federation: None,
     };
     store.create_user(user).await.unwrap();

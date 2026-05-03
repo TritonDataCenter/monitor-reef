@@ -164,14 +164,32 @@ impl Store for MemStore {
             )));
         }
 
-        let silo = Silo {
+        // Atomic two-record write: create the silo and its default
+        // tenant in the same lock acquisition so a federated login
+        // can never race with silo creation and observe a
+        // tenant-less silo.
+        let silo_id = Uuid::new_v4();
+        let now = Utc::now();
+        let tenant = Tenant {
             id: Uuid::new_v4(),
+            silo_id,
+            name: "default".to_string(),
+            description: format!("Default tenant for silo {}", req.name),
+            created_at: now,
+        };
+        let silo = Silo {
+            id: silo_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
-            created_at: Utc::now(),
+            default_tenant_id: tenant.id,
+            created_at: now,
         };
         guard.silo_id_by_name.insert(silo.name.clone(), silo.id);
         guard.silos_by_id.insert(silo.id, silo.clone());
+        guard
+            .tenant_id_by_silo_name
+            .insert((silo_id, tenant.name.clone()), tenant.id);
+        guard.tenants_by_id.insert(tenant.id, tenant);
         Ok(silo)
     }
 
@@ -192,7 +210,15 @@ impl Store for MemStore {
                 user.username
             )));
         }
-        if let (Some(silo_id), Some(fed)) = (user.silo_id, user.federation.as_ref()) {
+        // Federation index is keyed by (silo_id, issuer, subject) —
+        // the IdP belongs to the silo, not directly to the tenant.
+        // Resolve the user's tenant to find the owning silo.
+        if let (Some(tenant_id), Some(fed)) = (user.tenant_id, user.federation.as_ref()) {
+            let tenant = guard
+                .tenants_by_id
+                .get(&tenant_id)
+                .ok_or(StoreError::NotFound)?;
+            let silo_id = tenant.silo_id;
             let key = (silo_id, fed.issuer.clone(), fed.subject.clone());
             if guard.user_id_by_federation.contains_key(&key) {
                 return Err(StoreError::Conflict(format!(
@@ -1908,12 +1934,12 @@ mod tests {
             password_hash: "$2y$12$dummyhash".to_string(),
             is_root: false,
             created_at: Utc::now(),
-            silo_id: None,
+            tenant_id: None,
             federation: None,
         }
     }
 
-    fn federated_user_fixture(silo_id: Uuid, issuer: &str, subject: &str) -> User {
+    fn federated_user_fixture(tenant_id: Uuid, issuer: &str, subject: &str) -> User {
         use crate::Federation;
         User {
             id: Uuid::new_v4(),
@@ -1921,7 +1947,7 @@ mod tests {
             password_hash: String::new(),
             is_root: false,
             created_at: Utc::now(),
-            silo_id: Some(silo_id),
+            tenant_id: Some(tenant_id),
             federation: Some(Federation {
                 issuer: issuer.to_string(),
                 subject: subject.to_string(),
@@ -2087,33 +2113,47 @@ mod tests {
     #[tokio::test]
     async fn federated_user_round_trips_by_federation_triple() {
         let store = MemStore::new();
-        let silo_id = Uuid::new_v4();
-        let user = federated_user_fixture(silo_id, "https://idp.example", "tenant-42");
+        let silo = store
+            .create_silo(NewSilo {
+                name: "fed-rt".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let user =
+            federated_user_fixture(silo.default_tenant_id, "https://idp.example", "tenant-42");
         let user_id = user.id;
         store.create_user(user).await.unwrap();
 
         let resolved = store
-            .get_user_by_federation(silo_id, "https://idp.example", "tenant-42")
+            .get_user_by_federation(silo.id, "https://idp.example", "tenant-42")
             .await
             .unwrap();
         assert_eq!(resolved.id, user_id);
-        assert_eq!(resolved.silo_id, Some(silo_id));
+        assert_eq!(resolved.tenant_id, Some(silo.default_tenant_id));
     }
 
     #[tokio::test]
     async fn duplicate_federation_triple_conflicts() {
         let store = MemStore::new();
-        let silo_id = Uuid::new_v4();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "dup-fed".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
         store
             .create_user(federated_user_fixture(
-                silo_id,
+                silo.default_tenant_id,
                 "https://idp.example",
                 "tenant-42",
             ))
             .await
             .unwrap();
         // Same (silo, issuer, subject) but distinct username/uuid:
-        let mut second = federated_user_fixture(silo_id, "https://idp.example", "tenant-42");
+        let mut second =
+            federated_user_fixture(silo.default_tenant_id, "https://idp.example", "tenant-42");
         second.username = format!("alt-{}", second.id);
         let err = store
             .create_user(second)
@@ -2276,9 +2316,13 @@ mod tests {
         let fetched = store.get_tenant(t.id).await.unwrap();
         assert_eq!(fetched, t);
 
+        // The silo now ships with a "default" tenant created
+        // atomically alongside it (E-2), so the explicit tenant
+        // we just created should be the second of two listed.
         let listed = store.list_tenants_in_silo(silo.id).await.unwrap();
-        assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id, t.id);
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().any(|t2| t2.id == t.id));
+        assert!(listed.iter().any(|t2| t2.id == silo.default_tenant_id));
 
         store.delete_tenant(t.id).await.unwrap();
         let err = store

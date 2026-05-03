@@ -23,6 +23,11 @@ pub struct Silo {
     pub id: Uuid,
     pub name: String,
     pub description: String,
+    /// The tenant federated users from this silo's IdP land in by
+    /// default. Created atomically with the silo. Operators can
+    /// later create additional tenants in the silo and (in a future
+    /// slice) re-assign users.
+    pub default_tenant_id: Uuid,
     pub created_at: DateTime<Utc>,
 }
 
@@ -42,16 +47,23 @@ pub struct NewSilo {
 ///
 /// One `User` row covers two distinct credential models:
 ///
-/// * **Password-auth operators** — `silo_id = None`, `federation =
+/// * **Password-auth operators** — `tenant_id = None`, `federation =
 ///   None`, `password_hash` is the bcrypt hash of the operator's
-///   password. The bootstrap root user is the canonical example.
-/// * **Federated users** — `silo_id = Some(...)`, `federation =
+///   password. The bootstrap root user is the canonical example;
+///   root operators are cluster-wide and have no tenant.
+/// * **Federated users** — `tenant_id = Some(...)`, `federation =
 ///   Some(...)` carries the OIDC `(issuer, subject)` pair, and
 ///   `password_hash` is empty. Created just-in-time on the first
-///   successful OIDC login per `(silo_id, issuer, subject)`.
+///   successful OIDC login per `(silo_id, issuer, subject)`; the
+///   user lands in the silo's default tenant
+///   ([`Silo::default_tenant_id`]).
 ///
-/// `is_root` is mutually exclusive with `silo_id`: the root
-/// operator is cluster-wide; federated users are silo-scoped.
+/// `is_root` is mutually exclusive with `tenant_id`: the root
+/// operator is cluster-wide; federated users are tenant-scoped.
+///
+/// The owning silo can be derived from `tenant_id` via a
+/// [`Tenant::silo_id`] lookup when needed (e.g. by the auth layer
+/// for legacy silo-scoped Cedar rules).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     pub id: Uuid,
@@ -65,11 +77,14 @@ pub struct User {
     /// are written.
     pub is_root: bool,
     pub created_at: DateTime<Utc>,
-    /// Silo this user belongs to. `None` for the bootstrap root
+    /// Tenant this user belongs to. `None` for the bootstrap root
     /// operator and other cluster-wide accounts. Federated users
-    /// are always silo-scoped.
+    /// are always tenant-scoped — they land in their silo's
+    /// default tenant (see [`Silo::default_tenant_id`]) on JIT
+    /// creation. The owning silo, if any, is derivable via
+    /// [`Tenant::silo_id`].
     #[serde(default)]
-    pub silo_id: Option<Uuid>,
+    pub tenant_id: Option<Uuid>,
     /// External-IdP linkage when this user authenticates via OIDC.
     /// `None` for password-auth users.
     #[serde(default)]
@@ -77,8 +92,8 @@ pub struct User {
 }
 
 /// External-IdP linkage for a federated [`User`]. Combined with
-/// [`User::silo_id`] this is the unique key the auth middleware
-/// resolves on each OIDC login.
+/// the silo derived from [`User::tenant_id`] this is the unique
+/// key the auth middleware resolves on each OIDC login.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Federation {
     /// OIDC `iss` claim — must equal the issuer URL of the silo's

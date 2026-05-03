@@ -5292,6 +5292,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "default_tenant_id": {
+            "description": "The tenant federated users from this silo's IdP land in by default. Created atomically with the silo. Operators can later create additional tenants in the silo and (in a future slice) re-assign users.",
+            "type": "string",
+            "format": "uuid"
+          },
           "description": {
             "type": "string"
           },
@@ -5305,6 +5310,7 @@
         },
         "required": [
           "created_at",
+          "default_tenant_id",
           "description",
           "id",
           "name"

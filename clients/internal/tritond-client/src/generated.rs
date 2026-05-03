@@ -3969,6 +3969,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
+    #[doc = "    \"default_tenant_id\","]
     #[doc = "    \"description\","]
     #[doc = "    \"id\","]
     #[doc = "    \"name\""]
@@ -3977,6 +3978,11 @@ pub mod types {
     #[doc = "    \"created_at\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"default_tenant_id\": {"]
+    #[doc = "      \"description\": \"The tenant federated users from this silo's IdP land in by default. Created atomically with the silo. Operators can later create additional tenants in the silo and (in a future slice) re-assign users.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -3997,6 +4003,8 @@ pub mod types {
     )]
     pub struct Silo {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "The tenant federated users from this silo's IdP land in by default. Created atomically with the silo. Operators can later create additional tenants in the silo and (in a future slice) re-assign users."]
+        pub default_tenant_id: ::uuid::Uuid,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
         pub name: ::std::string::String,
@@ -9004,6 +9012,7 @@ pub mod types {
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
             >,
+            default_tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -9013,6 +9022,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     created_at: Err("no value supplied for created_at".to_string()),
+                    default_tenant_id: Err("no value supplied for default_tenant_id".to_string()),
                     description: Err("no value supplied for description".to_string()),
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
@@ -9029,6 +9039,16 @@ pub mod types {
                 self.created_at = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn default_tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default_tenant_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for default_tenant_id: {e}")
+                });
                 self
             }
             pub fn description<T>(mut self, value: T) -> Self
@@ -9068,6 +9088,7 @@ pub mod types {
             fn try_from(value: Silo) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     created_at: value.created_at?,
+                    default_tenant_id: value.default_tenant_id?,
                     description: value.description?,
                     id: value.id?,
                     name: value.name?,
@@ -9079,6 +9100,7 @@ pub mod types {
             fn from(value: super::Silo) -> Self {
                 Self {
                     created_at: Ok(value.created_at),
+                    default_tenant_id: Ok(value.default_tenant_id),
                     description: Ok(value.description),
                     id: Ok(value.id),
                     name: Ok(value.name),
