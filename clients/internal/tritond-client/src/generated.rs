@@ -2268,6 +2268,14 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"extra_nics\": {"]
+    #[doc = "      \"description\": \"Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, …\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NewInstanceNic\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"image_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
@@ -2303,6 +2311,9 @@ pub mod types {
         pub cpu: u32,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "Additional NICs beyond the primary one on `primary_subnet_id`. Each entry causes the store to allocate one NIC + IP from the named subnet at create time. The `InstanceCreateResult.nics` Vec returns all of them in declaration order (primary at index 0). The agent's vmadm payload iterates over the Vec and attaches `net0`, `net1`, …"]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub extra_nics: ::std::vec::Vec<NewInstanceNic>,
         pub image_id: ::uuid::Uuid,
         pub memory_bytes: u64,
         pub name: ::std::string::String,
@@ -2313,6 +2324,48 @@ pub mod types {
 
     impl NewInstance {
         pub fn builder() -> builder::NewInstance {
+            Default::default()
+        }
+    }
+
+    #[doc = "One additional NIC requested at instance create time. A future slice will let operators attach more after create via a dedicated POST endpoint; for v0 the only way to add a non-primary NIC is to declare it here."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One additional NIC requested at instance create time. A future slice will let operators attach more after create via a dedicated POST endpoint; for v0 the only way to add a non-primary NIC is to declare it here.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\","]
+    #[doc = "    \"subnet_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Operator-friendly NIC label (`primary`, `db-tier`, …). Must be unique within the instance.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"subnet_id\": {"]
+    #[doc = "      \"description\": \"Subnet to draw this NIC's IP from. Must live in a VPC inside the same project as the instance.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewInstanceNic {
+        #[doc = "Operator-friendly NIC label (`primary`, `db-tier`, …). Must be unique within the instance."]
+        pub name: ::std::string::String,
+        #[doc = "Subnet to draw this NIC's IP from. Must live in a VPC inside the same project as the instance."]
+        pub subnet_id: ::uuid::Uuid,
+    }
+
+    impl NewInstanceNic {
+        pub fn builder() -> builder::NewInstanceNic {
             Default::default()
         }
     }
@@ -5876,6 +5929,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            extra_nics: ::std::result::Result<
+                ::std::vec::Vec<super::NewInstanceNic>,
+                ::std::string::String,
+            >,
             image_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             memory_bytes: ::std::result::Result<u64, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -5889,6 +5946,7 @@ pub mod types {
                 Self {
                     cpu: Err("no value supplied for cpu".to_string()),
                     description: Ok(Default::default()),
+                    extra_nics: Ok(Default::default()),
                     image_id: Err("no value supplied for image_id".to_string()),
                     memory_bytes: Err("no value supplied for memory_bytes".to_string()),
                     name: Err("no value supplied for name".to_string()),
@@ -5917,6 +5975,16 @@ pub mod types {
                 self.description = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn extra_nics<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NewInstanceNic>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.extra_nics = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for extra_nics: {e}"));
                 self
             }
             pub fn image_id<T>(mut self, value: T) -> Self
@@ -5979,6 +6047,7 @@ pub mod types {
                 Ok(Self {
                     cpu: value.cpu?,
                     description: value.description?,
+                    extra_nics: value.extra_nics?,
                     image_id: value.image_id?,
                     memory_bytes: value.memory_bytes?,
                     name: value.name?,
@@ -5993,11 +6062,71 @@ pub mod types {
                 Self {
                     cpu: Ok(value.cpu),
                     description: Ok(value.description),
+                    extra_nics: Ok(value.extra_nics),
                     image_id: Ok(value.image_id),
                     memory_bytes: Ok(value.memory_bytes),
                     name: Ok(value.name),
                     primary_subnet_id: Ok(value.primary_subnet_id),
                     ssh_key_ids: Ok(value.ssh_key_ids),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewInstanceNic {
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            subnet_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewInstanceNic {
+            fn default() -> Self {
+                Self {
+                    name: Err("no value supplied for name".to_string()),
+                    subnet_id: Err("no value supplied for subnet_id".to_string()),
+                }
+            }
+        }
+
+        impl NewInstanceNic {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn subnet_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.subnet_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for subnet_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewInstanceNic> for super::NewInstanceNic {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewInstanceNic,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    name: value.name?,
+                    subnet_id: value.subnet_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewInstanceNic> for NewInstanceNic {
+            fn from(value: super::NewInstanceNic) -> Self {
+                Self {
+                    name: Ok(value.name),
+                    subnet_id: Ok(value.subnet_id),
                 }
             }
         }

@@ -584,6 +584,11 @@ pub async fn silo_project_instance_create(
             ssh_key_ids,
             cpu,
             memory_bytes,
+            // tcadm doesn't yet surface multi-NIC at create
+            // time on the CLI; operators that want extra NICs
+            // build the JSON body directly via curl. Future:
+            // a `--extra-nic SUBNET_ID:NAME` repeated flag.
+            extra_nics: Vec::new(),
         })
         .send()
         .await

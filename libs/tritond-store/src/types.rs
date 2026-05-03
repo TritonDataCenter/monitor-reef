@@ -809,6 +809,29 @@ pub struct NewInstance {
     pub ssh_key_ids: Vec<Uuid>,
     pub cpu: u32,
     pub memory_bytes: u64,
+    /// Additional NICs beyond the primary one on
+    /// `primary_subnet_id`. Each entry causes the store to
+    /// allocate one NIC + IP from the named subnet at create
+    /// time. The `InstanceCreateResult.nics` Vec returns all
+    /// of them in declaration order (primary at index 0). The
+    /// agent's vmadm payload iterates over the Vec and attaches
+    /// `net0`, `net1`, …
+    #[serde(default)]
+    pub extra_nics: Vec<NewInstanceNic>,
+}
+
+/// One additional NIC requested at instance create time. A
+/// future slice will let operators attach more after create
+/// via a dedicated POST endpoint; for v0 the only way to add
+/// a non-primary NIC is to declare it here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewInstanceNic {
+    /// Subnet to draw this NIC's IP from. Must live in a VPC
+    /// inside the same project as the instance.
+    pub subnet_id: Uuid,
+    /// Operator-friendly NIC label (`primary`, `db-tier`, …).
+    /// Must be unique within the instance.
+    pub name: String,
 }
 
 /// What a provisioning job asks an agent to do.

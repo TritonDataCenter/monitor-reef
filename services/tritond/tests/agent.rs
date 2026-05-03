@@ -428,6 +428,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
                 ssh_key_ids: Vec::new(),
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
+                extra_nics: Vec::new(),
             },
         )
         .await
@@ -502,8 +503,8 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
 /// completes in seconds.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sweeper_reaps_stale_inprogress_job() {
-    use tritond::SweeperConfig;
     use std::time::Duration;
+    use tritond::SweeperConfig;
 
     let store: Arc<dyn Store> = Arc::new(MemStore::new());
     let user = User {
@@ -546,13 +547,12 @@ async fn sweeper_reaps_stale_inprogress_job() {
         })
         .await
         .unwrap();
-    let claimed = test
-        .store
-        .claim_next_job("crashed-agent")
-        .await
-        .unwrap();
+    let claimed = test.store.claim_next_job("crashed-agent").await.unwrap();
     assert_eq!(claimed.id, queued.id);
-    assert!(matches!(claimed.status, tritond_store::JobStatus::InProgress));
+    assert!(matches!(
+        claimed.status,
+        tritond_store::JobStatus::InProgress
+    ));
 
     // Wait for the sweeper to do its thing. Threshold + interval
     // = 700ms; give it a generous 3s for tokio scheduling jitter.
@@ -665,6 +665,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
                 ssh_key_ids: Vec::new(),
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
+                extra_nics: Vec::new(),
             },
         )
         .await
@@ -844,6 +845,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
                 ssh_key_ids: Vec::new(),
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
+                extra_nics: Vec::new(),
             },
         )
         .await

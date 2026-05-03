@@ -2008,6 +2008,50 @@ impl Store for FdbStore {
         let disk_in_instance_key = Self::disk_in_instance_key(instance_id, disk_id);
         let instance_id_str = instance_id.to_string();
 
+        // Per-extra-NIC precomputed keys + ids. Cloned into the
+        // closure each iteration; the Vec itself is captured by
+        // move + cloned per-attempt.
+        #[derive(Clone)]
+        struct ExtraNicTxnPlan {
+            spec_subnet_id: Uuid,
+            name: String,
+            nic_id: Uuid,
+            subnet_check_key: Vec<u8>,
+            v4_begin: Vec<u8>,
+            v4_end: Vec<u8>,
+            v6_begin: Vec<u8>,
+            v6_end: Vec<u8>,
+            v4_prefix_len: usize,
+            v6_prefix_len: usize,
+            nic_by_id_key: Vec<u8>,
+            nic_in_instance_key: Vec<u8>,
+        }
+        let extra_plans: Vec<ExtraNicTxnPlan> = req
+            .extra_nics
+            .iter()
+            .map(|spec| {
+                let v4_prefix = Self::nic_ip_alloc_v4_prefix(spec.subnet_id);
+                let v6_prefix = Self::nic_ip_alloc_v6_prefix(spec.subnet_id);
+                let (v4_begin, v4_end) = prefix_range(&v4_prefix);
+                let (v6_begin, v6_end) = prefix_range(&v6_prefix);
+                let nid = Uuid::new_v4();
+                ExtraNicTxnPlan {
+                    spec_subnet_id: spec.subnet_id,
+                    name: spec.name.clone(),
+                    nic_id: nid,
+                    subnet_check_key: Self::subnet_by_id_key(spec.subnet_id),
+                    v4_prefix_len: v4_prefix.len(),
+                    v6_prefix_len: v6_prefix.len(),
+                    v4_begin,
+                    v4_end,
+                    v6_begin,
+                    v6_end,
+                    nic_by_id_key: Self::nic_by_id_key(nid),
+                    nic_in_instance_key: Self::nic_in_instance_key(instance_id, nid),
+                }
+            })
+            .collect();
+
         enum Outcome {
             Created(Box<InstanceCreateResult>),
             ProjectMissingOrWrongSilo,
@@ -2016,6 +2060,7 @@ impl Store for FdbStore {
             SshKeyMissingOrWrongSilo,
             NameTaken,
             IpPoolExhausted,
+            DuplicateNicName(String),
         }
 
         let req_for_txn = req.clone();
@@ -2039,6 +2084,7 @@ impl Store for FdbStore {
                 let v6_end = v6_end.clone();
                 let id_bytes = instance_id_str.as_bytes().to_vec();
                 let req = req_for_txn.clone();
+                let extra_plans = extra_plans.clone();
                 async move {
                     // Project
                     let project_bytes = match tr.get(&project_check_key, false).await? {
@@ -2150,7 +2196,10 @@ impl Store for FdbStore {
                     };
 
                     let now = Utc::now();
-                    let mut rng = rand::rng();
+                    // ThreadRng is !Send so we can't hold it across
+                    // the await points in the extra-NIC loop below.
+                    // Spin a fresh one per NIC right before the MAC
+                    // generation (which is synchronous).
                     let nic = Nic {
                         id: nic_id,
                         silo_id,
@@ -2159,7 +2208,10 @@ impl Store for FdbStore {
                         vpc_id: subnet.vpc_id,
                         subnet_id: subnet.id,
                         name: "primary".to_string(),
-                        mac: crate::types::generate_mac(&mut rng),
+                        mac: {
+                            let mut rng = rand::rng();
+                            crate::types::generate_mac(&mut rng)
+                        },
                         primary_ipv4,
                         primary_ipv6,
                         created_at: now,
@@ -2218,9 +2270,140 @@ impl Store for FdbStore {
                         let alloc_key = Self::nic_ip_alloc_v6_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
                     }
+
+                    // Extra NICs. Same pattern as the primary,
+                    // inside the same transaction so a partial
+                    // failure rolls back cleanly. Allocations
+                    // accumulated within this txn are added to
+                    // local v4/v6 sets so two extras drawing from
+                    // the same subnet don't collide on the same IP.
+                    let mut nic_records: Vec<Nic> = vec![nic];
+                    for plan in &extra_plans {
+                        // Spec name uniqueness within this instance.
+                        if nic_records.iter().any(|n| n.name == plan.name) {
+                            return Ok(Outcome::DuplicateNicName(plan.name.clone()));
+                        }
+                        // Resolve subnet.
+                        let extra_subnet_bytes = match tr.get(&plan.subnet_check_key, false).await?
+                        {
+                            Some(b) => b,
+                            None => return Ok(Outcome::SubnetMissingOrWrongParent),
+                        };
+                        let extra_subnet: Subnet = match serde_json::from_slice(&extra_subnet_bytes)
+                        {
+                            Ok(s) => s,
+                            Err(_) => return Ok(Outcome::SubnetMissingOrWrongParent),
+                        };
+                        if extra_subnet.silo_id != silo_id || extra_subnet.project_id != project_id
+                        {
+                            return Ok(Outcome::SubnetMissingOrWrongParent);
+                        }
+                        // Read existing v4 + v6 allocations for
+                        // this extra subnet.
+                        let mut allocated_v4_extra: std::collections::HashSet<std::net::Ipv4Addr> =
+                            std::collections::HashSet::new();
+                        {
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(plan.v4_begin.clone()),
+                                end: KeySelector::first_greater_or_equal(plan.v4_end.clone()),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[plan.v4_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                                {
+                                    allocated_v4_extra.insert(ip);
+                                }
+                            }
+                        }
+                        let mut allocated_v6_extra: std::collections::HashSet<std::net::Ipv6Addr> =
+                            std::collections::HashSet::new();
+                        {
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(plan.v6_begin.clone()),
+                                end: KeySelector::first_greater_or_equal(plan.v6_end.clone()),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[plan.v6_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                                {
+                                    allocated_v6_extra.insert(ip);
+                                }
+                            }
+                        }
+                        // If the same subnet appears more than
+                        // once across extras (or matches the
+                        // primary), prior allocations within
+                        // this txn must also be excluded.
+                        for n in &nic_records {
+                            if n.subnet_id == plan.spec_subnet_id {
+                                if let Some(ip) = n.primary_ipv4 {
+                                    allocated_v4_extra.insert(ip);
+                                }
+                                if let Some(ip) = n.primary_ipv6 {
+                                    allocated_v6_extra.insert(ip);
+                                }
+                            }
+                        }
+                        let extra_v4 = match extra_subnet.ipv4_block {
+                            Some(cidr) => {
+                                match crate::types::allocate_ipv4(cidr, &allocated_v4_extra) {
+                                    Some(ip) => Some(ip),
+                                    None => return Ok(Outcome::IpPoolExhausted),
+                                }
+                            }
+                            None => None,
+                        };
+                        let extra_v6 = match extra_subnet.ipv6_block {
+                            Some(cidr) => {
+                                match crate::types::allocate_ipv6(cidr, &allocated_v6_extra) {
+                                    Some(ip) => Some(ip),
+                                    None => return Ok(Outcome::IpPoolExhausted),
+                                }
+                            }
+                            None => None,
+                        };
+                        let extra_nic = Nic {
+                            id: plan.nic_id,
+                            silo_id,
+                            project_id,
+                            instance_id,
+                            vpc_id: extra_subnet.vpc_id,
+                            subnet_id: extra_subnet.id,
+                            name: plan.name.clone(),
+                            mac: {
+                                let mut rng = rand::rng();
+                                crate::types::generate_mac(&mut rng)
+                            },
+                            primary_ipv4: extra_v4,
+                            primary_ipv6: extra_v6,
+                            created_at: now,
+                        };
+                        let extra_value = match serde_json::to_vec(&extra_nic) {
+                            Ok(v) => v,
+                            Err(_) => return Ok(Outcome::NameTaken),
+                        };
+                        tr.set(&plan.nic_by_id_key, &extra_value);
+                        tr.set(&plan.nic_in_instance_key, b"");
+                        if let Some(ip) = extra_v4 {
+                            let alloc_key = Self::nic_ip_alloc_v4_key(extra_subnet.id, ip);
+                            tr.set(&alloc_key, b"");
+                        }
+                        if let Some(ip) = extra_v6 {
+                            let alloc_key = Self::nic_ip_alloc_v6_key(extra_subnet.id, ip);
+                            tr.set(&alloc_key, b"");
+                        }
+                        nic_records.push(extra_nic);
+                    }
+
                     Ok(Outcome::Created(Box::new(InstanceCreateResult {
                         instance,
-                        nics: vec![nic],
+                        nics: nic_records,
                         disks: vec![boot_disk],
                     })))
                 }
@@ -2240,6 +2423,9 @@ impl Store for FdbStore {
             Ok(Outcome::IpPoolExhausted) => Err(StoreError::Backend(format!(
                 "subnet {} ip pool exhausted",
                 req.primary_subnet_id
+            ))),
+            Ok(Outcome::DuplicateNicName(name)) => Err(StoreError::Conflict(format!(
+                "duplicate NIC name {name:?} on instance",
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }

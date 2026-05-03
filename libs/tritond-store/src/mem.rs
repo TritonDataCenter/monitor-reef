@@ -24,9 +24,9 @@ use crate::{
     AddressFamily, ApiKey, Disk, DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp,
     FloatingIpAttachment, IdpConfig, Image, Instance, InstanceCreateResult, JobOutcome, JobStatus,
     JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc,
+    NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewVpc, Nic,
+    Project, ProvisioningJob, Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, User,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
@@ -879,15 +879,88 @@ impl Store for MemStore {
             source_image_id: Some(image.id),
             created_at: now,
         };
+        // Resolve and allocate the extra NICs declared on the
+        // request. Each extra subnet must live under the same
+        // silo+project; each extra NIC name must be unique
+        // within the instance. We resolve all subnets *and*
+        // allocate all addresses before any insert so a failure
+        // half-way through doesn't leave partial state behind.
+        let mut nic_records: Vec<Nic> = vec![nic];
+        for spec in &req.extra_nics {
+            if nic_records.iter().any(|n| n.name == spec.name) {
+                return Err(StoreError::Conflict(format!(
+                    "duplicate NIC name {:?} on instance",
+                    spec.name
+                )));
+            }
+            let extra_subnet = guard
+                .subnets_by_id
+                .get(&spec.subnet_id)
+                .ok_or(StoreError::NotFound)?;
+            if extra_subnet.silo_id != silo_id || extra_subnet.project_id != project_id {
+                return Err(StoreError::NotFound);
+            }
+            let extra_subnet = extra_subnet.clone();
+            let allocated_v4 = guard
+                .allocated_ipv4_by_subnet
+                .entry(extra_subnet.id)
+                .or_default();
+            let extra_v4 = match extra_subnet.ipv4_block {
+                Some(cidr) => {
+                    let ip = crate::types::allocate_ipv4(cidr, allocated_v4).ok_or_else(|| {
+                        StoreError::Backend(format!(
+                            "subnet {} ipv4 pool exhausted",
+                            extra_subnet.id
+                        ))
+                    })?;
+                    allocated_v4.insert(ip);
+                    Some(ip)
+                }
+                None => None,
+            };
+            let allocated_v6 = guard
+                .allocated_ipv6_by_subnet
+                .entry(extra_subnet.id)
+                .or_default();
+            let extra_v6 = match extra_subnet.ipv6_block {
+                Some(cidr) => {
+                    let ip = crate::types::allocate_ipv6(cidr, allocated_v6).ok_or_else(|| {
+                        StoreError::Backend(format!(
+                            "subnet {} ipv6 pool exhausted",
+                            extra_subnet.id
+                        ))
+                    })?;
+                    allocated_v6.insert(ip);
+                    Some(ip)
+                }
+                None => None,
+            };
+            nic_records.push(Nic {
+                id: Uuid::new_v4(),
+                silo_id,
+                project_id,
+                instance_id,
+                vpc_id: extra_subnet.vpc_id,
+                subnet_id: extra_subnet.id,
+                name: spec.name.clone(),
+                mac: crate::types::generate_mac(&mut rng),
+                primary_ipv4: extra_v4,
+                primary_ipv6: extra_v6,
+                created_at: now,
+            });
+        }
+
         guard
             .instance_id_by_project_name
             .insert(name_key, instance.id);
         guard.instances_by_id.insert(instance.id, instance.clone());
-        guard.nics_by_id.insert(nic.id, nic.clone());
+        for n in &nic_records {
+            guard.nics_by_id.insert(n.id, n.clone());
+        }
         guard.disks_by_id.insert(boot_disk.id, boot_disk.clone());
         Ok(InstanceCreateResult {
             instance,
-            nics: vec![nic],
+            nics: nic_records,
             disks: vec![boot_disk],
         })
     }
@@ -2719,6 +2792,7 @@ mod tests {
             ssh_key_ids: vec![ssh_key_id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            extra_nics: Vec::new(),
         }
     }
 
@@ -3395,6 +3469,129 @@ mod tests {
         assert!(after.attached_to.is_none(), "should auto-detach");
         assert_eq!(after.address, original_address, "address preserved");
         assert_eq!(after.project_id, project_id, "project ownership preserved");
+    }
+
+    #[tokio::test]
+    async fn instance_with_extra_nic_allocates_per_subnet() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, primary_subnet, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        // A second subnet in the same project for the extra NIC.
+        let vpc_id = store.get_subnet(primary_subnet).await.unwrap().vpc_id;
+        let second = store
+            .create_subnet(
+                silo_id,
+                project_id,
+                vpc_id,
+                NewSubnet {
+                    name: "secondary".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.2.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let mut req = instance_req("two-nics", image_id, primary_subnet, ssh_key_id);
+        req.extra_nics = vec![NewInstanceNic {
+            subnet_id: second.id,
+            name: "data".to_string(),
+        }];
+        let result = store
+            .create_instance(silo_id, project_id, req)
+            .await
+            .unwrap();
+        assert_eq!(result.nics.len(), 2, "expected primary + one extra");
+        // Index 0 is the primary, index 1 is the declared extra.
+        assert_eq!(result.nics[0].name, "primary");
+        assert_eq!(result.nics[0].subnet_id, primary_subnet);
+        assert_eq!(result.nics[1].name, "data");
+        assert_eq!(result.nics[1].subnet_id, second.id);
+        assert!(result.nics[1].primary_ipv4.is_some());
+        assert_ne!(
+            result.nics[0].mac, result.nics[1].mac,
+            "each NIC must have a distinct MAC",
+        );
+    }
+
+    #[tokio::test]
+    async fn instance_extra_nic_duplicate_name_is_rejected() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, primary_subnet, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let mut req = instance_req("dup", image_id, primary_subnet, ssh_key_id);
+        req.extra_nics = vec![NewInstanceNic {
+            subnet_id: primary_subnet,
+            // Name collides with the auto-created "primary" NIC.
+            name: "primary".to_string(),
+        }];
+        let err = store
+            .create_instance(silo_id, project_id, req)
+            .await
+            .expect_err("duplicate NIC name must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn instance_extra_nic_in_wrong_silo_is_not_found() {
+        let store = MemStore::new();
+        let (silo_id, project_id, image_id, primary_subnet, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        // A subnet in a *different* silo+project.
+        let other_silo = store
+            .create_silo(NewSilo {
+                name: "other".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let other_project = store
+            .create_project(
+                other_silo.id,
+                NewProject {
+                    name: "p".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let other_vpc = store
+            .create_vpc(
+                other_silo.id,
+                other_project.id,
+                NewVpc {
+                    name: "v".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.99.0.0/16")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let other_subnet = store
+            .create_subnet(
+                other_silo.id,
+                other_project.id,
+                other_vpc.id,
+                NewSubnet {
+                    name: "s".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.99.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let mut req = instance_req("cross-tenant", image_id, primary_subnet, ssh_key_id);
+        req.extra_nics = vec![NewInstanceNic {
+            subnet_id: other_subnet.id,
+            name: "alien".to_string(),
+        }];
+        let err = store
+            .create_instance(silo_id, project_id, req)
+            .await
+            .expect_err("extra NIC subnet outside silo+project must NotFound");
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     #[tokio::test]

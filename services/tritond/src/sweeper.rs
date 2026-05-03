@@ -107,7 +107,11 @@ async fn run(
     }
 }
 
-async fn sweep_one(store: &Arc<dyn Store>, audit: &Arc<AuditService>, job: &tritond_store::ProvisioningJob) {
+async fn sweep_one(
+    store: &Arc<dyn Store>,
+    audit: &Arc<AuditService>,
+    job: &tritond_store::ProvisioningJob,
+) {
     let job_id = job.id;
     let outcome = JobOutcome::Failed {
         reason: SWEEPER_FAIL_REASON.to_string(),

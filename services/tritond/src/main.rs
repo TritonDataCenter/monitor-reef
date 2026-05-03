@@ -32,8 +32,8 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use tracing::info;
 use std::time::Duration;
+use tracing::info;
 
 use tritond::audit::AuditService;
 use tritond::auth::AuthService;

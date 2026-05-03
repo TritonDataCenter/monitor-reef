@@ -223,7 +223,8 @@ fn instance_req(fx: &Fixture, name: &str) -> NewInstance {
         ssh_key_ids: vec![fx.ssh_key_id],
         cpu: 2,
         memory_bytes: 2 * 1024 * 1024 * 1024,
-    }
+            extra_nics: Vec::new(),
+        }
 }
 
 fn lifecycle_state(state: &LifecycleState) -> &'static str {
