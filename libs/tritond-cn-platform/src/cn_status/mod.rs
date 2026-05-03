@@ -20,7 +20,7 @@ pub use disk_usage::{
     UuidNamedImageFilter, VmSnapshot,
 };
 pub use heartbeater::{
-    HEARTBEAT_INTERVAL, Heartbeater, HeartbeaterHandle, STATUS_CHECK_INTERVAL,
-    STATUS_MAX_INTERVAL, StatusSink, StatusSinkError,
+    HEARTBEAT_INTERVAL, Heartbeater, HeartbeaterHandle, STATUS_CHECK_INTERVAL, STATUS_MAX_INTERVAL,
+    StatusSink, StatusSinkError,
 };
 pub use watchers::{DirtyFlag, ZoneeventWatcher};

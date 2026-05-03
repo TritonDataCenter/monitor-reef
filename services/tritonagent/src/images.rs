@@ -228,9 +228,9 @@ async fn download_bundle_extract_content(
     expected_sha256: &str,
     content_dest: &Path,
 ) -> Result<()> {
-    let parent = content_dest.parent().ok_or_else(|| {
-        anyhow!("bundle content dest has no parent dir: {content_dest:?}")
-    })?;
+    let parent = content_dest
+        .parent()
+        .ok_or_else(|| anyhow!("bundle content dest has no parent dir: {content_dest:?}"))?;
     let bundle_path = parent.join(format!(
         "{}.tar",
         content_dest

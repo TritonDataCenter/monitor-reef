@@ -382,8 +382,8 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
                 sha256: "0".repeat(64),
                 source_url: None,
                 id: None,
-            compatibility: None,
-        },
+                compatibility: None,
+            },
         )
         .await
         .unwrap();
@@ -620,8 +620,8 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
                 sha256: "0".repeat(64),
                 source_url: None,
                 id: None,
-            compatibility: None,
-        },
+                compatibility: None,
+            },
         )
         .await
         .unwrap();
@@ -801,8 +801,8 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
                 sha256: "0".repeat(64),
                 source_url: None,
                 id: None,
-            compatibility: None,
-        },
+                compatibility: None,
+            },
         )
         .await
         .unwrap();
