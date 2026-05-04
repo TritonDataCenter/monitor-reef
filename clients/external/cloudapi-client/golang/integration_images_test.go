@@ -123,6 +123,113 @@ func TestIntegration_GetPackage(t *testing.T) {
 	}
 }
 
+func TestIntegration_ListPackages_FilterByName(t *testing.T) {
+	ctx := context.Background()
+
+	// First list all packages to get a known name.
+	allResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListPackages (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no packages available")
+	}
+
+	targetName := (*allResp.JSON200)[0].Name
+
+	// Now filter by that name.
+	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount, &cloudapi.ListPackagesParams{
+		Name: ptr(targetName),
+	})
+	if err != nil {
+		t.Fatalf("ListPackages filtered by name: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one package with name %q", targetName)
+	}
+	for _, pkg := range *resp.JSON200 {
+		if pkg.Name != targetName {
+			t.Errorf("expected package name %q, got %q", targetName, pkg.Name)
+		}
+	}
+}
+
+func TestIntegration_ListPackages_FilterByMemory(t *testing.T) {
+	ctx := context.Background()
+
+	// List all packages to find a known memory value.
+	allResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListPackages (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no packages available")
+	}
+
+	targetMemory := (*allResp.JSON200)[0].Memory
+
+	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount, &cloudapi.ListPackagesParams{
+		Memory: ptr(targetMemory),
+	})
+	if err != nil {
+		t.Fatalf("ListPackages filtered by memory: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one package with memory %d", targetMemory)
+	}
+	for _, pkg := range *resp.JSON200 {
+		if pkg.Memory != targetMemory {
+			t.Errorf("expected memory %d, got %d", targetMemory, pkg.Memory)
+		}
+	}
+}
+
+func TestIntegration_ListPackages_FilterNoMatch(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount, &cloudapi.ListPackagesParams{
+		Name: ptr("nonexistent-package-name-zzz"),
+	})
+	if err != nil {
+		t.Fatalf("ListPackages filtered (no match): %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil {
+		t.Fatal("expected JSON200 to be non-nil")
+	}
+	if len(*resp.JSON200) != 0 {
+		t.Errorf("expected empty result for bogus filter, got %d packages", len(*resp.JSON200))
+	}
+}
+
+func TestIntegration_HeadPackages_Filtered(t *testing.T) {
+	ctx := context.Background()
+
+	// List all packages to get a known name.
+	allResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListPackages: %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no packages available")
+	}
+
+	targetName := (*allResp.JSON200)[0].Name
+
+	resp, err := testClient.HeadPackagesWithResponse(ctx, testAccount, &cloudapi.HeadPackagesParams{
+		Name: ptr(targetName),
+	})
+	if err != nil {
+		t.Fatalf("HeadPackages filtered: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
 func TestIntegration_HeadImages(t *testing.T) {
 	ctx := context.Background()
 

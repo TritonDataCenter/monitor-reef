@@ -234,6 +234,176 @@ fn test_packages_json() {
     common::assert_valid_uuid(first_id, "Package id");
 }
 
+/// Test `triton packages -j --name=X` filters by name
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_packages_filter_by_name() {
+    common::config::require_integration_config();
+
+    // List all packages to get a known name.
+    let all_output = triton_with_profile()
+        .args(["packages", "-j"])
+        .output()
+        .expect("Failed to list packages");
+
+    let stdout = String::from_utf8_lossy(&all_output.stdout);
+    let all_packages: Vec<Value> = common::json_stream_parse(&stdout);
+    if all_packages.is_empty() {
+        eprintln!("Skipping: no packages available");
+        return;
+    }
+
+    let target_name = all_packages[0]["name"]
+        .as_str()
+        .expect("Package should have name");
+
+    // Filter by that name.
+    let filtered_output = triton_with_profile()
+        .args(["packages", "-j", "--name", target_name])
+        .output()
+        .expect("Failed to list packages filtered");
+
+    let filtered_stdout = String::from_utf8_lossy(&filtered_output.stdout);
+    assert!(
+        filtered_output.status.success(),
+        "filtered list should succeed"
+    );
+
+    let filtered: Vec<Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one package with name {target_name}"
+    );
+    for pkg in &filtered {
+        assert_eq!(
+            pkg["name"].as_str(),
+            Some(target_name),
+            "all results should match the filter name"
+        );
+    }
+}
+
+/// Test `triton packages -j --memory=X` filters by memory
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_packages_filter_by_memory() {
+    common::config::require_integration_config();
+
+    // List all packages to get a known memory value.
+    let all_output = triton_with_profile()
+        .args(["packages", "-j"])
+        .output()
+        .expect("Failed to list packages");
+
+    let stdout = String::from_utf8_lossy(&all_output.stdout);
+    let all_packages: Vec<Value> = common::json_stream_parse(&stdout);
+    if all_packages.is_empty() {
+        eprintln!("Skipping: no packages available");
+        return;
+    }
+
+    let target_memory = all_packages[0]["memory"]
+        .as_u64()
+        .expect("Package should have memory");
+
+    // Filter by that memory.
+    let filtered_output = triton_with_profile()
+        .args(["packages", "-j", "--memory", &target_memory.to_string()])
+        .output()
+        .expect("Failed to list packages filtered");
+
+    let filtered_stdout = String::from_utf8_lossy(&filtered_output.stdout);
+    assert!(
+        filtered_output.status.success(),
+        "filtered list should succeed"
+    );
+
+    let filtered: Vec<Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one package with memory {target_memory}"
+    );
+    for pkg in &filtered {
+        assert_eq!(
+            pkg["memory"].as_u64(),
+            Some(target_memory),
+            "all results should match the filter memory"
+        );
+    }
+}
+
+/// Test `triton packages -j name=X` positional filter
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_packages_positional_filter() {
+    common::config::require_integration_config();
+
+    // List all packages to get a known name.
+    let all_output = triton_with_profile()
+        .args(["packages", "-j"])
+        .output()
+        .expect("Failed to list packages");
+
+    let stdout = String::from_utf8_lossy(&all_output.stdout);
+    let all_packages: Vec<Value> = common::json_stream_parse(&stdout);
+    if all_packages.is_empty() {
+        eprintln!("Skipping: no packages available");
+        return;
+    }
+
+    let target_name = all_packages[0]["name"]
+        .as_str()
+        .expect("Package should have name");
+
+    // Use positional key=value filter.
+    let filter_arg = format!("name={target_name}");
+    let filtered_output = triton_with_profile()
+        .args(["packages", "-j", &filter_arg])
+        .output()
+        .expect("Failed to list packages with positional filter");
+
+    let filtered_stdout = String::from_utf8_lossy(&filtered_output.stdout);
+    assert!(
+        filtered_output.status.success(),
+        "positional filter list should succeed"
+    );
+
+    let filtered: Vec<Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one package with name {target_name}"
+    );
+    for pkg in &filtered {
+        assert_eq!(
+            pkg["name"].as_str(),
+            Some(target_name),
+            "all results should match the positional filter name"
+        );
+    }
+}
+
+/// Test `triton packages -j --name=nonexistent` returns empty
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_packages_filter_no_match() {
+    common::config::require_integration_config();
+
+    let output = triton_with_profile()
+        .args(["packages", "-j", "--name", "nonexistent-package-zzz"])
+        .output()
+        .expect("Failed to list packages filtered");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "filtered list should succeed");
+
+    let filtered: Vec<Value> = common::json_stream_parse(&stdout);
+    assert!(
+        filtered.is_empty(),
+        "expected empty result for bogus filter, got {} packages",
+        filtered.len()
+    );
+}
+
 /// Test `triton package get ID` returns package details
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
