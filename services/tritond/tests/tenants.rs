@@ -139,7 +139,9 @@ async fn root_creates_then_lists_tenant_in_silo() {
 
     // The silo's auto-created `default` tenant plus our new acme.
     assert!(
-        listed.iter().any(|t| t.id == created.id && t.name == "acme"),
+        listed
+            .iter()
+            .any(|t| t.id == created.id && t.name == "acme"),
         "freshly-created tenant should appear in the silo's tenant list"
     );
 

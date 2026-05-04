@@ -12,18 +12,25 @@
 //! 1. An in-process **stub OIDC provider** (axum) that serves
 //!    `/.well-known/openid-configuration` + `/jwks` and signs RS256
 //!    ID tokens with a key pair generated at startup.
-//! 2. An in-process **tritond** with one silo created via the store
-//!    and one IdP configured via the public API.
+//! 2. An in-process **tritond** with one silo created via the API
+//!    (which mints the silo's default tenant) and one IdP
+//!    configured against that default tenant via the public API.
+//!
+//! Post E-5 the IdP is tenant-scoped: the federation index is
+//! keyed by `(tenant_id, issuer, subject)` and inbound tokens are
+//! routed to their owning tenant via the issuer→tenant reverse
+//! index.
 //!
 //! The tests cover:
-//! - `POST /v2/silos/{}/idp` with an unreachable URL → 4xx (eager
-//!   discovery rejects).
+//! - `POST /v2/tenants/{}/idp` with an unreachable URL → 4xx
+//!   (eager discovery rejects).
 //! - First OIDC login JIT-creates a federated user; the same user
 //!   id is returned on subsequent logins (no duplicate users).
 //! - A token signed by an unrelated key is rejected.
-//! - A token whose `iss` doesn't match any configured silo → 403
+//! - A token whose `iss` doesn't match any configured tenant → 403
 //!   on protected endpoints (anonymous principal).
 //! - The IdP config GET endpoint never returns the client secret.
+//! - Two tenants cannot register the same `issuer_url` (409).
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -257,7 +264,7 @@ impl TestServer {
 // ---------- tests ----------
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn put_silo_idp_eagerly_rejects_unreachable_url() {
+async fn put_tenant_idp_eagerly_rejects_unreachable_url() {
     let test = TestServer::start().await;
     let client = test.authed_client();
 
@@ -273,8 +280,8 @@ async fn put_silo_idp_eagerly_rejects_unreachable_url() {
         .into_inner();
 
     let err = client
-        .put_silo_idp()
-        .silo_id(silo.id)
+        .put_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: "http://127.0.0.1:1".to_string(),
             client_id: "tritond".to_string(),
@@ -311,8 +318,8 @@ async fn first_oidc_login_jit_creates_federated_user_and_second_reuses() {
         .into_inner();
 
     admin
-        .put_silo_idp()
-        .silo_id(silo.id)
+        .put_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: idp.issuer().to_string(),
             client_id: "tritond".to_string(),
@@ -346,11 +353,12 @@ async fn first_oidc_login_jit_creates_federated_user_and_second_reuses() {
     };
     assert_eq!(response.status().as_u16(), 403);
 
-    // The JIT user must exist in the store now, and must land in
-    // the silo's default tenant (E-2 federation behaviour).
+    // The JIT user must exist in the store now, rooted at the
+    // tenant whose IdP authenticated it (post E-5 the federation
+    // index keys directly off tenant_id).
     let jit = test
         .store
-        .get_user_by_federation(silo.id, idp.issuer(), "tenant-42")
+        .get_user_by_federation(silo.default_tenant_id, idp.issuer(), "tenant-42")
         .await
         .expect("JIT user should have been created");
     assert_eq!(jit.tenant_id, Some(silo.default_tenant_id));
@@ -367,7 +375,7 @@ async fn first_oidc_login_jit_creates_federated_user_and_second_reuses() {
 
     let again = test
         .store
-        .get_user_by_federation(silo.id, idp.issuer(), "tenant-42")
+        .get_user_by_federation(silo.default_tenant_id, idp.issuer(), "tenant-42")
         .await
         .unwrap();
     assert_eq!(again.id, jit_id);
@@ -395,8 +403,8 @@ async fn token_signed_by_unrelated_key_does_not_authenticate() {
         .into_inner();
 
     admin
-        .put_silo_idp()
-        .silo_id(silo.id)
+        .put_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: real_idp.issuer().to_string(),
             client_id: "tritond".to_string(),
@@ -449,7 +457,7 @@ async fn token_signed_by_unrelated_key_does_not_authenticate() {
     // No JIT user should have been created from the forged login.
     let jit = test
         .store
-        .get_user_by_federation(silo.id, real_idp.issuer(), "spoof")
+        .get_user_by_federation(silo.default_tenant_id, real_idp.issuer(), "spoof")
         .await;
     assert!(jit.is_err(), "no JIT user should have been created");
 
@@ -459,7 +467,7 @@ async fn token_signed_by_unrelated_key_does_not_authenticate() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn get_silo_idp_never_returns_secret() {
+async fn get_tenant_idp_never_returns_secret() {
     let test = TestServer::start().await;
     let (idp, _, shutdown) = StubIdp::start().await;
     let admin = test.authed_client();
@@ -476,8 +484,8 @@ async fn get_silo_idp_never_returns_secret() {
         .into_inner();
 
     admin
-        .put_silo_idp()
-        .silo_id(silo.id)
+        .put_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: idp.issuer().to_string(),
             client_id: "tritond".to_string(),
@@ -489,8 +497,8 @@ async fn get_silo_idp_never_returns_secret() {
         .unwrap();
 
     let view = admin
-        .get_silo_idp()
-        .silo_id(silo.id)
+        .get_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .send()
         .await
         .unwrap()
@@ -504,14 +512,14 @@ async fn get_silo_idp_never_returns_secret() {
 
     // Delete clears the config and a subsequent GET is 404.
     admin
-        .delete_silo_idp()
-        .silo_id(silo.id)
+        .delete_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .send()
         .await
         .unwrap();
     let err = admin
-        .get_silo_idp()
-        .silo_id(silo.id)
+        .get_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
         .send()
         .await
         .expect_err("post-delete GET should be not-found");
@@ -519,6 +527,89 @@ async fn get_silo_idp_never_returns_secret() {
         panic!("expected ErrorResponse, got {err:?}");
     };
     assert_eq!(response.status().as_u16(), 404);
+
+    let _ = shutdown.send(());
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_tenant_duplicate_issuer_conflicts() {
+    // Two tenants in the same silo cannot register the same
+    // `issuer_url` — the second `put_tenant_idp` must return 409.
+    // Re-putting the same tenant's config is idempotent and OK.
+    let test = TestServer::start().await;
+    let (idp, _, shutdown) = StubIdp::start().await;
+    let admin = test.authed_client();
+
+    let silo = admin
+        .create_silo()
+        .body(NewSilo {
+            name: "issuer-uniq".to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    // Create a sibling tenant in the same silo.
+    let second_tenant = admin
+        .create_silo_tenant()
+        .silo_id(silo.id)
+        .body(tritond_client::types::NewTenant {
+            name: "sibling".to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    // First tenant claims the issuer.
+    admin
+        .put_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
+        .body(NewIdpConfig {
+            issuer_url: idp.issuer().to_string(),
+            client_id: "tritond".to_string(),
+            client_secret: "shhh".to_string(),
+            audience: None,
+        })
+        .send()
+        .await
+        .expect("first tenant claims issuer");
+
+    // Idempotent re-put for the *same* tenant succeeds.
+    admin
+        .put_tenant_idp()
+        .tenant_id(silo.default_tenant_id)
+        .body(NewIdpConfig {
+            issuer_url: idp.issuer().to_string(),
+            client_id: "tritond".to_string(),
+            client_secret: "shhh".to_string(),
+            audience: None,
+        })
+        .send()
+        .await
+        .expect("idempotent re-put for same tenant must succeed");
+
+    // Second tenant attempting the same issuer must 409.
+    let err = admin
+        .put_tenant_idp()
+        .tenant_id(second_tenant.id)
+        .body(NewIdpConfig {
+            issuer_url: idp.issuer().to_string(),
+            client_id: "tritond".to_string(),
+            client_secret: "other".to_string(),
+            audience: None,
+        })
+        .send()
+        .await
+        .expect_err("cross-tenant duplicate issuer must conflict");
+    let progenitor_client::Error::ErrorResponse(response) = err else {
+        panic!("expected ErrorResponse, got {err:?}");
+    };
+    assert_eq!(response.status().as_u16(), 409);
 
     let _ = shutdown.send(());
     test.close().await;

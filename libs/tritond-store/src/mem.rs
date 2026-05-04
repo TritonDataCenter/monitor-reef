@@ -54,13 +54,18 @@ struct Inner {
     silo_id_by_name: HashMap<String, Uuid>,
     users_by_id: HashMap<Uuid, User>,
     user_id_by_username: HashMap<String, Uuid>,
-    /// `(silo_id, issuer, subject)` → user_id index for federated
-    /// users.
+    /// `(tenant_id, issuer, subject)` → user_id index for federated
+    /// users. Post E-5 the IdP is tenant-scoped, so federation
+    /// lookups key off the owning tenant directly.
     user_id_by_federation: HashMap<(Uuid, String, String), Uuid>,
     api_keys_by_id: HashMap<Uuid, ApiKey>,
     api_key_id_by_lookup_id: HashMap<String, Uuid>,
     system_keys: HashMap<SystemKey, Vec<u8>>,
-    idp_configs_by_silo: HashMap<Uuid, IdpConfig>,
+    idp_configs_by_tenant: HashMap<Uuid, IdpConfig>,
+    /// `issuer_url` → tenant_id reverse index. Maintained in
+    /// lockstep with `idp_configs_by_tenant` on put/delete and
+    /// enforces global issuer uniqueness across tenants.
+    tenant_id_by_issuer: HashMap<String, Uuid>,
     projects_by_id: HashMap<Uuid, Project>,
     /// `(tenant_id, name)` → project_id index for the within-tenant
     /// uniqueness check.
@@ -210,19 +215,20 @@ impl Store for MemStore {
                 user.username
             )));
         }
-        // Federation index is keyed by (silo_id, issuer, subject) —
-        // the IdP belongs to the silo, not directly to the tenant.
-        // Resolve the user's tenant to find the owning silo.
+        // Federation index is keyed by (tenant_id, issuer, subject) —
+        // post E-5 the IdP belongs directly to the tenant, so the
+        // index is rooted at the tenant the user lives in.
         if let (Some(tenant_id), Some(fed)) = (user.tenant_id, user.federation.as_ref()) {
-            let tenant = guard
-                .tenants_by_id
-                .get(&tenant_id)
-                .ok_or(StoreError::NotFound)?;
-            let silo_id = tenant.silo_id;
-            let key = (silo_id, fed.issuer.clone(), fed.subject.clone());
+            // Defensive: the tenant must exist before we anchor a
+            // federated user to it. A missing tenant is a programming
+            // error, not a normal flow.
+            if !guard.tenants_by_id.contains_key(&tenant_id) {
+                return Err(StoreError::NotFound);
+            }
+            let key = (tenant_id, fed.issuer.clone(), fed.subject.clone());
             if guard.user_id_by_federation.contains_key(&key) {
                 return Err(StoreError::Conflict(format!(
-                    "federated user already exists for silo {silo_id} issuer {} subject {}",
+                    "federated user already exists for tenant {tenant_id} issuer {} subject {}",
                     fed.issuer, fed.subject
                 )));
             }
@@ -330,12 +336,12 @@ impl Store for MemStore {
 
     async fn get_user_by_federation(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         issuer: &str,
         subject: &str,
     ) -> Result<User, StoreError> {
         let guard = self.inner.read().await;
-        let key = (silo_id, issuer.to_string(), subject.to_string());
+        let key = (tenant_id, issuer.to_string(), subject.to_string());
         let user_id = guard
             .user_id_by_federation
             .get(&key)
@@ -350,39 +356,93 @@ impl Store for MemStore {
 
     async fn put_idp_config(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         config: IdpConfig,
     ) -> Result<IdpConfig, StoreError> {
         let mut guard = self.inner.write().await;
-        guard.idp_configs_by_silo.insert(silo_id, config.clone());
+
+        // Issuer uniqueness across tenants. If the issuer is already
+        // claimed by a *different* tenant, reject. Re-putting the
+        // same tenant's config (idempotent or with a changed issuer)
+        // is fine; in that case we also clear the old issuer's
+        // reverse-index entry below.
+        if let Some(other_tenant) = guard.tenant_id_by_issuer.get(&config.issuer_url)
+            && *other_tenant != tenant_id
+        {
+            return Err(StoreError::Conflict(format!(
+                "issuer {:?} already claimed by another tenant",
+                config.issuer_url
+            )));
+        }
+
+        // If this tenant previously had a config with a different
+        // issuer, drop the stale issuer→tenant entry before
+        // installing the new one. Clone the URL out so we can take
+        // a `&mut` to a different sub-map below without overlapping
+        // borrows.
+        let prev_issuer = guard
+            .idp_configs_by_tenant
+            .get(&tenant_id)
+            .map(|prev| prev.issuer_url.clone());
+        if let Some(prev) = prev_issuer
+            && prev != config.issuer_url
+        {
+            guard.tenant_id_by_issuer.remove(&prev);
+        }
+
+        guard
+            .tenant_id_by_issuer
+            .insert(config.issuer_url.clone(), tenant_id);
+        guard
+            .idp_configs_by_tenant
+            .insert(tenant_id, config.clone());
         Ok(config)
     }
 
-    async fn get_idp_config(&self, silo_id: Uuid) -> Result<IdpConfig, StoreError> {
+    async fn get_idp_config(&self, tenant_id: Uuid) -> Result<IdpConfig, StoreError> {
         let guard = self.inner.read().await;
         guard
-            .idp_configs_by_silo
-            .get(&silo_id)
+            .idp_configs_by_tenant
+            .get(&tenant_id)
             .cloned()
             .ok_or(StoreError::NotFound)
     }
 
-    async fn delete_idp_config(&self, silo_id: Uuid) -> Result<(), StoreError> {
+    async fn delete_idp_config(&self, tenant_id: Uuid) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
-        guard
-            .idp_configs_by_silo
-            .remove(&silo_id)
-            .map(|_| ())
-            .ok_or(StoreError::NotFound)
+        let removed = guard
+            .idp_configs_by_tenant
+            .remove(&tenant_id)
+            .ok_or(StoreError::NotFound)?;
+        guard.tenant_id_by_issuer.remove(&removed.issuer_url);
+        Ok(())
     }
 
     async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError> {
         let guard = self.inner.read().await;
         Ok(guard
-            .idp_configs_by_silo
+            .idp_configs_by_tenant
             .iter()
             .map(|(k, v)| (*k, v.clone()))
             .collect())
+    }
+
+    async fn get_idp_config_by_issuer(
+        &self,
+        issuer: &str,
+    ) -> Result<(Uuid, IdpConfig), StoreError> {
+        let guard = self.inner.read().await;
+        let tenant_id = guard
+            .tenant_id_by_issuer
+            .get(issuer)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        let config = guard
+            .idp_configs_by_tenant
+            .get(&tenant_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        Ok((tenant_id, config))
     }
 
     async fn create_project(
@@ -2138,7 +2198,7 @@ mod tests {
         store.create_user(user).await.unwrap();
 
         let resolved = store
-            .get_user_by_federation(silo.id, "https://idp.example", "tenant-42")
+            .get_user_by_federation(silo.default_tenant_id, "https://idp.example", "tenant-42")
             .await
             .unwrap();
         assert_eq!(resolved.id, user_id);
@@ -2431,7 +2491,7 @@ mod tests {
     #[tokio::test]
     async fn idp_config_round_trip() {
         let store = MemStore::new();
-        let silo_id = Uuid::new_v4();
+        let tenant_id = Uuid::new_v4();
         let config = IdpConfig {
             issuer_url: "https://idp.example".to_string(),
             client_id: "tritond".to_string(),
@@ -2439,25 +2499,91 @@ mod tests {
             audience: None,
         };
         let err = store
-            .get_idp_config(silo_id)
+            .get_idp_config(tenant_id)
             .await
             .expect_err("missing idp config is not-found");
         assert!(matches!(err, StoreError::NotFound));
 
-        store.put_idp_config(silo_id, config.clone()).await.unwrap();
-        let read = store.get_idp_config(silo_id).await.unwrap();
+        store
+            .put_idp_config(tenant_id, config.clone())
+            .await
+            .unwrap();
+        let read = store.get_idp_config(tenant_id).await.unwrap();
         assert_eq!(read.issuer_url, "https://idp.example");
 
         let listed = store.list_idp_configs().await.unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].0, silo_id);
+        assert_eq!(listed[0].0, tenant_id);
 
-        store.delete_idp_config(silo_id).await.unwrap();
+        // Issuer-keyed reverse lookup resolves to the same tenant.
+        let (by_iss_tenant, by_iss_cfg) = store
+            .get_idp_config_by_issuer("https://idp.example")
+            .await
+            .unwrap();
+        assert_eq!(by_iss_tenant, tenant_id);
+        assert_eq!(by_iss_cfg.issuer_url, "https://idp.example");
+
+        store.delete_idp_config(tenant_id).await.unwrap();
         let err = store
-            .get_idp_config(silo_id)
+            .get_idp_config(tenant_id)
             .await
             .expect_err("deleted idp config is not-found");
         assert!(matches!(err, StoreError::NotFound));
+        // The reverse-index entry is dropped too.
+        let err = store
+            .get_idp_config_by_issuer("https://idp.example")
+            .await
+            .expect_err("post-delete issuer lookup is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn idp_config_issuer_uniqueness_across_tenants() {
+        let store = MemStore::new();
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        let config = IdpConfig {
+            issuer_url: "https://idp.example".to_string(),
+            client_id: "tritond".to_string(),
+            client_secret: "shhh".to_string(),
+            audience: None,
+        };
+        store
+            .put_idp_config(tenant_a, config.clone())
+            .await
+            .unwrap();
+        // Same tenant, identical config → idempotent OK.
+        store
+            .put_idp_config(tenant_a, config.clone())
+            .await
+            .expect("idempotent re-put for the same tenant must succeed");
+        // Same tenant, different issuer → OK; the old issuer index
+        // entry is dropped so no other tenant can be blocked by it.
+        let alt = IdpConfig {
+            issuer_url: "https://idp.alt".to_string(),
+            ..config.clone()
+        };
+        store
+            .put_idp_config(tenant_a, alt.clone())
+            .await
+            .expect("changing the same tenant's issuer is fine");
+        // Different tenant, original issuer → now free to claim.
+        store
+            .put_idp_config(tenant_b, config.clone())
+            .await
+            .expect("issuer freed by tenant_a's swap should now be claimable");
+        // Different tenant, currently-claimed issuer → conflict.
+        let err = store
+            .put_idp_config(
+                tenant_b,
+                IdpConfig {
+                    issuer_url: "https://idp.alt".to_string(),
+                    ..config
+                },
+            )
+            .await
+            .expect_err("cross-tenant duplicate issuer must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
     }
 
     #[tokio::test]

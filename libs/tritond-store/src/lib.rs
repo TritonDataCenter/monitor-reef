@@ -145,47 +145,60 @@ pub trait Store: Send + Sync + 'static {
     // Federated users (OIDC)
     // ------------------------------------------------------------------
 
-    /// Look up a user by their `(silo_id, issuer, subject)` triple.
-    /// The IdP is silo-scoped (a silo owns its IdP), so the
-    /// federation index stays silo-keyed even though the returned
-    /// [`User`] now carries [`User::tenant_id`] (resolved to the
-    /// silo's [`Silo::default_tenant_id`] at JIT-create time)
-    /// rather than a direct `silo_id`.
+    /// Look up a user by their `(tenant_id, issuer, subject)` triple.
+    /// As of E-5 the IdP is tenant-scoped, so the federation index is
+    /// keyed by the tenant that owns the IdP — the same tenant the
+    /// JIT-created [`User`] is rooted under via [`User::tenant_id`].
     ///
     /// Returns [`StoreError::NotFound`] if no user matches; the
     /// auth middleware uses that to JIT-create the row on first
     /// OIDC login.
     async fn get_user_by_federation(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         issuer: &str,
         subject: &str,
     ) -> Result<User, StoreError>;
 
     // ------------------------------------------------------------------
-    // Per-silo IdP configuration
+    // Per-tenant IdP configuration
     // ------------------------------------------------------------------
 
-    /// Persist (or replace) the OIDC IdP config for a silo. Eager
+    /// Persist (or replace) the OIDC IdP config for a tenant. Eager
     /// discovery happens in the caller before this is invoked, so
     /// failure here is purely storage-side.
+    ///
+    /// Enforces issuer uniqueness across all tenants: if the
+    /// supplied `config.issuer_url` is already claimed by a
+    /// *different* tenant, returns [`StoreError::Conflict`].
+    /// Re-putting the same tenant's config (idempotent or with a
+    /// changed issuer) is fine.
     async fn put_idp_config(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         config: IdpConfig,
     ) -> Result<IdpConfig, StoreError>;
 
-    /// Read the IdP config for a silo. Returns [`StoreError::NotFound`]
-    /// when the silo has no IdP attached.
-    async fn get_idp_config(&self, silo_id: Uuid) -> Result<IdpConfig, StoreError>;
+    /// Read the IdP config for a tenant. Returns [`StoreError::NotFound`]
+    /// when the tenant has no IdP attached.
+    async fn get_idp_config(&self, tenant_id: Uuid) -> Result<IdpConfig, StoreError>;
 
-    /// Remove the IdP config for a silo.
-    async fn delete_idp_config(&self, silo_id: Uuid) -> Result<(), StoreError>;
+    /// Remove the IdP config for a tenant.
+    async fn delete_idp_config(&self, tenant_id: Uuid) -> Result<(), StoreError>;
 
-    /// Iterate every (silo_id, IdpConfig) pair. Used by the auth
-    /// middleware to find the IdP whose `issuer` matches an inbound
-    /// token's `iss` claim.
+    /// Iterate every (tenant_id, IdpConfig) pair. Returned `Uuid` is
+    /// now the owning tenant id (post E-5). The
+    /// [`Self::get_idp_config_by_issuer`] index is the preferred
+    /// lookup path; this method exists for operator surfaces that
+    /// dump every configured IdP.
     async fn list_idp_configs(&self) -> Result<Vec<(Uuid, IdpConfig)>, StoreError>;
+
+    /// Look up the (tenant_id, IdpConfig) pair whose issuer
+    /// matches `issuer`, if any. Used by `authenticate_oidc` to
+    /// route an inbound token to its owning tenant. Returns
+    /// [`StoreError::NotFound`] when no IdP claims the issuer.
+    async fn get_idp_config_by_issuer(&self, issuer: &str)
+    -> Result<(Uuid, IdpConfig), StoreError>;
 
     // ------------------------------------------------------------------
     // Projects (tenant-scoped)

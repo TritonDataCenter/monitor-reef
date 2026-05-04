@@ -41,7 +41,7 @@ use tritond_api::{
     CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig,
     NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest,
     RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse,
-    SiloImagePath, SiloPath, SiloSshKeyPath, SiloTenantPath, TenantPath,
+    SiloImagePath, SiloPath, SiloSshKeyPath, SiloTenantPath, TenantIdpPath, TenantPath,
     TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
     TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath,
     TokenResponse, TritondApi,
@@ -760,9 +760,9 @@ impl TritondApi for TritondServiceImpl {
         }
     }
 
-    async fn put_silo_idp(
+    async fn put_tenant_idp(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantIdpPath>,
         body: TypedBody<NewIdpConfig>,
     ) -> Result<HttpResponseCreated<IdpConfigView>, HttpError> {
         let ctx = rqctx.context();
@@ -771,14 +771,14 @@ impl TritondApi for TritondServiceImpl {
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
-            Action::SiloIdpSet,
+            Action::TenantIdpSet,
         )
         .await?;
-        let silo_id = path.into_inner().silo_id;
-        // Confirm the silo exists; reject 404 cleanly rather than
-        // dangling an IdP config off a non-existent silo.
+        let tenant_id = path.into_inner().tenant_id;
+        // Confirm the tenant exists; reject 404 cleanly rather
+        // than dangling an IdP config off a non-existent tenant.
         ctx.store
-            .get_silo(silo_id)
+            .get_tenant(tenant_id)
             .await
             .map_err(store_error_to_http)?;
 
@@ -801,7 +801,7 @@ impl TritondApi for TritondServiceImpl {
         };
         ctx.auth
             .oidc()
-            .discover(&silo_id.to_string(), &oidc_cfg)
+            .discover(&tenant_id.to_string(), &oidc_cfg)
             .await
             .map_err(|e| {
                 HttpError::for_client_error(
@@ -813,15 +813,15 @@ impl TritondApi for TritondServiceImpl {
 
         let saved = ctx
             .store
-            .put_idp_config(silo_id, config)
+            .put_idp_config(tenant_id, config)
             .await
             .map_err(store_error_to_http)?;
         Ok(HttpResponseCreated(saved.into()))
     }
 
-    async fn get_silo_idp(
+    async fn get_tenant_idp(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantIdpPath>,
     ) -> Result<HttpResponseOk<IdpConfigView>, HttpError> {
         let ctx = rqctx.context();
         authenticate_and_authorize(
@@ -829,21 +829,21 @@ impl TritondApi for TritondServiceImpl {
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
-            Action::SiloIdpGet,
+            Action::TenantIdpGet,
         )
         .await?;
-        let silo_id = path.into_inner().silo_id;
+        let tenant_id = path.into_inner().tenant_id;
         let config = ctx
             .store
-            .get_idp_config(silo_id)
+            .get_idp_config(tenant_id)
             .await
             .map_err(store_error_to_http)?;
         Ok(HttpResponseOk(config.into()))
     }
 
-    async fn delete_silo_idp(
+    async fn delete_tenant_idp(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantIdpPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
         authenticate_and_authorize(
@@ -851,15 +851,15 @@ impl TritondApi for TritondServiceImpl {
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
-            Action::SiloIdpDelete,
+            Action::TenantIdpDelete,
         )
         .await?;
-        let silo_id = path.into_inner().silo_id;
+        let tenant_id = path.into_inner().tenant_id;
         ctx.store
-            .delete_idp_config(silo_id)
+            .delete_idp_config(tenant_id)
             .await
             .map_err(store_error_to_http)?;
-        ctx.auth.oidc().invalidate(&silo_id.to_string()).await;
+        ctx.auth.oidc().invalidate(&tenant_id.to_string()).await;
         Ok(HttpResponseDeleted())
     }
 

@@ -119,11 +119,6 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum SiloCommand {
-    /// Manage the silo's OIDC identity provider.
-    Idp {
-        #[command(subcommand)]
-        command: SiloIdpCommand,
-    },
     /// Manage SSH keys registered in the silo's catalog.
     SshKey {
         #[command(subcommand)]
@@ -162,14 +157,16 @@ enum TenantCommand {
         json: bool,
     },
     /// Delete a tenant by id.
-    Delete {
-        silo_id: Uuid,
-        tenant_id: Uuid,
-    },
+    Delete { silo_id: Uuid, tenant_id: Uuid },
     /// Manage projects inside a tenant.
     Project {
         #[command(subcommand)]
         command: TenantProjectCommand,
+    },
+    /// Manage the tenant's OIDC identity provider.
+    Idp {
+        #[command(subcommand)]
+        command: TenantIdpCommand,
     },
 }
 
@@ -616,11 +613,13 @@ enum TenantProjectVpcSubnetCommand {
 }
 
 #[derive(Subcommand)]
-enum SiloIdpCommand {
-    /// Configure (or replace) the silo's IdP. Eagerly fetches the
-    /// OIDC discovery document; rejects on failure.
+enum TenantIdpCommand {
+    /// Configure (or replace) the tenant's IdP. Eagerly fetches
+    /// the OIDC discovery document; rejects on failure. Returns
+    /// 409 if a different tenant already claims the same
+    /// `--issuer-url`.
     Set {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         #[arg(long)]
         issuer_url: String,
         #[arg(long)]
@@ -634,15 +633,16 @@ enum SiloIdpCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Read the silo's IdP config (client secret never returned).
+    /// Read the tenant's IdP config (client secret never returned).
     Get {
-        silo_id: Uuid,
+        tenant_id: Uuid,
         #[arg(long)]
         json: bool,
     },
-    /// Remove the silo's IdP config. Federated users in that silo
-    /// will fail to authenticate until a new config is posted.
-    Delete { silo_id: Uuid },
+    /// Remove the tenant's IdP config. Federated users in that
+    /// tenant will fail to authenticate until a new config is
+    /// posted.
+    Delete { tenant_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -913,34 +913,6 @@ async fn main() -> Result<()> {
             }
         },
         Commands::Silo { command } => match command {
-            SiloCommand::Idp { command } => match command {
-                SiloIdpCommand::Set {
-                    silo_id,
-                    issuer_url,
-                    client_id,
-                    client_secret_stdin,
-                    audience,
-                    json,
-                } => {
-                    commands::silo_idp_set(
-                        cli.endpoint,
-                        cli.api_key,
-                        silo_id,
-                        issuer_url,
-                        client_id,
-                        client_secret_stdin,
-                        audience,
-                        json,
-                    )
-                    .await
-                }
-                SiloIdpCommand::Get { silo_id, json } => {
-                    commands::silo_idp_get(cli.endpoint, cli.api_key, silo_id, json).await
-                }
-                SiloIdpCommand::Delete { silo_id } => {
-                    commands::silo_idp_delete(cli.endpoint, cli.api_key, silo_id).await
-                }
-            },
             SiloCommand::SshKey { command } => match command {
                 SiloSshKeyCommand::List { silo_id, json } => {
                     commands::silo_ssh_key_list(cli.endpoint, cli.api_key, silo_id, json).await
@@ -1034,29 +1006,19 @@ async fn main() -> Result<()> {
                 silo_id,
                 tenant_id,
                 json,
-            } => {
-                commands::tenant_show(cli.endpoint, cli.api_key, silo_id, tenant_id, json).await
-            }
+            } => commands::tenant_show(cli.endpoint, cli.api_key, silo_id, tenant_id, json).await,
             TenantCommand::Create {
                 silo_id,
                 name,
                 description,
                 json,
             } => {
-                commands::tenant_create(
-                    cli.endpoint,
-                    cli.api_key,
-                    silo_id,
-                    name,
-                    description,
-                    json,
-                )
-                .await
+                commands::tenant_create(cli.endpoint, cli.api_key, silo_id, name, description, json)
+                    .await
             }
-            TenantCommand::Delete {
-                silo_id,
-                tenant_id,
-            } => commands::tenant_delete(cli.endpoint, cli.api_key, silo_id, tenant_id).await,
+            TenantCommand::Delete { silo_id, tenant_id } => {
+                commands::tenant_delete(cli.endpoint, cli.api_key, silo_id, tenant_id).await
+            }
             TenantCommand::Project { command } => match command {
                 TenantProjectCommand::List { tenant_id, json } => {
                     commands::tenant_project_list(cli.endpoint, cli.api_key, tenant_id, json).await
@@ -1594,6 +1556,34 @@ async fn main() -> Result<()> {
                         }
                     },
                 },
+            },
+            TenantCommand::Idp { command } => match command {
+                TenantIdpCommand::Set {
+                    tenant_id,
+                    issuer_url,
+                    client_id,
+                    client_secret_stdin,
+                    audience,
+                    json,
+                } => {
+                    commands::tenant_idp_set(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        issuer_url,
+                        client_id,
+                        client_secret_stdin,
+                        audience,
+                        json,
+                    )
+                    .await
+                }
+                TenantIdpCommand::Get { tenant_id, json } => {
+                    commands::tenant_idp_get(cli.endpoint, cli.api_key, tenant_id, json).await
+                }
+                TenantIdpCommand::Delete { tenant_id } => {
+                    commands::tenant_idp_delete(cli.endpoint, cli.api_key, tenant_id).await
+                }
             },
         },
     }

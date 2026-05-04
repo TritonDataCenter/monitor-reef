@@ -56,8 +56,11 @@ use crate::audit::AuditService;
 /// * Authenticated operators with `is_root == true` can perform any
 ///   action (the bootstrap-root path).
 /// * Silo members can perform actions on resources that remain
-///   silo-scoped after E-3 (SSH keys, images, IdP). Gated by
-///   `principal.silo_id == resource.silo_id`.
+///   silo-scoped after E-3 (SSH keys, images, tenant CRUD). Gated
+///   by `principal.silo_id == resource.silo_id`. The tenant IdP
+///   actions are intentionally omitted — IdP management stays
+///   root-only because the IdP grants identity, and granting
+///   identity is operator turf.
 /// * Tenant members can perform actions on the tenant-scoped
 ///   workload graph (project, VPC, subnet, instance, NIC, disk,
 ///   floating IP, quota). Gated by `principal.tenant_id ==
@@ -288,9 +291,9 @@ pub enum Action {
     AuditList,
     AuditFetch,
     AuditVerify,
-    SiloIdpSet,
-    SiloIdpGet,
-    SiloIdpDelete,
+    TenantIdpSet,
+    TenantIdpGet,
+    TenantIdpDelete,
     TenantList,
     TenantCreate,
     TenantGet,
@@ -399,9 +402,9 @@ impl Action {
             Action::AuditList => "audit_list",
             Action::AuditFetch => "audit_fetch",
             Action::AuditVerify => "audit_verify",
-            Action::SiloIdpSet => "silo_idp_set",
-            Action::SiloIdpGet => "silo_idp_get",
-            Action::SiloIdpDelete => "silo_idp_delete",
+            Action::TenantIdpSet => "tenant_idp_set",
+            Action::TenantIdpGet => "tenant_idp_get",
+            Action::TenantIdpDelete => "tenant_idp_delete",
             Action::TenantList => "tenant_list",
             Action::TenantCreate => "tenant_create",
             Action::TenantGet => "tenant_get",
@@ -563,25 +566,21 @@ impl AuthService {
         store: &dyn Store,
         token: &str,
     ) -> Result<Principal, AuthError> {
-        // Cheaply peek at the `iss` claim so we know which silo's
-        // IdP to verify against. A token without a parseable `iss`
-        // is just anonymous; same goes for one whose issuer doesn't
-        // match any configured silo.
+        // Cheaply peek at the `iss` claim so we can route the
+        // token to its owning tenant via the IdP's `issuer→tenant`
+        // index. A token without a parseable `iss` is just
+        // anonymous; same goes for one whose issuer doesn't match
+        // any configured tenant.
         let Some(issuer) = peek_issuer(token) else {
             return Ok(Principal::Anonymous);
         };
-        let configs = match store.list_idp_configs().await {
-            Ok(c) => c,
+        let (tenant_id, idp) = match store.get_idp_config_by_issuer(&issuer).await {
+            Ok(pair) => pair,
+            Err(StoreError::NotFound) => return Ok(Principal::Anonymous),
             Err(e) => {
-                warn!(error = %e, "store failure listing idp configs");
+                warn!(error = %e, "store failure resolving idp by issuer");
                 return Err(AuthError::Backend(e));
             }
-        };
-        let Some((silo_id, idp)) = configs
-            .into_iter()
-            .find(|(_, cfg)| cfg.issuer_url == issuer)
-        else {
-            return Ok(Principal::Anonymous);
         };
 
         let oidc_cfg = OidcConfig {
@@ -590,43 +589,40 @@ impl AuthService {
             client_secret: idp.client_secret,
             audience: idp.audience,
         };
-        let cache_key = silo_id.to_string();
+        // The OIDC verifier caches discovery + JWKS per cache key;
+        // tenant_id is the right granularity now that IdPs are
+        // tenant-scoped.
+        let cache_key = tenant_id.to_string();
         let claims = match self.oidc.verify(&cache_key, &oidc_cfg, token).await {
             Ok(c) => c,
             Err(e) => {
-                tracing::debug!(error = %e, %silo_id, "rejecting oidc token as anonymous");
+                tracing::debug!(error = %e, %tenant_id, "rejecting oidc token as anonymous");
                 return Ok(Principal::Anonymous);
             }
         };
 
-        // JIT user lookup or create for this (silo, issuer, subject).
-        // Federated users land in the silo's default tenant (E-2);
-        // a follow-on slice will let operators move users between
-        // tenants in the same silo. Read the silo first so we have
-        // its `default_tenant_id`.
-        let silo = match store.get_silo(silo_id).await {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(error = %e, %silo_id, "store failure resolving silo for federated login");
-                return Err(AuthError::Backend(e));
-            }
-        };
+        // JIT user lookup or create for this (tenant, issuer,
+        // subject). Federated users land in the tenant whose IdP
+        // authenticated them — no more silo-default-tenant
+        // routing. The tenant must exist (we just looked up its
+        // IdP), so we don't re-read it here.
         let user = match store
-            .get_user_by_federation(silo_id, &claims.issuer, &claims.subject)
+            .get_user_by_federation(tenant_id, &claims.issuer, &claims.subject)
             .await
         {
             Ok(user) => user,
             Err(StoreError::NotFound) => {
                 let new_user = User {
                     id: Uuid::new_v4(),
-                    // Disambiguate username across silos so a tenant
-                    // user with the same email in two silos doesn't
-                    // collide on the global username uniqueness key.
-                    username: format!("{}@{silo_id}", claims.username),
+                    // Disambiguate username across tenants so a
+                    // user with the same email in two tenants
+                    // doesn't collide on the global username
+                    // uniqueness key.
+                    username: format!("{}@{tenant_id}", claims.username),
                     password_hash: String::new(),
                     is_root: false,
                     created_at: Utc::now(),
-                    tenant_id: Some(silo.default_tenant_id),
+                    tenant_id: Some(tenant_id),
                     federation: Some(Federation {
                         issuer: claims.issuer.clone(),
                         subject: claims.subject.clone(),
@@ -637,7 +633,7 @@ impl AuthService {
                     Err(StoreError::Conflict(_)) => {
                         // A concurrent first login won the race. Re-read.
                         store
-                            .get_user_by_federation(silo_id, &claims.issuer, &claims.subject)
+                            .get_user_by_federation(tenant_id, &claims.issuer, &claims.subject)
                             .await
                             .map_err(|e| {
                                 warn!(error = %e, "post-conflict refetch failed");
@@ -944,7 +940,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::AuditList
         | Action::AuditFetch
         | Action::AuditVerify
-        | Action::SiloIdpGet
+        | Action::TenantIdpGet
         | Action::TenantList
         | Action::TenantGet => true,
         // Read-only project & workload resources.
@@ -971,8 +967,8 @@ fn is_read_action(action: Action) -> bool {
         Action::CreateSilo
         | Action::CreateApiKey
         | Action::DeleteApiKey
-        | Action::SiloIdpSet
-        | Action::SiloIdpDelete
+        | Action::TenantIdpSet
+        | Action::TenantIdpDelete
         | Action::TenantCreate
         | Action::TenantDelete
         | Action::ProjectCreate

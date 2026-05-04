@@ -302,15 +302,16 @@ pub async fn audit_get(
     Ok(())
 }
 
-/// Configure the silo's OIDC IdP. Eager discovery happens server-side;
-/// a bad URL or unreachable IdP fails the call with a 4xx.
+/// Configure the tenant's OIDC IdP. Eager discovery happens
+/// server-side; a bad URL or unreachable IdP fails the call with
+/// a 4xx; a duplicate issuer (claimed by another tenant) is 409.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
-pub async fn silo_idp_set(
+pub async fn tenant_idp_set(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     issuer_url: String,
     client_id: String,
     client_secret_stdin: bool,
@@ -332,8 +333,8 @@ pub async fn silo_idp_set(
     };
 
     let response = client
-        .put_silo_idp()
-        .silo_id(silo_id)
+        .put_tenant_idp()
+        .tenant_id(tenant_id)
         .body(tritond_client::types::NewIdpConfig {
             issuer_url,
             client_id,
@@ -348,7 +349,7 @@ pub async fn silo_idp_set(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&response)?);
     } else {
-        println!("IdP configured for silo {silo_id}");
+        println!("IdP configured for tenant {tenant_id}");
         println!("  issuer_url: {}", response.issuer_url);
         println!("  client_id:  {}", response.client_id);
         if let Some(aud) = response.audience {
@@ -358,18 +359,18 @@ pub async fn silo_idp_set(
     Ok(())
 }
 
-/// Read the silo's IdP config (with the client secret never returned).
-pub async fn silo_idp_get(
+/// Read the tenant's IdP config (with the client secret never returned).
+pub async fn tenant_idp_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let response = client
-        .get_silo_idp()
-        .silo_id(silo_id)
+        .get_tenant_idp()
+        .tenant_id(tenant_id)
         .send()
         .await
         .context("get idp config")?
@@ -377,7 +378,7 @@ pub async fn silo_idp_get(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&response)?);
     } else {
-        println!("IdP for silo {silo_id}");
+        println!("IdP for tenant {tenant_id}");
         println!("  issuer_url: {}", response.issuer_url);
         println!("  client_id:  {}", response.client_id);
         if let Some(aud) = response.audience {
@@ -387,21 +388,21 @@ pub async fn silo_idp_get(
     Ok(())
 }
 
-/// Remove the silo's IdP config.
-pub async fn silo_idp_delete(
+/// Remove the tenant's IdP config.
+pub async fn tenant_idp_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
+    tenant_id: Uuid,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     client
-        .delete_silo_idp()
-        .silo_id(silo_id)
+        .delete_tenant_idp()
+        .tenant_id(tenant_id)
         .send()
         .await
         .context("delete idp config")?;
-    println!("Removed IdP config for silo {silo_id}");
+    println!("Removed IdP config for tenant {tenant_id}");
     Ok(())
 }
 

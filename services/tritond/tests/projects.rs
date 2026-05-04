@@ -311,10 +311,10 @@ async fn federated_user_can_act_in_own_silo_only() {
         .unwrap()
         .into_inner();
 
-    // Configure IdP only for silo alpha; tokens from this IdP get
-    // mapped to alpha-membership.
-    root.put_silo_idp()
-        .silo_id(silo_alpha.id)
+    // Configure IdP only for silo alpha's default tenant; tokens
+    // from this IdP get mapped to that tenant's membership.
+    root.put_tenant_idp()
+        .tenant_id(silo_alpha.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: idp.issuer().to_string(),
             client_id: "tritond".to_string(),
@@ -421,8 +421,8 @@ async fn cross_silo_get_returns_404_not_403() {
         .unwrap()
         .into_inner();
 
-    root.put_silo_idp()
-        .silo_id(silo_alpha.id)
+    root.put_tenant_idp()
+        .tenant_id(silo_alpha.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: idp.issuer().to_string(),
             client_id: "tritond".to_string(),

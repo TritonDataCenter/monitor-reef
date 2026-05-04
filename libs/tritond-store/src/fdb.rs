@@ -28,11 +28,15 @@
 //! silo/by_name/<name>               -> uuid hyphenated bytes
 //! user/by_id/<uuid>                 -> JSON-encoded User
 //! user/by_name/<username>           -> uuid hyphenated bytes
-//! user/by_federation/<silo>/<sha256>-> uuid hyphenated bytes
+//! user/by_federation/<tenant>/<sha256>
+//!                                   -> uuid hyphenated bytes
 //! apikey/by_id/<uuid>               -> JSON-encoded ApiKey
 //! apikey/by_lookup/<lookup_id>      -> uuid hyphenated bytes
 //! apikey/by_user/<uuid>/<key-uuid>  -> empty (membership index)
-//! idp/by_silo/<uuid>                -> JSON-encoded IdpConfig
+//! idp/by_tenant/<uuid>              -> JSON-encoded IdpConfig
+//! idp/by_issuer/<sha256-hex>        -> tenant uuid hyphenated bytes
+//!                                      (issuer-uniqueness reverse index;
+//!                                       sha256 keeps URLs out of the keyspace)
 //! project/by_id/<uuid>              -> JSON-encoded Project
 //! project/by_silo/<silo>/<name>     -> uuid hyphenated bytes
 //! project/in_silo/<silo>/<proj>     -> empty (membership index)
@@ -201,7 +205,7 @@ impl FdbStore {
         format!("system/{}", key.tag()).into_bytes()
     }
 
-    fn user_federation_key(silo_id: Uuid, issuer: &str, subject: &str) -> Vec<u8> {
+    fn user_federation_key(tenant_id: Uuid, issuer: &str, subject: &str) -> Vec<u8> {
         // SHA-256 of `issuer\0subject` → fixed-length, no escaping
         // worries for arbitrary issuer URLs that contain slashes.
         use sha2::{Digest, Sha256};
@@ -211,15 +215,27 @@ impl FdbStore {
         hasher.update(subject.as_bytes());
         let digest = hasher.finalize();
         let hex = digest_to_hex(&digest);
-        format!("user/by_federation/{silo_id}/{hex}").into_bytes()
+        format!("user/by_federation/{tenant_id}/{hex}").into_bytes()
     }
 
-    fn idp_config_key(silo_id: Uuid) -> Vec<u8> {
-        format!("idp/by_silo/{silo_id}").into_bytes()
+    fn idp_config_key(tenant_id: Uuid) -> Vec<u8> {
+        format!("idp/by_tenant/{tenant_id}").into_bytes()
     }
 
     fn idp_config_prefix() -> &'static [u8] {
-        b"idp/by_silo/"
+        b"idp/by_tenant/"
+    }
+
+    /// Reverse index: SHA-256(issuer) → owning tenant uuid. Hashing
+    /// keeps arbitrary issuer URLs (slashes, ports, paths) out of
+    /// the key space the same way ssh-key fingerprint indices do.
+    fn idp_by_issuer_key(issuer: &str) -> Vec<u8> {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(issuer.as_bytes());
+        let digest = hasher.finalize();
+        let hex = digest_to_hex(&digest);
+        format!("idp/by_issuer/{hex}").into_bytes()
     }
 
     fn project_by_id_key(id: Uuid) -> Vec<u8> {
@@ -480,6 +496,14 @@ enum DeleteOutcome {
     NotFound,
 }
 
+/// Outcome of `put_idp_config`'s transaction. `IssuerTaken` is the
+/// "another tenant already claims this issuer" branch — surfaced
+/// to the caller as [`StoreError::Conflict`].
+enum PutIdpOutcome {
+    Stored,
+    IssuerTaken,
+}
+
 /// Job targeting matrix: unrouted jobs (target=None) are claimable
 /// by anyone; routed jobs (target=Some(X)) are claimable only by
 /// the bound claimer for X. Mirrors the in-memory store's helper.
@@ -595,16 +619,17 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
         let by_id_key = Self::user_by_id_key(user.id);
         let by_name_key = Self::user_by_name_key(&user.username);
-        // Federation index is keyed by (silo_id, issuer, subject) —
-        // the IdP belongs to the silo, not the tenant. Resolve the
-        // user's tenant outside the transaction so we can derive
-        // the owning silo. This is a defensive read; a missing
-        // tenant for a federated user is a programming error.
+        // Federation index is keyed by (tenant_id, issuer, subject) —
+        // post E-5 the IdP is tenant-scoped, so the index is rooted
+        // directly at the tenant. The defensive tenant existence
+        // check still happens (a federated user without a tenant is
+        // a programming error).
         let federation_key = match (user.tenant_id, user.federation.as_ref()) {
             (Some(tenant_id), Some(fed)) => {
-                let tenant = self.get_tenant(tenant_id).await?;
+                // Confirm the tenant exists; fail clean otherwise.
+                let _ = self.get_tenant(tenant_id).await?;
                 Some(Self::user_federation_key(
-                    tenant.silo_id,
+                    tenant_id,
                     &fed.issuer,
                     &fed.subject,
                 ))
@@ -865,11 +890,11 @@ impl Store for FdbStore {
 
     async fn get_user_by_federation(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         issuer: &str,
         subject: &str,
     ) -> Result<User, StoreError> {
-        let federation_key = Self::user_federation_key(silo_id, issuer, subject);
+        let federation_key = Self::user_federation_key(tenant_id, issuer, subject);
         let id_bytes = self
             .read_bytes(&federation_key)
             .await?
@@ -883,45 +908,92 @@ impl Store for FdbStore {
 
     async fn put_idp_config(
         &self,
-        silo_id: Uuid,
+        tenant_id: Uuid,
         config: IdpConfig,
     ) -> Result<IdpConfig, StoreError> {
-        let key = Self::idp_config_key(silo_id);
+        let by_tenant_key = Self::idp_config_key(tenant_id);
+        let by_issuer_key = Self::idp_by_issuer_key(&config.issuer_url);
         let value = serde_json::to_vec(&config)
             .map_err(|e| StoreError::Backend(format!("serialize idp config: {e}")))?;
-        let result: Result<(), FdbBindingError> = self
+        let tenant_id_str = tenant_id.to_string();
+
+        // Single transaction:
+        //   1. Read by_issuer/<hash>. If present and points to a
+        //      different tenant, return Conflict.
+        //   2. Read by_tenant/<tenant>. If present, derive the old
+        //      issuer's by_issuer key and clear it (we may be
+        //      changing this tenant's issuer).
+        //   3. Write by_tenant/<tenant> = JSON config.
+        //   4. Write by_issuer/<hash> = tenant_id bytes.
+        let outcome: Result<PutIdpOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
-                let key = key.clone();
+                let by_tenant_key = by_tenant_key.clone();
+                let by_issuer_key = by_issuer_key.clone();
                 let value = value.clone();
+                let tenant_id_bytes = tenant_id_str.as_bytes().to_vec();
                 async move {
-                    tr.set(&key, &value);
-                    Ok(())
+                    if let Some(claimed) = tr.get(&by_issuer_key, false).await?
+                        && claimed.as_ref() != tenant_id_bytes.as_slice()
+                    {
+                        return Ok(PutIdpOutcome::IssuerTaken);
+                    }
+                    if let Some(prev_bytes) = tr.get(&by_tenant_key, false).await? {
+                        let prev: IdpConfig = serde_json::from_slice(&prev_bytes).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("deserialize prev idp config: {e}").into(),
+                            )
+                        })?;
+                        // Drop the stale issuer→tenant entry when
+                        // the tenant is moving to a different issuer.
+                        let prev_issuer_key = FdbStore::idp_by_issuer_key(&prev.issuer_url);
+                        if prev_issuer_key != by_issuer_key {
+                            tr.clear(&prev_issuer_key);
+                        }
+                    }
+                    tr.set(&by_tenant_key, &value);
+                    tr.set(&by_issuer_key, &tenant_id_bytes);
+                    Ok(PutIdpOutcome::Stored)
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
-        Ok(config)
+        match outcome {
+            Ok(PutIdpOutcome::Stored) => Ok(config),
+            Ok(PutIdpOutcome::IssuerTaken) => Err(StoreError::Conflict(format!(
+                "issuer {:?} already claimed by another tenant",
+                config.issuer_url
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 
-    async fn get_idp_config(&self, silo_id: Uuid) -> Result<IdpConfig, StoreError> {
-        let key = Self::idp_config_key(silo_id);
+    async fn get_idp_config(&self, tenant_id: Uuid) -> Result<IdpConfig, StoreError> {
+        let key = Self::idp_config_key(tenant_id);
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("deserialize idp config: {e}")))
     }
 
-    async fn delete_idp_config(&self, silo_id: Uuid) -> Result<(), StoreError> {
-        let key = Self::idp_config_key(silo_id);
+    async fn delete_idp_config(&self, tenant_id: Uuid) -> Result<(), StoreError> {
+        let by_tenant_key = Self::idp_config_key(tenant_id);
         let outcome: Result<DeleteOutcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
-                let key = key.clone();
+                let by_tenant_key = by_tenant_key.clone();
                 async move {
-                    if tr.get(&key, false).await?.is_none() {
+                    let Some(prev_bytes) = tr.get(&by_tenant_key, false).await? else {
                         return Ok(DeleteOutcome::NotFound);
+                    };
+                    // Best-effort clear of the matching by_issuer
+                    // entry. If the JSON deserialise fails we still
+                    // clear the by_tenant key — leaving a stale
+                    // by_issuer entry behind is preferable to
+                    // refusing to delete a corrupt record.
+                    if let Ok(prev) = serde_json::from_slice::<IdpConfig>(&prev_bytes) {
+                        let by_issuer_key = FdbStore::idp_by_issuer_key(&prev.issuer_url);
+                        tr.clear(&by_issuer_key);
                     }
-                    tr.clear(&key);
+                    tr.clear(&by_tenant_key);
                     Ok(DeleteOutcome::Deleted)
                 }
             })
@@ -960,15 +1032,32 @@ impl Store for FdbStore {
         let mut out = Vec::with_capacity(raws.len());
         for (key, value) in raws {
             let suffix = &key[prefix_len..];
-            let silo_str = std::str::from_utf8(suffix)
+            let tenant_str = std::str::from_utf8(suffix)
                 .map_err(|e| StoreError::Backend(format!("idp index key not utf8: {e}")))?;
-            let silo_id = Uuid::parse_str(silo_str)
+            let tenant_id = Uuid::parse_str(tenant_str)
                 .map_err(|e| StoreError::Backend(format!("idp index key not uuid: {e}")))?;
             let config: IdpConfig = serde_json::from_slice(&value)
                 .map_err(|e| StoreError::Backend(format!("deserialize idp config: {e}")))?;
-            out.push((silo_id, config));
+            out.push((tenant_id, config));
         }
         Ok(out)
+    }
+
+    async fn get_idp_config_by_issuer(
+        &self,
+        issuer: &str,
+    ) -> Result<(Uuid, IdpConfig), StoreError> {
+        let by_issuer_key = Self::idp_by_issuer_key(issuer);
+        let id_bytes = self
+            .read_bytes(&by_issuer_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("idp issuer index value not utf8: {e}")))?;
+        let tenant_id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("idp issuer index value not uuid: {e}")))?;
+        let config = self.get_idp_config(tenant_id).await?;
+        Ok((tenant_id, config))
     }
 
     async fn create_project(

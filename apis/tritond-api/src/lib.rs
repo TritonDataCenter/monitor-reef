@@ -365,6 +365,15 @@ pub struct TenantPath {
     pub tenant_id: Uuid,
 }
 
+/// Path parameters for endpoints that operate on a single tenant's
+/// IdP config (the OIDC IdP rooted at `/v2/tenants/{tenant_id}/idp`).
+/// Distinct from [`TenantPath`] for shape-clarity in handler
+/// signatures even though the field set is identical.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantIdpPath {
+    pub tenant_id: Uuid,
+}
+
 /// Path parameters for endpoints that operate on a single project
 /// inside a tenant.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -490,7 +499,7 @@ pub struct AuditVerifyResponse {
     pub head: Option<AuditChainHead>,
 }
 
-/// Request body for `POST /v2/silos/{silo_id}/idp`. tritond
+/// Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond
 /// **eagerly** fetches the IdP's discovery document on this call;
 /// a 4xx/5xx return means the IdP isn't reachable or doesn't speak
 /// OIDC, and the config is not persisted.
@@ -860,44 +869,45 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// Configure the OIDC identity provider for a silo. Returns 502
-    /// if the discovery document cannot be fetched, 404 if the silo
-    /// does not exist, otherwise 201 with the redacted view of what
-    /// was persisted.
+    /// Configure the OIDC identity provider for a tenant. Returns
+    /// 502 if the discovery document cannot be fetched, 404 if the
+    /// tenant does not exist, 409 if a different tenant already
+    /// claims the same `issuer_url`, otherwise 201 with the
+    /// redacted view of what was persisted.
     #[endpoint {
         method = POST,
-        path = "/v2/silos/{silo_id}/idp",
-        tags = ["silos", "auth"],
+        path = "/v2/tenants/{tenant_id}/idp",
+        tags = ["tenants", "auth"],
     }]
-    async fn put_silo_idp(
+    async fn put_tenant_idp(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantIdpPath>,
         body: TypedBody<NewIdpConfig>,
     ) -> Result<HttpResponseCreated<IdpConfigView>, HttpError>;
 
-    /// Read the OIDC IdP config for a silo. The client secret is
+    /// Read the OIDC IdP config for a tenant. The client secret is
     /// never returned. 404 when no IdP is configured.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/idp",
-        tags = ["silos", "auth"],
+        path = "/v2/tenants/{tenant_id}/idp",
+        tags = ["tenants", "auth"],
     }]
-    async fn get_silo_idp(
+    async fn get_tenant_idp(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantIdpPath>,
     ) -> Result<HttpResponseOk<IdpConfigView>, HttpError>;
 
-    /// Remove the OIDC IdP config for a silo. Federated users in
-    /// that silo will fail to authenticate until a new config is
-    /// posted.
+    /// Remove the OIDC IdP config for a tenant. Federated users
+    /// in that tenant will fail to authenticate until a new
+    /// config is posted.
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/idp",
-        tags = ["silos", "auth"],
+        path = "/v2/tenants/{tenant_id}/idp",
+        tags = ["tenants", "auth"],
     }]
-    async fn delete_silo_idp(
+    async fn delete_tenant_idp(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloPath>,
+        path: Path<TenantIdpPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List the tenants in a silo. Operator-facing surface; root

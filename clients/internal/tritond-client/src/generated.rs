@@ -2533,13 +2533,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/silos/{silo_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted."]
+    #[doc = "Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.\","]
+    #[doc = "  \"description\": \"Request body for `POST /v2/tenants/{tenant_id}/idp`. tritond **eagerly** fetches the IdP's discovery document on this call; a 4xx/5xx return means the IdP isn't reachable or doesn't speak OIDC, and the config is not persisted.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"client_id\","]
@@ -10118,21 +10118,6 @@ impl Client {
         builder::GetSilo::new(self)
     }
 
-    #[doc = "Read the OIDC IdP config for a silo. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v2/silos/{silo_id}/idp`\n\n```ignore\nlet response = client.get_silo_idp()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
-    pub fn get_silo_idp(&self) -> builder::GetSiloIdp<'_> {
-        builder::GetSiloIdp::new(self)
-    }
-
-    #[doc = "Configure the OIDC identity provider for a silo. Returns 502\n\nif the discovery document cannot be fetched, 404 if the silo does not exist, otherwise 201 with the redacted view of what was persisted.\n\nSends a `POST` request to `/v2/silos/{silo_id}/idp`\n\n```ignore\nlet response = client.put_silo_idp()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn put_silo_idp(&self) -> builder::PutSiloIdp<'_> {
-        builder::PutSiloIdp::new(self)
-    }
-
-    #[doc = "Remove the OIDC IdP config for a silo. Federated users in\n\nthat silo will fail to authenticate until a new config is posted.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/idp`\n\n```ignore\nlet response = client.delete_silo_idp()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_silo_idp(&self) -> builder::DeleteSiloIdp<'_> {
-        builder::DeleteSiloIdp::new(self)
-    }
-
     #[doc = "Register an image from a tritond image bundle. tritond\n\nfetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from the `{image_id}` parameter of `GET /v2/silos/{silo_id}/images/{image_id}`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/image-bundles`\n\n```ignore\nlet response = client.create_silo_image_from_bundle()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image_from_bundle(&self) -> builder::CreateSiloImageFromBundle<'_> {
         builder::CreateSiloImageFromBundle::new(self)
@@ -10196,6 +10181,21 @@ impl Client {
     #[doc = "Delete a tenant. Returns 404 when the tenant does not exist\n\nor belongs to a different silo. Phase-0 deletion is permissive (does not check for child projects); the block-on-children guard belongs in a future cleanup.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.delete_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_tenant(&self) -> builder::DeleteSiloTenant<'_> {
         builder::DeleteSiloTenant::new(self)
+    }
+
+    #[doc = "Read the OIDC IdP config for a tenant. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.get_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn get_tenant_idp(&self) -> builder::GetTenantIdp<'_> {
+        builder::GetTenantIdp::new(self)
+    }
+
+    #[doc = "Configure the OIDC identity provider for a tenant. Returns\n\n502 if the discovery document cannot be fetched, 404 if the tenant does not exist, 409 if a different tenant already claims the same `issuer_url`, otherwise 201 with the redacted view of what was persisted.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.put_tenant_idp()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_tenant_idp(&self) -> builder::PutTenantIdp<'_> {
+        builder::PutTenantIdp::new(self)
+    }
+
+    #[doc = "Remove the OIDC IdP config for a tenant. Federated users\n\nin that tenant will fail to authenticate until a new config is posted.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.delete_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_tenant_idp(&self) -> builder::DeleteTenantIdp<'_> {
+        builder::DeleteTenantIdp::new(self)
     }
 
     #[doc = "List the projects inside a tenant\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.list_tenant_projects()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
@@ -12186,247 +12186,6 @@ pub mod builder {
         }
     }
 
-    #[doc = "Builder for [`Client::get_silo_idp`]\n\n[`Client::get_silo_idp`]: super::Client::get_silo_idp"]
-    #[derive(Debug, Clone)]
-    pub struct GetSiloIdp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetSiloIdp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/idp`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
-            let Self { client, silo_id } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/idp",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_silo_idp",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::put_silo_idp`]\n\n[`Client::put_silo_idp`]: super::Client::put_silo_idp"]
-    #[derive(Debug, Clone)]
-    pub struct PutSiloIdp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        body: Result<types::builder::NewIdpConfig, String>,
-    }
-
-    impl<'a> PutSiloIdp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn body<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<types::NewIdpConfig>,
-            <V as std::convert::TryInto<types::NewIdpConfig>>::Error: std::fmt::Display,
-        {
-            self.body = value
-                .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `NewIdpConfig` for body failed: {}", s));
-            self
-        }
-
-        pub fn body_map<F>(mut self, f: F) -> Self
-        where
-            F: std::ops::FnOnce(types::builder::NewIdpConfig) -> types::builder::NewIdpConfig,
-        {
-            self.body = self.body.map(f);
-            self
-        }
-
-        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/idp`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                body,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::NewIdpConfig::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/idp",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .post(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .json(&body)
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "put_silo_idp",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_silo_idp`]\n\n[`Client::delete_silo_idp`]: super::Client::delete_silo_idp"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteSiloIdp<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteSiloIdp<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/idp`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self { client, silo_id } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/idp",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_silo_idp",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
     #[doc = "Builder for [`Client::create_silo_image_from_bundle`]\n\n[`Client::create_silo_image_from_bundle`]: super::Client::create_silo_image_from_bundle"]
     #[derive(Debug, Clone)]
     pub struct CreateSiloImageFromBundle<'a> {
@@ -13542,6 +13301,247 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_tenant",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_tenant_idp`]\n\n[`Client::get_tenant_idp`]: super::Client::get_tenant_idp"]
+    #[derive(Debug, Clone)]
+    pub struct GetTenantIdp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetTenantIdp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/idp`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
+            let Self { client, tenant_id } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/idp",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_tenant_idp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::put_tenant_idp`]\n\n[`Client::put_tenant_idp`]: super::Client::put_tenant_idp"]
+    #[derive(Debug, Clone)]
+    pub struct PutTenantIdp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewIdpConfig, String>,
+    }
+
+    impl<'a> PutTenantIdp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewIdpConfig>,
+            <V as std::convert::TryInto<types::NewIdpConfig>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewIdpConfig` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewIdpConfig) -> types::builder::NewIdpConfig,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/idp`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::IdpConfigView>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewIdpConfig::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/idp",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_tenant_idp",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_tenant_idp`]\n\n[`Client::delete_tenant_idp`]: super::Client::delete_tenant_idp"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteTenantIdp<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteTenantIdp<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/idp`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, tenant_id } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/idp",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_tenant_idp",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

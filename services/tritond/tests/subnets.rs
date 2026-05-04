@@ -660,8 +660,8 @@ async fn federated_user_cross_silo_subnet_create_returns_404() {
         .unwrap()
         .into_inner();
 
-    root.put_silo_idp()
-        .silo_id(silo_alpha.id)
+    root.put_tenant_idp()
+        .tenant_id(silo_alpha.default_tenant_id)
         .body(NewIdpConfig {
             issuer_url: idp.issuer().to_string(),
             client_id: "tritond".to_string(),
