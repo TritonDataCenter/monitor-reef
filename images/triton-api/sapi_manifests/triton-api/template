@@ -1,0 +1,28 @@
+{
+    "datacenter_name": "{{{datacenter_name}}}",
+    "instance_uuid": "{{auto.ZONENAME}}",
+    "server_uuid": "{{auto.SERVER_UUID}}",
+    "admin_ip": "{{auto.ADMIN_IP}}",
+    "bind_address": "127.0.0.1:8080",
+    "max_body_bytes": 10485760,
+
+    "ldap": {
+        "url": "ldaps://{{{ufds_domain}}}",
+        "bind_dn": "{{{ufds_ldap_root_dn}}}",
+        "bind_password": "{{{ufds_ldap_root_pw}}}",
+        "search_base": "ou=users, o=smartdc",
+        "tls_verify": false,
+        "connection_timeout_secs": 10
+    },
+
+    "mahi": {
+        "url": "http://mahi.{{{datacenter_name}}}.{{{dns_domain}}}"
+    },
+
+    "jwt": {
+        "private_key_file": "/data/jwt-private.pem",
+        "public_key_file": "/data/jwt-public.pem",
+        "access_ttl_secs": 3600,
+        "refresh_ttl_secs": 86400
+    }
+}

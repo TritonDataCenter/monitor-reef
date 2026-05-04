@@ -261,9 +261,12 @@ pub struct NicSpec {
 /// Request body for `add_nics` action
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AddNicsRequest {
-    /// Networks to add NICs for (array of network UUIDs)
+    /// Networks to add NICs for.
+    ///
+    /// Each entry can be a UUID string or an object like
+    /// `{"uuid": "...", "primary": true}` or `{"name": "...", "primary": true}`.
     #[serde(default)]
-    pub networks: Option<Vec<Uuid>>,
+    pub networks: Option<Vec<serde_json::Value>>,
     /// MAC addresses of pre-created NICs to add
     #[serde(default)]
     pub macs: Option<Vec<String>>,

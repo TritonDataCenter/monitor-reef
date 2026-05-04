@@ -37,6 +37,7 @@ GO_TOOLCHAIN_DEP =
 endif
 
 .PHONY: help build build-release test clean lint format audit audit-update
+.PHONY: tritonadm-portable
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
@@ -46,6 +47,7 @@ endif
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint doc-lint
+.PHONY: image image-clean image-rebuild image-buildimage images-list
 .PHONY: go-test go-build go-vet go-coverage
 .PHONY: go-test-integration
 .PHONY: clients-generate clients-check
@@ -71,6 +73,13 @@ build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 
 build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build --release
+
+tritonadm-portable: | $(CARGO_EXEC) ## Build portable tritonadm binary (no pkgsrc deps)
+	$(CARGO) build --release --bin tritonadm
+	cp ./target/release/tritonadm ./tritonadm
+	/usr/bin/elfedit -e 'dyn:delete RUNPATH' ./tritonadm
+	/usr/bin/elfedit -e 'dyn:delete RPATH' ./tritonadm
+	@echo "Built portable binary: ./tritonadm"
 
 test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
 	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run
@@ -405,3 +414,25 @@ doc-lint: ## Check doc comments for implementation details that leak into OpenAP
 	else \
 		echo "No implementation detail leaks found in doc comments."; \
 	fi
+
+# Zone image build targets
+# Usage: make image IMAGE=triton-api
+#        make image-rebuild IMAGE=triton-api
+#        make image-buildimage IMAGE=triton-api
+
+image: ## Build a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-clean: ## Clean a zone image build (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+
+image-rebuild: ## Clean rebuild a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-buildimage: ## Build a zone image file from tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) buildimage
+
+images-list: ## List available zone images
+	@echo "Zone images:"
+	@ls -1 images/ 2>/dev/null | grep -v '\.mk$$' || echo "  (none)"

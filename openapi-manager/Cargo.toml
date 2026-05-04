@@ -22,7 +22,13 @@ dropshot-api-manager = { workspace = true }
 dropshot-api-manager-types = { workspace = true }
 bugview-api = { workspace = true }
 cloudapi-api = { workspace = true }
+imgapi-api = { workspace = true }
 jira-api = { workspace = true }
+mahi-api = { workspace = true }
+napi-api = { workspace = true }
+papi-api = { workspace = true }
+sapi-api = { workspace = true }
+triton-api = { workspace = true }
 vmapi-api = { workspace = true }
 anyhow = { workspace = true }
 camino = { workspace = true }

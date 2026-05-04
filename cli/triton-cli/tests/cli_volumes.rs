@@ -284,8 +284,8 @@ fn test_volume_sizes() {
 // and allowVolumesTests: true (default)
 // =============================================================================
 
-use cloudapi_client::Network;
-use cloudapi_client::types::Volume;
+use triton_gateway_client::Network;
+use triton_gateway_client::types::Volume;
 
 /// Delete a volume by name (doesn't error if not found)
 fn delete_test_volume(name: &str) {
@@ -428,7 +428,10 @@ fn test_volume_create_workflow() {
     assert!(success, "volume get should succeed");
     let volume: Volume = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(volume.name, volume_name);
-    assert_eq!(volume.type_, cloudapi_client::types::VolumeType::Tritonnfs);
+    assert_eq!(
+        volume.type_,
+        triton_gateway_client::types::VolumeType::Tritonnfs
+    );
     // Tags may or may not be present depending on CloudAPI version
     if !volume.tags.is_empty() {
         assert_eq!(

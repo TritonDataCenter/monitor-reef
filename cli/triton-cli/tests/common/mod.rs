@@ -116,7 +116,7 @@ pub fn fixture_path(name: &str) -> std::path::PathBuf {
 // Write operation test helpers
 // =============================================================================
 
-use cloudapi_client::{Image, Machine, Package};
+use triton_gateway_client::{Image, Machine, Package};
 
 /// Run triton with profile environment and return (stdout, stderr, success)
 pub fn run_triton_with_profile<I, S>(args: I) -> (String, String, bool)

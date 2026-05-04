@@ -490,6 +490,10 @@ impl BugviewApi for BugviewServiceImpl {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install the rustls crypto provider before any reqwest or rustls
+    // client is built. `triton-tls` owns backend selection.
+    triton_tls::install_default_crypto_provider();
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
@@ -595,6 +599,8 @@ mod tests {
     /// Returns `Some(server)` on success, or `None` if the server couldn't start
     /// (in non-CI environments). Panics in CI if startup fails.
     async fn start_test_server(ctx: ApiContext) -> Option<dropshot::HttpServer<ApiContext>> {
+        triton_tls::install_default_crypto_provider();
+
         let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
             .expect("api description");
 

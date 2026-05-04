@@ -1,0 +1,47 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritonadm"
+version = "0.1.0"
+edition.workspace = true
+description = "CLI for Triton datacenter administration (Rust successor to sdcadm)"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "tritonadm"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+futures-util = { workspace = true }
+imgapi-api = { workspace = true }
+imgapi-client = { workspace = true }
+libc = { workspace = true }
+mahi-api = { workspace = true }
+mahi-client = { workspace = true }
+mahi-sitter-client = { workspace = true }
+sapi-client = { workspace = true }
+napi-client = { workspace = true }
+papi-client = { workspace = true }
+progenitor-client = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+triton-tls = { workspace = true }
+uuid = { workspace = true }
+vmapi-client = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }

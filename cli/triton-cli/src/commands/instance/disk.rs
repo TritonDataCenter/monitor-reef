@@ -8,10 +8,10 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::Disk;
 use dialoguer::Confirm;
 use std::io::IsTerminal;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::Disk;
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -206,7 +206,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         .send()
         .await?;
 
-    let request = cloudapi_client::types::CreateDiskRequest {
+    let request = triton_gateway_client::types::CreateDiskRequest {
         size: args.size as u64,
         pci_slot: None,
     };
@@ -231,7 +231,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     if args.wait {
         super::wait::wait_for_state(
             machine_id,
-            cloudapi_client::types::MachineState::Running,
+            triton_gateway_client::types::MachineState::Running,
             args.wait_timeout,
             client,
         )
@@ -251,7 +251,7 @@ async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
     let disk_id: uuid::Uuid = args.disk.parse()?;
 
-    let request = cloudapi_client::ResizeDiskRequest {
+    let request = triton_gateway_client::ResizeDiskRequest {
         size: args.size as u64,
         dangerous_allow_shrink: Some(args.dangerous_allow_shrink),
     };

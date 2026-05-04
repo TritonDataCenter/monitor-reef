@@ -1,4 +1,5 @@
 /target
+/tritonadm
 /cache
 /rust
 .env
@@ -14,3 +15,9 @@ clients/external/cloudapi-client/golang/testconfig.json
 
 # Go coverage artifacts
 clients/external/cloudapi-client/golang/*.out
+
+# Image build artifacts (eng buildimage/release targets)
+images/*/bits/
+images/*/proto/
+images/*/make_stamps/
+images/*/*.tar.gz

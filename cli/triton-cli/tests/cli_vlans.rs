@@ -196,7 +196,7 @@ fn test_vlan_update_help() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-use cloudapi_client::FabricVlan;
+use triton_gateway_client::FabricVlan;
 
 /// Test `triton vlan list` returns table output
 #[test]

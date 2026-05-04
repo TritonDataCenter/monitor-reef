@@ -26,8 +26,8 @@
 mod common;
 
 use assert_cmd::Command;
-use cloudapi_client::{Image, ImageState, Machine, MachineState};
 use predicates::prelude::*;
+use triton_gateway_client::{Image, ImageState, Machine, MachineState};
 
 use common::{
     get_test_image, get_test_package, json_stream_parse, make_resource_name,
@@ -177,7 +177,7 @@ fn test_image_create_workflow() {
 
     // Test image share
     let dummy_uuid_str = "12345678-1234-1234-1234-123456789abc";
-    let dummy_uuid: cloudapi_client::Uuid =
+    let dummy_uuid: triton_gateway_client::Uuid =
         dummy_uuid_str.parse().expect("dummy UUID should parse");
     safe_triton(&["image", "share", &img_id, dummy_uuid_str]);
 

@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use tokio::time::sleep;
+use triton_gateway_client::TypedClient;
 
 #[derive(Args, Clone)]
 pub struct EnableProtectionArgs {
@@ -53,7 +53,7 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
             .enable_deletion_protection(
                 account,
                 &machine_id,
-                &cloudapi_client::EnableDeletionProtectionRequest::default(),
+                &triton_gateway_client::EnableDeletionProtectionRequest::default(),
             )
             .await?;
 
@@ -81,7 +81,7 @@ pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Resul
             .disable_deletion_protection(
                 account,
                 &machine_id,
-                &cloudapi_client::DisableDeletionProtectionRequest::default(),
+                &triton_gateway_client::DisableDeletionProtectionRequest::default(),
             )
             .await?;
 

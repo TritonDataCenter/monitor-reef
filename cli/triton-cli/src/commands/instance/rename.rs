@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 #[derive(Args, Clone)]
 pub struct RenameArgs {
@@ -36,7 +36,7 @@ pub async fn run(args: RenameArgs, client: &TypedClient) -> Result<()> {
         .rename_machine(
             account,
             &machine_id,
-            &cloudapi_client::RenameMachineRequest {
+            &triton_gateway_client::RenameMachineRequest {
                 name: args.name.clone(),
                 origin: None,
             },

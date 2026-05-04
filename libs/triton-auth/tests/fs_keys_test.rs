@@ -394,6 +394,44 @@ async fn test_scan_finds_non_standard_filename() {
     assert!(matches!(key.key_type().unwrap(), KeyType::Rsa));
 }
 
+/// Key file with leading junk (BOM, blank lines, etc.) still loads after
+/// PEM normalization — regression test for the config-agent rendering bug.
+#[tokio::test]
+async fn test_load_key_with_leading_junk() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let key_path = tmp_dir.path().join("dirty_key");
+
+    // Read the real RSA key, prepend BOM + blank lines
+    let src = test_keys_dir().join("id_rsa");
+    let clean_pem = tokio::fs::read_to_string(&src).await.unwrap();
+    let dirty_pem = format!("\u{FEFF}\n\n{}", clean_pem);
+    tokio::fs::write(&key_path, &dirty_pem).await.unwrap();
+
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Should load RSA key despite leading junk");
+
+    assert!(matches!(key.key_type().unwrap(), KeyType::Rsa));
+}
+
+/// Key file with trailing content after the END marker still loads.
+#[tokio::test]
+async fn test_load_key_with_trailing_junk() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let key_path = tmp_dir.path().join("dirty_key");
+
+    let src = test_keys_dir().join("id_rsa");
+    let clean_pem = tokio::fs::read_to_string(&src).await.unwrap();
+    let dirty_pem = format!("{}extra trailing content\n", clean_pem);
+    tokio::fs::write(&key_path, &dirty_pem).await.unwrap();
+
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Should load RSA key despite trailing junk");
+
+    assert!(matches!(key.key_type().unwrap(), KeyType::Rsa));
+}
+
 /// Non-matching fingerprint returns error
 #[tokio::test]
 async fn test_scan_no_match_returns_error() {

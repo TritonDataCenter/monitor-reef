@@ -1,0 +1,8 @@
+bits/
+proto/
+cache/
+make_stamps/
+tritonadm-*.sh
+*.tgz
+*.imgmanifest
+*.uuid

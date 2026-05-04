@@ -77,6 +77,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: cloudapi_api::cloud_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "imgapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/imgapi-api")?,
+            },
+            title: "Triton IMGAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton IMGAPI - internal HTTP API for managing virtual machine images in a Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: imgapi_api::img_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "jira-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/jira-api")?,
@@ -89,6 +103,88 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
                 ..ManagedApiMetadata::default()
             },
             api_description: jira_api::jira_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "mahi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/mahi-api")?,
+            },
+            title: "Mahi (Manta Auth Cache) API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Mahi - Manta Auth Cache. Redis-backed auth cache exposing UFDS-sourced account/user/role/policy lookups plus AWS SigV4/STS/IAM endpoints.",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: mahi_api::mahi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "mahi-sitter-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/mahi-api")?,
+            },
+            title: "Mahi Sitter API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Mahi sitter - internal replicator admin server running alongside the Mahi replicator. Exposes /ping and /snapshot (binary RDB streaming).",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: mahi_api::mahi_sitter_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "napi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/napi-api")?,
+            },
+            title: "Triton NAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton NAPI - internal HTTP API for managing networking resources in a Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: napi_api::napi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "papi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/papi-api")?,
+            },
+            title: "Triton PAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton PAPI - Packages API for managing package definitions (RAM, CPU, disk, etc.) used to provision VMs",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: papi_api::papi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "sapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/sapi-api")?,
+            },
+            title: "Triton SAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton SAPI - Services and Configuration API for managing applications, services, instances, and configuration manifests",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: sapi_api::sapi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "triton-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/triton-api")?,
+            },
+            title: "Triton API",
+            metadata: ManagedApiMetadata {
+                description: Some("Triton API - public-facing HTTP API for the Triton datacenter"),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: triton_api::triton_api_mod::stub_api_description,
         },
         ManagedApiConfig {
             ident: "vmapi-api",

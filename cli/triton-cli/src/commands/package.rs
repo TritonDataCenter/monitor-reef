@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::Package;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::Package;
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};

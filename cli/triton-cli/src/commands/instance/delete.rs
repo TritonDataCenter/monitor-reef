@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
+use triton_gateway_client::TypedClient;
 
 #[derive(Args, Clone)]
 pub struct DeleteArgs {
@@ -65,7 +65,7 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
         {
             #[cfg(debug_assertions)]
             if e.to_string()
-                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+                .contains(triton_gateway_client::EMIT_PAYLOAD_SENTINEL)
             {
                 continue;
             }
@@ -80,7 +80,7 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
             println!("Waiting for instance to be deleted...");
             match super::wait::wait_for_state(
                 machine_id,
-                cloudapi_client::types::MachineState::Deleted,
+                triton_gateway_client::types::MachineState::Deleted,
                 args.wait_timeout,
                 client,
             )

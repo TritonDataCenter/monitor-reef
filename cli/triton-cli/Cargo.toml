@@ -19,7 +19,8 @@ path = "src/main.rs"
 
 [dependencies]
 triton-auth = { workspace = true }
-cloudapi-client = { workspace = true }
+triton-tls = { workspace = true }
+triton-gateway-client = { workspace = true }
 cloudapi-api = { workspace = true }
 clap = { workspace = true }
 clap_complete = { workspace = true }
@@ -38,15 +39,12 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 getrandom = { workspace = true }
 rpassword = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
 strum = { workspace = true }
 
-# TLS certificate fallback for platforms where native cert probing fails (e.g., illumos)
-rustls = { workspace = true }
-rustls-native-certs = { workspace = true }
-rustls-pemfile = { workspace = true }
-webpki-roots = { workspace = true }
 
 # VNC proxy dependencies
 tokio-tungstenite = { workspace = true }
@@ -59,11 +57,13 @@ tempfile = { workspace = true }
 build-data = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = { workspace = true }    # CLI testing with command assertions
-predicates = { workspace = true }    # Fluent assertions for stdout/stderr
-test-case = { workspace = true }     # Parameterized tests
-pretty_assertions = { workspace = true } # Better diff output for test failures
-hostname = { workspace = true }      # Get hostname for unique test resource names
-regex = { workspace = true }         # Regex for extracting UUIDs from output
-rcgen = { workspace = true }         # Self-signed certs for TLS tests
-tokio-rustls = { workspace = true }  # TLS server for insecure-mode tests
+assert_cmd = { workspace = true }  # CLI testing with command assertions
+predicates = { workspace = true }  # Fluent assertions for stdout/stderr
+test-case = { workspace = true }          # Parameterized tests
+pretty_assertions = { workspace = true }  # Better diff output for test failures
+hostname = { workspace = true }           # Get hostname for unique test resource names
+regex = { workspace = true }              # Regex for extracting UUIDs from output
+rcgen = { workspace = true }  # Self-signed certs for TLS tests
+rustls = { workspace = true }
+# TLS server for insecure-mode tests.
+tokio-rustls = { workspace = true }

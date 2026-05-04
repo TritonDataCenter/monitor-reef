@@ -8,9 +8,9 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{Snapshot, SnapshotState};
 use dialoguer::Confirm;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::{Snapshot, SnapshotState};
 
 use crate::define_columns;
 use crate::output::json;
@@ -190,7 +190,7 @@ async fn create_snapshot(
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::CreateSnapshotRequest {
+    let request = triton_gateway_client::types::CreateSnapshotRequest {
         name: Some(args.name.clone()),
     };
 
@@ -233,7 +233,7 @@ async fn wait_for_snapshot_state(
     target: SnapshotState,
     timeout_secs: u64,
     client: &TypedClient,
-) -> Result<cloudapi_client::types::Snapshot> {
+) -> Result<triton_gateway_client::types::Snapshot> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
@@ -420,6 +420,11 @@ mod tests {
     fn test_client(port: u16) -> TypedClient {
         use std::path::PathBuf;
 
+        // reqwest builds a rustls client; rustls 0.23 requires a process-global
+        // CryptoProvider. Production binaries install one in main(); under
+        // nextest each test runs in its own process, so we install it here.
+        triton_tls::install_default_crypto_provider();
+
         let key_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../libs/triton-auth/tests/keys/id_rsa.pem");
         let auth = triton_auth::AuthConfig {
@@ -433,7 +438,10 @@ mod tests {
             act_as: None,
             accept_version: None,
         };
-        TypedClient::new(&format!("http://127.0.0.1:{port}"), auth)
+        TypedClient::new(
+            &format!("http://127.0.0.1:{port}"),
+            triton_gateway_client::GatewayAuthConfig::ssh_key(auth),
+        )
     }
 
     /// Snapshot absent from list → deletion complete.

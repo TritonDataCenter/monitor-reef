@@ -10,10 +10,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
 use serde_json::Value;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::{Image, ImageState};
 
 use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{enum_to_display, json, opt_enum_to_display, parse_filter_enum, table};
@@ -85,10 +85,10 @@ pub struct ImageListArgs {
     pub public: bool,
     /// Filter by state
     #[arg(long, value_enum)]
-    pub state: Option<cloudapi_client::types::ImageState>,
+    pub state: Option<triton_gateway_client::types::ImageState>,
     /// Filter by type
     #[arg(long = "type", value_enum)]
-    pub image_type: Option<cloudapi_client::types::ImageType>,
+    pub image_type: Option<triton_gateway_client::types::ImageType>,
 
     /// Include all images (including inactive, disabled, etc.)
     #[arg(short = 'a', long)]
@@ -216,8 +216,8 @@ pub struct ImageWaitArgs {
     pub images: Vec<String>,
     /// Target state(s) to wait for (comma-separated or multiple -s flags)
     /// Default is "active,failed"
-    #[arg(short = 's', long = "states", value_enum, value_delimiter = ',', default_values_t = vec![cloudapi_client::types::ImageState::Active, cloudapi_client::types::ImageState::Failed])]
-    pub states: Vec<cloudapi_client::types::ImageState>,
+    #[arg(short = 's', long = "states", value_enum, value_delimiter = ',', default_values_t = vec![triton_gateway_client::types::ImageState::Active, triton_gateway_client::types::ImageState::Failed])]
+    pub states: Vec<triton_gateway_client::types::ImageState>,
     /// Timeout in seconds
     #[arg(long, default_value = "600")]
     pub timeout: u64,
@@ -330,7 +330,9 @@ fn is_valid_filter(key: &str) -> bool {
 /// Apply positional key=value filters to the ImageListArgs, merging with any
 /// existing --flag values. Positional filters override flags if both are set.
 /// Returns an optional owner UUID filter (from `owner=` positional arg).
-fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<cloudapi_client::Uuid>> {
+fn apply_positional_filters(
+    args: &mut ImageListArgs,
+) -> Result<Option<triton_gateway_client::Uuid>> {
     let mut owner = None;
     for filter in std::mem::take(&mut args.filters) {
         let (key, value) = filter
@@ -617,7 +619,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
                 .map_err(|_| anyhow::anyhow!("Invalid ACL UUID: {}", acl_str))?;
             acl_uuids.push(uuid);
         }
-        Some(cloudapi_client::ImageAcl(acl_uuids))
+        Some(triton_gateway_client::ImageAcl(acl_uuids))
     } else {
         None
     };
@@ -635,12 +637,12 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
                 ));
             }
         }
-        Some(cloudapi_client::Tags(tag_map))
+        Some(triton_gateway_client::Tags(tag_map))
     } else {
         None
     };
 
-    let request = cloudapi_client::CreateImageRequest {
+    let request = triton_gateway_client::CreateImageRequest {
         machine: machine_id,
         name: args.name.clone(),
         version: args.version.clone(),
@@ -934,7 +936,7 @@ async fn update_image(
         updated_fields.push("eula");
     }
 
-    let request = cloudapi_client::UpdateImageRequest {
+    let request = triton_gateway_client::UpdateImageRequest {
         name,
         version,
         description,
@@ -986,7 +988,7 @@ async fn export_image(
         .export_image(
             account,
             &image_uuid,
-            &cloudapi_client::ExportImageRequest {
+            &triton_gateway_client::ExportImageRequest {
                 manta_path: args.manta_path.clone(),
             },
         )
@@ -1254,7 +1256,7 @@ async fn share_image(
 ) -> Result<()> {
     let account = client.effective_account();
     let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
-    let target_account: cloudapi_client::Uuid = args
+    let target_account: triton_gateway_client::Uuid = args
         .account
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
@@ -1288,7 +1290,7 @@ async fn unshare_image(
 ) -> Result<()> {
     let account = client.effective_account();
     let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
-    let target_account: cloudapi_client::Uuid = args
+    let target_account: triton_gateway_client::Uuid = args
         .account
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
@@ -1431,7 +1433,7 @@ async fn set_image_tags(
     }
 
     // Update image with new tags
-    let request = cloudapi_client::UpdateImageRequest {
+    let request = triton_gateway_client::UpdateImageRequest {
         name: None,
         version: None,
         description: None,
@@ -1492,7 +1494,7 @@ async fn delete_image_tag(
     }
 
     // Update image with removed tag
-    let request = cloudapi_client::UpdateImageRequest {
+    let request = triton_gateway_client::UpdateImageRequest {
         name: None,
         version: None,
         description: None,
@@ -1514,7 +1516,7 @@ async fn delete_image_tag(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cloudapi_client::types::ImageType;
+    use triton_gateway_client::types::ImageType;
 
     /// Build a minimal Image with sensible defaults for testing.
     fn test_image() -> Image {
@@ -1563,7 +1565,7 @@ mod tests {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
             owner: Some(acct_a),
-            acl: Some(cloudapi_client::ImageAcl(vec![acct_b])),
+            acl: Some(triton_gateway_client::ImageAcl(vec![acct_b])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "+");
@@ -1575,7 +1577,7 @@ mod tests {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
             owner: Some(acct_b),
-            acl: Some(cloudapi_client::ImageAcl(vec![acct_a])),
+            acl: Some(triton_gateway_client::ImageAcl(vec![acct_a])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "S");
@@ -1589,7 +1591,7 @@ mod tests {
             public: Some(true),
             state: Some(ImageState::Disabled),
             owner: Some(acct_a),
-            acl: Some(cloudapi_client::ImageAcl(vec![acct_a])),
+            acl: Some(triton_gateway_client::ImageAcl(vec![acct_a])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "IPX+S");
@@ -1605,7 +1607,7 @@ mod tests {
     fn flags_no_account_uuid() {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
-            acl: Some(cloudapi_client::ImageAcl(vec![acct_b])),
+            acl: Some(triton_gateway_client::ImageAcl(vec![acct_b])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, None), "-");

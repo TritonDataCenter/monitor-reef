@@ -1,0 +1,599 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Triton API",
+    "description": "Triton API - public-facing HTTP API for the Triton datacenter",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/auth/jwks.json": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "RFC 7517 JWKS document containing the public key(s) used to sign",
+        "description": "access tokens. Consumed by external JWT verifiers -- the gateway today, any future adminui proxy or DC component tomorrow. No auth required.",
+        "operationId": "auth_jwks",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JwkSet"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Authenticate an LDAP user and either issue tokens directly or",
+        "description": "require a second factor.\n\nThe response body is a tagged [`LoginOutcome`]:\n\n* `complete` — password was correct and the user has no 2FA enrolment; the embedded fields are identical to the historical [`LoginResponse`] shape and a `Set-Cookie` header carries the access token for browser clients. * `challenge_required` — password was correct but the user has a second factor enrolled; the embedded [`LoginChallenge`] carries a `challenge_token` and the list of methods the client may use. The client must POST the `challenge_token` plus a code to `/v1/auth/login/verify`. No cookie is set on this branch since the session has not been established yet.",
+        "operationId": "auth_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginOutcome"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/login/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Complete a 2FA login by presenting the challenge token and a",
+        "description": "second-factor code.\n\nCalled only when `/v1/auth/login` returned a `challenge_required` outcome. The server re-reads the user's TOTP secret from UFDS (it is never carried in the challenge), verifies the code, and returns the standard [`LoginResponse`] — same shape, same `Set-Cookie` semantics — that `/v1/auth/login` issues for non-2FA users.",
+        "operationId": "auth_login_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/login-ssh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Exchange a proof-of-SSH-key-ownership for an access + refresh",
+        "description": "token pair. The caller presents an `Authorization: Signature …` header (draft-cavage HTTP Signature, same dialect cloudapi accepts). The server resolves the key via mahi, verifies the signature, and issues tokens via the same path the password login uses.\n\nRequest body is empty — all auth material is in the headers. Response mirrors `POST /v1/auth/login`.",
+        "operationId": "auth_login_ssh",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke all outstanding refresh tokens for the caller and clear",
+        "description": "the auth cookie. Accepts an expired access token so that callers whose session has already expired can still log out cleanly.",
+        "operationId": "auth_logout",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Rotate a refresh token: consume the caller's refresh token and",
+        "description": "return a new `(access, refresh)` pair. The old refresh token is single-use and is invalidated on success.",
+        "operationId": "auth_refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Return the authenticated caller's identity, derived from the JWT",
+        "description": "claims. Useful for web UIs to check login state on page load.",
+        "operationId": "auth_session",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/ping": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Ping",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChallengeMethod": {
+        "description": "Second-factor authentication method offered for a login challenge.\n\nForward-compatible: clients deserialising an older binary can receive new method names from a newer server and round-trip them through `Unknown` rather than failing.",
+        "oneOf": [
+          {
+            "description": "Time-based one-time password (RFC 6238). Currently the only method tritonapi issues challenges for.",
+            "type": "string",
+            "enum": [
+              "totp"
+            ]
+          },
+          {
+            "description": "Catch-all for forward compatibility; an unrecognised method from a newer server.",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "Jwk": {
+        "description": "A single JWK entry.",
+        "type": "object",
+        "properties": {
+          "alg": {
+            "type": "string"
+          },
+          "crv": {
+            "type": "string"
+          },
+          "kid": {
+            "type": "string"
+          },
+          "kty": {
+            "type": "string"
+          },
+          "use": {
+            "type": "string"
+          },
+          "x": {
+            "description": "Base64url-encoded X coordinate of the EC public key.",
+            "type": "string"
+          },
+          "y": {
+            "description": "Base64url-encoded Y coordinate of the EC public key.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alg",
+          "crv",
+          "kid",
+          "kty",
+          "use",
+          "x",
+          "y"
+        ]
+      },
+      "JwkSet": {
+        "description": "RFC 7517 JWKS document returned by `GET /v1/auth/jwks.json`.\n\nVerifiers (triton-gateway, future admin-UI proxies, etc.) fetch this to obtain the public key(s) used to validate access tokens. Only ES256 P-256 keys are currently issued.",
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Jwk"
+            }
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      },
+      "LoginOutcome": {
+        "description": "Outcome of `POST /v1/auth/login`.\n\nTagged on the wire by the `outcome` field. The common case is `complete`: the password verified, no second factor is enrolled, and the response carries the same fields a non-2FA `LoginResponse` always has. Users enrolled in 2FA receive `challenge_required`, must read a code from their authenticator, and post it together with the `challenge_token` to `/v1/auth/login/verify` to obtain a `LoginResponse`.",
+        "oneOf": [
+          {
+            "description": "Authentication is complete; tokens are issued.",
+            "type": "object",
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "complete"
+                ]
+              },
+              "refresh_token": {
+                "description": "Single-use refresh token; present it to `POST /v1/auth/refresh` for a new (token, refresh_token) pair.",
+                "type": "string"
+              },
+              "token": {
+                "description": "Short-lived ES256 JWT access token.",
+                "type": "string"
+              },
+              "user": {
+                "$ref": "#/components/schemas/UserInfo"
+              }
+            },
+            "required": [
+              "outcome",
+              "refresh_token",
+              "token",
+              "user"
+            ]
+          },
+          {
+            "description": "Authentication needs a second factor before tokens are issued. Carry the `challenge_token` to `/v1/auth/login/verify`.",
+            "type": "object",
+            "properties": {
+              "challenge_token": {
+                "description": "Short-lived signed token. The client posts this verbatim alongside the second-factor code to `/v1/auth/login/verify`. Treat as opaque — the token's claims and TTL are server-side implementation details.",
+                "type": "string"
+              },
+              "methods": {
+                "description": "Methods the client may use to satisfy the challenge. v1 only emits `[totp]`, but clients should tolerate additional values via the `Unknown` variant rather than failing closed.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChallengeMethod"
+                }
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "challenge_required"
+                ]
+              }
+            },
+            "required": [
+              "challenge_token",
+              "methods",
+              "outcome"
+            ]
+          }
+        ]
+      },
+      "LoginRequest": {
+        "description": "`POST /v1/auth/login` request body.",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ]
+      },
+      "LoginResponse": {
+        "description": "`POST /v1/auth/login` response body when the password is correct and no second factor is required. Also the response body of `POST /v1/auth/login/verify` (which always completes a session).",
+        "type": "object",
+        "properties": {
+          "refresh_token": {
+            "description": "Single-use refresh token; present it to `POST /v1/auth/refresh` for a new (token, refresh_token) pair.",
+            "type": "string"
+          },
+          "token": {
+            "description": "Short-lived ES256 JWT access token.",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserInfo"
+          }
+        },
+        "required": [
+          "refresh_token",
+          "token",
+          "user"
+        ]
+      },
+      "LoginVerifyRequest": {
+        "description": "`POST /v1/auth/login/verify` request body.",
+        "type": "object",
+        "properties": {
+          "challenge_token": {
+            "description": "The exact `challenge_token` value from the `ChallengeRequired` outcome. Treated as opaque.",
+            "type": "string"
+          },
+          "code": {
+            "description": "6-digit code from the user's authenticator app.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "code"
+        ]
+      },
+      "LogoutResponse": {
+        "description": "`POST /v1/auth/logout` response body.",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "PingResponse": {
+        "description": "Ping response",
+        "type": "object",
+        "properties": {
+          "healthy": {
+            "nullable": true,
+            "description": "Health check status",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Ping status (e.g., \"OK\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "RefreshRequest": {
+        "description": "`POST /v1/auth/refresh` request body.",
+        "type": "object",
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ]
+      },
+      "RefreshResponse": {
+        "description": "`POST /v1/auth/refresh` response body.",
+        "type": "object",
+        "properties": {
+          "refresh_token": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token",
+          "token"
+        ]
+      },
+      "SessionResponse": {
+        "description": "`GET /v1/auth/session` response body.",
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/UserInfo"
+          }
+        },
+        "required": [
+          "user"
+        ]
+      },
+      "UserInfo": {
+        "description": "Public profile of the authenticated user. `email`, `name`, and `company` are only populated from `/v1/auth/login` (which reads UFDS); the `/v1/auth/session` endpoint can only return fields that live in the JWT claims, which is why those fields are optional.",
+        "type": "object",
+        "properties": {
+          "company": {
+            "nullable": true,
+            "type": "string"
+          },
+          "email": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "is_admin",
+          "username"
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "auth"
+    },
+    {
+      "name": "system"
+    }
+  ]
+}

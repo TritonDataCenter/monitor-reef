@@ -14,7 +14,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use cloudapi_client::types::Image;
+use triton_gateway_client::types::Image;
 
 use crate::config::profile::Profile;
 
@@ -36,7 +36,7 @@ impl ImageCache {
     /// request is visible in the captured output).
     pub async fn new(profile: &Profile) -> Option<Self> {
         #[cfg(debug_assertions)]
-        if cloudapi_client::is_emit_payload_mode() {
+        if triton_gateway_client::is_emit_payload_mode() {
             return None;
         }
         let slug = profile_slug(profile);

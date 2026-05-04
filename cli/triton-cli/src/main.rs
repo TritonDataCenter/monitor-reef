@@ -9,7 +9,7 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::{GatewayAuthConfig, TypedClient};
 
 mod cache;
 mod commands;
@@ -49,16 +49,19 @@ struct Cli {
     #[arg(short, long, env = "TRITON_PROFILE")]
     profile: Option<String>,
 
-    /// CloudAPI URL override
-    #[arg(short = 'U', long, env = "TRITON_URL")]
+    /// CloudAPI URL override (also reads $TRITON_URL / $SDC_URL when no
+    /// profile is selected via -p / $TRITON_PROFILE)
+    #[arg(short = 'U', long)]
     url: Option<String>,
 
-    /// Account name override
-    #[arg(short, long, env = "TRITON_ACCOUNT")]
+    /// Account name override (also reads $TRITON_ACCOUNT / $SDC_ACCOUNT
+    /// when no profile is selected via -p / $TRITON_PROFILE)
+    #[arg(short, long)]
     account: Option<String>,
 
-    /// SSH key fingerprint override
-    #[arg(short, long, env = "TRITON_KEY_ID")]
+    /// SSH key fingerprint override (also reads $TRITON_KEY_ID /
+    /// $SDC_KEY_ID when no profile is selected via -p / $TRITON_PROFILE)
+    #[arg(short, long)]
     key_id: Option<String>,
 
     /// Output as JSON
@@ -201,6 +204,23 @@ enum Commands {
     /// Show account info and resource usage
     Info,
 
+    /// Exchange credentials for a tritonapi JWT. Defaults to SSH-key
+    /// login via `POST /v1/auth/login-ssh` using the profile's key;
+    /// pass `-u/--user <login>` to force password login via
+    /// `POST /v1/auth/login`. The returned token is stashed at
+    /// `~/.triton/tokens/<profile>.json` (mode 0600) for future
+    /// Bearer-authenticated tritonapi calls.
+    Login(commands::login::LoginArgs),
+
+    /// Show the current tritonapi session (Bearer-authenticated
+    /// `GET /v1/auth/session`). Requires a cached token; run
+    /// `triton login` first if not logged in.
+    Whoami,
+
+    /// Revoke the current tritonapi session on the server (best
+    /// effort) and delete the cached token file.
+    Logout,
+
     /// List datacenters
     #[command(alias = "dcs")]
     Datacenters(commands::datacenters::DatacenterListArgs),
@@ -308,203 +328,136 @@ enum Commands {
     Cloudapi(commands::cloudapi::CloudApiArgs),
 }
 
-/// Extra certificate locations to probe on platforms where `openssl-probe`
-/// doesn't find the system CA store (e.g., SmartOS/illumos with pkgsrc).
-const EXTRA_CERT_FILES: &[&str] = &[
-    "/opt/local/etc/openssl/certs/ca-certificates.crt",
-    "/etc/ssl/certs/ca-certificates.crt",
-];
-const EXTRA_CERT_DIRS: &[&str] = &["/opt/local/etc/openssl/certs", "/etc/ssl/certs"];
-
-/// Build a root certificate store with a three-tier fallback:
+/// Resolve an override chain for a single Profile field.
 ///
-/// 1. Native system certs (via `rustls-native-certs` / `openssl-probe`)
-/// 2. Extra platform-specific paths (SmartOS pkgsrc, etc.)
-/// 3. Bundled Mozilla roots (via `webpki-roots`) as a last resort
-///
-/// This handles platforms like SmartOS/illumos where `openssl-probe` doesn't
-/// check the paths where certificates are actually installed.
-async fn build_root_cert_store() -> rustls::RootCertStore {
-    let mut root_store = rustls::RootCertStore::empty();
-
-    // 1. Try native certs (respects SSL_CERT_FILE / SSL_CERT_DIR)
-    let mut loaded = 0u32;
-    let mut skipped = 0u32;
-    for cert in rustls_native_certs::load_native_certs().certs {
-        if root_store.add(cert).is_ok() {
-            loaded += 1;
-        } else {
-            skipped += 1;
-        }
+/// Returns the first populated value from: CLI flag > any env fallback
+/// in order > profile value. Env fallbacks are already zeroed out by
+/// [`env_fallbacks`] when a profile was explicitly selected, so this
+/// helper doesn't need to know about that gate.
+fn override_or_profile(
+    cli: Option<&str>,
+    env_fallbacks: &[Option<String>],
+    profile: &str,
+) -> String {
+    if let Some(v) = cli {
+        return v.to_string();
     }
-    if skipped > 0 {
-        tracing::debug!(
-            "Loaded {} native root certs, skipped {} invalid",
-            loaded,
-            skipped
-        );
-    }
-    if !root_store.is_empty() {
-        return root_store;
-    }
-
-    // 2. Probe extra platform-specific paths
-    load_extra_cert_paths(&mut root_store).await;
-    if !root_store.is_empty() {
-        return root_store;
-    }
-
-    // 3. Fall back to bundled Mozilla roots
-    tracing::warn!(
-        "no native root certificates found; using bundled Mozilla roots\n\n  \
-         If you need to trust additional CAs (e.g., a self-signed certificate),\n  \
-         point the TLS library at your certificate store:\n\n    \
-         export SSL_CERT_FILE=/path/to/ca-bundle.pem\n    \
-         export SSL_CERT_DIR=/path/to/certs/directory"
-    );
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    root_store
+    env_fallbacks
+        .iter()
+        .flatten()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| profile.to_string())
 }
 
-/// Try loading PEM certificates from extra platform-specific paths into the
-/// root store. Stops as soon as any certificates are loaded.
-async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
-    // Try bundle files first (single file containing many PEM certs)
-    for path in EXTRA_CERT_FILES {
-        if let Ok(data) = tokio::fs::read(path).await {
-            let mut cursor = std::io::Cursor::new(data);
-            let mut loaded = 0u32;
-            let mut skipped = 0u32;
-            for cert in rustls_pemfile::certs(&mut cursor).flatten() {
-                if root_store.add(cert).is_ok() {
-                    loaded += 1;
-                } else {
-                    skipped += 1;
-                }
-            }
-            if skipped > 0 {
-                tracing::debug!(
-                    "Loaded {} root certs, skipped {} invalid from {}",
-                    loaded,
-                    skipped,
-                    path,
-                );
-            }
-            if !root_store.is_empty() {
-                return;
-            }
-        }
+/// Collect the TRITON_* / SDC_* env-var chain that should act as
+/// overrides for a single Profile field. Returns all-`None` when a
+/// profile was explicitly selected so that a stray `export TRITON_URL`
+/// in the caller's shell doesn't silently redirect every command.
+fn env_fallbacks(explicit_profile: bool, triton_var: &str, sdc_var: &str) -> Vec<Option<String>> {
+    if explicit_profile {
+        return vec![None, None];
     }
-
-    // Try cert directories (individual PEM files, including OpenSSL hash symlinks)
-    for dir_path in EXTRA_CERT_DIRS {
-        let Ok(mut entries) = tokio::fs::read_dir(dir_path).await else {
-            continue;
-        };
-        let mut loaded = 0u32;
-        let mut skipped = 0u32;
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if let Ok(data) = tokio::fs::read(&path).await {
-                let mut cursor = std::io::Cursor::new(data);
-                for cert in rustls_pemfile::certs(&mut cursor).flatten() {
-                    if root_store.add(cert).is_ok() {
-                        loaded += 1;
-                    } else {
-                        skipped += 1;
-                    }
-                }
-            }
-        }
-        if skipped > 0 {
-            tracing::debug!(
-                "Loaded {} root certs, skipped {} invalid from {}",
-                loaded,
-                skipped,
-                dir_path,
-            );
-        }
-        if !root_store.is_empty() {
-            return;
-        }
-    }
+    vec![std::env::var(triton_var).ok(), std::env::var(sdc_var).ok()]
 }
 
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
 /// the default certificate store isn't found (e.g., SmartOS/illumos).
 async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder()
-        .danger_accept_invalid_certs(insecure)
-        .redirect(reqwest::redirect::Policy::none());
-
-    // Only apply custom root cert store when we actually need to verify
-    // certificates. When insecure=true, reqwest's built-in handling of
-    // danger_accept_invalid_certs is sufficient — adding a preconfigured
-    // TLS config would override it and re-enable chain validation.
-    if !insecure {
-        let root_store = build_root_cert_store().await;
-        let tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-        builder = builder.use_preconfigured_tls(tls_config);
-    }
-
-    builder
-        .build()
+    triton_tls::build_http_client(insecure)
+        .await
         .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
 }
 
 impl Cli {
-    /// Build an authenticated TypedClient from CLI options or profile
+    /// Build an authenticated TypedClient, preferring a cached
+    /// Bearer JWT from `~/.triton/tokens/<profile>.json` when one is
+    /// fresh, falling back to SSH-HTTP-Signature auth otherwise.
     ///
-    /// Uses `resolve_profile` as the single source of truth for profile
-    /// resolution, then applies CLI/env overrides on top.
+    /// Almost every command wants this: after `triton login`, the
+    /// stashed token exists and the client wraps it as Bearer;
+    /// before login (or after the JWT expires), we sign with the
+    /// profile's SSH key exactly as we did pre-Bearer. The one
+    /// exception is `triton login` itself, which must always present
+    /// an SSH signature to `/v1/auth/login-ssh` and so uses
+    /// [`build_ssh_client`] to bypass the Bearer path unconditionally.
     async fn build_client(&self) -> Result<(TypedClient, Profile)> {
         let profile = resolve_profile(self.profile.as_deref()).await?;
+        let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
+        if let Some(tokens) =
+            commands::login::load_or_refresh(&profile.name, &final_url, insecure).await
+        {
+            let http_client = build_http_client(insecure).await?;
+            // CLI / env overrides stay respected on the Bearer path too --
+            // an explicit --account wins, else the profile's account goes
+            // into every /{account}/* URL we build via effective_account().
+            let account = self
+                .account
+                .clone()
+                .unwrap_or_else(|| profile.account.clone());
+            let gw_auth = commands::login::bearer_auth_from(&tokens, account);
+            return Ok((
+                TypedClient::new_with_http_client(&final_url, gw_auth, http_client),
+                profile,
+            ));
+        }
+        self.build_ssh_client_with_profile(profile).await
+    }
 
-        // Allow CLI/env overrides on top of the resolved profile.
-        // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
-        //
-        // SDC_* legacy env vars are only used as overrides when no explicit
-        // profile was selected (via -p or TRITON_PROFILE). When an explicit
-        // profile is chosen, its values take precedence over SDC_* env vars.
-        // (SDC_* vars are already handled by env_profile() when the "env"
-        // profile is active.)
+    /// Build a TypedClient that ALWAYS uses SSH-HTTP-Signature auth,
+    /// regardless of whether a cached JWT exists. Used by
+    /// `triton login` itself -- the `/v1/auth/login-ssh` endpoint
+    /// rejects Bearer auth by design, so bootstrapping a fresh
+    /// session has to sign with the SSH key.
+    async fn build_ssh_client(&self) -> Result<(TypedClient, Profile)> {
+        let profile = resolve_profile(self.profile.as_deref()).await?;
+        self.build_ssh_client_with_profile(profile).await
+    }
+
+    /// Resolve the URL and `insecure` flag from the profile +
+    /// CLI/env overrides. Factored out so the Bearer path can skip
+    /// the expensive SSH-key setup but still honor the usual
+    /// override precedence (-U/-i, TRITON_URL/TRITON_TLS_INSECURE,
+    /// SDC_URL when no explicit profile selected).
+    fn resolve_url_and_insecure(&self, profile: &Profile) -> (String, bool) {
         let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
-        let final_url = self
-            .url
-            .clone()
-            .or_else(|| {
-                if !explicit_profile {
-                    std::env::var("SDC_URL").ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| profile.url.clone());
-        let final_account = self
-            .account
-            .clone()
-            .or_else(|| {
-                if !explicit_profile {
-                    std::env::var("SDC_ACCOUNT").ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| profile.account.clone());
-        let final_key_id = self
-            .key_id
-            .clone()
-            .or_else(|| {
-                if !explicit_profile {
-                    std::env::var("SDC_KEY_ID").ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| profile.key_id.clone());
+        let final_url = override_or_profile(
+            self.url.as_deref(),
+            &env_fallbacks(explicit_profile, "TRITON_URL", "SDC_URL"),
+            &profile.url,
+        );
+        let insecure = self.insecure || profile.insecure;
+        (final_url, insecure)
+    }
+
+    async fn build_ssh_client_with_profile(
+        &self,
+        profile: Profile,
+    ) -> Result<(TypedClient, Profile)> {
+        // Override precedence for url/account/key_id:
+        //   1. Explicit CLI flag (--url / --account / --key-id)
+        //   2. TRITON_* env var, only when no explicit profile
+        //   3. SDC_* legacy env var, only when no explicit profile
+        //   4. The profile value
+        //
+        // TRITON_* and SDC_* are ignored when the user explicitly picked a
+        // profile (-p / $TRITON_PROFILE): the whole point of picking a
+        // profile is to get its values, and a stray `export TRITON_ACCOUNT`
+        // in the shell shouldn't silently redirect every triton command.
+        // (env_profile() in config/mod.rs still reads them when assembling
+        // the synthetic "env" profile, which is the right place for it.)
+        let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
+        let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
+        let final_account = override_or_profile(
+            self.account.as_deref(),
+            &env_fallbacks(explicit_profile, "TRITON_ACCOUNT", "SDC_ACCOUNT"),
+            &profile.account,
+        );
+        let final_key_id = override_or_profile(
+            self.key_id.as_deref(),
+            &env_fallbacks(explicit_profile, "TRITON_KEY_ID", "SDC_KEY_ID"),
+            &profile.key_id,
+        );
 
         let key_source = triton_auth::KeySource::auto(&final_key_id);
 
@@ -565,12 +518,14 @@ impl Cli {
             auth_config = auth_config.with_accept_version(version.clone());
         }
 
-        // Insecure mode: CLI flag or profile setting
-        let insecure = self.insecure || profile.insecure;
-
         let http_client = build_http_client(insecure).await?;
+        // Wrap the SSH AuthConfig in a GatewayAuthConfig. RBAC fields
+        // (`user`, `roles`) and the orthogonal `accept_version` / `act_as`
+        // headers stay on the inner AuthConfig; the SSH branch of
+        // `add_auth_headers` forwards them on each request.
+        let gw_auth = GatewayAuthConfig::ssh_key(auth_config);
         Ok((
-            TypedClient::new_with_http_client(&final_url, auth_config, http_client),
+            TypedClient::new_with_http_client(&final_url, gw_auth, http_client),
             profile,
         ))
     }
@@ -585,7 +540,7 @@ async fn main() {
         // Emit-payload mode uses a sentinel error to abort the request
         // after printing the payload. Treat it as a successful exit.
         #[cfg(debug_assertions)]
-        if msg.contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL) {
+        if msg.contains(triton_gateway_client::EMIT_PAYLOAD_SENTINEL) {
             return;
         }
 
@@ -611,7 +566,7 @@ async fn try_main() -> Result<()> {
     // comparison testing without sending requests)
     #[cfg(debug_assertions)]
     if cli.emit_payload {
-        cloudapi_client::set_emit_payload_mode(true);
+        triton_gateway_client::set_emit_payload_mode(true);
     }
 
     // Set up logging: always show warnings/errors, verbose adds debug
@@ -703,6 +658,20 @@ async fn try_main() -> Result<()> {
         Commands::Info => {
             let (client, _profile) = cli.build_client().await?;
             commands::info::run(&client, cli.json).await
+        }
+        Commands::Login(args) => {
+            // login bootstraps the session, so it must present SSH auth
+            // regardless of whether a (possibly stale) JWT is cached.
+            let (client, profile) = cli.build_ssh_client().await?;
+            commands::login::run(args.clone(), &client, &profile, cli.json).await
+        }
+        Commands::Whoami => {
+            let (client, profile) = cli.build_client().await?;
+            commands::whoami::run(&client, &profile, cli.json).await
+        }
+        Commands::Logout => {
+            let (client, profile) = cli.build_client().await?;
+            commands::logout::run(&client, &profile, cli.json).await
         }
         Commands::Datacenters(args) => {
             let (client, _profile) = cli.build_client().await?;
@@ -888,6 +857,87 @@ mod tests {
         Cli::command().debug_assert();
     }
 
+    /// `override_or_profile` with no CLI flag and no env fallbacks falls
+    /// back to the profile value.
+    #[test]
+    fn override_or_profile_falls_back_to_profile_when_nothing_overrides() {
+        let got = override_or_profile(None, &[None, None], "profile-value");
+        assert_eq!(got, "profile-value");
+    }
+
+    /// An explicit CLI flag always beats every other source.
+    #[test]
+    fn override_or_profile_cli_flag_wins_over_envs_and_profile() {
+        let got = override_or_profile(
+            Some("from-flag"),
+            &[
+                Some("from-triton".to_string()),
+                Some("from-sdc".to_string()),
+            ],
+            "profile-value",
+        );
+        assert_eq!(got, "from-flag");
+    }
+
+    /// The first populated env fallback wins over later ones and over
+    /// the profile. In practice that means TRITON_* > SDC_*.
+    #[test]
+    fn override_or_profile_first_populated_env_wins() {
+        let got = override_or_profile(
+            None,
+            &[
+                Some("from-triton".to_string()),
+                Some("from-sdc".to_string()),
+            ],
+            "profile-value",
+        );
+        assert_eq!(got, "from-triton");
+
+        // Fall through to SDC_* when TRITON_* is unset.
+        let got = override_or_profile(None, &[None, Some("from-sdc".to_string())], "profile-value");
+        assert_eq!(got, "from-sdc");
+    }
+
+    /// When a profile was explicitly selected, `env_fallbacks` must
+    /// return all-None so neither TRITON_* nor SDC_* can override the
+    /// profile value. This is the regression guard for
+    /// `triton -p foo` quietly using the caller's TRITON_URL.
+    #[test]
+    fn env_fallbacks_yields_none_when_profile_is_explicit() {
+        // SAFETY: single-threaded test, and we restore afterwards. We
+        // don't use serial_test because this test doesn't touch any
+        // global state beyond these two env vars.
+        let prev_triton = std::env::var("TRITON_URL").ok();
+        let prev_sdc = std::env::var("SDC_URL").ok();
+        unsafe {
+            std::env::set_var("TRITON_URL", "https://from-triton");
+            std::env::set_var("SDC_URL", "https://from-sdc");
+        }
+
+        let fallbacks = env_fallbacks(true, "TRITON_URL", "SDC_URL");
+        assert_eq!(fallbacks, vec![None, None]);
+
+        let fallbacks = env_fallbacks(false, "TRITON_URL", "SDC_URL");
+        assert_eq!(
+            fallbacks,
+            vec![
+                Some("https://from-triton".to_string()),
+                Some("https://from-sdc".to_string())
+            ]
+        );
+
+        unsafe {
+            match prev_triton {
+                Some(v) => std::env::set_var("TRITON_URL", v),
+                None => std::env::remove_var("TRITON_URL"),
+            }
+            match prev_sdc {
+                Some(v) => std::env::set_var("SDC_URL", v),
+                None => std::env::remove_var("SDC_URL"),
+            }
+        }
+    }
+
     /// Regression test: build_http_client(insecure=true) must accept
     /// self-signed certificates.
     ///
@@ -899,6 +949,11 @@ mod tests {
         use std::sync::Arc;
         use tokio::net::TcpListener;
         use tokio_rustls::TlsAcceptor;
+
+        // Needed here because `rustls::ServerConfig::builder()` below runs
+        // before `build_http_client`, which is what would normally install
+        // the default crypto provider for this process.
+        triton_tls::install_default_crypto_provider();
 
         // Generate a self-signed certificate for localhost
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])

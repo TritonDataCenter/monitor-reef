@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{MigrationAction, MigrationState};
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::{MigrationAction, MigrationState};
 
 use crate::output::{enum_to_display, json};
 
@@ -213,9 +213,11 @@ async fn begin_migration(
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
     let id_str = instance_id.to_string();
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Begin,
-        affinity: args.affinity.map(cloudapi_client::AffinityRules::from),
+    let request = triton_gateway_client::types::MigrateRequest {
+        action: triton_gateway_client::types::MigrationAction::Begin,
+        affinity: args
+            .affinity
+            .map(triton_gateway_client::AffinityRules::from),
     };
 
     let response = client
@@ -261,8 +263,8 @@ async fn sync_migration(
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Sync,
+    let request = triton_gateway_client::types::MigrateRequest {
+        action: triton_gateway_client::types::MigrationAction::Sync,
         affinity: None,
     };
 
@@ -304,8 +306,8 @@ async fn switch_migration(
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Switch,
+    let request = triton_gateway_client::types::MigrateRequest {
+        action: triton_gateway_client::types::MigrationAction::Switch,
         affinity: None,
     };
 
@@ -456,8 +458,8 @@ async fn abort_migration(
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
     let id_str = instance_id.to_string();
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Abort,
+    let request = triton_gateway_client::types::MigrateRequest {
+        action: triton_gateway_client::types::MigrationAction::Abort,
         affinity: None,
     };
 

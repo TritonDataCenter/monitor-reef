@@ -1,0 +1,22 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "sapi-api"
+version = "2.1.3"
+edition.workspace = true
+description = "Triton SAPI (Services API) trait definition"
+
+[lints]
+workspace = true
+
+[dependencies]
+dropshot = { workspace = true }
+http = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

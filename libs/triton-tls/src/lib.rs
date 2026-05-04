@@ -1,0 +1,276 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! TLS certificate loading and HTTP client construction for Triton CLI tools.
+//!
+//! Platforms like SmartOS/illumos store CA certificates in locations that
+//! `rustls-native-certs` doesn't probe by default. This crate provides a
+//! multi-tier fallback strategy:
+//!
+//! 1. Native system certs (respects `SSL_CERT_FILE` / `SSL_CERT_DIR`)
+//! 2. Extra platform-specific paths (SmartOS pkgsrc, etc.)
+//! 3. Bundled Mozilla roots (via `webpki-roots`) as a last resort
+//!
+//! The crate also owns process-wide installation of the rustls
+//! `CryptoProvider`. The active backend (ring vs aws-lc-rs) is set by
+//! `tools/crypto-backend.sh` -- invoked via `make use-ring`,
+//! `make use-aws-lc`, or `make crypto-status` -- which rewrites this
+//! file in lockstep with the rustls / hyper-rustls / tokio-rustls /
+//! reqwest / ldap3 feature strings in the workspace `Cargo.toml`.
+//! Because the workspace builds reqwest with `rustls-no-provider` when
+//! on ring, every `reqwest::Client::builder().build()` and every
+//! `rustls::*Config::builder()` call panics with "No provider set"
+//! unless a default `CryptoProvider` is installed first.
+//! [`build_http_client`] takes care of that for its own callers; other
+//! binaries or tests should call [`install_default_crypto_provider`]
+//! themselves before touching `rustls::ClientConfig::builder()` or
+//! `rustls::ServerConfig::builder()`.
+
+use std::sync::Once;
+
+/// Returns the rustls `CryptoProvider` for the active backend. The
+/// backend identifier on the next line (`ring` or `aws_lc_rs`) is the
+/// single source of truth that `tools/crypto-backend.sh` rewrites.
+fn selected_crypto_provider() -> rustls::crypto::CryptoProvider {
+    rustls::crypto::ring::default_provider()
+}
+
+/// Install the selected rustls crypto provider as this process's default,
+/// exactly once.
+///
+/// `install_default()` itself is idempotent (the second call returns
+/// `Err`, which we discard), but we guard it behind [`std::sync::Once`]
+/// so repeated calls from a hot path like [`build_http_client`] don't
+/// re-allocate a provider struct just to throw it away.
+pub fn install_default_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = selected_crypto_provider().install_default();
+    });
+}
+
+/// Extra certificate locations to probe on platforms where `openssl-probe`
+/// doesn't find the system CA store (e.g., SmartOS/illumos with pkgsrc).
+const EXTRA_CERT_FILES: &[&str] = &[
+    "/opt/local/etc/openssl/certs/ca-certificates.crt",
+    "/etc/ssl/certs/ca-certificates.crt",
+];
+const EXTRA_CERT_DIRS: &[&str] = &["/opt/local/etc/openssl/certs", "/etc/ssl/certs"];
+
+/// Build a root certificate store with a three-tier fallback:
+///
+/// 1. Native system certs (via `rustls-native-certs` / `openssl-probe`)
+/// 2. Extra platform-specific paths (SmartOS pkgsrc, etc.)
+/// 3. Bundled Mozilla roots (via `webpki-roots`) as a last resort
+///
+/// This handles platforms like SmartOS/illumos where `openssl-probe` doesn't
+/// check the paths where certificates are actually installed.
+pub async fn build_root_cert_store() -> rustls::RootCertStore {
+    let mut root_store = rustls::RootCertStore::empty();
+
+    // 1. Try native certs (respects SSL_CERT_FILE / SSL_CERT_DIR)
+    let mut loaded = 0u32;
+    let mut skipped = 0u32;
+    for cert in rustls_native_certs::load_native_certs().certs {
+        if root_store.add(cert).is_ok() {
+            loaded += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    if skipped > 0 {
+        tracing::debug!(
+            "Loaded {} native root certs, skipped {} invalid",
+            loaded,
+            skipped
+        );
+    }
+    if !root_store.is_empty() {
+        return root_store;
+    }
+
+    // 2. Probe extra platform-specific paths
+    load_extra_cert_paths(&mut root_store).await;
+    if !root_store.is_empty() {
+        return root_store;
+    }
+
+    // 3. Fall back to bundled Mozilla roots
+    tracing::warn!(
+        "no native root certificates found; using bundled Mozilla roots\n\n  \
+         If you need to trust additional CAs (e.g., a self-signed certificate),\n  \
+         point the TLS library at your certificate store:\n\n    \
+         export SSL_CERT_FILE=/path/to/ca-bundle.pem\n    \
+         export SSL_CERT_DIR=/path/to/certs/directory"
+    );
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    root_store
+}
+
+/// Try loading PEM certificates from extra platform-specific paths into the
+/// root store. Stops as soon as any certificates are loaded.
+async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
+    // Try bundle files first (single file containing many PEM certs)
+    for path in EXTRA_CERT_FILES {
+        if let Ok(data) = tokio::fs::read(path).await {
+            let mut cursor = std::io::Cursor::new(data);
+            let mut loaded = 0u32;
+            let mut skipped = 0u32;
+            for cert in rustls_pemfile::certs(&mut cursor).flatten() {
+                if root_store.add(cert).is_ok() {
+                    loaded += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            if skipped > 0 {
+                tracing::debug!(
+                    "Loaded {} root certs, skipped {} invalid from {}",
+                    loaded,
+                    skipped,
+                    path,
+                );
+            }
+            if !root_store.is_empty() {
+                return;
+            }
+        }
+    }
+
+    // Try cert directories (individual PEM files, including OpenSSL hash symlinks)
+    for dir_path in EXTRA_CERT_DIRS {
+        let Ok(mut entries) = tokio::fs::read_dir(dir_path).await else {
+            continue;
+        };
+        let mut loaded = 0u32;
+        let mut skipped = 0u32;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if let Ok(data) = tokio::fs::read(&path).await {
+                let mut cursor = std::io::Cursor::new(data);
+                for cert in rustls_pemfile::certs(&mut cursor).flatten() {
+                    if root_store.add(cert).is_ok() {
+                        loaded += 1;
+                    } else {
+                        skipped += 1;
+                    }
+                }
+            }
+        }
+        if skipped > 0 {
+            tracing::debug!(
+                "Loaded {} root certs, skipped {} invalid from {}",
+                loaded,
+                skipped,
+                dir_path,
+            );
+        }
+        if !root_store.is_empty() {
+            return;
+        }
+    }
+}
+
+/// Build an HTTP client with proper TLS certificate handling.
+///
+/// When `insecure` is `true`, TLS certificate validation is skipped entirely.
+/// Otherwise, certificates are loaded via [`build_root_cert_store`].
+pub async fn build_http_client(insecure: bool) -> Result<reqwest::Client, reqwest::Error> {
+    build_http_client_with_headers(insecure, reqwest::header::HeaderMap::new()).await
+}
+
+/// Like [`build_http_client`], but installs the supplied default headers on
+/// every request the resulting client issues. Used to attach API-version
+/// negotiation headers (e.g. SAPI's `Accept-Version: ~2`).
+pub async fn build_http_client_with_headers(
+    insecure: bool,
+    default_headers: reqwest::header::HeaderMap,
+) -> Result<reqwest::Client, reqwest::Error> {
+    install_default_crypto_provider();
+
+    let mut builder = reqwest::Client::builder()
+        .danger_accept_invalid_certs(insecure)
+        .default_headers(default_headers);
+
+    // Only apply custom root cert store when we actually need to verify
+    // certificates. When insecure=true, reqwest's built-in handling of
+    // danger_accept_invalid_certs is sufficient — adding a preconfigured
+    // TLS config would override it and re-enable chain validation.
+    if !insecure {
+        let root_store = build_root_cert_store().await;
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        builder = builder.use_preconfigured_tls(tls_config);
+    }
+
+    builder.build()
+}
+
+/// Build a `rustls::ClientConfig` with the same three-tier cert fallback
+/// as [`build_http_client`], for callers that need raw TLS rather than
+/// reqwest (e.g. `tokio_tungstenite::Connector::Rustls`).
+///
+/// When `insecure` is true, certificate validation is skipped entirely
+/// via a dangerous custom verifier that accepts any presented cert.
+pub async fn build_rustls_client_config(insecure: bool) -> rustls::ClientConfig {
+    install_default_crypto_provider();
+
+    if insecure {
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(NoCertVerifier))
+            .with_no_client_auth()
+    } else {
+        let root_store = build_root_cert_store().await;
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
+    }
+}
+
+/// Dangerous certificate verifier that accepts any presented certificate.
+/// Only used when the caller has opted into insecure mode.
+#[derive(Debug)]
+struct NoCertVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for NoCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        selected_crypto_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}

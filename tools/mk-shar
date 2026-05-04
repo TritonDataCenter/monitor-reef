@@ -1,0 +1,187 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+
+#
+# Copyright (c) 2019, Joyent, Inc.
+# Copyright 2026 Edgecast Cloud LLC.
+#
+
+#
+# Adapted from sdcadm/tools/mk-shar. Generalized so it can wrap any tool
+# into a self-extracting shell archive — not just sdcadm.
+#
+# Convention: the proto directory must contain an `install.sh` at its
+# top level. All other files/dirs in the proto are tarred (pigz) into
+# `contents.tgz`. The resulting shar uuencodes both install.sh and
+# contents.tgz, so when exec'd it self-extracts to a tempdir, untars
+# contents.tgz, and runs `bash ./install.sh "$@"` with any args the
+# caller passed. Why this shape:
+#
+#   * shar(1) uuencodes binary content, dodging the `tail -n` /
+#     `tail -c` pitfalls that bite appended-binary tarballs on illumos
+#     (the initial try for monitor-reef, which worked on macOS and
+#     failed on SmartOS with "tar: directory checksum error").
+#
+#   * sdcadm experimental get-tritonadm downloads the shar and execs
+#     it directly, so this matches the contract sdcadm already expects.
+#
+# Usage:
+#   mk-shar -n <name> -s <stamp> -d <proto_dir> -o <output.sh>
+#
+
+if [[ -n "$TRACE" ]]; then
+    export PS4='[\D{%FT%TZ}] ${BASH_SOURCE}:${LINENO}: ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+    set -o xtrace
+fi
+set -o errexit
+set -o pipefail
+
+
+#---- support stuff
+
+function fatal {
+    echo "$0: fatal error: $*" >&2
+    exit 1
+}
+
+function usage {
+    echo "Usage: $0 -n <name> -s <stamp> -d <proto_dir> -o <output.sh>" >&2
+    exit 2
+}
+
+
+#---- mainline
+
+NAME=""
+STAMP=""
+PROTO=""
+OUTPUT=""
+
+while getopts "n:s:d:o:" c; do
+    case "$c" in
+        n) NAME=$OPTARG ;;
+        s) STAMP=$OPTARG ;;
+        d) PROTO=$OPTARG ;;
+        o) OUTPUT=$OPTARG ;;
+        *) usage ;;
+    esac
+done
+
+[[ -n "$NAME"   ]] || usage
+[[ -n "$STAMP"  ]] || usage
+[[ -n "$PROTO"  ]] || usage
+[[ -n "$OUTPUT" ]] || usage
+
+[[ -d "$PROTO" ]] || fatal "proto dir not found: $PROTO"
+[[ -f "$PROTO/install.sh" ]] || fatal "missing $PROTO/install.sh (mk-shar convention)"
+
+# Locate our sibling md5sum shim. GNU shar's extraction code calls
+# md5sum at runtime to verify integrity; the illumos GZ doesn't ship
+# one, so we embed a fallback (same approach as sdcadm's mk-shar).
+MK_SHAR_DIR=$(cd "$(dirname "$0")" && pwd)
+MD5SUM_SHIM="$MK_SHAR_DIR/md5sum-for-smartos-gz"
+[[ -f "$MD5SUM_SHIM" ]] || fatal "md5sum shim missing: $MD5SUM_SHIM"
+
+# Need GNU sharutils — macOS's BSD shar doesn't support -Q and uses a very
+# different shar format (plain cat, not uudecoded).
+SHAR=""
+if command -v gshar >/dev/null 2>&1 && gshar --version 2>/dev/null | grep -q 'GNU sharutils'; then
+    SHAR=gshar
+elif command -v shar >/dev/null 2>&1 && shar --version 2>/dev/null | grep -q 'GNU sharutils'; then
+    SHAR=shar
+fi
+[[ -n "$SHAR" ]] || fatal "GNU sharutils not found. On SmartOS: 'pkgin -y in gsharutils'. On macOS: 'brew install sharutils' (installs as 'gshar')."
+
+# Pick GNU tar if available (gtar on illumos, tar on Linux). macOS ships
+# BSD tar but it also accepts the flags we use.
+if command -v gtar >/dev/null 2>&1; then
+    TAR=gtar
+else
+    TAR=tar
+fi
+
+
+#---- build contents.tgz inside the proto dir
+
+CONTENTS=$(cd "$PROTO" && ls | grep -v '^install\.sh$' | xargs || true)
+if [[ -n "$CONTENTS" ]]; then
+    (cd "$PROTO" \
+        && $TAR -czf contents.tgz $CONTENTS \
+        && rm -rf $CONTENTS)
+else
+    # No non-install.sh content; produce an empty tarball so the
+    # extractor's `tar -xzf contents.tgz` is still well-defined.
+    (cd "$PROTO" && $TAR -czf contents.tgz -T /dev/null)
+fi
+
+
+#---- write the shar
+#
+# Structure of the output:
+#
+#   [preamble 1]  — interpolated NAME/STAMP; sets TRACE/errexit, mktemp
+#                   a TMPDIR, installs the md5sum shim onto PATH.
+#   [shim]        — verbatim contents of md5sum-for-smartos-gz, embedded
+#                   via a quoted here-doc so $-substitutions in the shim
+#                   stay literal until runtime.
+#   [preamble 2]  — closes the shim heredoc and chmods +x the shim.
+#   [shar body]   — GNU shar -Q uuencoded install.sh + contents.tgz.
+#                   Strip shar's trailing 'exit 0' so our postamble runs.
+#   [postamble]   — untar contents.tgz, exec install.sh with $@.
+#
+
+cat <<HEADER1_END > "$OUTPUT"
+#!/bin/bash
+#
+# $NAME installer — self-extracting shell archive. Built by mk-shar.
+#
+# Honor TRACE=1 so sdcadm's installer-run stays debuggable (sdcadm sets
+# this on its exec of the shar).
+#
+
+if [[ -n "\$TRACE" ]]; then
+    export PS4='[\D{%FT%TZ}] \${BASH_SOURCE}:\${LINENO}: \${FUNCNAME[0]:+\${FUNCNAME[0]}(): }'
+    set -o xtrace
+fi
+set -o errexit
+set -o pipefail
+
+echo "Extracting $NAME $STAMP"
+
+TMPDIR=\$(mktemp -d -t $NAME-shar.XXXXXX)
+# cd / before rm so the cleanup isn't trying to remove our cwd.
+trap 'cd /; rm -rf "\$TMPDIR"' EXIT
+cd "\$TMPDIR"
+
+# GNU shar's extraction code calls md5sum to verify file integrity.
+# The illumos GZ doesn't ship md5sum; inject a shim (openssl-backed)
+# onto PATH before the shar body runs. Same approach sdcadm uses.
+mkdir -p "\$TMPDIR/.bin"
+export PATH="\$TMPDIR/.bin:\$PATH"
+cat > "\$TMPDIR/.bin/md5sum" <<'MD5SUM_SHIM_END'
+HEADER1_END
+
+cat "$MD5SUM_SHIM" >> "$OUTPUT"
+
+cat <<'HEADER2_END' >> "$OUTPUT"
+MD5SUM_SHIM_END
+chmod 755 "$TMPDIR/.bin/md5sum"
+
+HEADER2_END
+
+(cd "$PROTO" && $SHAR -Q install.sh contents.tgz | grep -v '^exit') >> "$OUTPUT"
+
+cat <<'POSTAMBLE_END' >> "$OUTPUT"
+
+tar -xzf contents.tgz
+bash ./install.sh "$@"
+exit 0
+POSTAMBLE_END
+
+chmod 755 "$OUTPUT"
+
+echo "Wrote $OUTPUT"

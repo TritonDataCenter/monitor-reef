@@ -139,10 +139,143 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_patch("AccessKeyStatus", &value_enum_patch);
 }
 
+fn configure_triton_gateway(settings: &mut GenerationSettings) {
+    // Merged spec covers both the tritonapi surface and cloudapi (proxied).
+    // ValueEnum patches mirror cloudapi's list — every enum that cloudapi-
+    // client patches is present in the merged spec and can be used as a
+    // CLI argument (see CLAUDE.md §3 "client-generator Patch Consistency").
+    // triton-api itself has no clap::ValueEnum enums today; add patches
+    // here if any are introduced.
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_inner_type(syn::parse_quote!(crate::auth::GatewayAuthConfig))
+        .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
+        .with_derive("schemars::JsonSchema")
+        // Replace Progenitor's generated copies of newtype schemas with the
+        // canonical cloudapi-api versions so field types agree across the
+        // hand-written and generated code paths (mirrors cloudapi-client).
+        .with_replacement("Tags", "cloudapi_api::Tags", std::iter::empty())
+        .with_replacement(
+            "MetadataObject",
+            "cloudapi_api::Metadata",
+            std::iter::empty(),
+        )
+        .with_replacement("RoleTags", "cloudapi_api::RoleTags", std::iter::empty())
+        .with_replacement(
+            "ProvisioningLimits",
+            "cloudapi_api::ProvisioningLimits",
+            std::iter::empty(),
+        )
+        .with_replacement("Resolvers", "cloudapi_api::Resolvers", std::iter::empty())
+        .with_replacement(
+            "PolicyRules",
+            "cloudapi_api::PolicyRules",
+            std::iter::empty(),
+        )
+        .with_replacement("ImageAcl", "cloudapi_api::ImageAcl", std::iter::empty())
+        .with_replacement(
+            "AffinityRules",
+            "cloudapi_api::AffinityRules",
+            std::iter::empty(),
+        )
+        .with_replacement("NetworkIds", "cloudapi_api::NetworkIds", std::iter::empty())
+        .with_patch("Brand", &value_enum_patch)
+        .with_patch("Brand2", &value_enum_patch)
+        .with_patch("VmBrand", &value_enum_patch)
+        .with_patch("MachineState", &value_enum_patch)
+        .with_patch("MachineType", &value_enum_patch)
+        .with_patch("ImageState", &value_enum_patch)
+        .with_patch("ImageType", &value_enum_patch)
+        .with_patch("DiskState", &value_enum_patch)
+        .with_patch("MigrationAction", &value_enum_patch)
+        .with_patch("MigrationState", &value_enum_patch)
+        .with_patch("NicState", &value_enum_patch)
+        .with_patch("SnapshotState", &value_enum_patch)
+        .with_patch("VolumeState", &value_enum_patch)
+        .with_patch("VolumeType", &value_enum_patch)
+        .with_patch("AccessKeyStatus", &value_enum_patch);
+}
+
+fn configure_sapi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("ServiceType", &value_enum_patch)
+        .with_patch("UpdateAction", &value_enum_patch)
+        .with_patch("SapiMode", &value_enum_patch);
+}
+
+fn configure_imgapi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("ImageState", &value_enum_patch)
+        .with_patch("ImageType", &value_enum_patch)
+        .with_patch("ImageOs", &value_enum_patch)
+        .with_patch("FileCompression", &value_enum_patch)
+        .with_patch("StorageType", &value_enum_patch);
+}
+
+fn configure_papi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("Brand", &value_enum_patch)
+        .with_patch("AllocServerSpread", &value_enum_patch)
+        .with_patch("BackendStatus", &value_enum_patch)
+        .with_patch("SortOrder", &value_enum_patch);
+}
+
+fn configure_napi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("NicState", &value_enum_patch)
+        .with_patch("BelongsToType", &value_enum_patch)
+        .with_patch("LacpMode", &value_enum_patch)
+        .with_patch("NetworkFamily", &value_enum_patch)
+        .with_patch("MorayServiceStatus", &value_enum_patch)
+        .with_patch("PingStatus", &value_enum_patch);
+}
+
 fn configure_jira(settings: &mut GenerationSettings) {
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged);
+}
+
+fn configure_mahi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("ObjectType", &value_enum_patch)
+        .with_patch("CredentialType", &value_enum_patch)
+        .with_patch("ArnPartition", &value_enum_patch);
+}
+
+fn configure_mahi_sitter(settings: &mut GenerationSettings) {
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema");
 }
 
 /// Registry of all managed clients.
@@ -160,16 +293,58 @@ static CLIENTS: &[ClientConfig] = &[
         configure: configure_cloudapi,
     },
     ClientConfig {
+        name: "sapi-client",
+        spec_path: "openapi-specs/patched/sapi-api.json",
+        output_path: "clients/internal/sapi-client/src/generated.rs",
+        configure: configure_sapi,
+    },
+    ClientConfig {
+        name: "napi-client",
+        spec_path: "openapi-specs/patched/napi-api.json",
+        output_path: "clients/internal/napi-client/src/generated.rs",
+        configure: configure_napi,
+    },
+    ClientConfig {
         name: "jira-client",
         spec_path: "openapi-specs/generated/jira-api.json",
         output_path: "clients/internal/jira-client/src/generated.rs",
         configure: configure_jira,
     },
     ClientConfig {
+        name: "imgapi-client",
+        spec_path: "openapi-specs/patched/imgapi-api.json",
+        output_path: "clients/internal/imgapi-client/src/generated.rs",
+        configure: configure_imgapi,
+    },
+    ClientConfig {
+        name: "papi-client",
+        spec_path: "openapi-specs/patched/papi-api.json",
+        output_path: "clients/internal/papi-client/src/generated.rs",
+        configure: configure_papi,
+    },
+    ClientConfig {
         name: "vmapi-client",
-        spec_path: "openapi-specs/generated/vmapi-api.json",
+        spec_path: "openapi-specs/patched/vmapi-api.json",
         output_path: "clients/internal/vmapi-client/src/generated.rs",
         configure: configure_vmapi,
+    },
+    ClientConfig {
+        name: "mahi-client",
+        spec_path: "openapi-specs/patched/mahi-api.json",
+        output_path: "clients/internal/mahi-client/src/generated.rs",
+        configure: configure_mahi,
+    },
+    ClientConfig {
+        name: "mahi-sitter-client",
+        spec_path: "openapi-specs/patched/mahi-sitter-api.json",
+        output_path: "clients/internal/mahi-sitter-client/src/generated.rs",
+        configure: configure_mahi_sitter,
+    },
+    ClientConfig {
+        name: "triton-gateway-client",
+        spec_path: "openapi-specs/patched/triton-gateway-api.json",
+        output_path: "clients/internal/triton-gateway-client/src/generated.rs",
+        configure: configure_triton_gateway,
     },
 ];
 

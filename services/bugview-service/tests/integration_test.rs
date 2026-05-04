@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Integration tests for bugview-service using jira-stub-server
 //!
@@ -27,6 +27,8 @@ impl Drop for ProcessGuard {
 /// with the progenitor-generated jira-client.
 #[tokio::test]
 async fn test_jira_stub_server_with_progenitor_client() {
+    triton_tls::install_default_crypto_provider();
+
     // ========================================================================
     // Step 1: Start the JIRA stub server
     // ========================================================================
@@ -164,6 +166,8 @@ async fn test_jira_stub_server_with_progenitor_client() {
 /// Test that the stub server correctly filters by label
 #[tokio::test]
 async fn test_stub_jira_label_filtering() {
+    triton_tls::install_default_crypto_provider();
+
     let jira_fixtures_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jira-stub-server/fixtures");
 
@@ -231,6 +235,8 @@ async fn test_stub_jira_label_filtering() {
 /// 3. The filtering is done by bugview based on labels
 #[tokio::test]
 async fn test_non_public_issues_filtered() {
+    triton_tls::install_default_crypto_provider();
+
     let jira_fixtures_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jira-stub-server/fixtures");
 
@@ -341,6 +347,8 @@ async fn test_non_public_issues_filtered() {
 /// 3. JSON responses have expected structure
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bugview_service_e2e() {
+    triton_tls::install_default_crypto_provider();
+
     // ========================================================================
     // Step 1: Start jira-stub-server
     // ========================================================================

@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
 use serde::Deserialize;
+use triton_gateway_client::TypedClient;
 
 use crate::define_columns;
 use crate::output::json;
@@ -200,7 +200,7 @@ pub async fn list_policies(
         json::print_json_stream(&policies)?;
     } else {
         define_columns! {
-            PolicyColumn for cloudapi_client::types::Policy, long_from: 3, {
+            PolicyColumn for triton_gateway_client::types::Policy, long_from: 3, {
                 Name("NAME") => |policy| policy.name.clone(),
                 Description("DESCRIPTION") => |policy| {
                     policy.description.clone().unwrap_or_else(|| "-".to_string())
@@ -262,7 +262,7 @@ async fn create_policy(args: PolicyCreateArgs, client: &TypedClient, use_json: b
         ));
     }
 
-    let request = cloudapi_client::types::CreatePolicyRequest {
+    let request = triton_gateway_client::types::CreatePolicyRequest {
         name: args.name.clone(),
         rules: args.rule.into(),
         description: args.description,
@@ -289,7 +289,7 @@ async fn create_policy(args: PolicyCreateArgs, client: &TypedClient, use_json: b
 async fn update_policy(args: PolicyUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::UpdatePolicyRequest {
+    let request = triton_gateway_client::types::UpdatePolicyRequest {
         name: args.name,
         rules: if args.rule.is_empty() {
             None
@@ -454,7 +454,7 @@ async fn add_policy_from_file(
 
     // Create the policy
     let account = client.effective_account();
-    let request = cloudapi_client::types::CreatePolicyRequest {
+    let request = triton_gateway_client::types::CreatePolicyRequest {
         name: name.clone(),
         rules: rules.into(),
         description,
@@ -492,7 +492,10 @@ struct PolicyEdit {
 }
 
 /// Convert a Policy to commented YAML for editing
-fn policy_to_commented_yaml(policy: &cloudapi_client::types::Policy, account: &str) -> String {
+fn policy_to_commented_yaml(
+    policy: &triton_gateway_client::types::Policy,
+    account: &str,
+) -> String {
     let rules = editor::format_yaml_list(&policy.rules, "  ");
     let description = policy.description.as_deref().unwrap_or("");
 
@@ -559,7 +562,7 @@ async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result
                 }
 
                 // Build update request
-                let request = cloudapi_client::types::UpdatePolicyRequest {
+                let request = triton_gateway_client::types::UpdatePolicyRequest {
                     name: Some(edited.name.clone()),
                     rules: Some(edited.rules.into()),
                     description: edited.description,
