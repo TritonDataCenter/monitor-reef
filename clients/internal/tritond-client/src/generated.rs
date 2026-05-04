@@ -3104,13 +3104,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for registering a new SSH key in a silo's catalog. The server assigns `id`, `fingerprint`, and `created_at`; the owning silo comes from the URL path."]
+    #[doc = "Request body for registering a new SSH key in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id`, `fingerprint`, and `created_at`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for registering a new SSH key in a silo's catalog. The server assigns `id`, `fingerprint`, and `created_at`; the owning silo comes from the URL path.\","]
+    #[doc = "  \"description\": \"Request body for registering a new SSH key in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id`, `fingerprint`, and `created_at`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\","]
@@ -4180,13 +4180,13 @@ pub mod types {
         }
     }
 
-    #[doc = "User-supplied SSH public key, registered in a silo's catalog so instance launches can pick keys to inject into authorized_keys. Phase 0 is silo-scoped (any user in the silo can pick from the pool). A future slice may add per-user ownership; the silo_id field is forward-compatible with that.\n\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting."]
+    #[doc = "User-supplied SSH public key, registered into one of five possible scopes (see [`SshKeyScope`]) so instance launches can pick keys to inject into authorized_keys. The User scope is the load-bearing one in practice (every user has their own personal keys); the other scopes mirror [`Image`] for symmetry and to support shared deployment keys.\n\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"User-supplied SSH public key, registered in a silo's catalog so instance launches can pick keys to inject into authorized_keys. Phase 0 is silo-scoped (any user in the silo can pick from the pool). A future slice may add per-user ownership; the silo_id field is forward-compatible with that.\\n\\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting.\","]
+    #[doc = "  \"description\": \"User-supplied SSH public key, registered into one of five possible scopes (see [`SshKeyScope`]) so instance launches can pick keys to inject into authorized_keys. The User scope is the load-bearing one in practice (every user has their own personal keys); the other scopes mirror [`Image`] for symmetry and to support shared deployment keys.\\n\\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -4195,7 +4195,7 @@ pub mod types {
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"public_key\","]
-    #[doc = "    \"silo_id\""]
+    #[doc = "    \"scope\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created_at\": {"]
@@ -4220,9 +4220,13 @@ pub mod types {
     #[doc = "      \"description\": \"OpenSSH-formatted public key — `<algo> <base64> [comment]`. Server-validated at create time; rejected with 400 if the `ssh-key` crate refuses to parse it.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"description\": \"Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SshKeyScope\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4240,13 +4244,133 @@ pub mod types {
         pub name: ::std::string::String,
         #[doc = "OpenSSH-formatted public key — `<algo> <base64> [comment]`. Server-validated at create time; rejected with 400 if the `ssh-key` crate refuses to parse it."]
         pub public_key: ::std::string::String,
-        pub silo_id: ::uuid::Uuid,
+        #[doc = "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed."]
+        pub scope: SshKeyScope,
     }
 
     impl SshKey {
         pub fn builder() -> builder::SshKey {
             Default::default()
         }
+    }
+
+    #[doc = "Visibility scope of an [`SshKey`]. Same shape as [`ImageScope`] — see Slice F. User scope is the most common in practice (every user owns their own personal keys); Public is for operator-distributed emergency-access keys; Silo / Tenant / Project are for shared deployment keys.\n\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on [`SshKey`]. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Visibility scope of an [`SshKey`]. Same shape as [`ImageScope`] — see Slice F. User scope is the most common in practice (every user owns their own personal keys); Public is for operator-distributed emergency-access keys; Silo / Tenant / Project are for shared deployment keys.\\n\\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on [`SshKey`]. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"public\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"silo_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"silo\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"silo_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"tenant_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"tenant\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"tenant_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"project_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"project\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"project_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"user_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"user\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"user_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind")]
+    pub enum SshKeyScope {
+        #[serde(rename = "public")]
+        Public,
+        #[serde(rename = "silo")]
+        Silo { silo_id: ::uuid::Uuid },
+        #[serde(rename = "tenant")]
+        Tenant { tenant_id: ::uuid::Uuid },
+        #[serde(rename = "project")]
+        Project { project_id: ::uuid::Uuid },
+        #[serde(rename = "user")]
+        User { user_id: ::uuid::Uuid },
     }
 
     #[doc = "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`, `ipv6_block ⊆ vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet)."]
@@ -9400,7 +9524,7 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             public_key: ::std::result::Result<::std::string::String, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            scope: ::std::result::Result<super::SshKeyScope, ::std::string::String>,
         }
 
         impl ::std::default::Default for SshKey {
@@ -9412,7 +9536,7 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
                     public_key: Err("no value supplied for public_key".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
                 }
             }
         }
@@ -9478,14 +9602,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for public_key: {e}"));
                 self
             }
-            pub fn silo_id<T>(mut self, value: T) -> Self
+            pub fn scope<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T: ::std::convert::TryInto<super::SshKeyScope>,
                 T::Error: ::std::fmt::Display,
             {
-                self.silo_id = value
+                self.scope = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
                 self
             }
         }
@@ -9502,7 +9626,7 @@ pub mod types {
                     id: value.id?,
                     name: value.name?,
                     public_key: value.public_key?,
-                    silo_id: value.silo_id?,
+                    scope: value.scope?,
                 })
             }
         }
@@ -9516,7 +9640,7 @@ pub mod types {
                     id: Ok(value.id),
                     name: Ok(value.name),
                     public_key: Ok(value.public_key),
-                    silo_id: Ok(value.silo_id),
+                    scope: Ok(value.scope),
                 }
             }
         }
@@ -10202,6 +10326,16 @@ impl Client {
         builder::Refresh::new(self)
     }
 
+    #[doc = "List the calling user's `User`-scoped SSH keys. Returns\n\nonly the caller's own keys; the bound user_id is resolved from the authenticated principal.\n\nSends a `GET` request to `/v2/auth/ssh-keys`\n\n```ignore\nlet response = client.list_my_ssh_keys()\n    .send()\n    .await;\n```"]
+    pub fn list_my_ssh_keys(&self) -> builder::ListMySshKeys<'_> {
+        builder::ListMySshKeys::new(self)
+    }
+
+    #[doc = "Register a `User`-scoped SSH key owned by the caller\n\nSends a `POST` request to `/v2/auth/ssh-keys`\n\n```ignore\nlet response = client.create_my_ssh_key()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_my_ssh_key(&self) -> builder::CreateMySshKey<'_> {
+        builder::CreateMySshKey::new(self)
+    }
+
     #[doc = "Approve a Pending compute node by claim code. Mints the\n\nper-CN API key inside the same transaction that flips state; the plaintext is delivered to the agent via its long-poll on `/register/status`. Per-source-IP rate-limited.\n\nReturns 404 for unknown / expired / already-approved codes (conflated to defeat enumeration). Returns 429 when the per-IP bucket is drained.\n\nThe path is `/v2/cn-approvals` rather than nested under `/v2/cns/...` because Dropshot's router cannot disambiguate a literal `approve` segment from the `{server_uuid}` parameter at the same level.\n\nSends a `POST` request to `/v2/cn-approvals`\n\n```ignore\nlet response = client.approve_cn()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn approve_cn(&self) -> builder::ApproveCn<'_> {
         builder::ApproveCn::new(self)
@@ -10287,24 +10421,14 @@ impl Client {
         builder::CreateSiloImage::new(self)
     }
 
-    #[doc = "List the SSH keys registered in a silo's catalog\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the SSH keys whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_ssh_keys(&self) -> builder::ListSiloSshKeys<'_> {
         builder::ListSiloSshKeys::new(self)
     }
 
-    #[doc = "Register an SSH key in a silo's catalog. The server parses\n\n`public_key` as openssh format and computes the SHA-256 fingerprint. Returns 400 if the key cannot be parsed, 409 if the name or fingerprint is already in use within the silo.\n\nSends a `POST` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.create_silo_ssh_key()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Silo`-scoped SSH key. The server parses\n\n`public_key` as openssh format and computes the SHA-256 fingerprint. Returns 400 if the key cannot be parsed, 409 if the name or fingerprint is already in use within the silo.\n\nSends a `POST` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.create_silo_ssh_key()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_ssh_key(&self) -> builder::CreateSiloSshKey<'_> {
         builder::CreateSiloSshKey::new(self)
-    }
-
-    #[doc = "Read a single SSH key. Returns 404 when the key does not\n\nexist or belongs to a different silo.\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}`\n\n```ignore\nlet response = client.get_silo_ssh_key()\n    .silo_id(silo_id)\n    .ssh_key_id(ssh_key_id)\n    .send()\n    .await;\n```"]
-    pub fn get_silo_ssh_key(&self) -> builder::GetSiloSshKey<'_> {
-        builder::GetSiloSshKey::new(self)
-    }
-
-    #[doc = "Delete an SSH key. Returns 404 when the key does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}`\n\n```ignore\nlet response = client.delete_silo_ssh_key()\n    .silo_id(silo_id)\n    .ssh_key_id(ssh_key_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_silo_ssh_key(&self) -> builder::DeleteSiloSshKey<'_> {
-        builder::DeleteSiloSshKey::new(self)
     }
 
     #[doc = "List the tenants in a silo. Operator-facing surface; root\n\ncan administer tenants directly.\n\nSends a `GET` request to `/v2/silos/{silo_id}/tenants`\n\n```ignore\nlet response = client.list_silo_tenants()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
@@ -10325,6 +10449,26 @@ impl Client {
     #[doc = "Delete a tenant. Returns 404 when the tenant does not exist\n\nor belongs to a different silo. Phase-0 deletion is permissive (does not check for child projects); the block-on-children guard belongs in a future cleanup.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/tenants/{tenant_id}`\n\n```ignore\nlet response = client.delete_silo_tenant()\n    .silo_id(silo_id)\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn delete_silo_tenant(&self) -> builder::DeleteSiloTenant<'_> {
         builder::DeleteSiloTenant::new(self)
+    }
+
+    #[doc = "List Public SSH keys. Anonymous-accessible — Public means\n\npublic, so unauthenticated probes get the catalog.\n\nSends a `GET` request to `/v2/ssh-keys`\n\n```ignore\nlet response = client.list_public_ssh_keys()\n    .send()\n    .await;\n```"]
+    pub fn list_public_ssh_keys(&self) -> builder::ListPublicSshKeys<'_> {
+        builder::ListPublicSshKeys::new(self)
+    }
+
+    #[doc = "Create a `Public` SSH key. Root-only via Cedar\n\nReturns 400 if the key cannot be parsed as openssh, 409 if the name or fingerprint is already in use among Public keys.\n\nSends a `POST` request to `/v2/ssh-keys`\n\n```ignore\nlet response = client.create_public_ssh_key()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_public_ssh_key(&self) -> builder::CreatePublicSshKey<'_> {
+        builder::CreatePublicSshKey::new(self)
+    }
+
+    #[doc = "Read a single SSH key by id. Returns 404 when the key\n\ndoes not exist OR when the principal cannot see it (cross-scope visibility deny).\n\nSends a `GET` request to `/v2/ssh-keys/{key_id}`\n\n```ignore\nlet response = client.get_ssh_key()\n    .key_id(key_id)\n    .send()\n    .await;\n```"]
+    pub fn get_ssh_key(&self) -> builder::GetSshKey<'_> {
+        builder::GetSshKey::new(self)
+    }
+
+    #[doc = "Delete an SSH key by id. Returns 404 when the key does\n\nnot exist OR the principal lacks ownership for the key's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/ssh-keys/{key_id}`\n\n```ignore\nlet response = client.delete_ssh_key()\n    .key_id(key_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_ssh_key(&self) -> builder::DeleteSshKey<'_> {
+        builder::DeleteSshKey::new(self)
     }
 
     #[doc = "Read the OIDC IdP config for a tenant. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.get_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
@@ -10482,6 +10626,16 @@ impl Client {
         builder::DeleteProjectQuota::new(self)
     }
 
+    #[doc = "List SSH keys visible to the project: Public + Silo (of\n\nproject's silo) + Tenant (of project's tenant) + Project.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`\n\n```ignore\nlet response = client.list_project_ssh_keys()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_ssh_keys(&self) -> builder::ListProjectSshKeys<'_> {
+        builder::ListProjectSshKeys::new(self)
+    }
+
+    #[doc = "Register a `Project`-scoped SSH key\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`\n\n```ignore\nlet response = client.create_project_ssh_key()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_ssh_key(&self) -> builder::CreateProjectSshKey<'_> {
+        builder::CreateProjectSshKey::new(self)
+    }
+
     #[doc = "List the VPCs inside a project. Returns 404 when the tenant or\n\nproject does not exist (or the project belongs to a different tenant).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs`\n\n```ignore\nlet response = client.list_project_vpcs()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
     pub fn list_project_vpcs(&self) -> builder::ListProjectVpcs<'_> {
         builder::ListProjectVpcs::new(self)
@@ -10520,6 +10674,16 @@ impl Client {
     #[doc = "Delete a subnet. Returns 404 when the subnet does not exist\n\nor belongs to a different tenant, project, or VPC.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}`\n\n```ignore\nlet response = client.delete_vpc_subnet()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
     pub fn delete_vpc_subnet(&self) -> builder::DeleteVpcSubnet<'_> {
         builder::DeleteVpcSubnet::new(self)
+    }
+
+    #[doc = "List SSH keys visible to the tenant: Public + Silo (of\n\ntenant's silo) + Tenant.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/ssh-keys`\n\n```ignore\nlet response = client.list_tenant_ssh_keys()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn list_tenant_ssh_keys(&self) -> builder::ListTenantSshKeys<'_> {
+        builder::ListTenantSshKeys::new(self)
+    }
+
+    #[doc = "Register a `Tenant`-scoped SSH key\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/ssh-keys`\n\n```ignore\nlet response = client.create_tenant_ssh_key()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_tenant_ssh_key(&self) -> builder::CreateTenantSshKey<'_> {
+        builder::CreateTenantSshKey::new(self)
     }
 }
 
@@ -11791,6 +11955,136 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_my_ssh_keys`]\n\n[`Client::list_my_ssh_keys`]: super::Client::list_my_ssh_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListMySshKeys<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListMySshKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/auth/ssh-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/auth/ssh-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_my_ssh_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_my_ssh_key`]\n\n[`Client::create_my_ssh_key`]: super::Client::create_my_ssh_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreateMySshKey<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewSshKey, String>,
+    }
+
+    impl<'a> CreateMySshKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSshKey>,
+            <V as std::convert::TryInto<types::NewSshKey>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSshKey` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewSshKey) -> types::builder::NewSshKey,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/auth/ssh-keys`"]
+        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/auth/ssh-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_my_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -13189,180 +13483,6 @@ pub mod builder {
         }
     }
 
-    #[doc = "Builder for [`Client::get_silo_ssh_key`]\n\n[`Client::get_silo_ssh_key`]: super::Client::get_silo_ssh_key"]
-    #[derive(Debug, Clone)]
-    pub struct GetSiloSshKey<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        ssh_key_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetSiloSshKey<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                ssh_key_id: Err("ssh_key_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn ssh_key_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.ssh_key_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for ssh_key_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                ssh_key_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let ssh_key_id = ssh_key_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/ssh-keys/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&ssh_key_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_silo_ssh_key",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_silo_ssh_key`]\n\n[`Client::delete_silo_ssh_key`]: super::Client::delete_silo_ssh_key"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteSiloSshKey<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        ssh_key_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteSiloSshKey<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                ssh_key_id: Err("ssh_key_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn ssh_key_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.ssh_key_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for ssh_key_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                ssh_key_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let ssh_key_id = ssh_key_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/ssh-keys/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&ssh_key_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_silo_ssh_key",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
     #[doc = "Builder for [`Client::list_silo_tenants`]\n\n[`Client::list_silo_tenants`]: super::Client::list_silo_tenants"]
     #[derive(Debug, Clone)]
     pub struct ListSiloTenants<'a> {
@@ -13689,6 +13809,274 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_silo_tenant",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_public_ssh_keys`]\n\n[`Client::list_public_ssh_keys`]: super::Client::list_public_ssh_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListPublicSshKeys<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListPublicSshKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/ssh-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/ssh-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_public_ssh_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_public_ssh_key`]\n\n[`Client::create_public_ssh_key`]: super::Client::create_public_ssh_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreatePublicSshKey<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewSshKey, String>,
+    }
+
+    impl<'a> CreatePublicSshKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSshKey>,
+            <V as std::convert::TryInto<types::NewSshKey>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSshKey` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewSshKey) -> types::builder::NewSshKey,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/ssh-keys`"]
+        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/ssh-keys", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_public_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_ssh_key`]\n\n[`Client::get_ssh_key`]: super::Client::get_ssh_key"]
+    #[derive(Debug, Clone)]
+    pub struct GetSshKey<'a> {
+        client: &'a super::Client,
+        key_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetSshKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key_id: Err("key_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn key_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.key_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for key_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/ssh-keys/{key_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+            let Self { client, key_id } = self;
+            let key_id = key_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/ssh-keys/{}",
+                client.baseurl,
+                encode_path(&key_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_ssh_key`]\n\n[`Client::delete_ssh_key`]: super::Client::delete_ssh_key"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSshKey<'a> {
+        client: &'a super::Client,
+        key_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSshKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key_id: Err("key_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn key_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.key_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for key_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/ssh-keys/{key_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, key_id } = self;
+            let key_id = key_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/ssh-keys/{}",
+                client.baseurl,
+                encode_path(&key_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_ssh_key",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
@@ -16769,6 +17157,209 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::list_project_ssh_keys`]\n\n[`Client::list_project_ssh_keys`]: super::Client::list_project_ssh_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectSshKeys<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectSshKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/ssh-keys",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_ssh_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_ssh_key`]\n\n[`Client::create_project_ssh_key`]: super::Client::create_project_ssh_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectSshKey<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewSshKey, String>,
+    }
+
+    impl<'a> CreateProjectSshKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSshKey>,
+            <V as std::convert::TryInto<types::NewSshKey>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSshKey` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewSshKey) -> types::builder::NewSshKey,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys`"]
+        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/ssh-keys",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::list_project_vpcs`]\n\n[`Client::list_project_vpcs`]: super::Client::list_project_vpcs"]
     #[derive(Debug, Clone)]
     pub struct ListProjectVpcs<'a> {
@@ -17632,6 +18223,176 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_tenant_ssh_keys`]\n\n[`Client::list_tenant_ssh_keys`]: super::Client::list_tenant_ssh_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListTenantSshKeys<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListTenantSshKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/ssh-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+            let Self { client, tenant_id } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/ssh-keys",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_tenant_ssh_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_tenant_ssh_key`]\n\n[`Client::create_tenant_ssh_key`]: super::Client::create_tenant_ssh_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreateTenantSshKey<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewSshKey, String>,
+    }
+
+    impl<'a> CreateTenantSshKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSshKey>,
+            <V as std::convert::TryInto<types::NewSshKey>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSshKey` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewSshKey) -> types::builder::NewSshKey,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/ssh-keys`"]
+        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewSshKey::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/ssh-keys",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_tenant_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

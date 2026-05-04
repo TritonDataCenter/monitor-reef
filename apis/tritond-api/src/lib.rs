@@ -403,12 +403,14 @@ pub struct TenantProjectVpcSubnetPath {
     pub subnet_id: Uuid,
 }
 
-/// Path parameters for endpoints that operate on a single SSH key
-/// inside a silo.
+/// Path parameter for endpoints that operate on a single SSH
+/// key by id, regardless of scope. Used by `GET
+/// /v2/ssh-keys/{key_id}` and `DELETE /v2/ssh-keys/{key_id}`.
+/// Visibility / ownership gating happens in the handler via the
+/// visibility predicate.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloSshKeyPath {
-    pub silo_id: Uuid,
-    pub ssh_key_id: Uuid,
+pub struct SshKeyPath {
+    pub key_id: Uuid,
 }
 
 /// Path parameter for endpoints that operate on a single image
@@ -1123,7 +1125,34 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List the SSH keys registered in a silo's catalog.
+    /// List Public SSH keys. Anonymous-accessible — Public means
+    /// public, so unauthenticated probes get the catalog.
+    #[endpoint {
+        method = GET,
+        path = "/v2/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn list_public_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+
+    /// Create a `Public` SSH key. Root-only via Cedar.
+    /// Returns 400 if the key cannot be parsed as openssh,
+    /// 409 if the name or fingerprint is already in use among
+    /// Public keys.
+    #[endpoint {
+        method = POST,
+        path = "/v2/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn create_public_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
+
+    /// List the SSH keys whose scope is exactly `Silo { silo_id }`
+    /// (does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys`
+    /// for the unioned tenant view).
     #[endpoint {
         method = GET,
         path = "/v2/silos/{silo_id}/ssh-keys",
@@ -1134,7 +1163,7 @@ pub trait TritondApi {
         path: Path<SiloPath>,
     ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
 
-    /// Register an SSH key in a silo's catalog. The server parses
+    /// Register a `Silo`-scoped SSH key. The server parses
     /// `public_key` as openssh format and computes the SHA-256
     /// fingerprint. Returns 400 if the key cannot be parsed, 409
     /// if the name or fingerprint is already in use within the silo.
@@ -1149,28 +1178,105 @@ pub trait TritondApi {
         body: TypedBody<NewSshKey>,
     ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
 
-    /// Read a single SSH key. Returns 404 when the key does not
-    /// exist or belongs to a different silo.
+    /// List SSH keys visible to the tenant: Public + Silo (of
+    /// tenant's silo) + Tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}",
+        path = "/v2/tenants/{tenant_id}/ssh-keys",
         tags = ["ssh-keys"],
     }]
-    async fn get_silo_ssh_key(
+    async fn list_tenant_ssh_keys(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloSshKeyPath>,
+        path: Path<TenantPath>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+
+    /// Register a `Tenant`-scoped SSH key.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn create_tenant_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantPath>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
+
+    /// List SSH keys visible to the project: Public + Silo (of
+    /// project's silo) + Tenant (of project's tenant) + Project.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn list_project_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+
+    /// Register a `Project`-scoped SSH key.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn create_project_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
+
+    /// List the calling user's `User`-scoped SSH keys. Returns
+    /// only the caller's own keys; the bound user_id is resolved
+    /// from the authenticated principal.
+    #[endpoint {
+        method = GET,
+        path = "/v2/auth/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn list_my_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+
+    /// Register a `User`-scoped SSH key owned by the caller.
+    #[endpoint {
+        method = POST,
+        path = "/v2/auth/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn create_my_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError>;
+
+    /// Read a single SSH key by id. Returns 404 when the key
+    /// does not exist OR when the principal cannot see it
+    /// (cross-scope visibility deny).
+    #[endpoint {
+        method = GET,
+        path = "/v2/ssh-keys/{key_id}",
+        tags = ["ssh-keys"],
+    }]
+    async fn get_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SshKeyPath>,
     ) -> Result<HttpResponseOk<SshKey>, HttpError>;
 
-    /// Delete an SSH key. Returns 404 when the key does not exist
-    /// or belongs to a different silo.
+    /// Delete an SSH key by id. Returns 404 when the key does
+    /// not exist OR the principal lacks ownership for the key's
+    /// scope:
+    /// * `Public` — root only.
+    /// * `Silo` / `Tenant` / `Project` — any tenant member of
+    ///   the resolved tenant (Phase 0 = same-tenant access).
+    /// * `User` — only the owning user (or root).
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}",
+        path = "/v2/ssh-keys/{key_id}",
         tags = ["ssh-keys"],
     }]
-    async fn delete_silo_ssh_key(
+    async fn delete_ssh_key(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloSshKeyPath>,
+        path: Path<SshKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List Public images. Anonymous-accessible — Public means

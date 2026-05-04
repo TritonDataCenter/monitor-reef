@@ -1625,7 +1625,101 @@ pub async fn tenant_project_vpc_subnet_delete(
     Ok(())
 }
 
-/// List SSH keys in a silo's catalog.
+/// Resolve `--public-key` / `--public-key-file` into the openssh
+/// string the API edge expects. Used by every per-scope ssh-key
+/// add command.
+fn resolve_public_key(
+    public_key: Option<String>,
+    public_key_file: Option<String>,
+) -> Result<String> {
+    match (public_key, public_key_file) {
+        (Some(s), None) => Ok(s),
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .with_context(|| format!("read public key from {path}")),
+        (None, None) => {
+            anyhow::bail!("--public-key or --public-key-file is required")
+        }
+        (Some(_), Some(_)) => unreachable!("clap conflicts_with should prevent this"),
+    }
+}
+
+fn print_ssh_keys(keys: Vec<tritond_client::types::SshKey>, json_output: bool) -> Result<()> {
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&keys)?);
+        return Ok(());
+    }
+    if keys.is_empty() {
+        println!("(no ssh keys)");
+        return Ok(());
+    }
+    for k in keys {
+        println!("{}  {}  {}", k.id, k.fingerprint, k.name);
+    }
+    Ok(())
+}
+
+fn print_ssh_key_details(key: &tritond_client::types::SshKey) {
+    println!("  scope:       {:?}", key.scope);
+    println!("  name:        {}", key.name);
+    println!("  description: {}", key.description);
+    println!("  fingerprint: {}", key.fingerprint);
+    println!("  public_key:  {}", key.public_key);
+    println!("  created:     {}", key.created_at);
+}
+
+/// List Public SSH keys. Anonymous-accessible.
+pub async fn public_ssh_key_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let keys = client
+        .list_public_ssh_keys()
+        .send()
+        .await
+        .context("list public ssh keys")?
+        .into_inner();
+    print_ssh_keys(keys, json_output)
+}
+
+/// Register a `Public` SSH key (root-only).
+pub async fn public_ssh_key_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    description: String,
+    public_key: Option<String>,
+    public_key_file: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let public_key = resolve_public_key(public_key, public_key_file)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let key = client
+        .create_public_ssh_key()
+        .body(tritond_client::types::NewSshKey {
+            name,
+            description: Some(description),
+            public_key,
+        })
+        .send()
+        .await
+        .context("create public ssh key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&key)?);
+    } else {
+        println!("Registered public ssh key {}", key.id);
+        print_ssh_key_details(&key);
+    }
+    Ok(())
+}
+
+/// List SSH keys whose scope is exactly `Silo { silo_id }` (does
+/// NOT include Public; use `tcadm tenant ssh-key list` for the
+/// unioned tenant view).
 pub async fn silo_ssh_key_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -1641,21 +1735,10 @@ pub async fn silo_ssh_key_list(
         .await
         .context("list ssh keys")?
         .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&keys)?);
-        return Ok(());
-    }
-    if keys.is_empty() {
-        println!("(no ssh keys)");
-        return Ok(());
-    }
-    for k in keys {
-        println!("{}  {}  {}", k.id, k.fingerprint, k.name);
-    }
-    Ok(())
+    print_ssh_keys(keys, json_output)
 }
 
-/// Register a new SSH key in a silo's catalog.
+/// Register a new `Silo`-scoped SSH key.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
@@ -1669,15 +1752,7 @@ pub async fn silo_ssh_key_add(
     public_key_file: Option<String>,
     json_output: bool,
 ) -> Result<()> {
-    let public_key = match (public_key, public_key_file) {
-        (Some(s), None) => s,
-        (None, Some(path)) => std::fs::read_to_string(&path)
-            .with_context(|| format!("read public key from {path}"))?,
-        (None, None) => {
-            anyhow::bail!("--public-key or --public-key-file is required")
-        }
-        (Some(_), Some(_)) => unreachable!("clap conflicts_with should prevent this"),
-    };
+    let public_key = resolve_public_key(public_key, public_key_file)?;
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let key = client
@@ -1696,28 +1771,191 @@ pub async fn silo_ssh_key_add(
         println!("{}", serde_json::to_string_pretty(&key)?);
     } else {
         println!("Registered ssh key {} in silo {silo_id}", key.id);
-        println!("  name:        {}", key.name);
-        println!("  description: {}", key.description);
-        println!("  fingerprint: {}", key.fingerprint);
-        println!("  created:     {}", key.created_at);
+        print_ssh_key_details(&key);
     }
     Ok(())
 }
 
-/// Read a single SSH key.
-pub async fn silo_ssh_key_get(
+/// List SSH keys visible to a tenant (Public + Silo + Tenant).
+pub async fn tenant_ssh_key_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
-    ssh_key_id: Uuid,
+    tenant_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let keys = client
+        .list_tenant_ssh_keys()
+        .tenant_id(tenant_id)
+        .send()
+        .await
+        .context("list tenant ssh keys")?
+        .into_inner();
+    print_ssh_keys(keys, json_output)
+}
+
+/// Register a `Tenant`-scoped SSH key.
+#[allow(clippy::too_many_arguments)]
+pub async fn tenant_ssh_key_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    name: String,
+    description: String,
+    public_key: Option<String>,
+    public_key_file: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let public_key = resolve_public_key(public_key, public_key_file)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let key = client
+        .create_tenant_ssh_key()
+        .tenant_id(tenant_id)
+        .body(tritond_client::types::NewSshKey {
+            name,
+            description: Some(description),
+            public_key,
+        })
+        .send()
+        .await
+        .context("create tenant ssh key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&key)?);
+    } else {
+        println!("Registered tenant ssh key {} in tenant {tenant_id}", key.id);
+        print_ssh_key_details(&key);
+    }
+    Ok(())
+}
+
+/// List SSH keys visible to a project (Public + Silo + Tenant + Project).
+pub async fn project_ssh_key_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let keys = client
+        .list_project_ssh_keys()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("list project ssh keys")?
+        .into_inner();
+    print_ssh_keys(keys, json_output)
+}
+
+/// Register a `Project`-scoped SSH key.
+#[allow(clippy::too_many_arguments)]
+pub async fn project_ssh_key_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    name: String,
+    description: String,
+    public_key: Option<String>,
+    public_key_file: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let public_key = resolve_public_key(public_key, public_key_file)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let key = client
+        .create_project_ssh_key()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .body(tritond_client::types::NewSshKey {
+            name,
+            description: Some(description),
+            public_key,
+        })
+        .send()
+        .await
+        .context("create project ssh key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&key)?);
+    } else {
+        println!(
+            "Registered project ssh key {} in project {project_id}",
+            key.id
+        );
+        print_ssh_key_details(&key);
+    }
+    Ok(())
+}
+
+/// List the caller's `User`-scoped SSH keys.
+pub async fn auth_ssh_key_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let keys = client
+        .list_my_ssh_keys()
+        .send()
+        .await
+        .context("list my ssh keys")?
+        .into_inner();
+    print_ssh_keys(keys, json_output)
+}
+
+/// Register a `User`-scoped SSH key owned by the caller.
+pub async fn auth_ssh_key_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    description: String,
+    public_key: Option<String>,
+    public_key_file: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let public_key = resolve_public_key(public_key, public_key_file)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let key = client
+        .create_my_ssh_key()
+        .body(tritond_client::types::NewSshKey {
+            name,
+            description: Some(description),
+            public_key,
+        })
+        .send()
+        .await
+        .context("create my ssh key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&key)?);
+    } else {
+        println!("Registered user-scoped ssh key {}", key.id);
+        print_ssh_key_details(&key);
+    }
+    Ok(())
+}
+
+/// Read a single SSH key by id (works regardless of scope; the
+/// server applies the visibility filter).
+pub async fn ssh_key_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    key_id: Uuid,
     json_output: bool,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let key = client
-        .get_silo_ssh_key()
-        .silo_id(silo_id)
-        .ssh_key_id(ssh_key_id)
+        .get_ssh_key()
+        .key_id(key_id)
         .send()
         .await
         .context("get ssh key")?
@@ -1725,33 +1963,28 @@ pub async fn silo_ssh_key_get(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&key)?);
     } else {
-        println!("SshKey {} in silo {silo_id}", key.id);
-        println!("  name:        {}", key.name);
-        println!("  description: {}", key.description);
-        println!("  fingerprint: {}", key.fingerprint);
-        println!("  public_key:  {}", key.public_key);
-        println!("  created:     {}", key.created_at);
+        println!("SshKey {}", key.id);
+        print_ssh_key_details(&key);
     }
     Ok(())
 }
 
-/// Delete an SSH key.
-pub async fn silo_ssh_key_delete(
+/// Delete an SSH key by id. Ownership is enforced server-side
+/// based on the key's scope.
+pub async fn ssh_key_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
-    silo_id: Uuid,
-    ssh_key_id: Uuid,
+    key_id: Uuid,
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     client
-        .delete_silo_ssh_key()
-        .silo_id(silo_id)
-        .ssh_key_id(ssh_key_id)
+        .delete_ssh_key()
+        .key_id(key_id)
         .send()
         .await
         .context("delete ssh key")?;
-    println!("Deleted ssh key {ssh_key_id} from silo {silo_id}");
+    println!("Deleted ssh key {key_id}");
     Ok(())
 }
 

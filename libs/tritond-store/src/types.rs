@@ -474,11 +474,12 @@ impl From<ApiKey> for ApiKeyView {
     }
 }
 
-/// User-supplied SSH public key, registered in a silo's catalog so
-/// instance launches can pick keys to inject into authorized_keys.
-/// Phase 0 is silo-scoped (any user in the silo can pick from the
-/// pool). A future slice may add per-user ownership; the silo_id
-/// field is forward-compatible with that.
+/// User-supplied SSH public key, registered into one of five
+/// possible scopes (see [`SshKeyScope`]) so instance launches can
+/// pick keys to inject into authorized_keys. The User scope is the
+/// load-bearing one in practice (every user has their own personal
+/// keys); the other scopes mirror [`Image`] for symmetry and to
+/// support shared deployment keys.
 ///
 /// The server validates the openssh wire format at create time and
 /// computes the SHA-256 fingerprint. The raw `public_key` string is
@@ -487,7 +488,11 @@ impl From<ApiKey> for ApiKeyView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SshKey {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    /// Visibility scope. The variant carries the parent identity
+    /// (silo_id / tenant_id / project_id / user_id) for the
+    /// non-Public scopes; visibility checks resolve up the
+    /// project → tenant → silo chain when needed.
+    pub scope: SshKeyScope,
     pub name: String,
     pub description: String,
     /// OpenSSH-formatted public key — `<algo> <base64> [comment]`.
@@ -501,15 +506,76 @@ pub struct SshKey {
     pub created_at: DateTime<Utc>,
 }
 
-/// Request body for registering a new SSH key in a silo's catalog.
-/// The server assigns `id`, `fingerprint`, and `created_at`; the
-/// owning silo comes from the URL path.
+/// Request body for registering a new SSH key in any scope's
+/// catalog. The owning scope (Public / Silo / Tenant / Project /
+/// User) is inferred from the URL path the request hit, *not*
+/// from the body. The server assigns `id`, `fingerprint`, and
+/// `created_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewSshKey {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
     pub public_key: String,
+}
+
+/// Visibility scope of an [`SshKey`]. Same shape as
+/// [`ImageScope`] — see Slice F. User scope is the most common
+/// in practice (every user owns their own personal keys); Public
+/// is for operator-distributed emergency-access keys; Silo /
+/// Tenant / Project are for shared deployment keys.
+///
+/// The variant carries everything the visibility predicate needs
+/// — there are no denormalised silo_id / tenant_id fields on
+/// [`SshKey`]. For `Project`, the resolver looks up the project
+/// to derive its tenant + silo when needed; for `Tenant`, the
+/// resolver looks up the tenant for its silo when needed. Cold
+/// path; correctness > one extra read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum SshKeyScope {
+    Public,
+    Silo { silo_id: Uuid },
+    Tenant { tenant_id: Uuid },
+    Project { project_id: Uuid },
+    User { user_id: Uuid },
+}
+
+impl SshKeyScope {
+    /// "Namespace key" used by [`derive_ssh_key_id`] so the same
+    /// fingerprint in different scopes produces different ssh-key
+    /// ids (no cross-scope collisions). Returns:
+    /// * `Uuid::nil()` for `Public`.
+    /// * `silo_id` for `Silo`.
+    /// * `tenant_id` for `Tenant`.
+    /// * `project_id` for `Project`.
+    /// * `user_id` for `User`.
+    #[must_use]
+    pub fn namespace_id(&self) -> Uuid {
+        match self {
+            SshKeyScope::Public => Uuid::nil(),
+            SshKeyScope::Silo { silo_id } => *silo_id,
+            SshKeyScope::Tenant { tenant_id } => *tenant_id,
+            SshKeyScope::Project { project_id } => *project_id,
+            SshKeyScope::User { user_id } => *user_id,
+        }
+    }
+
+    /// Stable short tag used as a discriminator inside
+    /// [`derive_ssh_key_id`] so two scopes whose namespace UUIDs
+    /// happen to collide (vanishingly unlikely, but possible)
+    /// still produce distinct ssh-key ids.
+    #[must_use]
+    pub fn namespace_tag(&self) -> &'static str {
+        match self {
+            SshKeyScope::Public => "public",
+            SshKeyScope::Silo { .. } => "silo",
+            SshKeyScope::Tenant { .. } => "tenant",
+            SshKeyScope::Project { .. } => "project",
+            SshKeyScope::User { .. } => "user",
+        }
+    }
 }
 
 /// Visibility scope of an [`Image`]. The variant determines who
@@ -809,6 +875,129 @@ mod derive_image_id_tests {
         assert_eq!(
             TRITOND_IMAGE_NAMESPACE.to_string(),
             "b5b50a2c-f06c-4909-9452-11e2efd7cd67",
+        );
+    }
+}
+
+/// Stable namespace for [`derive_ssh_key_id`]. Picked once on
+/// 2026-05-03; **never change this value** — it would
+/// retroactively re-key every persisted SSH key. Generated via
+/// `python3 -c 'import uuid; print(uuid.uuid4())'`.
+pub const TRITOND_SSH_KEY_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x6a, 0x4f, 0x9e, 0x12, 0x7d, 0x3b, 0x4e, 0x55, 0x90, 0x21, 0x4d, 0x82, 0x1f, 0x6c, 0xa1, 0x09,
+]);
+
+/// Derive an SSH-key UUID from its owning scope + openssh
+/// fingerprint.
+///
+/// Uses UUID v5 (SHA-1-based) over a fixed tritond namespace so
+/// the mapping `(scope, fingerprint) → uuid` is stable across
+/// hosts and cluster replays. The same key registered in the
+/// same scope under two different names yields the same id,
+/// which makes idempotent re-create safe.
+///
+/// **Why scope-keyed and not fingerprint-only.** SSH-key records
+/// carry `scope` as part of their identity (the same fingerprint
+/// in two different silos / tenants / projects / users must
+/// coexist as separate records). The scope's `namespace_tag()`
+/// and `namespace_id()` are folded into the v5 input so two
+/// scopes can never produce the same id even if their parent
+/// UUIDs somehow collide.
+///
+/// `fingerprint` is folded in verbatim — it's already a stable,
+/// canonical SHA-256 string produced by the `ssh-key` crate's
+/// `PublicKey::fingerprint(...)`, so no normalisation is needed.
+#[must_use]
+pub fn derive_ssh_key_id(scope: &SshKeyScope, fingerprint: &str) -> Uuid {
+    let tag = scope.namespace_tag();
+    let ns_id = scope.namespace_id();
+    let mut input = Vec::with_capacity(tag.len() + 1 + 16 + 1 + fingerprint.len());
+    input.extend_from_slice(tag.as_bytes());
+    input.push(b':');
+    input.extend_from_slice(ns_id.as_bytes());
+    input.push(b':');
+    input.extend_from_slice(fingerprint.as_bytes());
+    Uuid::new_v5(&TRITOND_SSH_KEY_NAMESPACE, &input)
+}
+
+#[cfg(test)]
+mod derive_ssh_key_id_tests {
+    use super::*;
+
+    fn fixture_silo_scope() -> SshKeyScope {
+        SshKeyScope::Silo {
+            silo_id: Uuid::from_bytes([0xab; 16]),
+        }
+    }
+
+    #[test]
+    fn deterministic_for_same_inputs() {
+        let s = fixture_silo_scope();
+        assert_eq!(
+            derive_ssh_key_id(&s, "SHA256:abc123"),
+            derive_ssh_key_id(&s, "SHA256:abc123"),
+            "same (scope, fingerprint) must yield same UUID",
+        );
+    }
+
+    #[test]
+    fn different_fingerprint_yields_different_id() {
+        let s = fixture_silo_scope();
+        assert_ne!(
+            derive_ssh_key_id(&s, "SHA256:aaaa"),
+            derive_ssh_key_id(&s, "SHA256:bbbb"),
+            "distinct fingerprints must not collide",
+        );
+    }
+
+    #[test]
+    fn same_fingerprint_in_different_silos_does_not_collide() {
+        let a = SshKeyScope::Silo {
+            silo_id: Uuid::from_bytes([0x01; 16]),
+        };
+        let b = SshKeyScope::Silo {
+            silo_id: Uuid::from_bytes([0x02; 16]),
+        };
+        assert_ne!(
+            derive_ssh_key_id(&a, "SHA256:abc"),
+            derive_ssh_key_id(&b, "SHA256:abc"),
+            "same fingerprint in different silos must yield distinct ids",
+        );
+    }
+
+    #[test]
+    fn same_fingerprint_in_different_scope_kinds_does_not_collide() {
+        let id = Uuid::from_bytes([0x07; 16]);
+        let silo = SshKeyScope::Silo { silo_id: id };
+        let tenant = SshKeyScope::Tenant { tenant_id: id };
+        let project = SshKeyScope::Project { project_id: id };
+        let user = SshKeyScope::User { user_id: id };
+        let public = SshKeyScope::Public;
+        let ids = [
+            derive_ssh_key_id(&silo, "SHA256:x"),
+            derive_ssh_key_id(&tenant, "SHA256:x"),
+            derive_ssh_key_id(&project, "SHA256:x"),
+            derive_ssh_key_id(&user, "SHA256:x"),
+            derive_ssh_key_id(&public, "SHA256:x"),
+        ];
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                assert_ne!(
+                    ids[i], ids[j],
+                    "scope variants {i} and {j} must yield distinct ssh-key ids",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn namespace_pinned() {
+        // Locks the namespace constant: regenerating the namespace
+        // would re-key every persisted SSH key, so a future change
+        // here is a wire break and must be deliberate.
+        assert_eq!(
+            TRITOND_SSH_KEY_NAMESPACE.to_string(),
+            "6a4f9e12-7d3b-4e55-9021-4d821f6ca109",
         );
     }
 }

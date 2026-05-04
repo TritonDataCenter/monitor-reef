@@ -38,9 +38,10 @@ pub use types::{
     InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewProject,
     NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, Tenant, User, UserView,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, format_claim_code,
-    generate_claim_code, generate_poll_token, normalize_claim_code,
+    Quota, Silo, SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
+    TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
+    generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -343,41 +344,116 @@ pub trait Store: Send + Sync + 'static {
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
-    // SSH keys (silo-scoped catalog)
+    // SSH keys (multi-scope catalog: Public / Silo / Tenant / Project / User)
     // ------------------------------------------------------------------
 
-    /// Register an SSH key in a silo's catalog.
-    ///
-    /// The caller (the API layer) is responsible for parsing
+    /// Register a `Public` SSH key (visible to everyone). The
+    /// caller (the API layer) is responsible for parsing
     /// `req.public_key` as openssh and computing the canonical
     /// SHA-256 fingerprint. tritond-store stays free of ssh-key
     /// crate dependencies; the store treats `public_key` as opaque
     /// and trusts the supplied `fingerprint`.
     ///
     /// The store enforces:
-    ///
-    /// * The silo exists. Missing silo → [`StoreError::NotFound`].
-    /// * `name` is unique within the silo. Collision →
+    /// * `name` is unique among Public keys. Collision →
     ///   [`StoreError::Conflict`].
-    /// * `fingerprint` is unique within the silo (re-uploading the
-    ///   same key under a new name is a Conflict so the catalog
+    /// * `fingerprint` is unique among Public keys (re-uploading
+    ///   the same key under a new name is a Conflict so the catalog
     ///   doesn't accumulate aliased pool entries).
-    async fn create_ssh_key(
+    async fn create_ssh_key_public(
+        &self,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError>;
+
+    /// Register a `Silo`-scoped SSH key. Returns
+    /// [`StoreError::NotFound`] if the silo does not exist;
+    /// [`StoreError::Conflict`] if `name` or `fingerprint` is
+    /// already in use among the silo's silo-scoped keys.
+    async fn create_ssh_key_silo(
         &self,
         silo_id: Uuid,
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError>;
 
+    /// Register a `Tenant`-scoped SSH key. Returns
+    /// [`StoreError::NotFound`] if the tenant does not exist;
+    /// [`StoreError::Conflict`] if `name` or `fingerprint` is
+    /// already in use among the tenant's tenant-scoped keys.
+    async fn create_ssh_key_tenant(
+        &self,
+        tenant_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError>;
+
+    /// Register a `Project`-scoped SSH key. Returns
+    /// [`StoreError::NotFound`] if the project does not exist;
+    /// [`StoreError::Conflict`] if `name` or `fingerprint` is
+    /// already in use among the project's project-scoped keys.
+    async fn create_ssh_key_project(
+        &self,
+        project_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError>;
+
+    /// Register a `User`-scoped SSH key. Returns
+    /// [`StoreError::NotFound`] if the user does not exist;
+    /// [`StoreError::Conflict`] if `name` or `fingerprint` is
+    /// already in use among the user's user-scoped keys.
+    async fn create_ssh_key_user(
+        &self,
+        user_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError>;
+
     /// Look up an SSH key by id. Returns [`StoreError::NotFound`]
-    /// when no such key exists, regardless of silo.
+    /// when no such key exists, regardless of scope. The handler
+    /// is expected to apply the visibility predicate on top —
+    /// this method is the cross-scope identity lookup.
     async fn get_ssh_key(&self, key_id: Uuid) -> Result<SshKey, StoreError>;
 
-    /// List every SSH key registered in a silo's catalog.
+    /// List every Public SSH key. Equivalent to filtering
+    /// `get_ssh_key` over `SshKeyScope::Public`.
+    async fn list_ssh_keys_public(&self) -> Result<Vec<SshKey>, StoreError>;
+
+    /// List every SSH key whose scope is exactly `Silo { silo_id }`.
+    /// Does NOT include Public; the caller composes unions via
+    /// [`Self::list_visible_ssh_keys_in_tenant`] /
+    /// [`Self::list_visible_ssh_keys_in_project`].
     async fn list_ssh_keys_in_silo(&self, silo_id: Uuid) -> Result<Vec<SshKey>, StoreError>;
 
-    /// Delete an SSH key by id. Returns [`StoreError::NotFound`] if
-    /// the id does not exist.
+    /// List every SSH key whose scope is exactly `Tenant { tenant_id }`.
+    async fn list_ssh_keys_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<SshKey>, StoreError>;
+
+    /// List every SSH key whose scope is exactly `Project { project_id }`.
+    async fn list_ssh_keys_in_project(&self, project_id: Uuid) -> Result<Vec<SshKey>, StoreError>;
+
+    /// List every SSH key whose scope is exactly `User { user_id }`.
+    async fn list_ssh_keys_for_user(&self, user_id: Uuid) -> Result<Vec<SshKey>, StoreError>;
+
+    /// List every SSH key visible at a tenant URL: Public + Silo
+    /// (of tenant's silo) + Tenant.
+    async fn list_visible_ssh_keys_in_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<SshKey>, StoreError>;
+
+    /// List every SSH key visible at a project URL: Public + Silo
+    /// (of project's silo) + Tenant (of project's tenant) +
+    /// Project.
+    async fn list_visible_ssh_keys_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<SshKey>, StoreError>;
+
+    /// Delete an SSH key by id. Visibility / ownership gating is
+    /// applied at the handler layer; the store layer just removes
+    /// the record. Returns [`StoreError::NotFound`] if the id
+    /// does not exist.
     async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------

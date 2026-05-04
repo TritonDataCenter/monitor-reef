@@ -50,9 +50,11 @@ use crate::audit::AuditService;
 
 /// Embedded Cedar policy bundle.
 ///
-/// Four rules, ordered by specificity:
+/// Five rules, ordered by specificity:
 ///
-/// * Anonymous callers can hit `health`, `login`, and `refresh`.
+/// * Anonymous callers can hit `health`, `login`, `refresh`,
+///   and the public-listing / by-id read actions for image and
+///   ssh-key.
 /// * Authenticated operators with `is_root == true` can perform any
 ///   action (the bootstrap-root path).
 /// * Silo members can perform actions on resources that remain
@@ -63,8 +65,14 @@ use crate::audit::AuditService;
 ///   identity is operator turf.
 /// * Tenant members can perform actions on the tenant-scoped
 ///   workload graph (project, VPC, subnet, instance, NIC, disk,
-///   floating IP, quota). Gated by `principal.tenant_id ==
-///   resource.tenant_id`.
+///   floating IP, quota, image, ssh-key). Gated by
+///   `principal.tenant_id == resource.tenant_id`.
+/// * Authenticated principals can hit the global image/ssh-key
+///   actions when the resource is `System::"global"` (no
+///   silo / tenant attribute) — these are the multi-scope
+///   /v2/{ssh-keys,images}/{id} and /v2/auth/* endpoints whose
+///   visibility is enforced in the handler via the visibility
+///   predicate.
 ///
 /// Every other access falls through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
@@ -78,7 +86,9 @@ permit(
         Action::"agent_register",
         Action::"agent_register_status",
         Action::"image_list_public",
-        Action::"image_get"
+        Action::"image_get",
+        Action::"ssh_key_list_public",
+        Action::"ssh_key_get"
     ],
     resource
 );
@@ -155,7 +165,11 @@ permit(
         Action::"image_list",
         Action::"image_create",
         Action::"image_get",
-        Action::"image_delete"
+        Action::"image_delete",
+        Action::"ssh_key_list",
+        Action::"ssh_key_create",
+        Action::"ssh_key_get",
+        Action::"ssh_key_delete"
     ],
     resource
 ) when {
@@ -171,7 +185,11 @@ permit(
         Action::"image_list",
         Action::"image_create",
         Action::"image_get",
-        Action::"image_delete"
+        Action::"image_delete",
+        Action::"ssh_key_list",
+        Action::"ssh_key_create",
+        Action::"ssh_key_get",
+        Action::"ssh_key_delete"
     ],
     resource
 ) when {
@@ -341,7 +359,14 @@ pub enum Action {
     SubnetCreate,
     SubnetGet,
     SubnetDelete,
+    /// Scope-aware ssh-key list (silo/tenant/project/user URLs).
+    /// Gated by per-scope Cedar rules.
     SshKeyList,
+    /// Anonymous-allowed Public-ssh-key list (only `/v2/ssh-keys`).
+    /// Separate so the anonymous-public-actions Cedar rule
+    /// doesn't accidentally permit `/v2/silos/.../ssh-keys` to
+    /// unauthenticated probes.
+    SshKeyListPublic,
     SshKeyCreate,
     SshKeyGet,
     SshKeyDelete,
@@ -460,6 +485,7 @@ impl Action {
             Action::SubnetGet => "subnet_get",
             Action::SubnetDelete => "subnet_delete",
             Action::SshKeyList => "ssh_key_list",
+            Action::SshKeyListPublic => "ssh_key_list_public",
             Action::SshKeyCreate => "ssh_key_create",
             Action::SshKeyGet => "ssh_key_get",
             Action::SshKeyDelete => "ssh_key_delete",
@@ -990,6 +1016,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::SubnetList
         | Action::SubnetGet
         | Action::SshKeyList
+        | Action::SshKeyListPublic
         | Action::SshKeyGet
         | Action::ImageList
         | Action::ImageListPublic

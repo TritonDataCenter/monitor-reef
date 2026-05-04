@@ -6,16 +6,15 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the `/v2/silos/{silo_id}/ssh-keys` surface.
+//! End-to-end tests for the `Silo`-scoped slice of the multi-scope
+//! `/v2/silos/{silo_id}/ssh-keys` surface and the cross-cutting
+//! concerns that aren't visibility (fingerprint validation,
+//! openssh parsing, name + fingerprint uniqueness within a single
+//! scope).
 //!
-//! Mirrors `tests/projects.rs` for the auth fixture; adds:
-//!
-//! * Real ed25519 key generation via the `ssh-key` crate so the
-//!   server-side parse path is exercised end-to-end (not just
-//!   trusted to do the right thing).
-//! * Parse-failure case (malformed openssh string → 400).
-//! * Fingerprint uniqueness within a silo (re-uploading the same
-//!   key under a new name → 409).
+//! The visibility / ownership matrix across all five scopes lives in
+//! `tests/ssh_key_scope.rs` (added in slice G); this file is the
+//! per-scope happy-path / wire-shape test surface.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -149,7 +148,10 @@ async fn ssh_key_round_trip_within_silo() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(key.silo_id, silo_id);
+    assert!(matches!(
+        key.scope,
+        tritond_client::types::SshKeyScope::Silo { silo_id: s } if s == silo_id,
+    ));
     assert_eq!(key.public_key, pk);
     assert!(
         key.fingerprint.starts_with("SHA256:"),
@@ -172,26 +174,24 @@ async fn ssh_key_round_trip_within_silo() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, key.id);
 
+    // Global by-id get works regardless of scope.
     let fetched = root
-        .get_silo_ssh_key()
-        .silo_id(silo_id)
-        .ssh_key_id(key.id)
+        .get_ssh_key()
+        .key_id(key.id)
         .send()
         .await
         .unwrap()
         .into_inner();
     assert_eq!(fetched.fingerprint, key.fingerprint);
 
-    root.delete_silo_ssh_key()
-        .silo_id(silo_id)
-        .ssh_key_id(key.id)
+    root.delete_ssh_key()
+        .key_id(key.id)
         .send()
         .await
         .unwrap();
     let err = root
-        .get_silo_ssh_key()
-        .silo_id(silo_id)
-        .ssh_key_id(key.id)
+        .get_ssh_key()
+        .key_id(key.id)
         .send()
         .await
         .expect_err("post-delete get must 404");
@@ -322,40 +322,7 @@ async fn same_key_in_different_silos_does_not_conflict() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn cross_silo_get_returns_404() {
-    let test = TestServer::start().await;
-    let root = test.root_client();
-    let silo_a = make_silo(&root).await;
-    let silo_b = make_silo(&root).await;
-
-    let key = root
-        .create_silo_ssh_key()
-        .silo_id(silo_a)
-        .body(NewSshKey {
-            name: "ci".to_string(),
-            description: None,
-            public_key: fresh_pubkey(),
-        })
-        .send()
-        .await
-        .unwrap()
-        .into_inner();
-
-    // Same key id, wrong silo path → 404.
-    let err = root
-        .get_silo_ssh_key()
-        .silo_id(silo_b)
-        .ssh_key_id(key.id)
-        .send()
-        .await
-        .expect_err("cross-silo get must 404");
-    assert_status(err, 404);
-
-    test.close().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn anonymous_cannot_reach_ssh_key_endpoints() {
+async fn anonymous_cannot_reach_silo_ssh_key_endpoints() {
     let test = TestServer::start().await;
     let root = test.root_client();
     let silo_id = make_silo(&root).await;

@@ -668,6 +668,73 @@
         }
       }
     },
+    "/v2/auth/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "List the calling user's `User`-scoped SSH keys. Returns",
+        "description": "only the caller's own keys; the bound user_id is resolved from the authenticated principal.",
+        "operationId": "list_my_ssh_keys",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_SshKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SshKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Register a `User`-scoped SSH key owned by the caller.",
+        "operationId": "create_my_ssh_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSshKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/cn-approvals": {
       "post": {
         "tags": [
@@ -1290,7 +1357,8 @@
         "tags": [
           "ssh-keys"
         ],
-        "summary": "List the SSH keys registered in a silo's catalog.",
+        "summary": "List the SSH keys whose scope is exactly `Silo { silo_id }`",
+        "description": "(does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).",
         "operationId": "list_silo_ssh_keys",
         "parameters": [
           {
@@ -1330,7 +1398,7 @@
         "tags": [
           "ssh-keys"
         ],
-        "summary": "Register an SSH key in a silo's catalog. The server parses",
+        "summary": "Register a `Silo`-scoped SSH key. The server parses",
         "description": "`public_key` as openssh format and computes the SHA-256 fingerprint. Returns 400 if the key cannot be parsed, 409 if the name or fingerprint is already in use within the silo.",
         "operationId": "create_silo_ssh_key",
         "parameters": [
@@ -1364,93 +1432,6 @@
                 }
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/ssh-keys/{ssh_key_id}": {
-      "get": {
-        "tags": [
-          "ssh-keys"
-        ],
-        "summary": "Read a single SSH key. Returns 404 when the key does not",
-        "description": "exist or belongs to a different silo.",
-        "operationId": "get_silo_ssh_key",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "ssh_key_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "ssh-keys"
-        ],
-        "summary": "Delete an SSH key. Returns 404 when the key does not exist",
-        "description": "or belongs to a different silo.",
-        "operationId": "delete_silo_ssh_key",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "ssh_key_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -1622,6 +1603,143 @@
           {
             "in": "path",
             "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "List Public SSH keys. Anonymous-accessible — Public means",
+        "description": "public, so unauthenticated probes get the catalog.",
+        "operationId": "list_public_ssh_keys",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_SshKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SshKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Create a `Public` SSH key. Root-only via Cedar.",
+        "description": "Returns 400 if the key cannot be parsed as openssh, 409 if the name or fingerprint is already in use among Public keys.",
+        "operationId": "create_public_ssh_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSshKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/ssh-keys/{key_id}": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Read a single SSH key by id. Returns 404 when the key",
+        "description": "does not exist OR when the principal cannot see it (cross-scope visibility deny).",
+        "operationId": "get_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Delete an SSH key by id. Returns 404 when the key does",
+        "description": "not exist OR the principal lacks ownership for the key's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).",
+        "operationId": "delete_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
             "required": true,
             "schema": {
               "type": "string",
@@ -3255,6 +3373,113 @@
         }
       }
     },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "List SSH keys visible to the project: Public + Silo (of",
+        "description": "project's silo) + Tenant (of project's tenant) + Project.",
+        "operationId": "list_project_ssh_keys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_SshKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SshKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Register a `Project`-scoped SSH key.",
+        "operationId": "create_project_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSshKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs": {
       "get": {
         "tags": [
@@ -3707,6 +3932,95 @@
         "responses": {
           "204": {
             "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "List SSH keys visible to the tenant: Public + Silo (of",
+        "description": "tenant's silo) + Tenant.",
+        "operationId": "list_tenant_ssh_keys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_SshKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SshKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "Register a `Tenant`-scoped SSH key.",
+        "operationId": "create_tenant_ssh_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSshKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -5321,7 +5635,7 @@
         ]
       },
       "NewSshKey": {
-        "description": "Request body for registering a new SSH key in a silo's catalog. The server assigns `id`, `fingerprint`, and `created_at`; the owning silo comes from the URL path.",
+        "description": "Request body for registering a new SSH key in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id`, `fingerprint`, and `created_at`.",
         "type": "object",
         "properties": {
           "description": {
@@ -5927,7 +6241,7 @@
         ]
       },
       "SshKey": {
-        "description": "User-supplied SSH public key, registered in a silo's catalog so instance launches can pick keys to inject into authorized_keys. Phase 0 is silo-scoped (any user in the silo can pick from the pool). A future slice may add per-user ownership; the silo_id field is forward-compatible with that.\n\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting.",
+        "description": "User-supplied SSH public key, registered into one of five possible scopes (see [`SshKeyScope`]) so instance launches can pick keys to inject into authorized_keys. The User scope is the load-bearing one in practice (every user has their own personal keys); the other scopes mirror [`Image`] for symmetry and to support shared deployment keys.\n\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -5952,9 +6266,13 @@
             "description": "OpenSSH-formatted public key — `<algo> <base64> [comment]`. Server-validated at create time; rejected with 400 if the `ssh-key` crate refuses to parse it.",
             "type": "string"
           },
-          "silo_id": {
-            "type": "string",
-            "format": "uuid"
+          "scope": {
+            "description": "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SshKeyScope"
+              }
+            ]
           }
         },
         "required": [
@@ -5964,7 +6282,102 @@
           "id",
           "name",
           "public_key",
-          "silo_id"
+          "scope"
+        ]
+      },
+      "SshKeyScope": {
+        "description": "Visibility scope of an [`SshKey`]. Same shape as [`ImageScope`] — see Slice F. User scope is the most common in practice (every user owns their own personal keys); Public is for operator-distributed emergency-access keys; Silo / Tenant / Project are for shared deployment keys.\n\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on [`SshKey`]. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "public"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "silo"
+                ]
+              },
+              "silo_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "silo_id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tenant"
+                ]
+              },
+              "tenant_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "tenant_id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project"
+                ]
+              },
+              "project_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "project_id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user"
+                ]
+              },
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "user_id"
+            ]
+          }
         ]
       },
       "Subnet": {

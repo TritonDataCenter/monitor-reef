@@ -41,7 +41,7 @@ use tritond_api::{
     CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery, LoginRequest, NewApiKey,
     NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SiloPath, SiloSshKeyPath, SiloTenantPath, TenantIdpPath, TenantPath,
+    RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath,
     TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
     TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath,
     TokenResponse, TritondApi,
@@ -50,7 +50,7 @@ use tritond_api::{
         ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
         LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
         NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-        Silo, SshKey, Subnet, Tenant, Vpc,
+        Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1625,6 +1625,103 @@ impl TritondApi for TritondServiceImpl {
         Ok(HttpResponseDeleted())
     }
 
+    async fn list_public_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError> {
+        let ctx = rqctx.context();
+        // Anonymous probes get through via the
+        // anonymous-public-actions Cedar rule on
+        // `ssh_key_list_public`. The silo / tenant / project
+        // lists use `ssh_key_list` instead so unauthenticated
+        // callers can't poke at scoped catalogs.
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyListPublic,
+        )
+        .await?;
+        let keys = ctx
+            .store
+            .list_ssh_keys_public()
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(keys))
+    }
+
+    async fn create_public_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError> {
+        let ctx = rqctx.context();
+        // Cedar's authenticated-image-global-actions rule (which
+        // also covers ssh-key) lets any authenticated principal
+        // pass ssh_key_create at the global resource so the
+        // per-URL handlers can dispatch. The Public scope is
+        // operator turf, so we add an explicit root check here —
+        // the audit event still records the deny.
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyCreate,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        if !matches!(principal, Principal::Operator { is_root: true, .. }) {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::SshKeyCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 403,
+                        message: "public ssh key creation is root-only".to_string(),
+                    },
+                    serde_json::json!({ "scope": "public" }),
+                )
+                .await;
+            return Err(HttpError::for_client_error(
+                Some("Forbidden".to_string()),
+                ClientErrorStatusCode::FORBIDDEN,
+                "public ssh key creation is root-only".to_string(),
+            ));
+        }
+        let req = body.into_inner();
+        let fingerprint = match parse_and_audit_ssh_key(
+            ctx,
+            &principal,
+            request_id,
+            &req,
+            serde_json::json!({ "scope": "public" }),
+        )
+        .await
+        {
+            Ok(fp) => fp,
+            Err(err) => return Err(err),
+        };
+        match ctx.store.create_ssh_key_public(req, fingerprint).await {
+            Ok(key) => {
+                audit_ssh_key_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &key,
+                    serde_json::json!({ "scope": "public" }),
+                )
+                .await;
+                Ok(HttpResponseCreated(key))
+            }
+            Err(e) => {
+                audit_ssh_key_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
     async fn list_silo_ssh_keys(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloPath>,
@@ -1666,127 +1763,362 @@ impl TritondApi for TritondServiceImpl {
         .await?;
         let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
-
-        // Server-side parse + fingerprint compute. Bad openssh
-        // payload → 400, never propagated to the store.
-        let fingerprint = match parse_ssh_public_key(&req.public_key) {
+        let fingerprint = match parse_and_audit_ssh_key(
+            ctx,
+            &principal,
+            request_id,
+            &req,
+            serde_json::json!({ "scope": "silo", "silo_id": silo_id }),
+        )
+        .await
+        {
             Ok(fp) => fp,
-            Err(msg) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::SshKeyCreate,
-                        request_id,
-                        None,
-                        AuditOutcome::ClientError {
-                            code: 400,
-                            message: msg.clone(),
-                        },
-                        serde_json::json!({ "silo_id": silo_id }),
-                    )
-                    .await;
-                return Err(HttpError::for_bad_request(
-                    Some("BadRequest".to_string()),
-                    msg,
-                ));
-            }
+            Err(err) => return Err(err),
         };
-
-        match ctx.store.create_ssh_key(silo_id, req, fingerprint).await {
+        match ctx
+            .store
+            .create_ssh_key_silo(silo_id, req, fingerprint)
+            .await
+        {
             Ok(key) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::SshKeyCreate,
-                        request_id,
-                        Some(format!("SshKey::\"{}\"", key.id)),
-                        AuditOutcome::Success {
-                            resource: Some(format!("SshKey::\"{}\"", key.id)),
-                        },
-                        serde_json::json!({
-                            "silo_id": silo_id,
-                            "name": key.name,
-                            "fingerprint": key.fingerprint,
-                        }),
-                    )
-                    .await;
+                audit_ssh_key_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &key,
+                    serde_json::json!({ "scope": "silo", "silo_id": silo_id }),
+                )
+                .await;
                 Ok(HttpResponseCreated(key))
             }
             Err(e) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::SshKeyCreate,
-                        request_id,
-                        None,
-                        store_error_to_audit_outcome(&e),
-                        serde_json::Value::Null,
-                    )
-                    .await;
+                audit_ssh_key_create_failure(ctx, &principal, request_id, &e).await;
                 Err(store_error_to_http(e))
             }
         }
     }
 
-    async fn get_silo_ssh_key(
+    async fn list_tenant_ssh_keys(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloSshKeyPath>,
+        path: Path<TenantPath>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError> {
+        let ctx = rqctx.context();
+        let tenant_id = path.into_inner().tenant_id;
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyList,
+            tenant_id,
+        )
+        .await?;
+        let keys = ctx
+            .store
+            .list_visible_ssh_keys_in_tenant(tenant_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(keys))
+    }
+
+    async fn create_tenant_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantPath>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError> {
+        let ctx = rqctx.context();
+        let tenant_id = path.into_inner().tenant_id;
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        let fingerprint = match parse_and_audit_ssh_key(
+            ctx,
+            &principal,
+            request_id,
+            &req,
+            serde_json::json!({ "scope": "tenant", "tenant_id": tenant_id }),
+        )
+        .await
+        {
+            Ok(fp) => fp,
+            Err(err) => return Err(err),
+        };
+        match ctx
+            .store
+            .create_ssh_key_tenant(tenant_id, req, fingerprint)
+            .await
+        {
+            Ok(key) => {
+                audit_ssh_key_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &key,
+                    serde_json::json!({ "scope": "tenant", "tenant_id": tenant_id }),
+                )
+                .await;
+                Ok(HttpResponseCreated(key))
+            }
+            Err(e) => {
+                audit_ssh_key_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_project_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectPath {
+            tenant_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyList,
+            tenant_id,
+        )
+        .await?;
+        // Project must exist and live in this tenant.
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.tenant_id != tenant_id {
+            return Err(not_found());
+        }
+        let keys = ctx
+            .store
+            .list_visible_ssh_keys_in_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(keys))
+    }
+
+    async fn create_project_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectPath {
+            tenant_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        // Verify the project belongs to the tenant before the
+        // store call (defence in depth; cross-tenant probe
+        // surfaces as 404).
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.tenant_id != tenant_id {
+            return Err(not_found());
+        }
+        let req = body.into_inner();
+        let fingerprint = match parse_and_audit_ssh_key(
+            ctx,
+            &principal,
+            request_id,
+            &req,
+            serde_json::json!({
+                "scope": "project",
+                "tenant_id": tenant_id,
+                "project_id": project_id,
+            }),
+        )
+        .await
+        {
+            Ok(fp) => fp,
+            Err(err) => return Err(err),
+        };
+        match ctx
+            .store
+            .create_ssh_key_project(project_id, req, fingerprint)
+            .await
+        {
+            Ok(key) => {
+                audit_ssh_key_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &key,
+                    serde_json::json!({
+                        "scope": "project",
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                    }),
+                )
+                .await;
+                Ok(HttpResponseCreated(key))
+            }
+            Err(e) => {
+                audit_ssh_key_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_my_ssh_keys(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyList,
+        )
+        .await?;
+        // /v2/auth/* requires an authenticated principal — Cedar
+        // would otherwise let an Anonymous probe reach this list.
+        let (user_id, _) = require_authenticated(principal)?;
+        let keys = ctx
+            .store
+            .list_ssh_keys_for_user(user_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(keys))
+    }
+
+    async fn create_my_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewSshKey>,
+    ) -> Result<HttpResponseCreated<SshKey>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::SshKeyCreate,
+        )
+        .await?;
+        let (user_id, _) = require_authenticated(principal.clone())?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        let fingerprint = match parse_and_audit_ssh_key(
+            ctx,
+            &principal,
+            request_id,
+            &req,
+            serde_json::json!({ "scope": "user", "user_id": user_id }),
+        )
+        .await
+        {
+            Ok(fp) => fp,
+            Err(err) => return Err(err),
+        };
+        match ctx
+            .store
+            .create_ssh_key_user(user_id, req, fingerprint)
+            .await
+        {
+            Ok(key) => {
+                audit_ssh_key_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &key,
+                    serde_json::json!({ "scope": "user", "user_id": user_id }),
+                )
+                .await;
+                Ok(HttpResponseCreated(key))
+            }
+            Err(e) => {
+                audit_ssh_key_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_ssh_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SshKeyPath>,
     ) -> Result<HttpResponseOk<SshKey>, HttpError> {
         let ctx = rqctx.context();
-        let SiloSshKeyPath {
-            silo_id,
-            ssh_key_id,
-        } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        let key_id = path.into_inner().key_id;
+        // Anonymous principals can hit Public ssh keys via the
+        // anonymous-public-actions Cedar rule + the visibility
+        // check below; authenticated callers go through scope
+        // gating in ssh_key_visible_to.
+        let principal = authenticate_and_authorize(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::SshKeyGet,
-            silo_id,
         )
         .await?;
         let key = ctx
             .store
-            .get_ssh_key(ssh_key_id)
+            .get_ssh_key(key_id)
             .await
             .map_err(store_error_to_http)?;
-        if key.silo_id != silo_id {
+        if !ssh_key_visible_to(&key, &principal, ctx.store.as_ref())
+            .await
+            .map_err(store_error_to_http)?
+        {
             return Err(not_found());
         }
         Ok(HttpResponseOk(key))
     }
 
-    async fn delete_silo_ssh_key(
+    async fn delete_ssh_key(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloSshKeyPath>,
+        path: Path<SshKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloSshKeyPath {
-            silo_id,
-            ssh_key_id,
-        } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let key_id = path.into_inner().key_id;
+        let principal = authenticate_and_authorize(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::SshKeyDelete,
-            silo_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
-
         let key = ctx
             .store
-            .get_ssh_key(ssh_key_id)
+            .get_ssh_key(key_id)
             .await
             .map_err(store_error_to_http)?;
-        if key.silo_id != silo_id {
+        // Ownership gate — stricter than visibility.
+        if !ssh_key_deletable_by(&key, &principal, ctx.store.as_ref())
+            .await
+            .map_err(store_error_to_http)?
+        {
             return Err(not_found());
         }
         ctx.store
-            .delete_ssh_key(ssh_key_id)
+            .delete_ssh_key(key_id)
             .await
             .map_err(store_error_to_http)?;
         ctx.audit
@@ -1794,11 +2126,11 @@ impl TritondApi for TritondServiceImpl {
                 &principal,
                 Action::SshKeyDelete,
                 request_id,
-                Some(format!("SshKey::\"{ssh_key_id}\"")),
+                Some(format!("SshKey::\"{key_id}\"")),
                 AuditOutcome::Success {
-                    resource: Some(format!("SshKey::\"{ssh_key_id}\"")),
+                    resource: Some(format!("SshKey::\"{key_id}\"")),
                 },
-                serde_json::json!({ "silo_id": silo_id }),
+                serde_json::json!({ "scope": key.scope }),
             )
             .await;
         Ok(HttpResponseDeleted())
@@ -2643,6 +2975,63 @@ impl TritondApi for TritondServiceImpl {
                 return Err(not_found());
             }
             Err(e) => return Err(store_error_to_http(e)),
+        }
+
+        // Cross-scope visibility check on every referenced SSH
+        // key. The store no longer enforces silo membership on
+        // SSH keys (multi-scope as of slice G); the handler
+        // resolves visibility against the principal and surfaces
+        // a not-visible (or not-found) key as 404 to preserve
+        // the cross-tenant probe invariant.
+        for key_id in &req.ssh_key_ids {
+            match ctx.store.get_ssh_key(*key_id).await {
+                Ok(key) => {
+                    let visible = ssh_key_visible_to(&key, &principal, ctx.store.as_ref())
+                        .await
+                        .map_err(store_error_to_http)?;
+                    if !visible {
+                        ctx.audit
+                            .record_mutation(
+                                &principal,
+                                Action::InstanceCreate,
+                                request_id,
+                                None,
+                                AuditOutcome::ClientError {
+                                    code: 404,
+                                    message: "ssh key not visible".to_string(),
+                                },
+                                serde_json::json!({
+                                    "tenant_id": tenant_id,
+                                    "project_id": project_id,
+                                    "ssh_key_id": *key_id,
+                                }),
+                            )
+                            .await;
+                        return Err(not_found());
+                    }
+                }
+                Err(StoreError::NotFound) => {
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::InstanceCreate,
+                            request_id,
+                            None,
+                            AuditOutcome::ClientError {
+                                code: 404,
+                                message: "ssh key not found".to_string(),
+                            },
+                            serde_json::json!({
+                                "tenant_id": tenant_id,
+                                "project_id": project_id,
+                                "ssh_key_id": *key_id,
+                            }),
+                        )
+                        .await;
+                    return Err(not_found());
+                }
+                Err(e) => return Err(store_error_to_http(e)),
+            }
         }
 
         let instance = match ctx.store.create_instance(tenant_id, project_id, req).await {
@@ -4192,6 +4581,171 @@ async fn image_deletable_by(
         // Defensive default for future variants.
         _ => Ok(false),
     }
+}
+
+/// Single source of truth for cross-scope SSH-key visibility.
+/// Mirrors [`image_visible_to`] — see Slice F. Used by every
+/// ssh-key read path (`get_ssh_key`, the per-scope list
+/// handlers) and by the instance-create reference check; a
+/// wrong answer here is a cross-tenant information leak.
+///
+/// Behaviour:
+/// * Root operators (`is_root == true`) can see everything.
+/// * `Public` is visible to every principal — authenticated *and*
+///   anonymous (Cedar lets the latter through on the global
+///   public-actions rule for `ssh_key_get`).
+/// * `Silo { silo_id }` is visible iff the principal's cached
+///   silo_id matches.
+/// * `Tenant { tenant_id }` is visible iff the principal's
+///   tenant_id matches.
+/// * `Project { project_id }` resolves the project to its
+///   tenant; visible iff `project.tenant_id == principal.tenant_id`.
+///   (Phase 0 = "any tenant member sees any project key"; a
+///   future slice can tighten to per-project membership.)
+/// * `User { user_id }` is visible iff the principal's user_id
+///   matches.
+pub async fn ssh_key_visible_to(
+    key: &SshKey,
+    principal: &Principal,
+    store: &dyn Store,
+) -> Result<bool, StoreError> {
+    // Root sees everything regardless of scope.
+    if let Principal::Operator { is_root: true, .. } = principal {
+        return Ok(true);
+    }
+    match &key.scope {
+        SshKeyScope::Public => Ok(true),
+        SshKeyScope::Silo { silo_id } => Ok(principal_silo_id(principal) == Some(*silo_id)),
+        SshKeyScope::Tenant { tenant_id } => Ok(principal_tenant_id(principal) == Some(*tenant_id)),
+        SshKeyScope::Project { project_id } => {
+            // Phase 0: any member of the project's tenant.
+            let Some(my_tenant) = principal_tenant_id(principal) else {
+                return Ok(false);
+            };
+            match store.get_project(*project_id).await {
+                Ok(project) => Ok(project.tenant_id == my_tenant),
+                Err(StoreError::NotFound) => Ok(false),
+                Err(e) => Err(e),
+            }
+        }
+        SshKeyScope::User { user_id } => Ok(principal_user_id(principal) == Some(*user_id)),
+        // SshKeyScope is `#[non_exhaustive]`. New variants must
+        // be classified explicitly in this gate; until then they
+        // deny by default to avoid silent visibility bugs.
+        _ => Ok(false),
+    }
+}
+
+/// Stricter than [`ssh_key_visible_to`]: returns `true` if the
+/// principal is allowed to delete `key`. The ownership rules
+/// match the URL-vs-scope structure (same shape as
+/// [`image_deletable_by`]):
+/// * `Public` — root only.
+/// * `Silo` / `Tenant` / `Project` — any tenant member of the
+///   resolved tenant (Phase 0); cross-tenant returns false.
+/// * `User` — the owning user only.
+async fn ssh_key_deletable_by(
+    key: &SshKey,
+    principal: &Principal,
+    store: &dyn Store,
+) -> Result<bool, StoreError> {
+    if let Principal::Operator { is_root: true, .. } = principal {
+        return Ok(true);
+    }
+    match &key.scope {
+        // Public is operator turf.
+        SshKeyScope::Public => Ok(false),
+        // Silo / Tenant / Project follow the same visibility
+        // gate as reads (Phase 0 = same-tenant access).
+        SshKeyScope::Silo { .. } | SshKeyScope::Tenant { .. } | SshKeyScope::Project { .. } => {
+            ssh_key_visible_to(key, principal, store).await
+        }
+        SshKeyScope::User { user_id } => Ok(principal_user_id(principal) == Some(*user_id)),
+        _ => Ok(false),
+    }
+}
+
+/// Shared API-edge helper used by every per-scope
+/// `create_ssh_key_*` handler: parse the openssh string,
+/// compute the SHA-256 fingerprint, and on a parse failure
+/// record a 400 audit event for the supplied principal +
+/// extras blob and return the HTTP error to surface. On
+/// success returns the canonical fingerprint.
+async fn parse_and_audit_ssh_key(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    req: &NewSshKey,
+    extras: serde_json::Value,
+) -> Result<String, HttpError> {
+    match parse_ssh_public_key(&req.public_key) {
+        Ok(fp) => Ok(fp),
+        Err(msg) => {
+            ctx.audit
+                .record_mutation(
+                    principal,
+                    Action::SshKeyCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 400,
+                        message: msg.clone(),
+                    },
+                    extras,
+                )
+                .await;
+            Err(HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                msg,
+            ))
+        }
+    }
+}
+
+async fn audit_ssh_key_create_success(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    key: &SshKey,
+    mut extras: serde_json::Value,
+) {
+    if let serde_json::Value::Object(ref mut map) = extras {
+        map.insert("name".to_string(), serde_json::json!(key.name));
+        map.insert(
+            "fingerprint".to_string(),
+            serde_json::json!(key.fingerprint),
+        );
+    }
+    ctx.audit
+        .record_mutation(
+            principal,
+            Action::SshKeyCreate,
+            request_id,
+            Some(format!("SshKey::\"{}\"", key.id)),
+            AuditOutcome::Success {
+                resource: Some(format!("SshKey::\"{}\"", key.id)),
+            },
+            extras,
+        )
+        .await;
+}
+
+async fn audit_ssh_key_create_failure(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    err: &StoreError,
+) {
+    ctx.audit
+        .record_mutation(
+            principal,
+            Action::SshKeyCreate,
+            request_id,
+            None,
+            store_error_to_audit_outcome(err),
+            serde_json::Value::Null,
+        )
+        .await;
 }
 
 fn principal_silo_id(p: &Principal) -> Option<Uuid> {

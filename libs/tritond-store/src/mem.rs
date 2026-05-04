@@ -24,8 +24,8 @@ use crate::{
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
     NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
+    Quota, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
@@ -34,6 +34,21 @@ use crate::{ApiKeyScope, NewInstanceNic};
 /// candidates and any realistic VPC count, collisions are vanishingly
 /// rare; the cap is purely defensive.
 const VNI_RETRY_ATTEMPTS: usize = 8;
+
+/// Build an [`SshKey`] record from a [`NewSshKey`] request and
+/// its resolved scope + fingerprint. Centralised so the
+/// per-scope create methods don't drift on field assignment.
+fn build_ssh_key(id: Uuid, scope: SshKeyScope, req: &NewSshKey, fingerprint: String) -> SshKey {
+    SshKey {
+        id,
+        scope,
+        name: req.name.clone(),
+        description: req.description.clone().unwrap_or_default(),
+        public_key: req.public_key.clone(),
+        fingerprint,
+        created_at: Utc::now(),
+    }
+}
 
 /// Build an [`Image`] record from a [`NewImage`] request and its
 /// resolved scope. Centralised so the per-scope create methods
@@ -105,12 +120,19 @@ struct Inner {
     /// uniqueness.
     subnet_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
     ssh_keys_by_id: HashMap<Uuid, SshKey>,
-    /// `(silo_id, name)` → key_id index for within-silo name
-    /// uniqueness.
+    /// Per-scope name + fingerprint uniqueness indexes. Each
+    /// scope-kind has its own pair of maps so two scopes whose
+    /// namespace UUIDs collide can't conflict.
+    ssh_key_id_by_public_name: HashMap<String, Uuid>,
+    ssh_key_id_by_public_fingerprint: HashMap<String, Uuid>,
     ssh_key_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
-    /// `(silo_id, fingerprint)` → key_id index for within-silo
-    /// fingerprint uniqueness (no aliased pool entries).
     ssh_key_id_by_silo_fingerprint: HashMap<(Uuid, String), Uuid>,
+    ssh_key_id_by_tenant_name: HashMap<(Uuid, String), Uuid>,
+    ssh_key_id_by_tenant_fingerprint: HashMap<(Uuid, String), Uuid>,
+    ssh_key_id_by_project_name: HashMap<(Uuid, String), Uuid>,
+    ssh_key_id_by_project_fingerprint: HashMap<(Uuid, String), Uuid>,
+    ssh_key_id_by_user_name: HashMap<(Uuid, String), Uuid>,
+    ssh_key_id_by_user_fingerprint: HashMap<(Uuid, String), Uuid>,
     images_by_id: HashMap<Uuid, Image>,
     /// Per-scope name uniqueness indexes. The key is the scope's
     /// namespace UUID (`Uuid::nil()` for Public, silo_id /
@@ -774,7 +796,45 @@ impl Store for MemStore {
         Ok(())
     }
 
-    async fn create_ssh_key(
+    async fn create_ssh_key_public(
+        &self,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError> {
+        let mut guard = self.inner.write().await;
+        if guard.ssh_key_id_by_public_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "public ssh key with name {:?} already exists",
+                req.name
+            )));
+        }
+        if guard
+            .ssh_key_id_by_public_fingerprint
+            .contains_key(&fingerprint)
+        {
+            return Err(StoreError::Conflict(format!(
+                "public ssh key with fingerprint {fingerprint} already exists"
+            )));
+        }
+        let scope = SshKeyScope::Public;
+        let id = crate::derive_ssh_key_id(&scope, &fingerprint);
+        if guard.ssh_keys_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with id {id} already exists",
+            )));
+        }
+        let key = build_ssh_key(id, scope, &req, fingerprint.clone());
+        guard
+            .ssh_key_id_by_public_name
+            .insert(key.name.clone(), key.id);
+        guard
+            .ssh_key_id_by_public_fingerprint
+            .insert(fingerprint, key.id);
+        guard.ssh_keys_by_id.insert(key.id, key.clone());
+        Ok(key)
+    }
+
+    async fn create_ssh_key_silo(
         &self,
         silo_id: Uuid,
         req: NewSshKey,
@@ -797,17 +857,134 @@ impl Store for MemStore {
                 "ssh key with fingerprint {fingerprint} already exists in silo {silo_id}"
             )));
         }
-        let key = SshKey {
-            id: Uuid::new_v4(),
-            silo_id,
-            name: req.name.clone(),
-            description: req.description.unwrap_or_default(),
-            public_key: req.public_key,
-            fingerprint,
-            created_at: Utc::now(),
-        };
+        let scope = SshKeyScope::Silo { silo_id };
+        let id = crate::derive_ssh_key_id(&scope, &fingerprint);
+        if guard.ssh_keys_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with id {id} already exists",
+            )));
+        }
+        let key = build_ssh_key(id, scope, &req, fingerprint);
         guard.ssh_key_id_by_silo_name.insert(name_key, key.id);
         guard.ssh_key_id_by_silo_fingerprint.insert(fp_key, key.id);
+        guard.ssh_keys_by_id.insert(key.id, key.clone());
+        Ok(key)
+    }
+
+    async fn create_ssh_key_tenant(
+        &self,
+        tenant_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.tenants_by_id.contains_key(&tenant_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (tenant_id, req.name.clone());
+        if guard.ssh_key_id_by_tenant_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with name {:?} already exists in tenant {tenant_id}",
+                req.name
+            )));
+        }
+        let fp_key = (tenant_id, fingerprint.clone());
+        if guard.ssh_key_id_by_tenant_fingerprint.contains_key(&fp_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with fingerprint {fingerprint} already exists in tenant {tenant_id}"
+            )));
+        }
+        let scope = SshKeyScope::Tenant { tenant_id };
+        let id = crate::derive_ssh_key_id(&scope, &fingerprint);
+        if guard.ssh_keys_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with id {id} already exists",
+            )));
+        }
+        let key = build_ssh_key(id, scope, &req, fingerprint);
+        guard.ssh_key_id_by_tenant_name.insert(name_key, key.id);
+        guard
+            .ssh_key_id_by_tenant_fingerprint
+            .insert(fp_key, key.id);
+        guard.ssh_keys_by_id.insert(key.id, key.clone());
+        Ok(key)
+    }
+
+    async fn create_ssh_key_project(
+        &self,
+        project_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.projects_by_id.contains_key(&project_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (project_id, req.name.clone());
+        if guard.ssh_key_id_by_project_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with name {:?} already exists in project {project_id}",
+                req.name
+            )));
+        }
+        let fp_key = (project_id, fingerprint.clone());
+        if guard
+            .ssh_key_id_by_project_fingerprint
+            .contains_key(&fp_key)
+        {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with fingerprint {fingerprint} already exists in project {project_id}"
+            )));
+        }
+        let scope = SshKeyScope::Project { project_id };
+        let id = crate::derive_ssh_key_id(&scope, &fingerprint);
+        if guard.ssh_keys_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with id {id} already exists",
+            )));
+        }
+        let key = build_ssh_key(id, scope, &req, fingerprint);
+        guard.ssh_key_id_by_project_name.insert(name_key, key.id);
+        guard
+            .ssh_key_id_by_project_fingerprint
+            .insert(fp_key, key.id);
+        guard.ssh_keys_by_id.insert(key.id, key.clone());
+        Ok(key)
+    }
+
+    async fn create_ssh_key_user(
+        &self,
+        user_id: Uuid,
+        req: NewSshKey,
+        fingerprint: String,
+    ) -> Result<SshKey, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.users_by_id.contains_key(&user_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (user_id, req.name.clone());
+        if guard.ssh_key_id_by_user_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with name {:?} already exists for user {user_id}",
+                req.name
+            )));
+        }
+        let fp_key = (user_id, fingerprint.clone());
+        if guard.ssh_key_id_by_user_fingerprint.contains_key(&fp_key) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with fingerprint {fingerprint} already exists for user {user_id}"
+            )));
+        }
+        let scope = SshKeyScope::User { user_id };
+        let id = crate::derive_ssh_key_id(&scope, &fingerprint);
+        if guard.ssh_keys_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "ssh key with id {id} already exists",
+            )));
+        }
+        let key = build_ssh_key(id, scope, &req, fingerprint);
+        guard.ssh_key_id_by_user_name.insert(name_key, key.id);
+        guard.ssh_key_id_by_user_fingerprint.insert(fp_key, key.id);
         guard.ssh_keys_by_id.insert(key.id, key.clone());
         Ok(key)
     }
@@ -821,12 +998,109 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)
     }
 
+    async fn list_ssh_keys_public(&self) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(|k| matches!(k.scope, SshKeyScope::Public))
+            .cloned()
+            .collect())
+    }
+
     async fn list_ssh_keys_in_silo(&self, silo_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
         let guard = self.inner.read().await;
         Ok(guard
             .ssh_keys_by_id
             .values()
-            .filter(|k| k.silo_id == silo_id)
+            .filter(|k| matches!(k.scope, SshKeyScope::Silo { silo_id: s } if s == silo_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_ssh_keys_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(|k| matches!(k.scope, SshKeyScope::Tenant { tenant_id: t } if t == tenant_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_ssh_keys_in_project(&self, project_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(
+                |k| matches!(k.scope, SshKeyScope::Project { project_id: p } if p == project_id),
+            )
+            .cloned()
+            .collect())
+    }
+
+    async fn list_ssh_keys_for_user(&self, user_id: Uuid) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(|k| matches!(k.scope, SshKeyScope::User { user_id: u } if u == user_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_visible_ssh_keys_in_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        let tenant = guard
+            .tenants_by_id
+            .get(&tenant_id)
+            .ok_or(StoreError::NotFound)?
+            .clone();
+        let silo_id = tenant.silo_id;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(|k| match &k.scope {
+                SshKeyScope::Public => true,
+                SshKeyScope::Silo { silo_id: s } => *s == silo_id,
+                SshKeyScope::Tenant { tenant_id: t } => *t == tenant_id,
+                _ => false,
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn list_visible_ssh_keys_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<SshKey>, StoreError> {
+        let guard = self.inner.read().await;
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?
+            .clone();
+        let tenant = guard
+            .tenants_by_id
+            .get(&project.tenant_id)
+            .ok_or(StoreError::NotFound)?
+            .clone();
+        let silo_id = tenant.silo_id;
+        let tenant_id = project.tenant_id;
+        Ok(guard
+            .ssh_keys_by_id
+            .values()
+            .filter(|k| match &k.scope {
+                SshKeyScope::Public => true,
+                SshKeyScope::Silo { silo_id: s } => *s == silo_id,
+                SshKeyScope::Tenant { tenant_id: t } => *t == tenant_id,
+                SshKeyScope::Project { project_id: p } => *p == project_id,
+                _ => false,
+            })
             .cloned()
             .collect())
     }
@@ -837,12 +1111,46 @@ impl Store for MemStore {
             .ssh_keys_by_id
             .remove(&key_id)
             .ok_or(StoreError::NotFound)?;
-        guard
-            .ssh_key_id_by_silo_name
-            .remove(&(key.silo_id, key.name));
-        guard
-            .ssh_key_id_by_silo_fingerprint
-            .remove(&(key.silo_id, key.fingerprint));
+        match key.scope {
+            SshKeyScope::Public => {
+                guard.ssh_key_id_by_public_name.remove(&key.name);
+                guard
+                    .ssh_key_id_by_public_fingerprint
+                    .remove(&key.fingerprint);
+            }
+            SshKeyScope::Silo { silo_id } => {
+                guard
+                    .ssh_key_id_by_silo_name
+                    .remove(&(silo_id, key.name.clone()));
+                guard
+                    .ssh_key_id_by_silo_fingerprint
+                    .remove(&(silo_id, key.fingerprint));
+            }
+            SshKeyScope::Tenant { tenant_id } => {
+                guard
+                    .ssh_key_id_by_tenant_name
+                    .remove(&(tenant_id, key.name.clone()));
+                guard
+                    .ssh_key_id_by_tenant_fingerprint
+                    .remove(&(tenant_id, key.fingerprint));
+            }
+            SshKeyScope::Project { project_id } => {
+                guard
+                    .ssh_key_id_by_project_name
+                    .remove(&(project_id, key.name.clone()));
+                guard
+                    .ssh_key_id_by_project_fingerprint
+                    .remove(&(project_id, key.fingerprint));
+            }
+            SshKeyScope::User { user_id } => {
+                guard
+                    .ssh_key_id_by_user_name
+                    .remove(&(user_id, key.name.clone()));
+                guard
+                    .ssh_key_id_by_user_fingerprint
+                    .remove(&(user_id, key.fingerprint));
+            }
+        }
         Ok(())
     }
 
@@ -1195,14 +1503,6 @@ impl Store for MemStore {
             return Err(StoreError::NotFound);
         }
 
-        // Resolve the owning silo via the tenant; ssh-key is
-        // still silo-scoped in E-3.
-        let silo_id = guard
-            .tenants_by_id
-            .get(&tenant_id)
-            .ok_or(StoreError::NotFound)?
-            .silo_id;
-
         // Image must exist. Visibility (cross-scope) is enforced
         // by the API handler before invoking this; the store
         // performs only the existence check so a stale image_id
@@ -1223,13 +1523,14 @@ impl Store for MemStore {
         }
         let subnet = subnet.clone();
 
-        // Each ssh-key id must exist and live in the silo.
+        // Each ssh-key id must exist. As of slice G, SSH keys
+        // are multi-scope (Public / Silo / Tenant / Project /
+        // User); the cross-scope visibility check happens at the
+        // API edge via `ssh_key_visible_to`. The store layer
+        // only verifies existence — the same shape as multi-scope
+        // image references in slice F.
         for key_id in &req.ssh_key_ids {
-            let key = guard
-                .ssh_keys_by_id
-                .get(key_id)
-                .ok_or(StoreError::NotFound)?;
-            if key.silo_id != silo_id {
+            if !guard.ssh_keys_by_id.contains_key(key_id) {
                 return Err(StoreError::NotFound);
             }
         }
@@ -3463,14 +3764,14 @@ mod tests {
             .unwrap();
 
         let key = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo.id,
                 ssh_key_req("ci", "ssh-ed25519 AAAA test"),
                 "SHA256:abc".to_string(),
             )
             .await
             .unwrap();
-        assert_eq!(key.silo_id, silo.id);
+        assert!(matches!(key.scope, SshKeyScope::Silo { silo_id: s } if s == silo.id));
         assert_eq!(key.name, "ci");
         assert_eq!(key.fingerprint, "SHA256:abc");
 
@@ -3500,7 +3801,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo.id,
                 ssh_key_req("ci", "ssh-ed25519 AAAA"),
                 "SHA256:a".to_string(),
@@ -3508,7 +3809,7 @@ mod tests {
             .await
             .unwrap();
         let err = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo.id,
                 ssh_key_req("ci", "ssh-ed25519 BBBB"),
                 "SHA256:b".to_string(),
@@ -3529,7 +3830,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo.id,
                 ssh_key_req("alice", "ssh-ed25519 AAAA"),
                 "SHA256:dup".to_string(),
@@ -3537,7 +3838,7 @@ mod tests {
             .await
             .unwrap();
         let err = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo.id,
                 ssh_key_req("bob", "ssh-ed25519 AAAA"),
                 "SHA256:dup".to_string(),
@@ -3566,7 +3867,7 @@ mod tests {
             .unwrap();
         // Same name + same fingerprint in two different silos is OK.
         store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 a.id,
                 ssh_key_req("ci", "ssh-ed25519 AAAA"),
                 "SHA256:x".to_string(),
@@ -3574,7 +3875,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 b.id,
                 ssh_key_req("ci", "ssh-ed25519 AAAA"),
                 "SHA256:x".to_string(),
@@ -3587,7 +3888,7 @@ mod tests {
     async fn create_ssh_key_in_unknown_silo_is_not_found() {
         let store = MemStore::new();
         let err = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 Uuid::new_v4(),
                 ssh_key_req("orphan", "ssh-ed25519 AAAA"),
                 "SHA256:x".to_string(),
@@ -3941,7 +4242,7 @@ mod tests {
             .await
             .unwrap();
         let ssh_key = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo_id,
                 ssh_key_req("ci", "ssh-ed25519 AAAA"),
                 "SHA256:fixture".to_string(),
@@ -4368,7 +4669,7 @@ mod tests {
             .await
             .unwrap();
         let key = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo_id,
                 ssh_key_req("ci", "ssh-ed25519 AAAA"),
                 "SHA256:dual".to_string(),
@@ -4847,7 +5148,7 @@ mod tests {
             .await
             .unwrap();
         let key_b = store
-            .create_ssh_key(
+            .create_ssh_key_silo(
                 silo_id,
                 ssh_key_req("ci-b", "ssh-ed25519 BBBB"),
                 "SHA256:b".to_string(),

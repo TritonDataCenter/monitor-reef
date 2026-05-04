@@ -122,8 +122,16 @@ enum Commands {
         #[command(subcommand)]
         command: PublicImageCommand,
     },
-    /// Caller-scoped resources (your own user-scoped images, in
-    /// slice F).
+    /// Manage Public SSH keys (operator-facing root commands)
+    /// plus the global show/delete-by-id endpoints.
+    /// Tenant- / project- / user-scoped keys live under the
+    /// `tenant`, `tenant project`, and `auth` subtrees.
+    SshKey {
+        #[command(subcommand)]
+        command: PublicSshKeyCommand,
+    },
+    /// Caller-scoped resources (your own user-scoped images and
+    /// ssh keys).
     Auth {
         #[command(subcommand)]
         command: AuthCommand,
@@ -174,6 +182,11 @@ enum AuthCommand {
     Image {
         #[command(subcommand)]
         command: AuthImageCommand,
+    },
+    /// Manage your own (caller-scoped) SSH keys.
+    SshKey {
+        #[command(subcommand)]
+        command: AuthSshKeyCommand,
     },
 }
 
@@ -263,6 +276,11 @@ enum TenantCommand {
         #[command(subcommand)]
         command: TenantImageCommand,
     },
+    /// Manage `Tenant`-scoped SSH keys.
+    SshKey {
+        #[command(subcommand)]
+        command: TenantSshKeyCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -347,14 +365,16 @@ enum SiloImageCommand {
 
 #[derive(Subcommand)]
 enum SiloSshKeyCommand {
-    /// List SSH keys in the silo's catalog.
+    /// List `Silo`-scoped SSH keys (does NOT include Public; use
+    /// `tcadm tenant ssh-key list` for the unioned tenant view).
     List {
         silo_id: Uuid,
         #[arg(long)]
         json: bool,
     },
-    /// Register a new SSH key. Reads the openssh public-key string
-    /// from `--public-key-file` (one line) or `--public-key`.
+    /// Register a new `Silo`-scoped SSH key. Reads the openssh
+    /// public-key string from `--public-key-file` (one line) or
+    /// `--public-key`.
     Add {
         silo_id: Uuid,
         #[arg(long)]
@@ -370,15 +390,109 @@ enum SiloSshKeyCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Read a single SSH key.
-    Get {
-        silo_id: Uuid,
-        ssh_key_id: Uuid,
+}
+
+#[derive(Subcommand)]
+enum PublicSshKeyCommand {
+    /// List Public SSH keys. Anonymous-accessible.
+    List {
         #[arg(long)]
         json: bool,
     },
-    /// Delete an SSH key.
-    Delete { silo_id: Uuid, ssh_key_id: Uuid },
+    /// Register a new Public SSH key. Root-only.
+    Add {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long, conflicts_with = "public_key_file")]
+        public_key: Option<String>,
+        #[arg(long, conflicts_with = "public_key")]
+        public_key_file: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single SSH key by id (visibility-filtered server-side).
+    Show {
+        key_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an SSH key by id (ownership-gated server-side).
+    Delete { key_id: Uuid },
+}
+
+#[derive(Subcommand)]
+enum TenantSshKeyCommand {
+    /// List SSH keys visible to this tenant (Public + Silo + Tenant).
+    List {
+        tenant_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new `Tenant`-scoped SSH key.
+    Add {
+        tenant_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long, conflicts_with = "public_key_file")]
+        public_key: Option<String>,
+        #[arg(long, conflicts_with = "public_key")]
+        public_key_file: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TenantProjectSshKeyCommand {
+    /// List SSH keys visible to this project (Public + Silo +
+    /// Tenant + Project).
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new `Project`-scoped SSH key.
+    Add {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long, conflicts_with = "public_key_file")]
+        public_key: Option<String>,
+        #[arg(long, conflicts_with = "public_key")]
+        public_key_file: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthSshKeyCommand {
+    /// List your `User`-scoped SSH keys.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new `User`-scoped SSH key owned by the caller.
+    Add {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long, conflicts_with = "public_key_file")]
+        public_key: Option<String>,
+        #[arg(long, conflicts_with = "public_key")]
+        public_key_file: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -433,6 +547,11 @@ enum TenantProjectCommand {
     Image {
         #[command(subcommand)]
         command: TenantProjectImageCommand,
+    },
+    /// Manage `Project`-scoped SSH keys.
+    SshKey {
+        #[command(subcommand)]
+        command: TenantProjectSshKeyCommand,
     },
 }
 
@@ -1104,21 +1223,6 @@ async fn main() -> Result<()> {
                     )
                     .await
                 }
-                SiloSshKeyCommand::Get {
-                    silo_id,
-                    ssh_key_id,
-                    json,
-                } => {
-                    commands::silo_ssh_key_get(cli.endpoint, cli.api_key, silo_id, ssh_key_id, json)
-                        .await
-                }
-                SiloSshKeyCommand::Delete {
-                    silo_id,
-                    ssh_key_id,
-                } => {
-                    commands::silo_ssh_key_delete(cli.endpoint, cli.api_key, silo_id, ssh_key_id)
-                        .await
-                }
             },
             SiloCommand::Image { command } => match command {
                 SiloImageCommand::List { silo_id, json } => {
@@ -1625,6 +1729,44 @@ async fn main() -> Result<()> {
                         .await
                     }
                 },
+                TenantProjectCommand::SshKey { command } => match command {
+                    TenantProjectSshKeyCommand::List {
+                        tenant_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::project_ssh_key_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectSshKeyCommand::Add {
+                        tenant_id,
+                        project_id,
+                        name,
+                        description,
+                        public_key,
+                        public_key_file,
+                        json,
+                    } => {
+                        commands::project_ssh_key_add(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            name,
+                            description,
+                            public_key,
+                            public_key_file,
+                            json,
+                        )
+                        .await
+                    }
+                },
                 TenantProjectCommand::Vpc { command } => match command {
                     TenantProjectVpcCommand::List {
                         tenant_id,
@@ -1831,6 +1973,31 @@ async fn main() -> Result<()> {
                     .await
                 }
             },
+            TenantCommand::SshKey { command } => match command {
+                TenantSshKeyCommand::List { tenant_id, json } => {
+                    commands::tenant_ssh_key_list(cli.endpoint, cli.api_key, tenant_id, json).await
+                }
+                TenantSshKeyCommand::Add {
+                    tenant_id,
+                    name,
+                    description,
+                    public_key,
+                    public_key_file,
+                    json,
+                } => {
+                    commands::tenant_ssh_key_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        name,
+                        description,
+                        public_key,
+                        public_key_file,
+                        json,
+                    )
+                    .await
+                }
+            },
         },
         Commands::Image { command } => match command {
             PublicImageCommand::List { json } => {
@@ -1865,17 +2032,40 @@ async fn main() -> Result<()> {
             PublicImageCommand::Get { image_id, json } => {
                 // Re-uses the silo_image_get helper which already
                 // calls the scope-agnostic /v2/images/{id} endpoint.
-                commands::silo_image_get(
+                commands::silo_image_get(cli.endpoint, cli.api_key, Uuid::nil(), image_id, json)
+                    .await
+            }
+            PublicImageCommand::Delete { image_id } => {
+                commands::silo_image_delete(cli.endpoint, cli.api_key, Uuid::nil(), image_id).await
+            }
+        },
+        Commands::SshKey { command } => match command {
+            PublicSshKeyCommand::List { json } => {
+                commands::public_ssh_key_list(cli.endpoint, cli.api_key, json).await
+            }
+            PublicSshKeyCommand::Add {
+                name,
+                description,
+                public_key,
+                public_key_file,
+                json,
+            } => {
+                commands::public_ssh_key_add(
                     cli.endpoint,
                     cli.api_key,
-                    Uuid::nil(),
-                    image_id,
+                    name,
+                    description,
+                    public_key,
+                    public_key_file,
                     json,
                 )
                 .await
             }
-            PublicImageCommand::Delete { image_id } => {
-                commands::silo_image_delete(cli.endpoint, cli.api_key, Uuid::nil(), image_id).await
+            PublicSshKeyCommand::Show { key_id, json } => {
+                commands::ssh_key_show(cli.endpoint, cli.api_key, key_id, json).await
+            }
+            PublicSshKeyCommand::Delete { key_id } => {
+                commands::ssh_key_delete(cli.endpoint, cli.api_key, key_id).await
             }
         },
         Commands::Auth { command } => match command {
@@ -1905,6 +2095,29 @@ async fn main() -> Result<()> {
                         sha256,
                         source_url,
                         id,
+                        json,
+                    )
+                    .await
+                }
+            },
+            AuthCommand::SshKey { command } => match command {
+                AuthSshKeyCommand::List { json } => {
+                    commands::auth_ssh_key_list(cli.endpoint, cli.api_key, json).await
+                }
+                AuthSshKeyCommand::Add {
+                    name,
+                    description,
+                    public_key,
+                    public_key_file,
+                    json,
+                } => {
+                    commands::auth_ssh_key_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        name,
+                        description,
+                        public_key,
+                        public_key_file,
                         json,
                     )
                     .await
