@@ -21,10 +21,10 @@ use uuid::Uuid;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
-    Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
-    NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
-    SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
+    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
+    NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
@@ -34,6 +34,25 @@ use crate::{ApiKeyScope, NewInstanceNic};
 /// candidates and any realistic VPC count, collisions are vanishingly
 /// rare; the cap is purely defensive.
 const VNI_RETRY_ATTEMPTS: usize = 8;
+
+/// Build an [`Image`] record from a [`NewImage`] request and its
+/// resolved scope. Centralised so the per-scope create methods
+/// don't drift on field assignment.
+fn build_image(id: Uuid, scope: ImageScope, req: &NewImage) -> Image {
+    Image {
+        id,
+        scope,
+        name: req.name.clone(),
+        description: req.description.clone().unwrap_or_default(),
+        os: req.os.clone(),
+        version: req.version.clone(),
+        size_bytes: req.size_bytes,
+        sha256: req.sha256.clone(),
+        source_url: req.source_url.clone(),
+        compatibility: req.compatibility.clone(),
+        created_at: Utc::now(),
+    }
+}
 
 /// Job targeting matrix shared by both store backends:
 /// * unrouted job (target=None) — claimable by anyone.
@@ -93,9 +112,16 @@ struct Inner {
     /// fingerprint uniqueness (no aliased pool entries).
     ssh_key_id_by_silo_fingerprint: HashMap<(Uuid, String), Uuid>,
     images_by_id: HashMap<Uuid, Image>,
-    /// `(silo_id, name)` → image_id index for within-silo name
-    /// uniqueness.
+    /// Per-scope name uniqueness indexes. The key is the scope's
+    /// namespace UUID (`Uuid::nil()` for Public, silo_id /
+    /// tenant_id / project_id / user_id for the others) plus the
+    /// image name. Each scope-kind has its own map so two scopes
+    /// whose namespace UUIDs collide can't conflict.
+    image_id_by_public_name: HashMap<String, Uuid>,
     image_id_by_silo_name: HashMap<(Uuid, String), Uuid>,
+    image_id_by_tenant_name: HashMap<(Uuid, String), Uuid>,
+    image_id_by_project_name: HashMap<(Uuid, String), Uuid>,
+    image_id_by_user_name: HashMap<(Uuid, String), Uuid>,
     /// `project_id` → quota record. Singleton per project.
     quotas_by_project: HashMap<Uuid, Quota>,
     instances_by_id: HashMap<Uuid, Instance>,
@@ -820,7 +846,32 @@ impl Store for MemStore {
         Ok(())
     }
 
-    async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+    async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError> {
+        let mut guard = self.inner.write().await;
+        if guard.image_id_by_public_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "public image with name {:?} already exists",
+                req.name
+            )));
+        }
+        let scope = ImageScope::Public;
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(&scope, &req.sha256));
+        if guard.images_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "image with id {id} already exists",
+            )));
+        }
+        let image = build_image(id, scope, &req);
+        guard
+            .image_id_by_public_name
+            .insert(image.name.clone(), image.id);
+        guard.images_by_id.insert(image.id, image.clone());
+        Ok(image)
+    }
+
+    async fn create_image_silo(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
         let mut guard = self.inner.write().await;
         if !guard.silos_by_id.contains_key(&silo_id) {
             return Err(StoreError::NotFound);
@@ -832,29 +883,106 @@ impl Store for MemStore {
                 req.name
             )));
         }
-        let id = match req.id {
-            Some(pinned) => pinned,
-            None => crate::derive_image_id(silo_id, &req.sha256),
-        };
+        let scope = ImageScope::Silo { silo_id };
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(&scope, &req.sha256));
         if guard.images_by_id.contains_key(&id) {
             return Err(StoreError::Conflict(format!(
                 "image with id {id} already exists",
             )));
         }
-        let image = Image {
-            id,
-            silo_id,
-            name: req.name.clone(),
-            description: req.description.unwrap_or_default(),
-            os: req.os,
-            version: req.version,
-            size_bytes: req.size_bytes,
-            sha256: req.sha256,
-            source_url: req.source_url,
-            compatibility: req.compatibility,
-            created_at: Utc::now(),
-        };
+        let image = build_image(id, scope, &req);
         guard.image_id_by_silo_name.insert(name_key, image.id);
+        guard.images_by_id.insert(image.id, image.clone());
+        Ok(image)
+    }
+
+    async fn create_image_tenant(
+        &self,
+        tenant_id: Uuid,
+        req: NewImage,
+    ) -> Result<Image, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.tenants_by_id.contains_key(&tenant_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (tenant_id, req.name.clone());
+        if guard.image_id_by_tenant_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "image with name {:?} already exists in tenant {tenant_id}",
+                req.name
+            )));
+        }
+        let scope = ImageScope::Tenant { tenant_id };
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(&scope, &req.sha256));
+        if guard.images_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "image with id {id} already exists",
+            )));
+        }
+        let image = build_image(id, scope, &req);
+        guard.image_id_by_tenant_name.insert(name_key, image.id);
+        guard.images_by_id.insert(image.id, image.clone());
+        Ok(image)
+    }
+
+    async fn create_image_project(
+        &self,
+        project_id: Uuid,
+        req: NewImage,
+    ) -> Result<Image, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.projects_by_id.contains_key(&project_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (project_id, req.name.clone());
+        if guard.image_id_by_project_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "image with name {:?} already exists in project {project_id}",
+                req.name
+            )));
+        }
+        let scope = ImageScope::Project { project_id };
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(&scope, &req.sha256));
+        if guard.images_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "image with id {id} already exists",
+            )));
+        }
+        let image = build_image(id, scope, &req);
+        guard.image_id_by_project_name.insert(name_key, image.id);
+        guard.images_by_id.insert(image.id, image.clone());
+        Ok(image)
+    }
+
+    async fn create_image_user(&self, user_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.users_by_id.contains_key(&user_id) {
+            return Err(StoreError::NotFound);
+        }
+        let name_key = (user_id, req.name.clone());
+        if guard.image_id_by_user_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "image with name {:?} already exists for user {user_id}",
+                req.name
+            )));
+        }
+        let scope = ImageScope::User { user_id };
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(&scope, &req.sha256));
+        if guard.images_by_id.contains_key(&id) {
+            return Err(StoreError::Conflict(format!(
+                "image with id {id} already exists",
+            )));
+        }
+        let image = build_image(id, scope, &req);
+        guard.image_id_by_user_name.insert(name_key, image.id);
         guard.images_by_id.insert(image.id, image.clone());
         Ok(image)
     }
@@ -868,12 +996,111 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)
     }
 
+    async fn list_images_public(&self) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| matches!(i.scope, ImageScope::Public))
+            .cloned()
+            .collect())
+    }
+
     async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError> {
         let guard = self.inner.read().await;
         Ok(guard
             .images_by_id
             .values()
-            .filter(|i| i.silo_id == silo_id)
+            .filter(|i| matches!(i.scope, ImageScope::Silo { silo_id: s } if s == silo_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_images_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| matches!(i.scope, ImageScope::Tenant { tenant_id: t } if t == tenant_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_images_in_project(&self, project_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| matches!(i.scope, ImageScope::Project { project_id: p } if p == project_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_images_for_user(&self, user_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| matches!(i.scope, ImageScope::User { user_id: u } if u == user_id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_visible_images_in_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        // Tenant must exist; surfaces NotFound for cross-tenant
+        // probes via the handler's authorize_in_tenant gate, but
+        // we also want a clean NotFound for a stale tenant id
+        // that slipped past Cedar.
+        let tenant = guard
+            .tenants_by_id
+            .get(&tenant_id)
+            .ok_or(StoreError::NotFound)?
+            .clone();
+        let silo_id = tenant.silo_id;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| match &i.scope {
+                ImageScope::Public => true,
+                ImageScope::Silo { silo_id: s } => *s == silo_id,
+                ImageScope::Tenant { tenant_id: t } => *t == tenant_id,
+                _ => false,
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn list_visible_images_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Image>, StoreError> {
+        let guard = self.inner.read().await;
+        let project = guard
+            .projects_by_id
+            .get(&project_id)
+            .ok_or(StoreError::NotFound)?
+            .clone();
+        let tenant = guard
+            .tenants_by_id
+            .get(&project.tenant_id)
+            .ok_or(StoreError::NotFound)?
+            .clone();
+        let silo_id = tenant.silo_id;
+        let tenant_id = project.tenant_id;
+        Ok(guard
+            .images_by_id
+            .values()
+            .filter(|i| match &i.scope {
+                ImageScope::Public => true,
+                ImageScope::Silo { silo_id: s } => *s == silo_id,
+                ImageScope::Tenant { tenant_id: t } => *t == tenant_id,
+                ImageScope::Project { project_id: p } => *p == project_id,
+                _ => false,
+            })
             .cloned()
             .collect())
     }
@@ -884,9 +1111,27 @@ impl Store for MemStore {
             .images_by_id
             .remove(&image_id)
             .ok_or(StoreError::NotFound)?;
-        guard
-            .image_id_by_silo_name
-            .remove(&(image.silo_id, image.name));
+        match image.scope {
+            ImageScope::Public => {
+                guard.image_id_by_public_name.remove(&image.name);
+            }
+            ImageScope::Silo { silo_id } => {
+                guard.image_id_by_silo_name.remove(&(silo_id, image.name));
+            }
+            ImageScope::Tenant { tenant_id } => {
+                guard
+                    .image_id_by_tenant_name
+                    .remove(&(tenant_id, image.name));
+            }
+            ImageScope::Project { project_id } => {
+                guard
+                    .image_id_by_project_name
+                    .remove(&(project_id, image.name));
+            }
+            ImageScope::User { user_id } => {
+                guard.image_id_by_user_name.remove(&(user_id, image.name));
+            }
+        }
         Ok(())
     }
 
@@ -950,7 +1195,7 @@ impl Store for MemStore {
             return Err(StoreError::NotFound);
         }
 
-        // Resolve the owning silo via the tenant; image + ssh-key are
+        // Resolve the owning silo via the tenant; ssh-key is
         // still silo-scoped in E-3.
         let silo_id = guard
             .tenants_by_id
@@ -958,15 +1203,15 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)?
             .silo_id;
 
-        // Image must exist and be in the silo.
+        // Image must exist. Visibility (cross-scope) is enforced
+        // by the API handler before invoking this; the store
+        // performs only the existence check so a stale image_id
+        // surfaces as NotFound.
         let image = guard
             .images_by_id
             .get(&req.image_id)
-            .ok_or(StoreError::NotFound)?;
-        if image.silo_id != silo_id {
-            return Err(StoreError::NotFound);
-        }
-        let image = image.clone();
+            .ok_or(StoreError::NotFound)?
+            .clone();
 
         // Subnet must exist and live under this same tenant+project.
         let subnet = guard
@@ -3392,10 +3637,10 @@ mod tests {
             .unwrap();
 
         let img = store
-            .create_image(silo.id, image_req("ubuntu-base"))
+            .create_image_silo(silo.id, image_req("ubuntu-base"))
             .await
             .unwrap();
-        assert_eq!(img.silo_id, silo.id);
+        assert_eq!(img.scope, ImageScope::Silo { silo_id: silo.id });
         assert_eq!(img.os, "linux");
         assert_eq!(img.size_bytes, 1_000_000_000);
 
@@ -3424,11 +3669,11 @@ mod tests {
             .await
             .unwrap();
         store
-            .create_image(silo.id, image_req("ubuntu-base"))
+            .create_image_silo(silo.id, image_req("ubuntu-base"))
             .await
             .unwrap();
         let err = store
-            .create_image(silo.id, image_req("ubuntu-base"))
+            .create_image_silo(silo.id, image_req("ubuntu-base"))
             .await
             .expect_err("duplicate name within silo conflicts");
         assert!(matches!(err, StoreError::Conflict(_)));
@@ -3438,10 +3683,144 @@ mod tests {
     async fn create_image_in_unknown_silo_is_not_found() {
         let store = MemStore::new();
         let err = store
-            .create_image(Uuid::new_v4(), image_req("orphan"))
+            .create_image_silo(Uuid::new_v4(), image_req("orphan"))
             .await
             .expect_err("unknown silo should be not-found");
         assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn image_scope_round_trips() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "scopes".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant_id = silo.default_tenant_id;
+        let project = store
+            .create_project(
+                tenant_id,
+                NewProject {
+                    name: "p".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let user = store
+            .create_user(User {
+                id: Uuid::new_v4(),
+                username: "alice".to_string(),
+                password_hash: "$2y$dummy".to_string(),
+                is_root: false,
+                created_at: Utc::now(),
+                tenant_id: Some(tenant_id),
+                federation: None,
+            })
+            .await
+            .unwrap();
+
+        let pub_img = store
+            .create_image_public(image_req("public-img"))
+            .await
+            .unwrap();
+        assert_eq!(pub_img.scope, ImageScope::Public);
+        let silo_img = store
+            .create_image_silo(silo.id, image_req("silo-img"))
+            .await
+            .unwrap();
+        let tenant_img = store
+            .create_image_tenant(tenant_id, image_req("tenant-img"))
+            .await
+            .unwrap();
+        let project_img = store
+            .create_image_project(project.id, image_req("project-img"))
+            .await
+            .unwrap();
+        let user_img = store
+            .create_image_user(user.id, image_req("user-img"))
+            .await
+            .unwrap();
+        assert_eq!(user_img.scope, ImageScope::User { user_id: user.id });
+
+        // Single-scope listings are exact (no union).
+        let pub_list = store.list_images_public().await.unwrap();
+        assert_eq!(pub_list.len(), 1);
+        assert_eq!(pub_list[0].id, pub_img.id);
+
+        let silo_list = store.list_images_in_silo(silo.id).await.unwrap();
+        assert_eq!(silo_list.len(), 1);
+        assert_eq!(silo_list[0].id, silo_img.id);
+
+        let tenant_list = store.list_images_in_tenant(tenant_id).await.unwrap();
+        assert_eq!(tenant_list.len(), 1);
+        assert_eq!(tenant_list[0].id, tenant_img.id);
+
+        let project_list = store.list_images_in_project(project.id).await.unwrap();
+        assert_eq!(project_list.len(), 1);
+        assert_eq!(project_list[0].id, project_img.id);
+
+        let user_list = store.list_images_for_user(user.id).await.unwrap();
+        assert_eq!(user_list.len(), 1);
+        assert_eq!(user_list[0].id, user_img.id);
+
+        // Visible-in-tenant unions Public + Silo + Tenant.
+        let visible_tenant = store
+            .list_visible_images_in_tenant(tenant_id)
+            .await
+            .unwrap();
+        let mut ids: Vec<Uuid> = visible_tenant.iter().map(|i| i.id).collect();
+        ids.sort();
+        let mut want = vec![pub_img.id, silo_img.id, tenant_img.id];
+        want.sort();
+        assert_eq!(ids, want);
+
+        // Visible-in-project adds Project.
+        let visible_project = store
+            .list_visible_images_in_project(project.id)
+            .await
+            .unwrap();
+        let mut ids: Vec<Uuid> = visible_project.iter().map(|i| i.id).collect();
+        ids.sort();
+        let mut want = vec![pub_img.id, silo_img.id, tenant_img.id, project_img.id];
+        want.sort();
+        assert_eq!(ids, want);
+
+        // Delete cleans up the per-scope name index — re-create
+        // with the same name in the same scope succeeds.
+        store.delete_image(silo_img.id).await.unwrap();
+        store
+            .create_image_silo(silo.id, image_req("silo-img"))
+            .await
+            .expect("re-create after delete must succeed");
+    }
+
+    #[tokio::test]
+    async fn same_image_name_across_scopes_does_not_collide() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "ns".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant_id = silo.default_tenant_id;
+        store
+            .create_image_public(image_req("ubuntu"))
+            .await
+            .unwrap();
+        store
+            .create_image_silo(silo.id, image_req("ubuntu"))
+            .await
+            .expect("silo `ubuntu` and public `ubuntu` are independent");
+        store
+            .create_image_tenant(tenant_id, image_req("ubuntu"))
+            .await
+            .expect("tenant `ubuntu` and silo `ubuntu` are independent");
     }
 
     fn quota_req() -> NewQuota {
@@ -3558,7 +3937,7 @@ mod tests {
             .await
             .unwrap();
         let image = store
-            .create_image(silo_id, image_req("ubuntu-base"))
+            .create_image_silo(silo_id, image_req("ubuntu-base"))
             .await
             .unwrap();
         let ssh_key = store
@@ -3611,29 +3990,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn instance_with_image_in_other_silo_is_not_found() {
+    async fn instance_with_unknown_image_is_not_found() {
         let store = MemStore::new();
         let (tenant_id, project_id, _, subnet_id, ssh_key_id) = make_instance_fixture(&store).await;
-        // Image registered in a *different* silo.
-        let other_silo = store
-            .create_silo(NewSilo {
-                name: "other".to_string(),
-                description: None,
-            })
-            .await
-            .unwrap();
-        let foreign_image = store
-            .create_image(other_silo.id, image_req("foreign"))
-            .await
-            .unwrap();
         let err = store
             .create_instance(
                 tenant_id,
                 project_id,
-                instance_req("bad", foreign_image.id, subnet_id, ssh_key_id),
+                instance_req("bad", Uuid::new_v4(), subnet_id, ssh_key_id),
             )
             .await
-            .expect_err("foreign-silo image should be not-found");
+            .expect_err("unknown image should be not-found");
         assert!(matches!(err, StoreError::NotFound));
     }
 
@@ -3997,7 +4364,7 @@ mod tests {
             .await
             .unwrap();
         let image = store
-            .create_image(silo_id, image_req("dual"))
+            .create_image_silo(silo_id, image_req("dual"))
             .await
             .unwrap();
         let key = store
@@ -4476,7 +4843,7 @@ mod tests {
             .await
             .unwrap();
         let image_b = store
-            .create_image(silo_id, image_req("ub-b"))
+            .create_image_silo(silo_id, image_req("ub-b"))
             .await
             .unwrap();
         let key_b = store

@@ -525,6 +525,73 @@
         }
       }
     },
+    "/v2/auth/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List the calling user's `User`-scoped images. Returns",
+        "description": "only the caller's own images; the bound user_id is resolved from the authenticated principal.",
+        "operationId": "list_my_images",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Image",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Register a `User`-scoped image owned by the caller.",
+        "operationId": "create_my_image",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/auth/login": {
       "post": {
         "tags": [
@@ -867,6 +934,143 @@
         }
       }
     },
+    "/v2/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List Public images. Anonymous-accessible — Public means",
+        "description": "public, so unauthenticated probes get the catalog.",
+        "operationId": "list_public_images",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Image",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Create a `Public` image. Root-only via Cedar.",
+        "description": "Returns 400 if `sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use among Public images.",
+        "operationId": "create_public_image",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/images/{image_id}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Read a single image by id. Returns 404 when the image",
+        "description": "does not exist OR when the principal cannot see it (cross-scope visibility deny).",
+        "operationId": "get_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Delete an image by id. Returns 404 when the image does",
+        "description": "not exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).",
+        "operationId": "delete_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos": {
       "post": {
         "tags": [
@@ -948,8 +1152,8 @@
         "tags": [
           "images"
         ],
-        "summary": "Register an image from a tritond image bundle. tritond",
-        "description": "fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from the `{image_id}` parameter of `GET /v2/silos/{silo_id}/images/{image_id}`.",
+        "summary": "Register an image from a tritond image bundle (silo-scoped",
+        "description": "only). tritond fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from a sibling `{image_id}` parameter at the same level.",
         "operationId": "create_silo_image_from_bundle",
         "parameters": [
           {
@@ -997,7 +1201,8 @@
         "tags": [
           "images"
         ],
-        "summary": "List the images registered in a silo's catalog.",
+        "summary": "List the images whose scope is exactly `Silo { silo_id }`",
+        "description": "(does NOT include Public — use `/v2/tenants/{tenant_id}/images` for the unioned tenant view).",
         "operationId": "list_silo_images",
         "parameters": [
           {
@@ -1037,8 +1242,7 @@
         "tags": [
           "images"
         ],
-        "summary": "Register an image in a silo's catalog. Returns 400 if",
-        "description": "`sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use within the silo.",
+        "summary": "Register a `Silo`-scoped image.",
         "operationId": "create_silo_image",
         "parameters": [
           {
@@ -1071,93 +1275,6 @@
                 }
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      }
-    },
-    "/v2/silos/{silo_id}/images/{image_id}": {
-      "get": {
-        "tags": [
-          "images"
-        ],
-        "summary": "Read a single image. Returns 404 when the image does not",
-        "description": "exist or belongs to a different silo.",
-        "operationId": "get_silo_image",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "image_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
-              }
-            }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "images"
-        ],
-        "summary": "Delete an image. Returns 404 when the image does not exist",
-        "description": "or belongs to a different silo.",
-        "operationId": "delete_silo_image",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "image_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "in": "path",
-            "name": "silo_id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -1634,6 +1751,95 @@
         "responses": {
           "204": {
             "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List images visible to the tenant: Public + Silo (of",
+        "description": "tenant's silo) + Tenant.",
+        "operationId": "list_tenant_images",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Image",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Register a `Tenant`-scoped image.",
+        "operationId": "create_tenant_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -2143,6 +2349,113 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FloatingIp"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List images visible to the project: Public + Silo (of",
+        "description": "project's silo) + Tenant (of project's tenant) + Project. This is the practical \"what can a project member launch from?\" query.",
+        "operationId": "list_project_images",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Image",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Image"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Register a `Project`-scoped image.",
+        "operationId": "create_project_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
                 }
               }
             }
@@ -4159,7 +4472,7 @@
         ]
       },
       "Image": {
-        "description": "Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\n\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private.",
+        "description": "Image catalog entry. Multi-scope as of Slice F: see [`ImageScope`] for the variants. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.",
         "type": "object",
         "properties": {
           "compatibility": {
@@ -4190,13 +4503,17 @@
             "description": "OS family identifier (e.g. `linux`, `windows`, `smartos`). Stringly-typed in Phase 0; will tighten to an enum once the instance brand model lands.",
             "type": "string"
           },
+          "scope": {
+            "description": "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageScope"
+              }
+            ]
+          },
           "sha256": {
             "description": "Lowercase hex SHA-256 of the image content. Server-validated for length (64 chars) and charset at create time.",
             "type": "string"
-          },
-          "silo_id": {
-            "type": "string",
-            "format": "uuid"
           },
           "size_bytes": {
             "description": "Total content size, in bytes.",
@@ -4220,8 +4537,8 @@
           "id",
           "name",
           "os",
+          "scope",
           "sha256",
-          "silo_id",
           "size_bytes",
           "version"
         ]
@@ -4250,6 +4567,101 @@
           "brand"
         ]
       },
+      "ImageScope": {
+        "description": "Visibility scope of an [`Image`]. The variant determines who can see and use the image: `Public` is everyone (including anonymous probes on the public listing endpoint); `Silo` is every member of any tenant under that silo; `Tenant` is every member of that tenant; `Project` is every tenant member with project access (Phase 0: every tenant member); `User` is one specific user.\n\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on `Image`. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "public"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "silo"
+                ]
+              },
+              "silo_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "silo_id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tenant"
+                ]
+              },
+              "tenant_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "tenant_id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project"
+                ]
+              },
+              "project_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "project_id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "user"
+                ]
+              },
+              "user_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "kind",
+              "user_id"
+            ]
+          }
+        ]
+      },
       "Instance": {
         "description": "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships.",
         "type": "object",
@@ -4272,7 +4684,7 @@
             "format": "uuid"
           },
           "image_id": {
-            "description": "Boot image; must be in the same silo as the instance's tenant. Images remain silo-scoped in E-3.",
+            "description": "Boot image. As of Slice F images are multi-scope; the instance-create handler enforces that the principal can see this image (via the [`crate`]-level visibility predicate). Cross-scope references that the principal cannot see surface as `NotFound`.",
             "type": "string",
             "format": "uuid"
           },
@@ -4700,7 +5112,7 @@
         ]
       },
       "NewImage": {
-        "description": "Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`.",
+        "description": "Request body for registering an image in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id` and `created_at`.",
         "type": "object",
         "properties": {
           "compatibility": {
@@ -4720,7 +5132,7 @@
           },
           "id": {
             "nullable": true,
-            "description": "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `sha256` via [`derive_image_id`] — same content always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.",
+            "description": "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `(scope, sha256)` via [`derive_image_id`] — same content in the same scope always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. Different scopes registering the same content yield distinct ids (no cross-scope collisions). `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.",
             "default": null,
             "type": "string",
             "format": "uuid"
@@ -4757,7 +5169,7 @@
         ]
       },
       "NewImageFromBundle": {
-        "description": "Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).",
+        "description": "Request body for `POST /v2/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).",
         "type": "object",
         "properties": {
           "bundle_url": {

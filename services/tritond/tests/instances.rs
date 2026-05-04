@@ -520,43 +520,17 @@ async fn zero_cpu_or_memory_returns_400() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn cross_silo_image_returns_404() {
+async fn unknown_image_returns_404() {
+    // Slice F: image visibility is no longer enforced by silo
+    // membership for the root principal — root sees every image.
+    // The cross-tenant invariant is exercised against non-root
+    // principals in `image_scope.rs`. This test keeps coverage
+    // for the "image_id doesn't exist at all" branch.
     let test = TestServer::start().await;
     let root = test.root_client();
     let fx = build_fixture(&root).await;
-
-    // Image from a *different* silo.
-    let other_silo = root
-        .create_silo()
-        .body(NewSilo {
-            name: "other".to_string(),
-            description: None,
-        })
-        .send()
-        .await
-        .unwrap()
-        .into_inner();
-    let foreign_image = root
-        .create_silo_image()
-        .silo_id(other_silo.id)
-        .body(NewImage {
-            name: "foreign".to_string(),
-            description: None,
-            os: "linux".to_string(),
-            version: "1".to_string(),
-            size_bytes: 1,
-            sha256: "0".repeat(64),
-            source_url: None,
-            id: None,
-            compatibility: None,
-        })
-        .send()
-        .await
-        .unwrap()
-        .into_inner();
-
     let mut req = instance_req(&fx, "x");
-    req.image_id = foreign_image.id;
+    req.image_id = Uuid::new_v4();
     let err = root
         .create_project_instance()
         .tenant_id(fx.tenant_id)
@@ -564,7 +538,7 @@ async fn cross_silo_image_returns_404() {
         .body(req)
         .send()
         .await
-        .expect_err("cross-silo image must 404");
+        .expect_err("unknown image must 404");
     assert_status(err, 404);
 
     test.close().await;

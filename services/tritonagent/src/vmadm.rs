@@ -345,7 +345,7 @@ mod tests {
         };
         let image = Image {
             id: image_id,
-            silo_id: silo,
+            scope: tritond_client::types::ImageScope::Silo { silo_id: silo },
             name: "minimal-64-lts".to_string(),
             description: String::new(),
             os: "smartos".to_string(),

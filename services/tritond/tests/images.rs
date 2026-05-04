@@ -6,15 +6,14 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! End-to-end tests for the `/v2/silos/{silo_id}/images` surface.
+//! End-to-end tests for the silo-scoped image endpoints
+//! (`/v2/silos/{silo_id}/images` create + list, `/v2/images/{id}`
+//! cross-scope get + delete).
 //!
-//! Mirrors `tests/projects.rs` for the auth fixture and exercises:
-//!
-//! * Server-side sha256 format validation (must be 64 lowercase hex).
-//! * Server-side size_bytes > 0 validation.
-//! * Cross-silo 404 on get.
-//! * Name uniqueness within silo (409).
-//! * Same name in different silos OK.
+//! Visibility / ownership / cross-scope cases live in
+//! `tests/image_scope.rs`. This file covers the silo-scoped
+//! sha256 / size validation invariants and the legacy "same
+//! name in different silos" constraint.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -136,6 +135,7 @@ fn standard_image(name: &str) -> NewImage {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn image_round_trip_within_silo() {
+    use tritond_client::types::ImageScope;
     let test = TestServer::start().await;
     let root = test.root_client();
     let silo_id = make_silo(&root).await;
@@ -148,7 +148,7 @@ async fn image_round_trip_within_silo() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(img.silo_id, silo_id);
+    assert!(matches!(img.scope, ImageScope::Silo { silo_id: s } if s == silo_id));
     assert_eq!(img.size_bytes, 1_000_000_000);
 
     let listed = root
@@ -161,8 +161,7 @@ async fn image_round_trip_within_silo() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, img.id);
 
-    root.delete_silo_image()
-        .silo_id(silo_id)
+    root.delete_image()
         .image_id(img.id)
         .send()
         .await
@@ -272,35 +271,42 @@ async fn same_name_in_different_silos_does_not_conflict() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn cross_silo_get_returns_404() {
+async fn root_can_get_image_globally() {
+    // The legacy "cross-silo get returns 404" test is now obsolete:
+    // /v2/images/{id} is a global lookup and root sees everything.
+    // The cross-silo / cross-tenant 404 invariant is exercised by
+    // image_scope.rs against non-root principals where it actually
+    // matters.
     let test = TestServer::start().await;
     let root = test.root_client();
-    let silo_a = make_silo(&root).await;
-    let silo_b = make_silo(&root).await;
-
+    let silo_id = make_silo(&root).await;
     let img = root
         .create_silo_image()
-        .silo_id(silo_a)
+        .silo_id(silo_id)
         .body(standard_image("ubuntu-base"))
         .send()
         .await
         .unwrap()
         .into_inner();
 
-    let err = root
-        .get_silo_image()
-        .silo_id(silo_b)
+    let fetched = root
+        .get_image()
         .image_id(img.id)
         .send()
         .await
-        .expect_err("cross-silo get must 404");
-    assert_status(err, 404);
+        .unwrap()
+        .into_inner();
+    assert_eq!(fetched.id, img.id);
 
     test.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn anonymous_cannot_reach_image_endpoints() {
+async fn anonymous_cannot_reach_silo_image_list() {
+    // The silo-scoped list still requires silo membership; an
+    // anonymous probe gets the cross-silo 404. (Public images
+    // are reachable anonymously via /v2/images — see
+    // image_scope.rs).
     let test = TestServer::start().await;
     let root = test.root_client();
     let silo_id = make_silo(&root).await;
@@ -311,7 +317,7 @@ async fn anonymous_cannot_reach_image_endpoints() {
         .silo_id(silo_id)
         .send()
         .await
-        .expect_err("anonymous list must be denied");
+        .expect_err("anonymous silo-list must be denied");
     assert_status(err, 404);
 
     test.close().await;

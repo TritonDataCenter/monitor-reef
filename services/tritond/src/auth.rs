@@ -76,7 +76,9 @@ permit(
         Action::"login",
         Action::"refresh",
         Action::"agent_register",
-        Action::"agent_register_status"
+        Action::"agent_register_status",
+        Action::"image_list_public",
+        Action::"image_get"
     ],
     resource
 );
@@ -149,13 +151,33 @@ permit(
         Action::"floating_ip_get",
         Action::"floating_ip_delete",
         Action::"floating_ip_attach",
-        Action::"floating_ip_detach"
+        Action::"floating_ip_detach",
+        Action::"image_list",
+        Action::"image_create",
+        Action::"image_get",
+        Action::"image_delete"
     ],
     resource
 ) when {
     principal has tenant_id &&
     resource has tenant_id &&
     principal.tenant_id == resource.tenant_id
+};
+
+@id("authenticated-image-global-actions")
+permit(
+    principal,
+    action in [
+        Action::"image_list",
+        Action::"image_create",
+        Action::"image_get",
+        Action::"image_delete"
+    ],
+    resource
+) when {
+    principal has user_id &&
+    !(resource has silo_id) &&
+    !(resource has tenant_id)
 };
 "#;
 
@@ -249,6 +271,7 @@ impl Principal {
         let uid = self.entity_uid()?;
         let mut attrs: HashMap<String, RestrictedExpression> = HashMap::new();
         if let Principal::Operator {
+            user_id,
             is_root,
             silo_id,
             tenant_id,
@@ -258,6 +281,14 @@ impl Principal {
             attrs.insert(
                 "is_root".to_string(),
                 RestrictedExpression::new_bool(*is_root),
+            );
+            // user_id is always present on an authenticated
+            // operator; emitting it as an attribute lets Cedar
+            // gate user-scoped actions (e.g. /v2/auth/images)
+            // on `principal has user_id`.
+            attrs.insert(
+                "user_id".to_string(),
+                RestrictedExpression::new_string(user_id.to_string()),
             );
             if let Some(silo_id) = silo_id {
                 attrs.insert(
@@ -314,7 +345,14 @@ pub enum Action {
     SshKeyCreate,
     SshKeyGet,
     SshKeyDelete,
+    /// Scope-aware image list (silo/tenant/project/user URLs).
+    /// Gated by per-scope Cedar rules.
     ImageList,
+    /// Anonymous-allowed Public-image list (only `/v2/images`).
+    /// Separate so the anonymous-public-actions Cedar rule
+    /// doesn't accidentally permit `/v2/silos/.../images` to
+    /// unauthenticated probes.
+    ImageListPublic,
     ImageCreate,
     ImageGet,
     ImageDelete,
@@ -426,6 +464,7 @@ impl Action {
             Action::SshKeyGet => "ssh_key_get",
             Action::SshKeyDelete => "ssh_key_delete",
             Action::ImageList => "image_list",
+            Action::ImageListPublic => "image_list_public",
             Action::ImageCreate => "image_create",
             Action::ImageGet => "image_get",
             Action::ImageDelete => "image_delete",
@@ -953,6 +992,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::SshKeyList
         | Action::SshKeyGet
         | Action::ImageList
+        | Action::ImageListPublic
         | Action::ImageGet
         | Action::QuotaGet
         | Action::InstanceList

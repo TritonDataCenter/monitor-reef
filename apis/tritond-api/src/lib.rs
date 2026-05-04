@@ -90,7 +90,9 @@ pub struct TokenResponse {
     pub refresh_expires_at: DateTime<Utc>,
 }
 
-/// Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.
+/// Request body for `POST /v2/silos/{silo_id}/image-bundles`.
+/// (Bundle ingest stays silo-scoped through slice F; multi-scope
+/// bundle ingest is a future concern.)
 ///
 /// `bundle_url` points at a tritond image bundle (an
 /// uncompressed tar with `manifest.json` + `content.zfs.gz`,
@@ -409,11 +411,12 @@ pub struct SiloSshKeyPath {
     pub ssh_key_id: Uuid,
 }
 
-/// Path parameters for endpoints that operate on a single image
-/// inside a silo.
+/// Path parameter for endpoints that operate on a single image
+/// by id, regardless of scope. Used by `GET /v2/images/{image_id}`
+/// and `DELETE /v2/images/{image_id}`. Visibility / ownership
+/// gating happens in the handler via the visibility predicate.
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct SiloImagePath {
-    pub silo_id: Uuid,
+pub struct ImagePath {
     pub image_id: Uuid,
 }
 
@@ -1170,7 +1173,34 @@ pub trait TritondApi {
         path: Path<SiloSshKeyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List the images registered in a silo's catalog.
+    /// List Public images. Anonymous-accessible — Public means
+    /// public, so unauthenticated probes get the catalog.
+    #[endpoint {
+        method = GET,
+        path = "/v2/images",
+        tags = ["images"],
+    }]
+    async fn list_public_images(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
+
+    /// Create a `Public` image. Root-only via Cedar.
+    /// Returns 400 if `sha256` is not 64 lowercase hex chars or
+    /// if `size_bytes` is zero. Returns 409 if the name is
+    /// already in use among Public images.
+    #[endpoint {
+        method = POST,
+        path = "/v2/images",
+        tags = ["images"],
+    }]
+    async fn create_public_image(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// List the images whose scope is exactly `Silo { silo_id }`
+    /// (does NOT include Public — use `/v2/tenants/{tenant_id}/images`
+    /// for the unioned tenant view).
     #[endpoint {
         method = GET,
         path = "/v2/silos/{silo_id}/images",
@@ -1181,10 +1211,7 @@ pub trait TritondApi {
         path: Path<SiloPath>,
     ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
 
-    /// Register an image in a silo's catalog. Returns 400 if
-    /// `sha256` is not 64 lowercase hex chars or if `size_bytes`
-    /// is zero. Returns 409 if the name is already in use within
-    /// the silo.
+    /// Register a `Silo`-scoped image.
     #[endpoint {
         method = POST,
         path = "/v2/silos/{silo_id}/images",
@@ -1196,21 +1223,22 @@ pub trait TritondApi {
         body: TypedBody<NewImage>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
-    /// Register an image from a tritond image bundle. tritond
-    /// fetches the bundle once at registration, validates the
-    /// manifest, re-hashes the content, and populates every
-    /// Image-record field from the manifest. The returned
-    /// `Image` carries `compatibility = Some(...)` so the per-CN
-    /// agent enforces brand + min_smartos_platform gates at
-    /// provision time. Returns 400 on a malformed bundle or
-    /// sha256 mismatch, 502 if `bundle_url` is unreachable, 409
-    /// on a name or content collision within the silo.
+    /// Register an image from a tritond image bundle (silo-scoped
+    /// only). tritond fetches the bundle once at registration,
+    /// validates the manifest, re-hashes the content, and
+    /// populates every Image-record field from the manifest. The
+    /// returned `Image` carries `compatibility = Some(...)` so
+    /// the per-CN agent enforces brand + min_smartos_platform
+    /// gates at provision time. Returns 400 on a malformed
+    /// bundle or sha256 mismatch, 502 if `bundle_url` is
+    /// unreachable, 409 on a name or content collision within
+    /// the silo.
     ///
     /// The path is `/v2/silos/{silo_id}/image-bundles` rather
     /// than `/v2/silos/{silo_id}/images/from-bundle` because
     /// Dropshot's router cannot disambiguate a literal
-    /// `from-bundle` segment from the `{image_id}` parameter
-    /// of `GET /v2/silos/{silo_id}/images/{image_id}`.
+    /// `from-bundle` segment from a sibling `{image_id}`
+    /// parameter at the same level.
     #[endpoint {
         method = POST,
         path = "/v2/silos/{silo_id}/image-bundles",
@@ -1222,28 +1250,107 @@ pub trait TritondApi {
         body: TypedBody<NewImageFromBundle>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
-    /// Read a single image. Returns 404 when the image does not
-    /// exist or belongs to a different silo.
+    /// List images visible to the tenant: Public + Silo (of
+    /// tenant's silo) + Tenant.
     #[endpoint {
         method = GET,
-        path = "/v2/silos/{silo_id}/images/{image_id}",
+        path = "/v2/tenants/{tenant_id}/images",
         tags = ["images"],
     }]
-    async fn get_silo_image(
+    async fn list_tenant_images(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloImagePath>,
+        path: Path<TenantPath>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
+
+    /// Register a `Tenant`-scoped image.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/images",
+        tags = ["images"],
+    }]
+    async fn create_tenant_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantPath>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// List images visible to the project: Public + Silo (of
+    /// project's silo) + Tenant (of project's tenant) + Project.
+    /// This is the practical "what can a project member launch
+    /// from?" query.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/images",
+        tags = ["images"],
+    }]
+    async fn list_project_images(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
+
+    /// Register a `Project`-scoped image.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/images",
+        tags = ["images"],
+    }]
+    async fn create_project_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// List the calling user's `User`-scoped images. Returns
+    /// only the caller's own images; the bound user_id is
+    /// resolved from the authenticated principal.
+    #[endpoint {
+        method = GET,
+        path = "/v2/auth/images",
+        tags = ["images"],
+    }]
+    async fn list_my_images(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
+
+    /// Register a `User`-scoped image owned by the caller.
+    #[endpoint {
+        method = POST,
+        path = "/v2/auth/images",
+        tags = ["images"],
+    }]
+    async fn create_my_image(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// Read a single image by id. Returns 404 when the image
+    /// does not exist OR when the principal cannot see it
+    /// (cross-scope visibility deny).
+    #[endpoint {
+        method = GET,
+        path = "/v2/images/{image_id}",
+        tags = ["images"],
+    }]
+    async fn get_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ImagePath>,
     ) -> Result<HttpResponseOk<Image>, HttpError>;
 
-    /// Delete an image. Returns 404 when the image does not exist
-    /// or belongs to a different silo.
+    /// Delete an image by id. Returns 404 when the image does
+    /// not exist OR the principal lacks ownership for the
+    /// image's scope:
+    /// * `Public` — root only.
+    /// * `Silo` / `Tenant` / `Project` — any tenant member of
+    ///   the resolved tenant (Phase 0 = same-tenant access).
+    /// * `User` — only the owning user (or root).
     #[endpoint {
         method = DELETE,
-        path = "/v2/silos/{silo_id}/images/{image_id}",
+        path = "/v2/images/{image_id}",
         tags = ["images"],
     }]
-    async fn delete_silo_image(
+    async fn delete_image(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloImagePath>,
+        path: Path<ImagePath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// Set (or replace) the resource quota on a project. Returns

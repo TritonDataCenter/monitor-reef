@@ -375,7 +375,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
         .unwrap();
     let image = test
         .store
-        .create_image(
+        .create_image_silo(
             silo.id,
             tritond_store::NewImage {
                 name: "test-image".to_string(),
@@ -619,7 +619,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
         .unwrap();
     let image = test
         .store
-        .create_image(
+        .create_image_silo(
             silo.id,
             tritond_store::NewImage {
                 name: "img".to_string(),
@@ -800,7 +800,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
         .unwrap();
     let image = test
         .store
-        .create_image(
+        .create_image_silo(
             silo.id,
             tritond_store::NewImage {
                 name: "test-image".to_string(),

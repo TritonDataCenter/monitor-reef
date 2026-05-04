@@ -34,13 +34,13 @@ pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
     CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnState, CnView, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment,
-    IdpConfig, IdpConfigView, Image, ImageCompatibility, Instance, InstanceCreateResult, JobKind,
-    JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NewFloatingIp,
-    NewImage, NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet,
-    SystemKey, TRITOND_IMAGE_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, format_claim_code, generate_claim_code,
-    generate_poll_token, normalize_claim_code,
+    IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, Instance,
+    InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewProject,
+    NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, Tenant, User, UserView,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, format_claim_code,
+    generate_claim_code, generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -381,35 +381,102 @@ pub trait Store: Send + Sync + 'static {
     async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
-    // Images (silo-scoped catalog)
+    // Images (multi-scope catalog: Public / Silo / Tenant / Project / User)
     // ------------------------------------------------------------------
 
-    /// Register an image in a silo's catalog.
+    /// Register a `Public` image (visible to everyone, including
+    /// anonymous probes on the public listing endpoint).
     ///
     /// The store enforces:
-    ///
-    /// * The silo exists. Missing silo → [`StoreError::NotFound`].
-    /// * `name` is unique within the silo. Collision →
+    /// * `name` is unique among Public images. Collision →
     ///   [`StoreError::Conflict`].
-    /// * `(name, version)` is treated as a single addressable
-    ///   tuple by some operator workflows; uniqueness is on `name`
-    ///   alone for Phase 0 — operators encode versions into the
-    ///   name (e.g. `ubuntu-22.04-base`) until a registry-style
-    ///   model lands.
     ///
     /// The caller is expected to have validated `req.sha256`
     /// (lowercase 64-char hex) at the API edge. The store treats
     /// it as an opaque string.
-    async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError>;
+    async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError>;
+
+    /// Register a `Silo`-scoped image. Returns
+    /// [`StoreError::NotFound`] if the silo does not exist;
+    /// [`StoreError::Conflict`] if `name` is already in use among
+    /// the silo's silo-scoped images.
+    async fn create_image_silo(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError>;
+
+    /// Register a `Tenant`-scoped image. Returns
+    /// [`StoreError::NotFound`] if the tenant does not exist;
+    /// [`StoreError::Conflict`] if `name` is already in use
+    /// among the tenant's tenant-scoped images.
+    async fn create_image_tenant(
+        &self,
+        tenant_id: Uuid,
+        req: NewImage,
+    ) -> Result<Image, StoreError>;
+
+    /// Register a `Project`-scoped image. Returns
+    /// [`StoreError::NotFound`] if the project does not exist;
+    /// [`StoreError::Conflict`] if `name` is already in use
+    /// among the project's project-scoped images.
+    async fn create_image_project(
+        &self,
+        project_id: Uuid,
+        req: NewImage,
+    ) -> Result<Image, StoreError>;
+
+    /// Register a `User`-scoped image. Returns
+    /// [`StoreError::NotFound`] if the user does not exist;
+    /// [`StoreError::Conflict`] if `name` is already in use
+    /// among the user's user-scoped images.
+    async fn create_image_user(&self, user_id: Uuid, req: NewImage) -> Result<Image, StoreError>;
 
     /// Look up an image by id. Returns [`StoreError::NotFound`]
-    /// when no such image exists, regardless of silo.
+    /// when no such image exists, regardless of scope. The
+    /// handler is expected to apply the visibility predicate on
+    /// top — this method is the cross-scope identity lookup.
     async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError>;
 
-    /// List every image in a silo's catalog.
+    /// List every Public image. Equivalent to filtering
+    /// `get_image` over `ImageScope::Public`.
+    async fn list_images_public(&self) -> Result<Vec<Image>, StoreError>;
+
+    /// List every image whose scope is exactly `Silo { silo_id }`.
+    /// Does NOT include Public; the caller composes unions via
+    /// [`Self::list_visible_images_in_tenant`] /
+    /// [`Self::list_visible_images_in_project`].
     async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError>;
 
-    /// Delete an image by id.
+    /// List every image whose scope is exactly `Tenant {
+    /// tenant_id }`.
+    async fn list_images_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Image>, StoreError>;
+
+    /// List every image whose scope is exactly `Project {
+    /// project_id }`.
+    async fn list_images_in_project(&self, project_id: Uuid) -> Result<Vec<Image>, StoreError>;
+
+    /// List every image whose scope is exactly `User { user_id }`.
+    async fn list_images_for_user(&self, user_id: Uuid) -> Result<Vec<Image>, StoreError>;
+
+    /// List every image visible at a tenant URL: Public + Silo
+    /// (of tenant's silo) + Tenant. Used by `GET
+    /// /v2/tenants/{tenant}/images` for the practical "what can a
+    /// tenant member launch from?" query.
+    async fn list_visible_images_in_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<Image>, StoreError>;
+
+    /// List every image visible at a project URL: Public + Silo
+    /// (of project's silo) + Tenant (of project's tenant) +
+    /// Project. Used by `GET
+    /// /v2/tenants/{tenant}/projects/{project}/images` for the
+    /// practical "what can a project member launch from?" query.
+    async fn list_visible_images_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Image>, StoreError>;
+
+    /// Delete an image by id. Visibility / ownership gating is
+    /// applied at the handler layer; the store layer just
+    /// removes the record.
     async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
@@ -448,10 +515,12 @@ pub trait Store: Send + Sync + 'static {
     /// * Project exists and `project.tenant_id == tenant_id`. Mismatch
     ///   surfaces as [`StoreError::NotFound`] (cross-tenant probe
     ///   story).
-    /// * Image exists and lives in the silo derived from the
-    ///   tenant. A missing or wrong-silo image is
-    ///   [`StoreError::NotFound`]. (Images are still silo-scoped in
-    ///   E-3; E-4 will move them.)
+    /// * Image exists. The handler layer applies the visibility
+    ///   predicate (see `image_visible_to` in the `tritond`
+    ///   crate); a referenced image the principal cannot see
+    ///   surfaces as [`StoreError::NotFound`] from the handler.
+    ///   The store itself does not gate on visibility — the
+    ///   handler resolves it before invoking `create_instance`.
     /// * Subnet exists and lives in this project (i.e.
     ///   `subnet.tenant_id == tenant_id` and `subnet.project_id ==
     ///   project_id`). Otherwise [`StoreError::NotFound`].

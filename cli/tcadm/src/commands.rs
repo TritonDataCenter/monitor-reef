@@ -1755,7 +1755,9 @@ pub async fn silo_ssh_key_delete(
     Ok(())
 }
 
-/// List images in a silo's catalog.
+/// List images whose scope is exactly `Silo { silo_id }` (not
+/// the unioned tenant view; use `tcadm tenant image list` for
+/// that).
 pub async fn silo_image_list(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -1771,28 +1773,10 @@ pub async fn silo_image_list(
         .await
         .context("list images")?
         .into_inner();
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&images)?);
-        return Ok(());
-    }
-    if images.is_empty() {
-        println!("(no images)");
-        return Ok(());
-    }
-    for i in images {
-        println!(
-            "{}  {}/{} {}MB  {}",
-            i.id,
-            i.os,
-            i.version,
-            i.size_bytes / 1_048_576,
-            i.name
-        );
-    }
-    Ok(())
+    print_images(images, json_output)
 }
 
-/// Register a new image in a silo's catalog.
+/// Register a new `Silo`-scoped image.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
 // ceremony.
@@ -1839,21 +1823,327 @@ pub async fn silo_image_add(
         println!("{}", serde_json::to_string_pretty(&image)?);
     } else {
         println!("Registered image {} in silo {silo_id}", image.id);
-        println!("  name:        {}", image.name);
-        println!("  description: {}", image.description);
-        println!("  os/version:  {}/{}", image.os, image.version);
-        println!("  size_bytes:  {}", image.size_bytes);
-        println!("  sha256:      {}", image.sha256);
-        println!(
-            "  source_url:  {}",
-            image.source_url.as_deref().unwrap_or("(none)")
-        );
-        println!("  created:     {}", image.created_at);
+        print_image_details(&image);
     }
     Ok(())
 }
 
-/// Read a single image.
+fn print_image_details(image: &tritond_client::types::Image) {
+    println!("  scope:       {:?}", image.scope);
+    println!("  name:        {}", image.name);
+    println!("  description: {}", image.description);
+    println!("  os/version:  {}/{}", image.os, image.version);
+    println!("  size_bytes:  {}", image.size_bytes);
+    println!("  sha256:      {}", image.sha256);
+    println!(
+        "  source_url:  {}",
+        image.source_url.as_deref().unwrap_or("(none)")
+    );
+    println!("  created:     {}", image.created_at);
+}
+
+/// Generic body builder for the explicit-fields image-create
+/// path. Used by every per-scope `*_image_add` command so the
+/// field set stays consistent across scopes.
+#[allow(clippy::too_many_arguments)]
+fn build_new_image(
+    name: String,
+    description: String,
+    os: String,
+    version: String,
+    size_bytes: u64,
+    sha256: String,
+    source_url: Option<String>,
+    id: Option<Uuid>,
+) -> tritond_client::types::NewImage {
+    tritond_client::types::NewImage {
+        name,
+        description: Some(description),
+        os,
+        version,
+        size_bytes,
+        sha256,
+        source_url,
+        id,
+        compatibility: None,
+    }
+}
+
+/// List Public images. Anonymous-accessible.
+pub async fn public_image_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let images = client
+        .list_public_images()
+        .send()
+        .await
+        .context("list public images")?
+        .into_inner();
+    print_images(images, json_output)
+}
+
+/// Register a `Public` image (root-only).
+#[allow(clippy::too_many_arguments)]
+pub async fn public_image_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    description: String,
+    os: String,
+    version: String,
+    size_bytes: u64,
+    sha256: String,
+    source_url: Option<String>,
+    id: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let image = client
+        .create_public_image()
+        .body(build_new_image(
+            name,
+            description,
+            os,
+            version,
+            size_bytes,
+            sha256,
+            source_url,
+            id,
+        ))
+        .send()
+        .await
+        .context("create public image")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&image)?);
+    } else {
+        println!("Registered public image {}", image.id);
+        print_image_details(&image);
+    }
+    Ok(())
+}
+
+/// List images visible to a tenant (Public + Silo + Tenant).
+pub async fn tenant_image_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let images = client
+        .list_tenant_images()
+        .tenant_id(tenant_id)
+        .send()
+        .await
+        .context("list tenant images")?
+        .into_inner();
+    print_images(images, json_output)
+}
+
+/// Register a `Tenant`-scoped image.
+#[allow(clippy::too_many_arguments)]
+pub async fn tenant_image_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    name: String,
+    description: String,
+    os: String,
+    version: String,
+    size_bytes: u64,
+    sha256: String,
+    source_url: Option<String>,
+    id: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let image = client
+        .create_tenant_image()
+        .tenant_id(tenant_id)
+        .body(build_new_image(
+            name,
+            description,
+            os,
+            version,
+            size_bytes,
+            sha256,
+            source_url,
+            id,
+        ))
+        .send()
+        .await
+        .context("create tenant image")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&image)?);
+    } else {
+        println!("Registered tenant image {} in tenant {tenant_id}", image.id);
+        print_image_details(&image);
+    }
+    Ok(())
+}
+
+/// List images visible to a project (Public + Silo + Tenant + Project).
+pub async fn project_image_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let images = client
+        .list_project_images()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .send()
+        .await
+        .context("list project images")?
+        .into_inner();
+    print_images(images, json_output)
+}
+
+/// Register a `Project`-scoped image.
+#[allow(clippy::too_many_arguments)]
+pub async fn project_image_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    name: String,
+    description: String,
+    os: String,
+    version: String,
+    size_bytes: u64,
+    sha256: String,
+    source_url: Option<String>,
+    id: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let image = client
+        .create_project_image()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .body(build_new_image(
+            name,
+            description,
+            os,
+            version,
+            size_bytes,
+            sha256,
+            source_url,
+            id,
+        ))
+        .send()
+        .await
+        .context("create project image")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&image)?);
+    } else {
+        println!(
+            "Registered project image {} in project {project_id}",
+            image.id
+        );
+        print_image_details(&image);
+    }
+    Ok(())
+}
+
+/// List the caller's `User`-scoped images.
+pub async fn auth_image_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let images = client
+        .list_my_images()
+        .send()
+        .await
+        .context("list my images")?
+        .into_inner();
+    print_images(images, json_output)
+}
+
+/// Register a `User`-scoped image owned by the caller.
+#[allow(clippy::too_many_arguments)]
+pub async fn auth_image_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    description: String,
+    os: String,
+    version: String,
+    size_bytes: u64,
+    sha256: String,
+    source_url: Option<String>,
+    id: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let image = client
+        .create_my_image()
+        .body(build_new_image(
+            name,
+            description,
+            os,
+            version,
+            size_bytes,
+            sha256,
+            source_url,
+            id,
+        ))
+        .send()
+        .await
+        .context("create my image")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&image)?);
+    } else {
+        println!("Registered user-scoped image {}", image.id);
+        print_image_details(&image);
+    }
+    Ok(())
+}
+
+fn print_images(images: Vec<tritond_client::types::Image>, json_output: bool) -> Result<()> {
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&images)?);
+        return Ok(());
+    }
+    if images.is_empty() {
+        println!("(no images)");
+        return Ok(());
+    }
+    for i in images {
+        println!(
+            "{}  {}/{} {}MB  {}",
+            i.id,
+            i.os,
+            i.version,
+            i.size_bytes / 1_048_576,
+            i.name
+        );
+    }
+    Ok(())
+}
+
+/// Read a single image by id (works regardless of scope; the
+/// server applies the visibility filter).
 pub async fn silo_image_get(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -1864,8 +2154,7 @@ pub async fn silo_image_get(
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let image = client
-        .get_silo_image()
-        .silo_id(silo_id)
+        .get_image()
         .image_id(image_id)
         .send()
         .await
@@ -1874,7 +2163,8 @@ pub async fn silo_image_get(
     if json_output {
         println!("{}", serde_json::to_string_pretty(&image)?);
     } else {
-        println!("Image {} in silo {silo_id}", image.id);
+        println!("Image {} (silo context {silo_id})", image.id);
+        println!("  scope:       {:?}", image.scope);
         println!("  name:        {}", image.name);
         println!("  description: {}", image.description);
         println!("  os/version:  {}/{}", image.os, image.version);
@@ -1889,7 +2179,8 @@ pub async fn silo_image_get(
     Ok(())
 }
 
-/// Delete an image.
+/// Delete an image by id. Ownership is enforced server-side
+/// based on the image's scope.
 pub async fn silo_image_delete(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
@@ -1899,13 +2190,12 @@ pub async fn silo_image_delete(
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     client
-        .delete_silo_image()
-        .silo_id(silo_id)
+        .delete_image()
         .image_id(image_id)
         .send()
         .await
         .context("delete image")?;
-    println!("Deleted image {image_id} from silo {silo_id}");
+    println!("Deleted image {image_id} (silo context {silo_id})");
     Ok(())
 }
 

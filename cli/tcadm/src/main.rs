@@ -115,6 +115,96 @@ enum Commands {
         #[command(subcommand)]
         command: TenantCommand,
     },
+    /// Manage Public images (operator-facing root commands).
+    /// Tenant- / project- / user-scoped images live under the
+    /// `tenant`, `tenant project`, and `auth` subtrees.
+    Image {
+        #[command(subcommand)]
+        command: PublicImageCommand,
+    },
+    /// Caller-scoped resources (your own user-scoped images, in
+    /// slice F).
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum PublicImageCommand {
+    /// List Public images. Anonymous-accessible.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new Public image. Root-only.
+    Add {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        os: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        size_bytes: u64,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        source_url: Option<String>,
+        #[arg(long)]
+        id: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single image by id (visibility-filtered server-side).
+    Get {
+        image_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an image by id (ownership-gated server-side).
+    Delete { image_id: Uuid },
+}
+
+#[derive(Subcommand)]
+enum AuthCommand {
+    /// Manage your own (caller-scoped) images.
+    Image {
+        #[command(subcommand)]
+        command: AuthImageCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthImageCommand {
+    /// List your `User`-scoped images.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new `User`-scoped image owned by the caller.
+    Add {
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        os: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        size_bytes: u64,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        source_url: Option<String>,
+        #[arg(long)]
+        id: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -167,6 +257,43 @@ enum TenantCommand {
     Idp {
         #[command(subcommand)]
         command: TenantIdpCommand,
+    },
+    /// Manage `Tenant`-scoped images.
+    Image {
+        #[command(subcommand)]
+        command: TenantImageCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TenantImageCommand {
+    /// List images visible to this tenant (Public + Silo + Tenant).
+    List {
+        tenant_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new `Tenant`-scoped image.
+    Add {
+        tenant_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        os: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        size_bytes: u64,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        source_url: Option<String>,
+        #[arg(long)]
+        id: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -301,6 +428,46 @@ enum TenantProjectCommand {
     FloatingIp {
         #[command(subcommand)]
         command: TenantProjectFloatingIpCommand,
+    },
+    /// Manage `Project`-scoped images.
+    Image {
+        #[command(subcommand)]
+        command: TenantProjectImageCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TenantProjectImageCommand {
+    /// List images visible to this project (Public + Silo +
+    /// Tenant + Project).
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new `Project`-scoped image.
+    Add {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        os: String,
+        #[arg(long)]
+        version: String,
+        #[arg(long)]
+        size_bytes: u64,
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        source_url: Option<String>,
+        #[arg(long)]
+        id: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1412,6 +1579,52 @@ async fn main() -> Result<()> {
                         .await
                     }
                 },
+                TenantProjectCommand::Image { command } => match command {
+                    TenantProjectImageCommand::List {
+                        tenant_id,
+                        project_id,
+                        json,
+                    } => {
+                        commands::project_image_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            json,
+                        )
+                        .await
+                    }
+                    TenantProjectImageCommand::Add {
+                        tenant_id,
+                        project_id,
+                        name,
+                        description,
+                        os,
+                        version,
+                        size_bytes,
+                        sha256,
+                        source_url,
+                        id,
+                        json,
+                    } => {
+                        commands::project_image_add(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            name,
+                            description,
+                            os,
+                            version,
+                            size_bytes,
+                            sha256,
+                            source_url,
+                            id,
+                            json,
+                        )
+                        .await
+                    }
+                },
                 TenantProjectCommand::Vpc { command } => match command {
                     TenantProjectVpcCommand::List {
                         tenant_id,
@@ -1583,6 +1796,118 @@ async fn main() -> Result<()> {
                 }
                 TenantIdpCommand::Delete { tenant_id } => {
                     commands::tenant_idp_delete(cli.endpoint, cli.api_key, tenant_id).await
+                }
+            },
+            TenantCommand::Image { command } => match command {
+                TenantImageCommand::List { tenant_id, json } => {
+                    commands::tenant_image_list(cli.endpoint, cli.api_key, tenant_id, json).await
+                }
+                TenantImageCommand::Add {
+                    tenant_id,
+                    name,
+                    description,
+                    os,
+                    version,
+                    size_bytes,
+                    sha256,
+                    source_url,
+                    id,
+                    json,
+                } => {
+                    commands::tenant_image_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        name,
+                        description,
+                        os,
+                        version,
+                        size_bytes,
+                        sha256,
+                        source_url,
+                        id,
+                        json,
+                    )
+                    .await
+                }
+            },
+        },
+        Commands::Image { command } => match command {
+            PublicImageCommand::List { json } => {
+                commands::public_image_list(cli.endpoint, cli.api_key, json).await
+            }
+            PublicImageCommand::Add {
+                name,
+                description,
+                os,
+                version,
+                size_bytes,
+                sha256,
+                source_url,
+                id,
+                json,
+            } => {
+                commands::public_image_add(
+                    cli.endpoint,
+                    cli.api_key,
+                    name,
+                    description,
+                    os,
+                    version,
+                    size_bytes,
+                    sha256,
+                    source_url,
+                    id,
+                    json,
+                )
+                .await
+            }
+            PublicImageCommand::Get { image_id, json } => {
+                // Re-uses the silo_image_get helper which already
+                // calls the scope-agnostic /v2/images/{id} endpoint.
+                commands::silo_image_get(
+                    cli.endpoint,
+                    cli.api_key,
+                    Uuid::nil(),
+                    image_id,
+                    json,
+                )
+                .await
+            }
+            PublicImageCommand::Delete { image_id } => {
+                commands::silo_image_delete(cli.endpoint, cli.api_key, Uuid::nil(), image_id).await
+            }
+        },
+        Commands::Auth { command } => match command {
+            AuthCommand::Image { command } => match command {
+                AuthImageCommand::List { json } => {
+                    commands::auth_image_list(cli.endpoint, cli.api_key, json).await
+                }
+                AuthImageCommand::Add {
+                    name,
+                    description,
+                    os,
+                    version,
+                    size_bytes,
+                    sha256,
+                    source_url,
+                    id,
+                    json,
+                } => {
+                    commands::auth_image_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        name,
+                        description,
+                        os,
+                        version,
+                        size_bytes,
+                        sha256,
+                        source_url,
+                        id,
+                        json,
+                    )
+                    .await
                 }
             },
         },

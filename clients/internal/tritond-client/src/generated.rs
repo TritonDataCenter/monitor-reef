@@ -1749,13 +1749,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\n\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private."]
+    #[doc = "Image catalog entry. Multi-scope as of Slice F: see [`ImageScope`] for the variants. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Tenant image catalog entry. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\\n\\nSilo-scoped: each silo has its own catalog. A future slice may add a fleet-shared catalog (operator-owned) that silos can reference; for now images are tenant-private.\","]
+    #[doc = "  \"description\": \"Image catalog entry. Multi-scope as of Slice F: see [`ImageScope`] for the variants. Phase 0 ships only the metadata record — image content lives in mantafs / object storage and is not modelled here. Operators register images by URL + sha256 and trust the caller for the content match; an eventual import pipeline will pre-stage content in storage and verify the digest before the record is persisted.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -1763,8 +1763,8 @@ pub mod types {
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"os\","]
+    #[doc = "    \"scope\","]
     #[doc = "    \"sha256\","]
-    #[doc = "    \"silo_id\","]
     #[doc = "    \"size_bytes\","]
     #[doc = "    \"version\""]
     #[doc = "  ],"]
@@ -1802,13 +1802,17 @@ pub mod types {
     #[doc = "      \"description\": \"OS family identifier (e.g. `linux`, `windows`, `smartos`). Stringly-typed in Phase 0; will tighten to an enum once the instance brand model lands.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
+    #[doc = "    \"scope\": {"]
+    #[doc = "      \"description\": \"Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ImageScope\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"sha256\": {"]
     #[doc = "      \"description\": \"Lowercase hex SHA-256 of the image content. Server-validated for length (64 chars) and charset at create time.\","]
     #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"silo_id\": {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"size_bytes\": {"]
     #[doc = "      \"description\": \"Total content size, in bytes.\","]
@@ -1844,9 +1848,10 @@ pub mod types {
         pub name: ::std::string::String,
         #[doc = "OS family identifier (e.g. `linux`, `windows`, `smartos`). Stringly-typed in Phase 0; will tighten to an enum once the instance brand model lands."]
         pub os: ::std::string::String,
+        #[doc = "Visibility scope. The variant carries the parent identity (silo_id / tenant_id / project_id / user_id) for the non-Public scopes; visibility checks resolve up the project → tenant → silo chain when needed."]
+        pub scope: ImageScope,
         #[doc = "Lowercase hex SHA-256 of the image content. Server-validated for length (64 chars) and charset at create time."]
         pub sha256: ::std::string::String,
-        pub silo_id: ::uuid::Uuid,
         #[doc = "Total content size, in bytes."]
         pub size_bytes: u64,
         #[doc = "Optional URL where the image content can be fetched. `None` means the content is registered out-of-band (e.g. already in mantafs at a known path resolved by image_id)."]
@@ -1913,6 +1918,125 @@ pub mod types {
         }
     }
 
+    #[doc = "Visibility scope of an [`Image`]. The variant determines who can see and use the image: `Public` is everyone (including anonymous probes on the public listing endpoint); `Silo` is every member of any tenant under that silo; `Tenant` is every member of that tenant; `Project` is every tenant member with project access (Phase 0: every tenant member); `User` is one specific user.\n\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on `Image`. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Visibility scope of an [`Image`]. The variant determines who can see and use the image: `Public` is everyone (including anonymous probes on the public listing endpoint); `Silo` is every member of any tenant under that silo; `Tenant` is every member of that tenant; `Project` is every tenant member with project access (Phase 0: every tenant member); `User` is one specific user.\\n\\nThe variant carries everything the visibility predicate needs — there are no denormalised silo_id / tenant_id fields on `Image`. For `Project`, the resolver looks up the project to derive its tenant + silo when needed; for `Tenant`, the resolver looks up the tenant for its silo when needed. Cold path; correctness > one extra read.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"public\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"silo_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"silo\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"silo_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"tenant_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"tenant\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"tenant_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"project_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"project\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"project_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"user_id\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"user\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"user_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind")]
+    pub enum ImageScope {
+        #[serde(rename = "public")]
+        Public,
+        #[serde(rename = "silo")]
+        Silo { silo_id: ::uuid::Uuid },
+        #[serde(rename = "tenant")]
+        Tenant { tenant_id: ::uuid::Uuid },
+        #[serde(rename = "project")]
+        Project { project_id: ::uuid::Uuid },
+        #[serde(rename = "user")]
+        User { user_id: ::uuid::Uuid },
+    }
+
     #[doc = "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1955,7 +2079,7 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"image_id\": {"]
-    #[doc = "      \"description\": \"Boot image; must be in the same silo as the instance's tenant. Images remain silo-scoped in E-3.\","]
+    #[doc = "      \"description\": \"Boot image. As of Slice F images are multi-scope; the instance-create handler enforces that the principal can see this image (via the [`crate`]-level visibility predicate). Cross-scope references that the principal cannot see surface as `NotFound`.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -2009,7 +2133,7 @@ pub mod types {
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
         pub id: ::uuid::Uuid,
-        #[doc = "Boot image; must be in the same silo as the instance's tenant. Images remain silo-scoped in E-3."]
+        #[doc = "Boot image. As of Slice F images are multi-scope; the instance-create handler enforces that the principal can see this image (via the [`crate`]-level visibility predicate). Cross-scope references that the principal cannot see surface as `NotFound`."]
         pub image_id: ::uuid::Uuid,
         pub lifecycle: LifecycleState,
         #[doc = "Memory budget in bytes."]
@@ -2585,13 +2709,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`."]
+    #[doc = "Request body for registering an image in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id` and `created_at`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for registering an image in a silo's catalog. The owning silo comes from the URL path. The server assigns `id` and `created_at`.\","]
+    #[doc = "  \"description\": \"Request body for registering an image in any scope's catalog. The owning scope (Public / Silo / Tenant / Project / User) is inferred from the URL path the request hit, *not* from the body. The server assigns `id` and `created_at`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\","]
@@ -2623,7 +2747,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
-    #[doc = "      \"description\": \"Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `sha256` via [`derive_image_id`] — same content always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.\","]
+    #[doc = "      \"description\": \"Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `(scope, sha256)` via [`derive_image_id`] — same content in the same scope always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. Different scopes registering the same content yield distinct ids (no cross-scope collisions). `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -2666,7 +2790,7 @@ pub mod types {
         pub compatibility: ::std::option::Option<ImageCompatibility>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
-        #[doc = "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `sha256` via [`derive_image_id`] — same content always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use."]
+        #[doc = "Optional UUID to pin for the new image. When `None` (the usual case), the server derives the UUID deterministically from `(scope, sha256)` via [`derive_image_id`] — same content in the same scope always yields the same id across hosts and replays, so the per-CN agent's content-addressed ZFS dataset (`zones/<image_id>`) collapses identical bytes into one import. Different scopes registering the same content yield distinct ids (no cross-scope collisions). `Some(...)` is only useful for cross-cluster mirroring scenarios where the operator wants tritond's id to match a UUID minted elsewhere; the store rejects the create with [`StoreError::Conflict`] if the id is already in use."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub id: ::std::option::Option<::uuid::Uuid>,
         pub name: ::std::string::String,
@@ -2684,13 +2808,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives)."]
+    #[doc = "Request body for `POST /v2/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\n\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\n\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/images/from-bundle`.\\n\\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\\n\\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).\","]
+    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/image-bundles`. (Bundle ingest stays silo-scoped through slice F; multi-scope bundle ingest is a future concern.)\\n\\n`bundle_url` points at a tritond image bundle (an uncompressed tar with `manifest.json` + `content.zfs.gz`, produced by the `tritonimg-build` CLI). tritond fetches the bundle once at registration time, validates the manifest, re-hashes the content against the manifest's claimed sha256, and populates the Image record's `name`, `version`, `os`, `size_bytes`, `sha256`, and `compatibility` from the manifest. Operators don't pass any of those fields by hand — the bundle is the source of truth.\\n\\nThe bundle URL is also recorded as the Image's `source_url` so the per-CN agent fetches the same bundle at provision time (extracts manifest, sha256-verifies content, ZFS- receives).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"bundle_url\""]
@@ -6339,8 +6463,8 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             os: ::std::result::Result<::std::string::String, ::std::string::String>,
+            scope: ::std::result::Result<super::ImageScope, ::std::string::String>,
             sha256: ::std::result::Result<::std::string::String, ::std::string::String>,
-            silo_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             size_bytes: ::std::result::Result<u64, ::std::string::String>,
             source_url: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -6358,8 +6482,8 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
                     os: Err("no value supplied for os".to_string()),
+                    scope: Err("no value supplied for scope".to_string()),
                     sha256: Err("no value supplied for sha256".to_string()),
-                    silo_id: Err("no value supplied for silo_id".to_string()),
                     size_bytes: Err("no value supplied for size_bytes".to_string()),
                     source_url: Ok(Default::default()),
                     version: Err("no value supplied for version".to_string()),
@@ -6428,6 +6552,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for os: {e}"));
                 self
             }
+            pub fn scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ImageScope>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for scope: {e}"));
+                self
+            }
             pub fn sha256<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -6436,16 +6570,6 @@ pub mod types {
                 self.sha256 = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for sha256: {e}"));
-                self
-            }
-            pub fn silo_id<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.silo_id = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for silo_id: {e}"));
                 self
             }
             pub fn size_bytes<T>(mut self, value: T) -> Self
@@ -6492,8 +6616,8 @@ pub mod types {
                     id: value.id?,
                     name: value.name?,
                     os: value.os?,
+                    scope: value.scope?,
                     sha256: value.sha256?,
-                    silo_id: value.silo_id?,
                     size_bytes: value.size_bytes?,
                     source_url: value.source_url?,
                     version: value.version?,
@@ -6510,8 +6634,8 @@ pub mod types {
                     id: Ok(value.id),
                     name: Ok(value.name),
                     os: Ok(value.os),
+                    scope: Ok(value.scope),
                     sha256: Ok(value.sha256),
-                    silo_id: Ok(value.silo_id),
                     size_bytes: Ok(value.size_bytes),
                     source_url: Ok(value.source_url),
                     version: Ok(value.version),
@@ -10058,6 +10182,16 @@ impl Client {
         builder::DeleteApiKey::new(self)
     }
 
+    #[doc = "List the calling user's `User`-scoped images. Returns\n\nonly the caller's own images; the bound user_id is resolved from the authenticated principal.\n\nSends a `GET` request to `/v2/auth/images`\n\n```ignore\nlet response = client.list_my_images()\n    .send()\n    .await;\n```"]
+    pub fn list_my_images(&self) -> builder::ListMyImages<'_> {
+        builder::ListMyImages::new(self)
+    }
+
+    #[doc = "Register a `User`-scoped image owned by the caller\n\nSends a `POST` request to `/v2/auth/images`\n\n```ignore\nlet response = client.create_my_image()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_my_image(&self) -> builder::CreateMyImage<'_> {
+        builder::CreateMyImage::new(self)
+    }
+
     #[doc = "Exchange username + password for an access/refresh token pair\n\nReturns 401 if credentials are invalid.\n\nSends a `POST` request to `/v2/auth/login`\n\n```ignore\nlet response = client.login()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn login(&self) -> builder::Login<'_> {
         builder::Login::new(self)
@@ -10108,6 +10242,26 @@ impl Client {
         builder::Health::new(self)
     }
 
+    #[doc = "List Public images. Anonymous-accessible — Public means\n\npublic, so unauthenticated probes get the catalog.\n\nSends a `GET` request to `/v2/images`\n\n```ignore\nlet response = client.list_public_images()\n    .send()\n    .await;\n```"]
+    pub fn list_public_images(&self) -> builder::ListPublicImages<'_> {
+        builder::ListPublicImages::new(self)
+    }
+
+    #[doc = "Create a `Public` image. Root-only via Cedar\n\nReturns 400 if `sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use among Public images.\n\nSends a `POST` request to `/v2/images`\n\n```ignore\nlet response = client.create_public_image()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_public_image(&self) -> builder::CreatePublicImage<'_> {
+        builder::CreatePublicImage::new(self)
+    }
+
+    #[doc = "Read a single image by id. Returns 404 when the image\n\ndoes not exist OR when the principal cannot see it (cross-scope visibility deny).\n\nSends a `GET` request to `/v2/images/{image_id}`\n\n```ignore\nlet response = client.get_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
+    pub fn get_image(&self) -> builder::GetImage<'_> {
+        builder::GetImage::new(self)
+    }
+
+    #[doc = "Delete an image by id. Returns 404 when the image does\n\nnot exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/images/{image_id}`\n\n```ignore\nlet response = client.delete_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_image(&self) -> builder::DeleteImage<'_> {
+        builder::DeleteImage::new(self)
+    }
+
     #[doc = "Create a silo. Returns 201 with the created silo\n\nFails with 409 if a silo with the requested name already exists.\n\nSends a `POST` request to `/v2/silos`\n\n```ignore\nlet response = client.create_silo()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo(&self) -> builder::CreateSilo<'_> {
         builder::CreateSilo::new(self)
@@ -10118,29 +10272,19 @@ impl Client {
         builder::GetSilo::new(self)
     }
 
-    #[doc = "Register an image from a tritond image bundle. tritond\n\nfetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from the `{image_id}` parameter of `GET /v2/silos/{silo_id}/images/{image_id}`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/image-bundles`\n\n```ignore\nlet response = client.create_silo_image_from_bundle()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register an image from a tritond image bundle (silo-scoped\n\nonly). tritond fetches the bundle once at registration, validates the manifest, re-hashes the content, and populates every Image-record field from the manifest. The returned `Image` carries `compatibility = Some(...)` so the per-CN agent enforces brand + min_smartos_platform gates at provision time. Returns 400 on a malformed bundle or sha256 mismatch, 502 if `bundle_url` is unreachable, 409 on a name or content collision within the silo.\n\nThe path is `/v2/silos/{silo_id}/image-bundles` rather than `/v2/silos/{silo_id}/images/from-bundle` because Dropshot's router cannot disambiguate a literal `from-bundle` segment from a sibling `{image_id}` parameter at the same level.\n\nSends a `POST` request to `/v2/silos/{silo_id}/image-bundles`\n\n```ignore\nlet response = client.create_silo_image_from_bundle()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image_from_bundle(&self) -> builder::CreateSiloImageFromBundle<'_> {
         builder::CreateSiloImageFromBundle::new(self)
     }
 
-    #[doc = "List the images registered in a silo's catalog\n\nSends a `GET` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.list_silo_images()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
+    #[doc = "List the images whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v2/tenants/{tenant_id}/images` for the unioned tenant view).\n\nSends a `GET` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.list_silo_images()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
     pub fn list_silo_images(&self) -> builder::ListSiloImages<'_> {
         builder::ListSiloImages::new(self)
     }
 
-    #[doc = "Register an image in a silo's catalog. Returns 400 if\n\n`sha256` is not 64 lowercase hex chars or if `size_bytes` is zero. Returns 409 if the name is already in use within the silo.\n\nSends a `POST` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.create_silo_image()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Register a `Silo`-scoped image\n\nSends a `POST` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.create_silo_image()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image(&self) -> builder::CreateSiloImage<'_> {
         builder::CreateSiloImage::new(self)
-    }
-
-    #[doc = "Read a single image. Returns 404 when the image does not\n\nexist or belongs to a different silo.\n\nSends a `GET` request to `/v2/silos/{silo_id}/images/{image_id}`\n\n```ignore\nlet response = client.get_silo_image()\n    .silo_id(silo_id)\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
-    pub fn get_silo_image(&self) -> builder::GetSiloImage<'_> {
-        builder::GetSiloImage::new(self)
-    }
-
-    #[doc = "Delete an image. Returns 404 when the image does not exist\n\nor belongs to a different silo.\n\nSends a `DELETE` request to `/v2/silos/{silo_id}/images/{image_id}`\n\n```ignore\nlet response = client.delete_silo_image()\n    .silo_id(silo_id)\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
-    pub fn delete_silo_image(&self) -> builder::DeleteSiloImage<'_> {
-        builder::DeleteSiloImage::new(self)
     }
 
     #[doc = "List the SSH keys registered in a silo's catalog\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
@@ -10198,6 +10342,16 @@ impl Client {
         builder::DeleteTenantIdp::new(self)
     }
 
+    #[doc = "List images visible to the tenant: Public + Silo (of\n\ntenant's silo) + Tenant.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/images`\n\n```ignore\nlet response = client.list_tenant_images()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
+    pub fn list_tenant_images(&self) -> builder::ListTenantImages<'_> {
+        builder::ListTenantImages::new(self)
+    }
+
+    #[doc = "Register a `Tenant`-scoped image\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/images`\n\n```ignore\nlet response = client.create_tenant_image()\n    .tenant_id(tenant_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_tenant_image(&self) -> builder::CreateTenantImage<'_> {
+        builder::CreateTenantImage::new(self)
+    }
+
     #[doc = "List the projects inside a tenant\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects`\n\n```ignore\nlet response = client.list_tenant_projects()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
     pub fn list_tenant_projects(&self) -> builder::ListTenantProjects<'_> {
         builder::ListTenantProjects::new(self)
@@ -10246,6 +10400,16 @@ impl Client {
     #[doc = "Detach a FloatingIp from its current NIC. Idempotent — a\n\ndetach on an already-detached FloatingIp is a no-op that returns the current record.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}/detach`\n\n```ignore\nlet response = client.detach_project_floating_ip()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .floating_ip_id(floating_ip_id)\n    .send()\n    .await;\n```"]
     pub fn detach_project_floating_ip(&self) -> builder::DetachProjectFloatingIp<'_> {
         builder::DetachProjectFloatingIp::new(self)
+    }
+
+    #[doc = "List images visible to the project: Public + Silo (of\n\nproject's silo) + Tenant (of project's tenant) + Project. This is the practical \"what can a project member launch from?\" query.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`\n\n```ignore\nlet response = client.list_project_images()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
+    pub fn list_project_images(&self) -> builder::ListProjectImages<'_> {
+        builder::ListProjectImages::new(self)
+    }
+
+    #[doc = "Register a `Project`-scoped image\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`\n\n```ignore\nlet response = client.create_project_image()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_project_image(&self) -> builder::CreateProjectImage<'_> {
+        builder::CreateProjectImage::new(self)
     }
 
     #[doc = "List instances in a project\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances`\n\n```ignore\nlet response = client.list_project_instances()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .send()\n    .await;\n```"]
@@ -11348,6 +11512,136 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::list_my_images`]\n\n[`Client::list_my_images`]: super::Client::list_my_images"]
+    #[derive(Debug, Clone)]
+    pub struct ListMyImages<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListMyImages<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/auth/images`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/auth/images", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_my_images",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_my_image`]\n\n[`Client::create_my_image`]: super::Client::create_my_image"]
+    #[derive(Debug, Clone)]
+    pub struct CreateMyImage<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewImage, String>,
+    }
+
+    impl<'a> CreateMyImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImage>,
+            <V as std::convert::TryInto<types::NewImage>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImage` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewImage) -> types::builder::NewImage,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/auth/images`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/auth/images", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_my_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::login`]\n\n[`Client::login`]: super::Client::login"]
     #[derive(Debug, Clone)]
     pub struct Login<'a> {
@@ -12039,6 +12333,274 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::list_public_images`]\n\n[`Client::list_public_images`]: super::Client::list_public_images"]
+    #[derive(Debug, Clone)]
+    pub struct ListPublicImages<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListPublicImages<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/images`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/images", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_public_images",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_public_image`]\n\n[`Client::create_public_image`]: super::Client::create_public_image"]
+    #[derive(Debug, Clone)]
+    pub struct CreatePublicImage<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewImage, String>,
+    }
+
+    impl<'a> CreatePublicImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImage>,
+            <V as std::convert::TryInto<types::NewImage>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImage` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewImage) -> types::builder::NewImage,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/images`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/images", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_public_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_image`]\n\n[`Client::get_image`]: super::Client::get_image"]
+    #[derive(Debug, Clone)]
+    pub struct GetImage<'a> {
+        client: &'a super::Client,
+        image_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                image_id: Err("image_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn image_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.image_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for image_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/images/{image_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self { client, image_id } = self;
+            let image_id = image_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/images/{}",
+                client.baseurl,
+                encode_path(&image_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_image`]\n\n[`Client::delete_image`]: super::Client::delete_image"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteImage<'a> {
+        client: &'a super::Client,
+        image_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                image_id: Err("image_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn image_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.image_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for image_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/images/{image_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, image_id } = self;
+            let image_id = image_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/images/{}",
+                client.baseurl,
+                encode_path(&image_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::create_silo`]\n\n[`Client::create_silo`]: super::Client::create_silo"]
     #[derive(Debug, Clone)]
     pub struct CreateSilo<'a> {
@@ -12446,180 +13008,6 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 201u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::get_silo_image`]\n\n[`Client::get_silo_image`]: super::Client::get_silo_image"]
-    #[derive(Debug, Clone)]
-    pub struct GetSiloImage<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        image_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> GetSiloImage<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                image_id: Err("image_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn image_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.image_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for image_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `GET` request to `/v2/silos/{silo_id}/images/{image_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                image_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let image_id = image_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/images/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&image_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "get_silo_image",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
-            }
-        }
-    }
-
-    #[doc = "Builder for [`Client::delete_silo_image`]\n\n[`Client::delete_silo_image`]: super::Client::delete_silo_image"]
-    #[derive(Debug, Clone)]
-    pub struct DeleteSiloImage<'a> {
-        client: &'a super::Client,
-        silo_id: Result<::uuid::Uuid, String>,
-        image_id: Result<::uuid::Uuid, String>,
-    }
-
-    impl<'a> DeleteSiloImage<'a> {
-        pub fn new(client: &'a super::Client) -> Self {
-            Self {
-                client: client,
-                silo_id: Err("silo_id was not initialized".to_string()),
-                image_id: Err("image_id was not initialized".to_string()),
-            }
-        }
-
-        pub fn silo_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.silo_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
-            self
-        }
-
-        pub fn image_id<V>(mut self, value: V) -> Self
-        where
-            V: std::convert::TryInto<::uuid::Uuid>,
-        {
-            self.image_id = value
-                .try_into()
-                .map_err(|_| "conversion to `:: uuid :: Uuid` for image_id failed".to_string());
-            self
-        }
-
-        #[doc = "Sends a `DELETE` request to `/v2/silos/{silo_id}/images/{image_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
-            let Self {
-                client,
-                silo_id,
-                image_id,
-            } = self;
-            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
-            let image_id = image_id.map_err(Error::InvalidRequest)?;
-            let url = format!(
-                "{}/v2/silos/{}/images/{}",
-                client.baseurl,
-                encode_path(&silo_id.to_string()),
-                encode_path(&image_id.to_string()),
-            );
-            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
-            header_map.append(
-                ::reqwest::header::HeaderName::from_static("api-version"),
-                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
-            );
-            #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .delete(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
-            let info = OperationInfo {
-                operation_id: "delete_silo_image",
-            };
-            client.pre(&mut request, &info).await?;
-            let result = client.exec(request, &info).await;
-            client.post(&result, &info).await?;
-            let response = result?;
-            match response.status().as_u16() {
-                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -13549,6 +13937,176 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_tenant_images`]\n\n[`Client::list_tenant_images`]: super::Client::list_tenant_images"]
+    #[derive(Debug, Clone)]
+    pub struct ListTenantImages<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListTenantImages<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/images`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+            let Self { client, tenant_id } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/images",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_tenant_images",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_tenant_image`]\n\n[`Client::create_tenant_image`]: super::Client::create_tenant_image"]
+    #[derive(Debug, Clone)]
+    pub struct CreateTenantImage<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewImage, String>,
+    }
+
+    impl<'a> CreateTenantImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImage>,
+            <V as std::convert::TryInto<types::NewImage>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImage` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewImage) -> types::builder::NewImage,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/images`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/images",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_tenant_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -14538,6 +15096,209 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_project_images`]\n\n[`Client::list_project_images`]: super::Client::list_project_images"]
+    #[derive(Debug, Clone)]
+    pub struct ListProjectImages<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListProjectImages<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/images",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_project_images",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_project_image`]\n\n[`Client::create_project_image`]: super::Client::create_project_image"]
+    #[derive(Debug, Clone)]
+    pub struct CreateProjectImage<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewImage, String>,
+    }
+
+    impl<'a> CreateProjectImage<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImage>,
+            <V as std::convert::TryInto<types::NewImage>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImage` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewImage) -> types::builder::NewImage,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/images`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewImage::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/images",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_project_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

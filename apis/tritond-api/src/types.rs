@@ -19,9 +19,9 @@ pub use tritond_audit::{
 };
 pub use tritond_store::{
     AddressFamily, ApiKeyScope, ApiKeyView, AutoApproveWindow, CnState, CnView, Disk, DiskKind,
-    FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, Instance, JobKind,
-    JobOutcome, JobStatus, LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage,
-    NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Tenant,
-    UserView, Vpc,
+    FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, ImageScope,
+    Instance, JobKind, JobOutcome, JobStatus, LifecycleState, LifecycleStateKind, NewFloatingIp,
+    NewImage, NewInstance, NewInstanceNic, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet,
+    Tenant, UserView, Vpc,
 };

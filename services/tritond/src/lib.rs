@@ -38,19 +38,19 @@ use tritond_api::{
     AgentJobPath, AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest,
     AttachFloatingIpRequest, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath,
-    CompleteJobRequest, HealthResponse, InstanceDeleteQuery, LoginRequest, NewApiKey, NewIdpConfig,
-    NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest,
-    RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse,
-    SiloImagePath, SiloPath, SiloSshKeyPath, SiloTenantPath, TenantIdpPath, TenantPath,
+    CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery, LoginRequest, NewApiKey,
+    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
+    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
+    RegisterStatusResponse, SiloPath, SiloSshKeyPath, SiloTenantPath, TenantIdpPath, TenantPath,
     TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
     TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath,
     TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
-        ImageCompatibility, Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind,
-        NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota, NewSilo, NewSshKey,
-        NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet,
-        Tenant, Vpc,
+        ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
+        LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
+        NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
+        Silo, SshKey, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -66,7 +66,7 @@ use uuid::Uuid;
 
 use crate::audit::AuditService;
 use crate::auth::{
-    Action, AuthService, authenticate_and_authorize, authenticate_and_authorize_in_silo,
+    Action, AuthService, Principal, authenticate_and_authorize, authenticate_and_authorize_in_silo,
     authenticate_and_authorize_in_tenant, require_authenticated,
 };
 use crate::rate_limit::{IpRateLimiter, LoginRateLimiter};
@@ -1804,6 +1804,102 @@ impl TritondApi for TritondServiceImpl {
         Ok(HttpResponseDeleted())
     }
 
+    async fn list_public_images(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError> {
+        let ctx = rqctx.context();
+        // Anonymous probes get through via the
+        // anonymous-public-actions Cedar rule on
+        // `image_list_public`. The silo / tenant / project
+        // lists use `image_list` instead so unauthenticated
+        // callers can't poke at scoped catalogs.
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageListPublic,
+        )
+        .await?;
+        let images = ctx
+            .store
+            .list_images_public()
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(images))
+    }
+
+    async fn create_public_image(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError> {
+        let ctx = rqctx.context();
+        // Cedar's authenticated-image-actions rule lets any
+        // authenticated principal pass image_create at the
+        // global resource so the per-URL handlers can dispatch.
+        // The Public scope is operator turf, so we add an
+        // explicit root check here — the audit event still
+        // records the deny.
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageCreate,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        if !matches!(principal, Principal::Operator { is_root: true, .. }) {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::ImageCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 403,
+                        message: "public image creation is root-only".to_string(),
+                    },
+                    serde_json::json!({ "scope": "public" }),
+                )
+                .await;
+            return Err(HttpError::for_client_error(
+                Some("Forbidden".to_string()),
+                ClientErrorStatusCode::FORBIDDEN,
+                "public image creation is root-only".to_string(),
+            ));
+        }
+        let req = body.into_inner();
+        if let Some(err) = validate_image_request(
+            &req,
+            ctx,
+            &principal,
+            request_id,
+            serde_json::json!({ "scope": "public" }),
+        )
+        .await
+        {
+            return Err(err);
+        }
+        match ctx.store.create_image_public(req).await {
+            Ok(image) => {
+                audit_image_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &image,
+                    serde_json::json!({ "scope": "public" }),
+                )
+                .await;
+                Ok(HttpResponseCreated(image))
+            }
+            Err(e) => {
+                audit_image_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
     async fn list_silo_images(
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloPath>,
@@ -1845,80 +1941,31 @@ impl TritondApi for TritondServiceImpl {
         .await?;
         let request_id = parse_request_id(&rqctx);
         let req = body.into_inner();
-
-        // Format checks at the API edge so the store stays opaque to
-        // hex/byte-size invariants.
-        if let Err(msg) = validate_sha256(&req.sha256) {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::ImageCreate,
-                    request_id,
-                    None,
-                    AuditOutcome::ClientError {
-                        code: 400,
-                        message: msg.clone(),
-                    },
-                    serde_json::json!({ "silo_id": silo_id }),
-                )
-                .await;
-            return Err(HttpError::for_bad_request(
-                Some("BadRequest".to_string()),
-                msg,
-            ));
+        if let Some(err) = validate_image_request(
+            &req,
+            ctx,
+            &principal,
+            request_id,
+            serde_json::json!({ "scope": "silo", "silo_id": silo_id }),
+        )
+        .await
+        {
+            return Err(err);
         }
-        if req.size_bytes == 0 {
-            let msg = "size_bytes must be greater than zero".to_string();
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::ImageCreate,
-                    request_id,
-                    None,
-                    AuditOutcome::ClientError {
-                        code: 400,
-                        message: msg.clone(),
-                    },
-                    serde_json::json!({ "silo_id": silo_id }),
-                )
-                .await;
-            return Err(HttpError::for_bad_request(
-                Some("BadRequest".to_string()),
-                msg,
-            ));
-        }
-
-        match ctx.store.create_image(silo_id, req).await {
+        match ctx.store.create_image_silo(silo_id, req).await {
             Ok(image) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::ImageCreate,
-                        request_id,
-                        Some(format!("Image::\"{}\"", image.id)),
-                        AuditOutcome::Success {
-                            resource: Some(format!("Image::\"{}\"", image.id)),
-                        },
-                        serde_json::json!({
-                            "silo_id": silo_id,
-                            "name": image.name,
-                            "sha256": image.sha256,
-                        }),
-                    )
-                    .await;
+                audit_image_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &image,
+                    serde_json::json!({ "scope": "silo", "silo_id": silo_id }),
+                )
+                .await;
                 Ok(HttpResponseCreated(image))
             }
             Err(e) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::ImageCreate,
-                        request_id,
-                        None,
-                        store_error_to_audit_outcome(&e),
-                        serde_json::Value::Null,
-                    )
-                    .await;
+                audit_image_create_failure(ctx, &principal, request_id, &e).await;
                 Err(store_error_to_http(e))
             }
         }
@@ -1973,7 +2020,7 @@ impl TritondApi for TritondServiceImpl {
             }
         };
 
-        match ctx.store.create_image(silo_id, new_image).await {
+        match ctx.store.create_image_silo(silo_id, new_image).await {
             Ok(image) => {
                 ctx.audit
                     .record_mutation(
@@ -1995,70 +2042,309 @@ impl TritondApi for TritondServiceImpl {
                 Ok(HttpResponseCreated(image))
             }
             Err(e) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::ImageCreate,
-                        request_id,
-                        None,
-                        store_error_to_audit_outcome(&e),
-                        serde_json::Value::Null,
-                    )
-                    .await;
+                audit_image_create_failure(ctx, &principal, request_id, &e).await;
                 Err(store_error_to_http(e))
             }
         }
     }
 
-    async fn get_silo_image(
+    async fn list_tenant_images(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloImagePath>,
-    ) -> Result<HttpResponseOk<Image>, HttpError> {
+        path: Path<TenantPath>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError> {
         let ctx = rqctx.context();
-        let SiloImagePath { silo_id, image_id } = path.into_inner();
-        authenticate_and_authorize_in_silo(
+        let tenant_id = path.into_inner().tenant_id;
+        authenticate_and_authorize_in_tenant(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
-            Action::ImageGet,
-            silo_id,
+            Action::ImageList,
+            tenant_id,
         )
         .await?;
+        let images = ctx
+            .store
+            .list_visible_images_in_tenant(tenant_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(images))
+    }
+
+    async fn create_tenant_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantPath>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError> {
+        let ctx = rqctx.context();
+        let tenant_id = path.into_inner().tenant_id;
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        if let Some(err) = validate_image_request(
+            &req,
+            ctx,
+            &principal,
+            request_id,
+            serde_json::json!({ "scope": "tenant", "tenant_id": tenant_id }),
+        )
+        .await
+        {
+            return Err(err);
+        }
+        match ctx.store.create_image_tenant(tenant_id, req).await {
+            Ok(image) => {
+                audit_image_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &image,
+                    serde_json::json!({ "scope": "tenant", "tenant_id": tenant_id }),
+                )
+                .await;
+                Ok(HttpResponseCreated(image))
+            }
+            Err(e) => {
+                audit_image_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_project_images(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectPath {
+            tenant_id,
+            project_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageList,
+            tenant_id,
+        )
+        .await?;
+        // Project must exist and live in this tenant.
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.tenant_id != tenant_id {
+            return Err(not_found());
+        }
+        let images = ctx
+            .store
+            .list_visible_images_in_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(images))
+    }
+
+    async fn create_project_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectPath>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectPath {
+            tenant_id,
+            project_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        // Verify the project belongs to the tenant before the
+        // store call (defence in depth; cross-tenant probe
+        // surfaces as 404).
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if project.tenant_id != tenant_id {
+            return Err(not_found());
+        }
+        let req = body.into_inner();
+        if let Some(err) = validate_image_request(
+            &req,
+            ctx,
+            &principal,
+            request_id,
+            serde_json::json!({
+                "scope": "project",
+                "tenant_id": tenant_id,
+                "project_id": project_id,
+            }),
+        )
+        .await
+        {
+            return Err(err);
+        }
+        match ctx.store.create_image_project(project_id, req).await {
+            Ok(image) => {
+                audit_image_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &image,
+                    serde_json::json!({
+                        "scope": "project",
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                    }),
+                )
+                .await;
+                Ok(HttpResponseCreated(image))
+            }
+            Err(e) => {
+                audit_image_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_my_images(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageList,
+        )
+        .await?;
+        // /v2/auth/* requires an authenticated principal — Cedar
+        // would otherwise let an Anonymous probe reach this list.
+        let (user_id, _) = require_authenticated(principal)?;
+        let images = ctx
+            .store
+            .list_images_for_user(user_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(images))
+    }
+
+    async fn create_my_image(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewImage>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ImageCreate,
+        )
+        .await?;
+        let (user_id, _) = require_authenticated(principal.clone())?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        if let Some(err) = validate_image_request(
+            &req,
+            ctx,
+            &principal,
+            request_id,
+            serde_json::json!({ "scope": "user", "user_id": user_id }),
+        )
+        .await
+        {
+            return Err(err);
+        }
+        match ctx.store.create_image_user(user_id, req).await {
+            Ok(image) => {
+                audit_image_create_success(
+                    ctx,
+                    &principal,
+                    request_id,
+                    &image,
+                    serde_json::json!({ "scope": "user", "user_id": user_id }),
+                )
+                .await;
+                Ok(HttpResponseCreated(image))
+            }
+            Err(e) => {
+                audit_image_create_failure(ctx, &principal, request_id, &e).await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_image(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError> {
+        let ctx = rqctx.context();
+        let image_id = path.into_inner().image_id;
+        // Anonymous principals can hit Public images via the
+        // anonymous-public-actions Cedar rule + the visibility
+        // check below; authenticated callers go through scope
+        // gating in image_visible_to.
+        let principal =
+            authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::ImageGet)
+                .await?;
         let image = ctx
             .store
             .get_image(image_id)
             .await
             .map_err(store_error_to_http)?;
-        if image.silo_id != silo_id {
+        if !image_visible_to(&image, &principal, ctx.store.as_ref())
+            .await
+            .map_err(store_error_to_http)?
+        {
             return Err(not_found());
         }
         Ok(HttpResponseOk(image))
     }
 
-    async fn delete_silo_image(
+    async fn delete_image(
         rqctx: RequestContext<Self::Context>,
-        path: Path<SiloImagePath>,
+        path: Path<ImagePath>,
     ) -> Result<HttpResponseDeleted, HttpError> {
         let ctx = rqctx.context();
-        let SiloImagePath { silo_id, image_id } = path.into_inner();
-        let principal = authenticate_and_authorize_in_silo(
+        let image_id = path.into_inner().image_id;
+        let principal = authenticate_and_authorize(
             &rqctx,
             &ctx.auth,
             &ctx.audit,
             &ctx.store,
             Action::ImageDelete,
-            silo_id,
         )
         .await?;
         let request_id = parse_request_id(&rqctx);
-
         let image = ctx
             .store
             .get_image(image_id)
             .await
             .map_err(store_error_to_http)?;
-        if image.silo_id != silo_id {
+        // Ownership gate — stricter than visibility.
+        if !image_deletable_by(&image, &principal, ctx.store.as_ref())
+            .await
+            .map_err(store_error_to_http)?
+        {
             return Err(not_found());
         }
         ctx.store
@@ -2074,7 +2360,7 @@ impl TritondApi for TritondServiceImpl {
                 AuditOutcome::Success {
                     resource: Some(format!("Image::\"{image_id}\"")),
                 },
-                serde_json::json!({ "silo_id": silo_id }),
+                serde_json::json!({ "scope": image.scope }),
             )
             .await;
         Ok(HttpResponseDeleted())
@@ -2302,6 +2588,61 @@ impl TritondApi for TritondServiceImpl {
                 serde_json::json!({ "tenant_id": tenant_id, "project_id": project_id }),
             )
             .await);
+        }
+
+        // Cross-scope visibility check on the referenced image.
+        // The store no longer enforces silo membership on images
+        // (multi-scope as of slice F); the handler resolves
+        // visibility against the principal and surfaces a
+        // not-visible image as 404 to preserve the cross-tenant
+        // probe invariant.
+        match ctx.store.get_image(req.image_id).await {
+            Ok(image) => {
+                let visible = image_visible_to(&image, &principal, ctx.store.as_ref())
+                    .await
+                    .map_err(store_error_to_http)?;
+                if !visible {
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::InstanceCreate,
+                            request_id,
+                            None,
+                            AuditOutcome::ClientError {
+                                code: 404,
+                                message: "image not visible".to_string(),
+                            },
+                            serde_json::json!({
+                                "tenant_id": tenant_id,
+                                "project_id": project_id,
+                                "image_id": req.image_id,
+                            }),
+                        )
+                        .await;
+                    return Err(not_found());
+                }
+            }
+            Err(StoreError::NotFound) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::InstanceCreate,
+                        request_id,
+                        None,
+                        AuditOutcome::ClientError {
+                            code: 404,
+                            message: "image not found".to_string(),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "image_id": req.image_id,
+                        }),
+                    )
+                    .await;
+                return Err(not_found());
+            }
+            Err(e) => return Err(store_error_to_http(e)),
         }
 
         let instance = match ctx.store.create_instance(tenant_id, project_id, req).await {
@@ -3767,6 +4108,208 @@ fn parse_ssh_public_key(public_key: &str) -> Result<String, String> {
     let parsed = ssh_key::PublicKey::from_openssh(public_key.trim())
         .map_err(|e| format!("invalid openssh public key: {e}"))?;
     Ok(parsed.fingerprint(ssh_key::HashAlg::Sha256).to_string())
+}
+
+/// Single source of truth for cross-scope image visibility.
+///
+/// Returns `true` if `principal` can see `image`. Used by every
+/// image read path (`get_image`, the per-scope list handlers) and
+/// by the instance-create reference check; a wrong answer here
+/// is a cross-tenant information leak.
+///
+/// Behaviour:
+/// * Root operators (`is_root == true`) can see everything.
+/// * `Public` is visible to every principal — authenticated *and*
+///   anonymous (Cedar lets the latter through on the global
+///   public-actions rule for `image_get`).
+/// * `Silo { silo_id }` is visible iff the principal's cached
+///   silo_id matches.
+/// * `Tenant { tenant_id }` is visible iff the principal's
+///   tenant_id matches.
+/// * `Project { project_id }` resolves the project to its
+///   tenant; visible iff `project.tenant_id == principal.tenant_id`.
+///   (Phase 0 = "any tenant member sees any project image"; a
+///   future slice can tighten to per-project membership.)
+/// * `User { user_id }` is visible iff the principal's user_id
+///   matches.
+pub async fn image_visible_to(
+    image: &Image,
+    principal: &Principal,
+    store: &dyn Store,
+) -> Result<bool, StoreError> {
+    // Root sees everything regardless of scope.
+    if let Principal::Operator { is_root: true, .. } = principal {
+        return Ok(true);
+    }
+    match &image.scope {
+        ImageScope::Public => Ok(true),
+        ImageScope::Silo { silo_id } => Ok(principal_silo_id(principal) == Some(*silo_id)),
+        ImageScope::Tenant { tenant_id } => Ok(principal_tenant_id(principal) == Some(*tenant_id)),
+        ImageScope::Project { project_id } => {
+            // Phase 0: any member of the project's tenant.
+            let Some(my_tenant) = principal_tenant_id(principal) else {
+                return Ok(false);
+            };
+            match store.get_project(*project_id).await {
+                Ok(project) => Ok(project.tenant_id == my_tenant),
+                Err(StoreError::NotFound) => Ok(false),
+                Err(e) => Err(e),
+            }
+        }
+        ImageScope::User { user_id } => Ok(principal_user_id(principal) == Some(*user_id)),
+        // ImageScope is `#[non_exhaustive]`. New variants must
+        // be classified explicitly in this gate; until then they
+        // deny by default to avoid silent visibility bugs.
+        _ => Ok(false),
+    }
+}
+
+/// Stricter than [`image_visible_to`]: returns `true` if the
+/// principal is allowed to delete `image`. The ownership rules
+/// match the URL-vs-scope structure:
+/// * `Public` — root only.
+/// * `Silo` / `Tenant` / `Project` — any tenant member of the
+///   resolved tenant (Phase 0); cross-tenant returns false.
+/// * `User` — the owning user only.
+async fn image_deletable_by(
+    image: &Image,
+    principal: &Principal,
+    store: &dyn Store,
+) -> Result<bool, StoreError> {
+    if let Principal::Operator { is_root: true, .. } = principal {
+        return Ok(true);
+    }
+    match &image.scope {
+        // Public is operator turf.
+        ImageScope::Public => Ok(false),
+        // Silo / Tenant / Project follow the same visibility
+        // gate as reads (Phase 0 = same-tenant access). A future
+        // slice can split delete from read for these scopes.
+        ImageScope::Silo { .. } | ImageScope::Tenant { .. } | ImageScope::Project { .. } => {
+            image_visible_to(image, principal, store).await
+        }
+        ImageScope::User { user_id } => Ok(principal_user_id(principal) == Some(*user_id)),
+        // Defensive default for future variants.
+        _ => Ok(false),
+    }
+}
+
+fn principal_silo_id(p: &Principal) -> Option<Uuid> {
+    match p {
+        Principal::Operator { silo_id, .. } => *silo_id,
+        Principal::Anonymous => None,
+    }
+}
+
+fn principal_tenant_id(p: &Principal) -> Option<Uuid> {
+    match p {
+        Principal::Operator { tenant_id, .. } => *tenant_id,
+        Principal::Anonymous => None,
+    }
+}
+
+fn principal_user_id(p: &Principal) -> Option<Uuid> {
+    match p {
+        Principal::Operator { user_id, .. } => Some(*user_id),
+        Principal::Anonymous => None,
+    }
+}
+
+/// Shared sha256 / size_bytes API-edge validation used by every
+/// per-scope `create_image_*` handler. On a validation failure,
+/// records a 400 audit event for the supplied principal +
+/// extras blob, and returns the HTTP error to surface. On
+/// success returns `None` — the handler proceeds.
+async fn validate_image_request(
+    req: &NewImage,
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    extras: serde_json::Value,
+) -> Option<HttpError> {
+    if let Err(msg) = validate_sha256(&req.sha256) {
+        ctx.audit
+            .record_mutation(
+                principal,
+                Action::ImageCreate,
+                request_id,
+                None,
+                AuditOutcome::ClientError {
+                    code: 400,
+                    message: msg.clone(),
+                },
+                extras,
+            )
+            .await;
+        return Some(HttpError::for_bad_request(
+            Some("BadRequest".to_string()),
+            msg,
+        ));
+    }
+    if req.size_bytes == 0 {
+        let msg = "size_bytes must be greater than zero".to_string();
+        ctx.audit
+            .record_mutation(
+                principal,
+                Action::ImageCreate,
+                request_id,
+                None,
+                AuditOutcome::ClientError {
+                    code: 400,
+                    message: msg.clone(),
+                },
+                extras,
+            )
+            .await;
+        return Some(HttpError::for_bad_request(
+            Some("BadRequest".to_string()),
+            msg,
+        ));
+    }
+    None
+}
+
+async fn audit_image_create_success(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    image: &Image,
+    mut extras: serde_json::Value,
+) {
+    if let serde_json::Value::Object(ref mut map) = extras {
+        map.insert("name".to_string(), serde_json::json!(image.name));
+        map.insert("sha256".to_string(), serde_json::json!(image.sha256));
+    }
+    ctx.audit
+        .record_mutation(
+            principal,
+            Action::ImageCreate,
+            request_id,
+            Some(format!("Image::\"{}\"", image.id)),
+            AuditOutcome::Success {
+                resource: Some(format!("Image::\"{}\"", image.id)),
+            },
+            extras,
+        )
+        .await;
+}
+
+async fn audit_image_create_failure(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    err: &StoreError,
+) {
+    ctx.audit
+        .record_mutation(
+            principal,
+            Action::ImageCreate,
+            request_id,
+            None,
+            store_error_to_audit_outcome(err),
+            serde_json::Value::Null,
+        )
+        .await;
 }
 
 /// Validate an image's `sha256` field — must be exactly 64 lowercase

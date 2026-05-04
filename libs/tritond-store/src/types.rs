@@ -512,20 +512,82 @@ pub struct NewSshKey {
     pub public_key: String,
 }
 
-/// Tenant image catalog entry. Phase 0 ships only the metadata
-/// record — image content lives in mantafs / object storage and is
-/// not modelled here. Operators register images by URL + sha256 and
-/// trust the caller for the content match; an eventual import
-/// pipeline will pre-stage content in storage and verify the digest
-/// before the record is persisted.
+/// Visibility scope of an [`Image`]. The variant determines who
+/// can see and use the image: `Public` is everyone (including
+/// anonymous probes on the public listing endpoint); `Silo` is
+/// every member of any tenant under that silo; `Tenant` is
+/// every member of that tenant; `Project` is every tenant
+/// member with project access (Phase 0: every tenant member);
+/// `User` is one specific user.
 ///
-/// Silo-scoped: each silo has its own catalog. A future slice may
-/// add a fleet-shared catalog (operator-owned) that silos can
-/// reference; for now images are tenant-private.
+/// The variant carries everything the visibility predicate
+/// needs — there are no denormalised silo_id / tenant_id
+/// fields on `Image`. For `Project`, the resolver looks up the
+/// project to derive its tenant + silo when needed; for
+/// `Tenant`, the resolver looks up the tenant for its silo
+/// when needed. Cold path; correctness > one extra read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ImageScope {
+    Public,
+    Silo { silo_id: Uuid },
+    Tenant { tenant_id: Uuid },
+    Project { project_id: Uuid },
+    User { user_id: Uuid },
+}
+
+impl ImageScope {
+    /// "Namespace key" used by [`derive_image_id`] so the same
+    /// content sha256 in different scopes produces different
+    /// image ids (no cross-scope collisions). Returns:
+    /// * `Uuid::nil()` for `Public`.
+    /// * `silo_id` for `Silo`.
+    /// * `tenant_id` for `Tenant`.
+    /// * `project_id` for `Project`.
+    /// * `user_id` for `User`.
+    #[must_use]
+    pub fn namespace_id(&self) -> Uuid {
+        match self {
+            ImageScope::Public => Uuid::nil(),
+            ImageScope::Silo { silo_id } => *silo_id,
+            ImageScope::Tenant { tenant_id } => *tenant_id,
+            ImageScope::Project { project_id } => *project_id,
+            ImageScope::User { user_id } => *user_id,
+        }
+    }
+
+    /// Stable short tag used as a discriminator inside
+    /// [`derive_image_id`] so two scopes whose namespace UUIDs
+    /// happen to collide (vanishingly unlikely, but possible)
+    /// still produce distinct image ids.
+    #[must_use]
+    pub fn namespace_tag(&self) -> &'static str {
+        match self {
+            ImageScope::Public => "public",
+            ImageScope::Silo { .. } => "silo",
+            ImageScope::Tenant { .. } => "tenant",
+            ImageScope::Project { .. } => "project",
+            ImageScope::User { .. } => "user",
+        }
+    }
+}
+
+/// Image catalog entry. Multi-scope as of Slice F: see
+/// [`ImageScope`] for the variants. Phase 0 ships only the
+/// metadata record — image content lives in mantafs / object
+/// storage and is not modelled here. Operators register images
+/// by URL + sha256 and trust the caller for the content match;
+/// an eventual import pipeline will pre-stage content in storage
+/// and verify the digest before the record is persisted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Image {
     pub id: Uuid,
-    pub silo_id: Uuid,
+    /// Visibility scope. The variant carries the parent identity
+    /// (silo_id / tenant_id / project_id / user_id) for the
+    /// non-Public scopes; visibility checks resolve up the
+    /// project → tenant → silo chain when needed.
+    pub scope: ImageScope,
     pub name: String,
     pub description: String,
     /// OS family identifier (e.g. `linux`, `windows`, `smartos`).
@@ -577,9 +639,10 @@ pub struct ImageCompatibility {
     pub min_smartos_platform: Option<String>,
 }
 
-/// Request body for registering an image in a silo's catalog. The
-/// owning silo comes from the URL path. The server assigns `id`
-/// and `created_at`.
+/// Request body for registering an image in any scope's catalog.
+/// The owning scope (Public / Silo / Tenant / Project / User) is
+/// inferred from the URL path the request hit, *not* from the
+/// body. The server assigns `id` and `created_at`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct NewImage {
     pub name: String,
@@ -593,15 +656,16 @@ pub struct NewImage {
     pub source_url: Option<String>,
     /// Optional UUID to pin for the new image. When `None` (the
     /// usual case), the server derives the UUID deterministically
-    /// from `sha256` via [`derive_image_id`] — same content
-    /// always yields the same id across hosts and replays, so
-    /// the per-CN agent's content-addressed ZFS dataset
-    /// (`zones/<image_id>`) collapses identical bytes into one
-    /// import. `Some(...)` is only useful for cross-cluster
-    /// mirroring scenarios where the operator wants tritond's id
-    /// to match a UUID minted elsewhere; the store rejects the
-    /// create with [`StoreError::Conflict`] if the id is already
-    /// in use.
+    /// from `(scope, sha256)` via [`derive_image_id`] — same
+    /// content in the same scope always yields the same id across
+    /// hosts and replays, so the per-CN agent's content-addressed
+    /// ZFS dataset (`zones/<image_id>`) collapses identical bytes
+    /// into one import. Different scopes registering the same
+    /// content yield distinct ids (no cross-scope collisions).
+    /// `Some(...)` is only useful for cross-cluster mirroring
+    /// scenarios where the operator wants tritond's id to match a
+    /// UUID minted elsewhere; the store rejects the create with
+    /// [`StoreError::Conflict`] if the id is already in use.
     #[serde(default)]
     pub id: Option<Uuid>,
     /// Optional host-compatibility constraints. Populated by
@@ -621,33 +685,34 @@ pub const TRITOND_IMAGE_NAMESPACE: Uuid = Uuid::from_bytes([
     0xb5, 0xb5, 0x0a, 0x2c, 0xf0, 0x6c, 0x49, 0x09, 0x94, 0x52, 0x11, 0xe2, 0xef, 0xd7, 0xcd, 0x67,
 ]);
 
-/// Derive an image UUID from its owning silo + content sha256.
+/// Derive an image UUID from its owning scope + content sha256.
 ///
-/// Uses UUID v5 (SHA-1-based) over a fixed tritond namespace
-/// so the mapping `(silo_id, sha256) → uuid` is stable across
-/// hosts and cluster replays. The same image content
-/// registered in the same silo under two different names
-/// yields the same id, which makes per-CN `zones/<image_id>`
-/// content-addressed storage work without a separate lookup
-/// table.
+/// Uses UUID v5 (SHA-1-based) over a fixed tritond namespace so
+/// the mapping `(scope, sha256) → uuid` is stable across hosts
+/// and cluster replays. The same image content registered in
+/// the same scope under two different names yields the same id,
+/// which makes per-CN `zones/<image_id>` content-addressed
+/// storage work without a separate lookup table.
 ///
-/// **Why silo-keyed and not content-only.** Phase 0 image
-/// records carry `silo_id` as part of their identity (same
-/// name in different silos must coexist as separate records).
-/// A purely content-keyed id would force `(silo_id, image_id)`
-/// to become a composite primary key — a substantial schema
-/// change for a small future-proofing win. The Slice B catalog
-/// redesign tackles cross-silo dedup; for now we accept that
-/// two silos registering identical bytes on the same CN end
-/// up with two ZFS datasets.
+/// **Why scope-keyed and not content-only.** Image records
+/// carry `scope` as part of their identity (same name in two
+/// different silos / tenants / projects / users must coexist as
+/// separate records). The scope's `namespace_tag()` and
+/// `namespace_id()` are folded into the v5 input so two scopes
+/// can never produce the same id even if their parent UUIDs
+/// somehow collide.
 ///
 /// `sha256` is expected to be lowercase hex; case is normalised
 /// here so trivial input differences don't desync the mapping.
 #[must_use]
-pub fn derive_image_id(silo_id: Uuid, sha256: &str) -> Uuid {
+pub fn derive_image_id(scope: &ImageScope, sha256: &str) -> Uuid {
     let normalised = sha256.to_ascii_lowercase();
-    let mut input = Vec::with_capacity(16 + normalised.len() + 1);
-    input.extend_from_slice(silo_id.as_bytes());
+    let tag = scope.namespace_tag();
+    let ns_id = scope.namespace_id();
+    let mut input = Vec::with_capacity(tag.len() + 1 + 16 + 1 + normalised.len());
+    input.extend_from_slice(tag.as_bytes());
+    input.push(b':');
+    input.extend_from_slice(ns_id.as_bytes());
     input.push(b':');
     input.extend_from_slice(normalised.as_bytes());
     Uuid::new_v5(&TRITOND_IMAGE_NAMESPACE, &input)
@@ -657,49 +722,83 @@ pub fn derive_image_id(silo_id: Uuid, sha256: &str) -> Uuid {
 mod derive_image_id_tests {
     use super::*;
 
-    fn fixture_silo() -> Uuid {
-        Uuid::from_bytes([0xab; 16])
+    fn fixture_silo_scope() -> ImageScope {
+        ImageScope::Silo {
+            silo_id: Uuid::from_bytes([0xab; 16]),
+        }
     }
 
     #[test]
     fn deterministic_for_same_inputs() {
-        let s = fixture_silo();
+        let s = fixture_silo_scope();
         assert_eq!(
-            derive_image_id(s, "abc123"),
-            derive_image_id(s, "abc123"),
-            "same (silo, sha256) must yield same UUID",
+            derive_image_id(&s, "abc123"),
+            derive_image_id(&s, "abc123"),
+            "same (scope, sha256) must yield same UUID",
         );
     }
 
     #[test]
     fn case_insensitive_on_sha256() {
-        let s = fixture_silo();
+        let s = fixture_silo_scope();
         assert_eq!(
-            derive_image_id(s, "ABCDEF1234"),
-            derive_image_id(s, "abcdef1234"),
+            derive_image_id(&s, "ABCDEF1234"),
+            derive_image_id(&s, "abcdef1234"),
             "case differences must not desync the mapping",
         );
     }
 
     #[test]
     fn different_content_yields_different_id() {
-        let s = fixture_silo();
+        let s = fixture_silo_scope();
         assert_ne!(
-            derive_image_id(s, &"a".repeat(64)),
-            derive_image_id(s, &"b".repeat(64)),
+            derive_image_id(&s, &"a".repeat(64)),
+            derive_image_id(&s, &"b".repeat(64)),
             "distinct sha256 inputs must not collide",
         );
     }
 
     #[test]
     fn same_content_in_different_silos_does_not_collide() {
-        let a = Uuid::from_bytes([0x01; 16]);
-        let b = Uuid::from_bytes([0x02; 16]);
+        let a = ImageScope::Silo {
+            silo_id: Uuid::from_bytes([0x01; 16]),
+        };
+        let b = ImageScope::Silo {
+            silo_id: Uuid::from_bytes([0x02; 16]),
+        };
         assert_ne!(
-            derive_image_id(a, "abc123"),
-            derive_image_id(b, "abc123"),
+            derive_image_id(&a, "abc123"),
+            derive_image_id(&b, "abc123"),
             "same content in different silos must yield distinct ids",
         );
+    }
+
+    #[test]
+    fn same_content_in_different_scope_kinds_does_not_collide() {
+        // The scope tag prefix in the v5 input means two scopes
+        // whose namespace_ids happen to match still produce
+        // distinct image ids.
+        let id = Uuid::from_bytes([0x07; 16]);
+        let silo = ImageScope::Silo { silo_id: id };
+        let tenant = ImageScope::Tenant { tenant_id: id };
+        let project = ImageScope::Project { project_id: id };
+        let user = ImageScope::User { user_id: id };
+        let public = ImageScope::Public;
+        let ids = [
+            derive_image_id(&silo, "abc"),
+            derive_image_id(&tenant, "abc"),
+            derive_image_id(&project, "abc"),
+            derive_image_id(&user, "abc"),
+            derive_image_id(&public, "abc"),
+        ];
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                assert_ne!(
+                    ids[i], ids[j],
+                    "scope variants {i} and {j} must yield distinct image ids",
+                );
+            }
+        }
     }
 
     #[test]
@@ -863,8 +962,11 @@ pub struct Instance {
     pub project_id: Uuid,
     pub name: String,
     pub description: String,
-    /// Boot image; must be in the same silo as the instance's
-    /// tenant. Images remain silo-scoped in E-3.
+    /// Boot image. As of Slice F images are multi-scope; the
+    /// instance-create handler enforces that the principal can
+    /// see this image (via the [`crate`]-level visibility
+    /// predicate). Cross-scope references that the principal
+    /// cannot see surface as `NotFound`.
     pub image_id: Uuid,
     /// Subnet the instance's primary NIC attaches to. Phase 0
     /// auto-creates a NIC at provisioning time; a future slice

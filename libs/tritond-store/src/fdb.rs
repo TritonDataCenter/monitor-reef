@@ -56,8 +56,16 @@
 //!                                   -> uuid hyphenated bytes
 //! ssh_key/in_silo/<silo>/<key>      -> empty (membership index)
 //! image/by_id/<uuid>                -> JSON-encoded Image
+//! image/by_public/<name>            -> uuid hyphenated bytes
 //! image/by_silo/<silo>/<name>       -> uuid hyphenated bytes
-//! image/in_silo/<silo>/<image>      -> empty (membership index)
+//! image/by_tenant/<tenant>/<name>   -> uuid hyphenated bytes
+//! image/by_project/<proj>/<name>    -> uuid hyphenated bytes
+//! image/by_user/<user>/<name>       -> uuid hyphenated bytes
+//! image/in_public/<image>           -> empty (membership index, public scope)
+//! image/in_silo/<silo>/<image>      -> empty (membership index, silo scope)
+//! image/in_tenant/<tenant>/<image>  -> empty (membership index, tenant scope)
+//! image/in_project/<proj>/<image>   -> empty (membership index, project scope)
+//! image/by_user_idx/<user>/<image>  -> empty (membership index, user scope)
 //! quota/by_project/<project>        -> JSON-encoded Quota
 //! instance/by_id/<uuid>             -> JSON-encoded Instance
 //! instance/by_project/<proj>/<name> -> uuid hyphenated bytes
@@ -98,10 +106,10 @@ use uuid::Uuid;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
-    Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
-    NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo,
-    SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
+    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
+    NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Silo, SshKey, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
     VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 
@@ -314,8 +322,32 @@ impl FdbStore {
         format!("image/by_id/{id}").into_bytes()
     }
 
+    fn image_by_public_name_key(name: &str) -> Vec<u8> {
+        format!("image/by_public/{name}").into_bytes()
+    }
+
     fn image_by_silo_name_key(silo_id: Uuid, name: &str) -> Vec<u8> {
         format!("image/by_silo/{silo_id}/{name}").into_bytes()
+    }
+
+    fn image_by_tenant_name_key(tenant_id: Uuid, name: &str) -> Vec<u8> {
+        format!("image/by_tenant/{tenant_id}/{name}").into_bytes()
+    }
+
+    fn image_by_project_name_key(project_id: Uuid, name: &str) -> Vec<u8> {
+        format!("image/by_project/{project_id}/{name}").into_bytes()
+    }
+
+    fn image_by_user_name_key(user_id: Uuid, name: &str) -> Vec<u8> {
+        format!("image/by_user/{user_id}/{name}").into_bytes()
+    }
+
+    fn image_in_public_key(image_id: Uuid) -> Vec<u8> {
+        format!("image/in_public/{image_id}").into_bytes()
+    }
+
+    fn image_in_public_prefix() -> Vec<u8> {
+        b"image/in_public/".to_vec()
     }
 
     fn image_in_silo_key(silo_id: Uuid, image_id: Uuid) -> Vec<u8> {
@@ -324,6 +356,30 @@ impl FdbStore {
 
     fn image_in_silo_prefix(silo_id: Uuid) -> Vec<u8> {
         format!("image/in_silo/{silo_id}/").into_bytes()
+    }
+
+    fn image_in_tenant_key(tenant_id: Uuid, image_id: Uuid) -> Vec<u8> {
+        format!("image/in_tenant/{tenant_id}/{image_id}").into_bytes()
+    }
+
+    fn image_in_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
+        format!("image/in_tenant/{tenant_id}/").into_bytes()
+    }
+
+    fn image_in_project_key(project_id: Uuid, image_id: Uuid) -> Vec<u8> {
+        format!("image/in_project/{project_id}/{image_id}").into_bytes()
+    }
+
+    fn image_in_project_prefix(project_id: Uuid) -> Vec<u8> {
+        format!("image/in_project/{project_id}/").into_bytes()
+    }
+
+    fn image_by_user_idx_key(user_id: Uuid, image_id: Uuid) -> Vec<u8> {
+        format!("image/by_user_idx/{user_id}/{image_id}").into_bytes()
+    }
+
+    fn image_by_user_idx_prefix(user_id: Uuid) -> Vec<u8> {
+        format!("image/by_user_idx/{user_id}/").into_bytes()
     }
 
     fn quota_by_project_key(project_id: Uuid) -> Vec<u8> {
@@ -2001,88 +2057,91 @@ impl Store for FdbStore {
         }
     }
 
-    async fn create_image(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
-        // None → derive from sha256 (the new default), which makes
-        // tritond's image identity content-addressed and lets the
-        // per-CN agent share one ZFS dataset across silos when
-        // operators register the same content under different
-        // names. Some(...) → operator pinned, used for cross-cluster
-        // mirror cases.
-        let id = req
-            .id
-            .unwrap_or_else(|| crate::derive_image_id(silo_id, &req.sha256));
-        let image = Image {
-            id,
-            silo_id,
-            name: req.name.clone(),
-            description: req.description.unwrap_or_default(),
-            os: req.os,
-            version: req.version,
-            size_bytes: req.size_bytes,
-            sha256: req.sha256,
-            source_url: req.source_url,
-            compatibility: req.compatibility,
-            created_at: Utc::now(),
-        };
-        let value = serde_json::to_vec(&image)
-            .map_err(|e| StoreError::Backend(format!("serialize image: {e}")))?;
-        let by_id_key = Self::image_by_id_key(image.id);
-        let by_name_key = Self::image_by_silo_name_key(silo_id, &image.name);
-        let in_silo_key = Self::image_in_silo_key(silo_id, image.id);
-        let silo_check_key = Self::silo_by_id_key(silo_id);
-        let id_str = image.id.to_string();
+    async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError> {
+        let scope = ImageScope::Public;
+        let by_name_key = Self::image_by_public_name_key(&req.name);
+        let in_scope_key_for = |id: Uuid| Self::image_in_public_key(id);
+        self.create_image_inner(
+            scope,
+            req,
+            None, // no parent existence check for Public.
+            by_name_key,
+            in_scope_key_for,
+            "public",
+        )
+        .await
+    }
 
-        enum Outcome {
-            Created,
-            SiloMissing,
-            NameTaken,
-            IdTaken,
-        }
+    async fn create_image_silo(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        let scope = ImageScope::Silo { silo_id };
+        let by_name_key = Self::image_by_silo_name_key(silo_id, &req.name);
+        let parent_check_key = Self::silo_by_id_key(silo_id);
+        let in_scope_key_for = move |id: Uuid| Self::image_in_silo_key(silo_id, id);
+        self.create_image_inner(
+            scope,
+            req,
+            Some(parent_check_key),
+            by_name_key,
+            in_scope_key_for,
+            "silo",
+        )
+        .await
+    }
 
-        let outcome: Result<Outcome, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_silo_key = in_silo_key.clone();
-                let silo_check_key = silo_check_key.clone();
-                let value = value.clone();
-                let id_bytes = id_str.as_bytes().to_vec();
-                async move {
-                    if tr.get(&silo_check_key, false).await?.is_none() {
-                        return Ok(Outcome::SiloMissing);
-                    }
-                    if tr.get(&by_name_key, false).await?.is_some() {
-                        return Ok(Outcome::NameTaken);
-                    }
-                    // When `req.id` was set, the by_id key may
-                    // already exist for an unrelated image — we
-                    // check inside the transaction so a concurrent
-                    // pin-id create can't race past us.
-                    if tr.get(&by_id_key, false).await?.is_some() {
-                        return Ok(Outcome::IdTaken);
-                    }
-                    tr.set(&by_id_key, &value);
-                    tr.set(&by_name_key, &id_bytes);
-                    tr.set(&in_silo_key, b"");
-                    Ok(Outcome::Created)
-                }
-            })
-            .await;
+    async fn create_image_tenant(
+        &self,
+        tenant_id: Uuid,
+        req: NewImage,
+    ) -> Result<Image, StoreError> {
+        let scope = ImageScope::Tenant { tenant_id };
+        let by_name_key = Self::image_by_tenant_name_key(tenant_id, &req.name);
+        let parent_check_key = Self::tenant_by_id_key(tenant_id);
+        let in_scope_key_for = move |id: Uuid| Self::image_in_tenant_key(tenant_id, id);
+        self.create_image_inner(
+            scope,
+            req,
+            Some(parent_check_key),
+            by_name_key,
+            in_scope_key_for,
+            "tenant",
+        )
+        .await
+    }
 
-        match outcome {
-            Ok(Outcome::Created) => Ok(image),
-            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
-            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
-                "image with name {:?} already exists in silo {silo_id}",
-                req.name
-            ))),
-            Ok(Outcome::IdTaken) => Err(StoreError::Conflict(format!(
-                "image with id {} already exists",
-                image.id,
-            ))),
-            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
-        }
+    async fn create_image_project(
+        &self,
+        project_id: Uuid,
+        req: NewImage,
+    ) -> Result<Image, StoreError> {
+        let scope = ImageScope::Project { project_id };
+        let by_name_key = Self::image_by_project_name_key(project_id, &req.name);
+        let parent_check_key = Self::project_by_id_key(project_id);
+        let in_scope_key_for = move |id: Uuid| Self::image_in_project_key(project_id, id);
+        self.create_image_inner(
+            scope,
+            req,
+            Some(parent_check_key),
+            by_name_key,
+            in_scope_key_for,
+            "project",
+        )
+        .await
+    }
+
+    async fn create_image_user(&self, user_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        let scope = ImageScope::User { user_id };
+        let by_name_key = Self::image_by_user_name_key(user_id, &req.name);
+        let parent_check_key = Self::user_by_id_key(user_id);
+        let in_scope_key_for = move |id: Uuid| Self::image_by_user_idx_key(user_id, id);
+        self.create_image_inner(
+            scope,
+            req,
+            Some(parent_check_key),
+            by_name_key,
+            in_scope_key_for,
+            "user",
+        )
+        .await
     }
 
     async fn get_image(&self, image_id: Uuid) -> Result<Image, StoreError> {
@@ -2092,47 +2151,70 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))
     }
 
+    async fn list_images_public(&self) -> Result<Vec<Image>, StoreError> {
+        let prefix = Self::image_in_public_prefix();
+        self.list_images_via_index(prefix).await
+    }
+
     async fn list_images_in_silo(&self, silo_id: Uuid) -> Result<Vec<Image>, StoreError> {
         let prefix = Self::image_in_silo_prefix(silo_id);
-        let (begin, end) = prefix_range(&prefix);
-        let prefix_len = prefix.len();
+        self.list_images_via_index(prefix).await
+    }
 
-        let id_strs: Result<Vec<String>, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let begin = begin.clone();
-                let end = end.clone();
-                async move {
-                    let opt = RangeOption {
-                        begin: KeySelector::first_greater_or_equal(begin),
-                        end: KeySelector::first_greater_or_equal(end),
-                        ..RangeOption::default()
-                    };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
-                    let mut ids = Vec::new();
-                    for kv in kvs.iter() {
-                        let suffix = &kv.key()[prefix_len..];
-                        if let Ok(s) = std::str::from_utf8(suffix) {
-                            ids.push(s.to_string());
-                        }
-                    }
-                    Ok(ids)
-                }
-            })
-            .await;
-        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+    async fn list_images_in_tenant(&self, tenant_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let prefix = Self::image_in_tenant_prefix(tenant_id);
+        self.list_images_via_index(prefix).await
+    }
 
-        let mut out = Vec::with_capacity(id_strs.len());
-        for s in id_strs {
-            let id = Uuid::parse_str(&s)
-                .map_err(|e| StoreError::Backend(format!("image index uuid: {e}")))?;
-            let by_id_key = Self::image_by_id_key(id);
-            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
-                let image: Image = serde_json::from_slice(&bytes)
-                    .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
-                out.push(image);
-            }
-        }
+    async fn list_images_in_project(&self, project_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let prefix = Self::image_in_project_prefix(project_id);
+        self.list_images_via_index(prefix).await
+    }
+
+    async fn list_images_for_user(&self, user_id: Uuid) -> Result<Vec<Image>, StoreError> {
+        let prefix = Self::image_by_user_idx_prefix(user_id);
+        self.list_images_via_index(prefix).await
+    }
+
+    async fn list_visible_images_in_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<Image>, StoreError> {
+        // Tenant existence anchors the silo lookup; missing
+        // tenant → NotFound (handler-side authorize_in_tenant
+        // would already have 404'd a cross-tenant probe).
+        let tenant_bytes = self
+            .read_bytes(&Self::tenant_by_id_key(tenant_id))
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+        let mut out = self.list_images_public().await?;
+        out.extend(self.list_images_in_silo(tenant.silo_id).await?);
+        out.extend(self.list_images_in_tenant(tenant_id).await?);
+        Ok(out)
+    }
+
+    async fn list_visible_images_in_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Image>, StoreError> {
+        let project_bytes = self
+            .read_bytes(&Self::project_by_id_key(project_id))
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let project: Project = serde_json::from_slice(&project_bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize project: {e}")))?;
+        let tenant_bytes = self
+            .read_bytes(&Self::tenant_by_id_key(project.tenant_id))
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let tenant: Tenant = serde_json::from_slice(&tenant_bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize tenant: {e}")))?;
+        let mut out = self.list_images_public().await?;
+        out.extend(self.list_images_in_silo(tenant.silo_id).await?);
+        out.extend(self.list_images_in_tenant(project.tenant_id).await?);
+        out.extend(self.list_images_in_project(project_id).await?);
         Ok(out)
     }
 
@@ -2144,8 +2226,28 @@ impl Store for FdbStore {
         };
         let image: Image = serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
-        let by_name_key = Self::image_by_silo_name_key(image.silo_id, &image.name);
-        let in_silo_key = Self::image_in_silo_key(image.silo_id, image.id);
+        let (by_name_key, in_scope_key) = match &image.scope {
+            ImageScope::Public => (
+                Self::image_by_public_name_key(&image.name),
+                Self::image_in_public_key(image.id),
+            ),
+            ImageScope::Silo { silo_id } => (
+                Self::image_by_silo_name_key(*silo_id, &image.name),
+                Self::image_in_silo_key(*silo_id, image.id),
+            ),
+            ImageScope::Tenant { tenant_id } => (
+                Self::image_by_tenant_name_key(*tenant_id, &image.name),
+                Self::image_in_tenant_key(*tenant_id, image.id),
+            ),
+            ImageScope::Project { project_id } => (
+                Self::image_by_project_name_key(*project_id, &image.name),
+                Self::image_in_project_key(*project_id, image.id),
+            ),
+            ImageScope::User { user_id } => (
+                Self::image_by_user_name_key(*user_id, &image.name),
+                Self::image_by_user_idx_key(*user_id, image.id),
+            ),
+        };
 
         enum DelOut {
             Deleted,
@@ -2156,14 +2258,14 @@ impl Store for FdbStore {
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
                 let by_name_key = by_name_key.clone();
-                let in_silo_key = in_silo_key.clone();
+                let in_scope_key = in_scope_key.clone();
                 async move {
                     if tr.get(&by_id_key, false).await?.is_none() {
                         return Ok(DelOut::Vanished);
                     }
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
-                    tr.clear(&in_silo_key);
+                    tr.clear(&in_scope_key);
                     Ok(DelOut::Deleted)
                 }
             })
@@ -2472,7 +2574,10 @@ impl Store for FdbStore {
                     if project.tenant_id != tenant_id {
                         return Ok(Outcome::ProjectMissingOrWrongTenant);
                     }
-                    // Image (still silo-scoped in E-3)
+                    // Image (multi-scope as of slice F).
+                    // Visibility is enforced by the API handler
+                    // before invoking create_instance; the store
+                    // only checks that the image record exists.
                     let image_bytes = match tr.get(&image_check_key, false).await? {
                         Some(b) => b,
                         None => return Ok(Outcome::ImageMissingOrWrongSilo),
@@ -2481,9 +2586,6 @@ impl Store for FdbStore {
                         Ok(i) => i,
                         Err(_) => return Ok(Outcome::ImageMissingOrWrongSilo),
                     };
-                    if image.silo_id != silo_id {
-                        return Ok(Outcome::ImageMissingOrWrongSilo);
-                    }
                     // Subnet
                     let subnet_bytes = match tr.get(&subnet_check_key, false).await? {
                         Some(b) => b,
@@ -4570,6 +4672,145 @@ impl FdbStore {
             })
             .await;
         result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    /// Shared body for the per-scope `create_image_*` methods.
+    /// Performs (in one transaction): optional parent-existence
+    /// check, `(scope, name)` uniqueness check, id-uniqueness
+    /// check, then writes `image/by_id`, the per-scope `by_*`
+    /// name index, and the per-scope membership index.
+    ///
+    /// `in_scope_key_for` builds the membership-index key for a
+    /// given image id; it's a closure so each per-scope caller
+    /// can capture its own scope identity (silo / tenant / project
+    /// / user uuid).
+    async fn create_image_inner<F>(
+        &self,
+        scope: ImageScope,
+        req: NewImage,
+        parent_check_key: Option<Vec<u8>>,
+        by_name_key: Vec<u8>,
+        in_scope_key_for: F,
+        scope_label: &'static str,
+    ) -> Result<Image, StoreError>
+    where
+        F: Fn(Uuid) -> Vec<u8> + Send + Sync,
+    {
+        let id = req
+            .id
+            .unwrap_or_else(|| crate::derive_image_id(&scope, &req.sha256));
+        let image = Image {
+            id,
+            scope: scope.clone(),
+            name: req.name.clone(),
+            description: req.description.clone().unwrap_or_default(),
+            os: req.os.clone(),
+            version: req.version.clone(),
+            size_bytes: req.size_bytes,
+            sha256: req.sha256.clone(),
+            source_url: req.source_url.clone(),
+            compatibility: req.compatibility.clone(),
+            created_at: Utc::now(),
+        };
+        let value = serde_json::to_vec(&image)
+            .map_err(|e| StoreError::Backend(format!("serialize image: {e}")))?;
+        let by_id_key = Self::image_by_id_key(image.id);
+        let in_scope_key = in_scope_key_for(image.id);
+        let id_str = image.id.to_string();
+
+        enum Outcome {
+            Created,
+            ParentMissing,
+            NameTaken,
+            IdTaken,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_scope_key = in_scope_key.clone();
+                let parent_check_key = parent_check_key.clone();
+                let value = value.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                async move {
+                    if let Some(pkey) = parent_check_key.as_ref()
+                        && tr.get(pkey, false).await?.is_none()
+                    {
+                        return Ok(Outcome::ParentMissing);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+                    if tr.get(&by_id_key, false).await?.is_some() {
+                        return Ok(Outcome::IdTaken);
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_scope_key, b"");
+                    Ok(Outcome::Created)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created) => Ok(image),
+            Ok(Outcome::ParentMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "image with name {:?} already exists in {scope_label} scope",
+                req.name,
+            ))),
+            Ok(Outcome::IdTaken) => Err(StoreError::Conflict(format!(
+                "image with id {} already exists",
+                image.id,
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    /// Shared body for the per-scope `list_images_*` methods.
+    /// Walks a `image/in_*` membership-index prefix, parses the
+    /// suffix uuids, then fetches each image record by id.
+    async fn list_images_via_index(&self, prefix: Vec<u8>) -> Result<Vec<Image>, StoreError> {
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("image index uuid: {e}")))?;
+            let by_id_key = Self::image_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let image: Image = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize image: {e}")))?;
+                out.push(image);
+            }
+        }
+        Ok(out)
     }
 }
 
