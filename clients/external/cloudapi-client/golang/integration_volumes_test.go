@@ -87,7 +87,7 @@ func TestIntegration_Volumes_CRUD(t *testing.T) {
 	}
 
 	// List volumes.
-	listResp, err := testClient.ListVolumesWithResponse(ctx, testAccount)
+	listResp, err := testClient.ListVolumesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("ListVolumes: %v", err)
 	}

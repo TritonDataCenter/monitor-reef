@@ -85,7 +85,7 @@ func TestIntegration_GetImage(t *testing.T) {
 func TestIntegration_ListPackages(t *testing.T) {
 	ctx := context.Background()
 
-	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount)
+	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("ListPackages: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestIntegration_GetPackage(t *testing.T) {
 	ctx := context.Background()
 
 	// List packages and pick one.
-	listResp, err := testClient.ListPackagesWithResponse(ctx, testAccount)
+	listResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("ListPackages: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestIntegration_HeadImage(t *testing.T) {
 func TestIntegration_HeadPackages(t *testing.T) {
 	ctx := context.Background()
 
-	resp, err := testClient.HeadPackagesWithResponse(ctx, testAccount)
+	resp, err := testClient.HeadPackagesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("HeadPackages: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestIntegration_HeadPackages(t *testing.T) {
 func TestIntegration_HeadPackage(t *testing.T) {
 	ctx := context.Background()
 
-	listResp, err := testClient.ListPackagesWithResponse(ctx, testAccount)
+	listResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
 	if err != nil {
 		t.Fatalf("ListPackages: %v", err)
 	}
