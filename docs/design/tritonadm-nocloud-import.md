@@ -327,6 +327,56 @@ Follow-ups (not in POC scope):
 - Xz source format (Talos, FreeBSD).
 - TOML profile loading from `--profile-dir`.
 
+## Known limitations / follow-ups
+
+### Parallel builds
+
+Different `(vendor, release)` pairs run in parallel without conflict
+(unique build dataset UUIDs, separate cache and output dirs). The
+startup sweep does see the other run's dataset and try to destroy
+it; `zfs destroy` fails with "dataset is busy" and the build
+continues unaffected, but the failure should be logged differently
+from a real cleanup so an operator isn't misled.
+
+Same `(vendor, release)` pair in parallel is **not** supported:
+
+- Cache file race: both runs download to the same path; the second's
+  write can corrupt the first's read.
+- Output file race: both write to
+  `/var/tmp/tritonadm/nocloud/image/<vendor>-<series>/<stub>.x86_64.zfs.gz`
+  — last-writer-wins on the artifact and manifest.
+- Sweep race: as above.
+
+Reasonable fixes (not in POC):
+
+1. Make the sweep distinguish "destroyed" from "in use, skipped"
+   in its log output. Optionally restrict sweeping to datasets older
+   than a configurable threshold (zfs `creation` property) to avoid
+   touching another live build's dataset at all.
+2. Take a process-level `flock` on `<workdir>/.lock` to serialize
+   same-`(vendor, release)` runs while leaving different pairs free
+   to run concurrently.
+
+### Cleanup gaps
+
+- The SIGINT handler best-effort-cleans-up the in-flight dataset.
+  SIGKILL (`kill -9`) bypasses it; the dataset stays. The startup
+  sweep on the next run is the safety net for that case.
+- Children spawned by the build (`zfs send`, `gzip`) inherit the
+  process group, so a TTY-delivered SIGINT reaches them directly.
+  A signal delivered via `kill <pid>` to just our PID would not
+  reach them, and the cleanup would race with their completion.
+
+### Image format / vendor follow-ups
+
+- `Xz` source format (Talos, FreeBSD).
+- Other vendors (Debian, Alpine, FreeBSD, Talos).
+- `Sha256SumsGpg` verifier for vendors that publish detached
+  signatures (Debian, Ubuntu canonical-signed `SHA256SUMS.gpg`).
+- TOML profile loading from `--profile-dir`.
+- `--target smartos` (shells `imgadm install`).
+- `--target imgapi` (reuses `tritonadm image import` machinery).
+
 ## Manifest field decisions
 
 - `min_platform`: `{"7.0": "20260306T044811Z"}`, hardcoded. This marks

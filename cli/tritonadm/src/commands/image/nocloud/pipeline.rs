@@ -43,7 +43,7 @@ fn manifest_namespace() -> Uuid {
     )
 }
 
-fn stable_manifest_uuid(source_sha256_hex: &str) -> Uuid {
+pub fn stable_manifest_uuid(source_sha256_hex: &str) -> Uuid {
     Uuid::new_v5(&manifest_namespace(), source_sha256_hex.as_bytes())
 }
 

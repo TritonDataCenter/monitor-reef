@@ -43,6 +43,12 @@ pub struct ResolvedImage {
     pub homepage: Url,
     pub ssh_key: bool,
     pub verifier: Box<dyn Verifier>,
+    /// Vendors that get the sha256 from their metadata feed (e.g.
+    /// Ubuntu Simple Streams) populate this so `--dry-run` can show
+    /// the expected hash and the derived manifest UUID without
+    /// downloading anything. Vendors whose verifier fetches the hash
+    /// at verification time leave this `None`.
+    pub expected_sha256: Option<String>,
 }
 
 #[async_trait]

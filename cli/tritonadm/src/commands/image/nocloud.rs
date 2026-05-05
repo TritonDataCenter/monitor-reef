@@ -25,6 +25,7 @@ pub struct FetchOpts {
     pub workdir: Option<PathBuf>,
     pub insecure_no_verify: bool,
     pub dataset: Option<String>,
+    pub dry_run: bool,
 }
 
 pub async fn run(opts: FetchOpts) -> Result<()> {
@@ -48,10 +49,17 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
     let stub = format!("{}-{}", opts.vendor, resolved.series);
     let workdir = opts
         .workdir
+        .clone()
         .unwrap_or_else(|| PathBuf::from(format!("/var/tmp/tritonadm/nocloud/cache/{stub}")));
     let output_dir = opts
         .output_dir
+        .clone()
         .unwrap_or_else(|| PathBuf::from(format!("/var/tmp/tritonadm/nocloud/image/{stub}")));
+
+    if opts.dry_run {
+        print_plan(&opts, &resolved, &dataset, &workdir, &output_dir);
+        return Ok(());
+    }
 
     let outputs = pipeline::run(
         resolved,
@@ -79,6 +87,76 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
         outputs.manifest_path.display()
     );
     Ok(())
+}
+
+fn print_plan(
+    opts: &FetchOpts,
+    resolved: &vendor::ResolvedImage,
+    dataset: &str,
+    workdir: &std::path::Path,
+    output_dir: &std::path::Path,
+) {
+    let src_filename = resolved
+        .url
+        .path_segments()
+        .and_then(|mut s| s.next_back())
+        .unwrap_or("(unknown)");
+    let stub = format!(
+        "{}-{}-{}",
+        opts.vendor, resolved.series, resolved.version
+    );
+
+    println!("Resolved upstream image:");
+    println!("  Vendor:        {}", opts.vendor);
+    println!("  Codename:      {}", resolved.series);
+    println!("  Version:       {}", resolved.version);
+    println!("  URL:           {}", resolved.url);
+    println!(
+        "  Format:        {}",
+        match resolved.format {
+            vendor::SourceFormat::Qcow2 => "qcow2",
+            vendor::SourceFormat::Raw => "raw",
+            vendor::SourceFormat::Xz => "xz",
+        }
+    );
+    match &resolved.expected_sha256 {
+        Some(s) => {
+            println!("  SHA-256:       {s}");
+            let manifest_uuid = pipeline::stable_manifest_uuid(s);
+            println!("  Manifest UUID: {manifest_uuid}  (derived from sha256)");
+        }
+        None => {
+            println!("  SHA-256:       (fetched from vendor at verify time)");
+            println!("  Manifest UUID: (derived after download — vendor publishes hash separately)");
+        }
+    }
+
+    println!();
+    println!("Would write to:");
+    println!("  Cache file:    {}", workdir.join(src_filename).display());
+    println!(
+        "  Image:         {}",
+        output_dir.join(format!("{stub}.x86_64.zfs.gz")).display()
+    );
+    println!(
+        "  Manifest:      {}",
+        output_dir.join(format!("{stub}.json")).display()
+    );
+
+    println!();
+    println!("Would create transient zvol:");
+    println!("  Parent:        {dataset}");
+    println!("  Child:         tritonadm-nocloud-<random-uuid>");
+
+    println!();
+    println!("Manifest fields that would be set:");
+    println!("  name:          {}-{}-nocloud", opts.vendor, resolved.series);
+    println!("  version:       {}", resolved.version);
+    println!("  os:            {}", resolved.os);
+    println!("  ssh_key req'd: {}", resolved.ssh_key);
+
+    println!();
+    println!("(--dry-run: nothing was downloaded, written, or created.)");
 }
 
 fn preflight() -> Result<()> {

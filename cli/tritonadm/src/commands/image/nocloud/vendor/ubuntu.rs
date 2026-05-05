@@ -107,7 +107,8 @@ async fn resolve_via_streams(
         description,
         homepage: Url::parse("https://ubuntu.com/").context("ubuntu homepage url")?,
         ssh_key: true,
-        verifier: Box::new(Sha256Pinned(img.sha256)),
+        verifier: Box::new(Sha256Pinned(img.sha256.clone())),
+        expected_sha256: Some(img.sha256),
     })
 }
 
@@ -139,6 +140,10 @@ async fn resolve_via_table(release: &str) -> Result<ResolvedImage> {
         homepage: Url::parse("https://ubuntu.com/").context("ubuntu homepage url")?,
         ssh_key: true,
         verifier: Box::new(Sha256SumsTls::new(sums_url, filename)),
+        // Fallback path: hash isn't known until SHA256SUMS is fetched
+        // at verification time, so dry-run can't display it without
+        // network I/O against a different URL than the streams path.
+        expected_sha256: None,
     })
 }
 

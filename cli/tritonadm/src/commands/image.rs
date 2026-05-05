@@ -125,6 +125,10 @@ pub enum ImageCommand {
         /// Skip checksum/signature verification (DANGEROUS, dev only)
         #[arg(long)]
         insecure_no_verify: bool,
+        /// Resolve metadata and print the build plan, but don't download,
+        /// hash, write any files, or touch any datasets.
+        #[arg(long)]
+        dry_run: bool,
     },
 
     // ========================================================================
@@ -645,6 +649,7 @@ impl ImageCommand {
             workdir,
             dataset,
             insecure_no_verify,
+            dry_run,
         } = self
         {
             return nocloud::run(nocloud::FetchOpts {
@@ -654,6 +659,7 @@ impl ImageCommand {
                 workdir,
                 insecure_no_verify,
                 dataset,
+                dry_run,
             })
             .await;
         }
