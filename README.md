@@ -136,6 +136,8 @@ See AGENTS.md for the step‑by‑step migration workflow (API → specs → ser
 ## Documentation
 
 See [AGENTS.md](AGENTS.md) for detailed design patterns, workflows, and troubleshooting.
+For the broader Triton vNext product and architecture direction, start with
+[docs/vnext/README.md](docs/vnext/README.md).
 
 ## OpenAPI Management
 
