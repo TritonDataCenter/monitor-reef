@@ -122,6 +122,85 @@ impl Verifier for Sha512SumsTls {
     }
 }
 
+/// FreeBSD-style `CHECKSUM.SHA256` file — BSD-traditional format
+/// `SHA256 (filename) = hex` rather than the Linux `<hex>  filename`
+/// format the other SUMS verifiers handle. Same threat model.
+pub struct Sha256BsdSumsTls {
+    pub sums_url: Url,
+    pub filename: String,
+}
+
+impl Sha256BsdSumsTls {
+    pub fn new(sums_url: Url, filename: String) -> Self {
+        Self { sums_url, filename }
+    }
+}
+
+#[async_trait]
+impl Verifier for Sha256BsdSumsTls {
+    async fn verify(
+        &self,
+        _file: &Path,
+        file_sha256_hex: &str,
+        http: &reqwest::Client,
+    ) -> Result<()> {
+        eprintln!("Fetching {}", self.sums_url);
+        let body = http
+            .get(self.sums_url.clone())
+            .send()
+            .await
+            .with_context(|| format!("GET {}", self.sums_url))?
+            .error_for_status()
+            .with_context(|| format!("status from {}", self.sums_url))?
+            .text()
+            .await
+            .with_context(|| format!("read body of {}", self.sums_url))?;
+        let expected = parse_bsd_sums_file(&body, &self.filename).ok_or_else(|| {
+            anyhow::anyhow!(
+                "filename {} not found in {}",
+                self.filename,
+                self.sums_url
+            )
+        })?;
+        if file_sha256_hex != expected {
+            anyhow::bail!(
+                "sha256 mismatch\n  expected: {expected} (from {})\n  actual:   {file_sha256_hex}",
+                self.sums_url
+            );
+        }
+        eprintln!("Checksum OK: {expected}");
+        Ok(())
+    }
+}
+
+/// Parse a BSD-style `CHECKSUM.SHA256` listing. Each non-empty,
+/// non-comment line is `SHA256 (filename) = hex`. Whitespace is
+/// flexible. Mixed formats (some lines BSD, some Linux) are not
+/// supported, but vendors don't mix.
+fn parse_bsd_sums_file(body: &str, filename: &str) -> Option<String> {
+    let needle_open = format!("({filename})");
+    for line in body.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(open) = line.find(&needle_open) else {
+            continue;
+        };
+        // After `(filename)` look for `= hex`.
+        let after = &line[open + needle_open.len()..];
+        let after = after.trim_start();
+        let Some(rest) = after.strip_prefix('=') else {
+            continue;
+        };
+        let hash = rest.trim();
+        if !hash.is_empty() {
+            return Some(hash.to_string());
+        }
+    }
+    None
+}
+
 /// Some vendors (Alpine) publish a per-image sidecar URL that is just
 /// the bare hash on a single line — no filename, no comment. Different
 /// shape from a `<HASH>SUMS` file but same threat model.
@@ -260,6 +339,24 @@ deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef  bar.img\n\
             Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string())
         );
         assert_eq!(parse_sums_file(body, "missing.img"), None);
+    }
+
+    #[test]
+    fn parse_bsd_sums_file_canonical_lines() {
+        let body = "\
+SHA256 (FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-zfs.raw.xz) = 311661446d4654a81a687afd6cbca72cf32848f5251f072a7d4067c42e173324
+SHA256 (FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.raw.xz) = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+# comment line
+";
+        assert_eq!(
+            parse_bsd_sums_file(body, "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-zfs.raw.xz"),
+            Some("311661446d4654a81a687afd6cbca72cf32848f5251f072a7d4067c42e173324".to_string())
+        );
+        assert_eq!(
+            parse_bsd_sums_file(body, "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.raw.xz"),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
+        );
+        assert_eq!(parse_bsd_sums_file(body, "missing.raw.xz"), None);
     }
 
     #[test]

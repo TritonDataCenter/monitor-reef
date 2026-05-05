@@ -115,6 +115,7 @@ indicatif = "0.18"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
 libc = "0.2"
+lzma-rs = "0.3"
 md-5 = "0.10"
 openapiv3 = "2.0"
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk", "pem", "std"] }

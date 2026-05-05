@@ -29,6 +29,7 @@ imgapi-api = { workspace = true }
 imgapi-client = { workspace = true }
 indicatif = { workspace = true }
 libc = { workspace = true }
+lzma-rs = { workspace = true }
 mahi-api = { workspace = true }
 mahi-client = { workspace = true }
 mahi-sitter-client = { workspace = true }
@@ -37,6 +38,7 @@ napi-client = { workspace = true }
 papi-client = { workspace = true }
 progenitor-client = { workspace = true }
 qcow = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

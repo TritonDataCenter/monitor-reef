@@ -100,11 +100,9 @@ async fn run_inner(
 
     let source_sha256 = ensure_verified_source(resolved, opts, cancel).await?;
 
-    let virtual_size_bytes = read_virtual_size(
-        &opts.workdir.join(filename_from_url(&resolved.url)?),
-        resolved.format,
-    )
-    .await?;
+    let downloaded = opts.workdir.join(filename_from_url(&resolved.url)?);
+
+    let virtual_size_bytes = read_virtual_size(&downloaded, resolved.format).await?;
     let virtual_size_mib = virtual_size_bytes.div_ceil(1024 * 1024);
 
     let build_uuid = Uuid::new_v4();
@@ -115,10 +113,10 @@ async fn run_inner(
         "Creating zvol: {} ({} MiB virtual)",
         dataset, virtual_size_mib
     );
-    let downloaded = opts.workdir.join(filename_from_url(&resolved.url)?);
     let result = build_image(
         resolved,
         &downloaded,
+        resolved.format,
         &source_sha256,
         virtual_size_bytes,
         virtual_size_mib,
@@ -262,6 +260,7 @@ async fn sweep_stale_datasets(parent: &str) {
 async fn build_image(
     resolved: &ResolvedImage,
     src_path: &Path,
+    src_format: SourceFormat,
     source_sha256: &str,
     virtual_size_bytes: u64,
     virtual_size_mib: u64,
@@ -276,20 +275,13 @@ async fn build_image(
     eprintln!(
         "Writing image to zvol ({} bytes from {}) ...",
         virtual_size_bytes,
-        match resolved.format {
+        match src_format {
             SourceFormat::Qcow2 => "qcow2",
             SourceFormat::Raw => "raw",
             SourceFormat::Xz => "xz",
         }
     );
-    write_to_zvol(
-        src_path,
-        resolved.format,
-        zvol_rdsk,
-        virtual_size_bytes,
-        cancel,
-    )
-    .await?;
+    write_to_zvol(src_path, src_format, zvol_rdsk, virtual_size_bytes, cancel).await?;
 
     let snap = format!("{dataset}@image");
     eprintln!("Snapshotting zvol ...");
@@ -356,8 +348,91 @@ async fn read_virtual_size(path: &Path, format: SourceFormat) -> Result<u64> {
         })
         .await
         .context("qcow2 header read task panicked")?,
-        SourceFormat::Xz => bail!("xz source format not yet implemented"),
+        SourceFormat::Xz => {
+            // Read just the xz Stream Footer + Index — no decompression
+            // needed. The total uncompressed size is the sum of all
+            // Records' Uncompressed Size VLIs.
+            tokio::task::spawn_blocking(move || -> Result<u64> {
+                xz_uncompressed_size_from_footer(&path)
+            })
+            .await
+            .context("xz footer parse task panicked")?
+        }
     }
+}
+
+/// Parse an xz file's Stream Footer + Index without decompressing
+/// anything. Returns the sum of the Uncompressed Size VLIs across
+/// all Records — the size we need to provision the zvol at. Only
+/// single-stream xz files are supported (the case for every cloud
+/// image we've seen); multi-stream concatenated xz would need a
+/// loop walking back from the end.
+fn xz_uncompressed_size_from_footer(xz_path: &Path) -> Result<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(xz_path)
+        .with_context(|| format!("open {}", xz_path.display()))?;
+    let file_len = file.metadata()?.len();
+    if file_len < 12 {
+        anyhow::bail!("xz file too short to contain a Stream Footer");
+    }
+
+    file.seek(SeekFrom::End(-12))?;
+    let mut footer = [0u8; 12];
+    file.read_exact(&mut footer)?;
+    if &footer[10..12] != b"YZ" {
+        anyhow::bail!("xz Stream Footer magic mismatch (not single-stream xz?)");
+    }
+    let backward_size_field =
+        u32::from_le_bytes([footer[4], footer[5], footer[6], footer[7]]) as u64;
+    let index_size = backward_size_field
+        .checked_add(1)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| anyhow::anyhow!("xz Backward Size overflow"))?;
+    if file_len < 12 + index_size {
+        anyhow::bail!("xz file shorter than declared Index size");
+    }
+
+    file.seek(SeekFrom::End(-(12 + index_size as i64)))?;
+    let mut index_buf = vec![0u8; index_size as usize];
+    file.read_exact(&mut index_buf)?;
+
+    if index_buf.first().copied() != Some(0x00) {
+        anyhow::bail!("xz Index does not start with 0x00 indicator byte");
+    }
+    let mut p = 1usize;
+    let (num_records, n) = read_xz_vli(&index_buf[p..])?;
+    p += n;
+
+    let mut total_uncompressed = 0u64;
+    for _ in 0..num_records {
+        let (_unpadded_size, n) = read_xz_vli(&index_buf[p..])?;
+        p += n;
+        let (uncompressed_size, n) = read_xz_vli(&index_buf[p..])?;
+        p += n;
+        total_uncompressed = total_uncompressed
+            .checked_add(uncompressed_size)
+            .ok_or_else(|| anyhow::anyhow!("xz uncompressed size sum overflow"))?;
+    }
+
+    Ok(total_uncompressed)
+}
+
+/// Read an xz Variable-Length Integer (LEB128 with 7 bits per byte,
+/// MSB=1 means continue). XZ caps these at 9 bytes.
+fn read_xz_vli(buf: &[u8]) -> Result<(u64, usize)> {
+    let mut value: u64 = 0;
+    let mut shift: u32 = 0;
+    for i in 0..9 {
+        let b = *buf
+            .get(i)
+            .ok_or_else(|| anyhow::anyhow!("xz VLI: truncated buffer"))?;
+        value |= u64::from(b & 0x7f) << shift;
+        if b & 0x80 == 0 {
+            return Ok((value, i + 1));
+        }
+        shift += 7;
+    }
+    anyhow::bail!("xz VLI: more than 9 bytes")
 }
 
 async fn write_to_zvol(
@@ -397,7 +472,30 @@ async fn write_to_zvol(
                     .with_context(|| format!("open {}", src_path.display()))?;
                 copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
             }
-            SourceFormat::Xz => bail!("xz source format not yet implemented"),
+            SourceFormat::Xz => {
+                // Stream the decompressed bytes straight into the
+                // zvol via lzma-rs, no intermediate `.raw` file.
+                // The progress bar / cancel flag piggyback on a
+                // ProgressWriter wrapper around the zvol file.
+                let xz_input = std::fs::File::open(&src_path)
+                    .with_context(|| format!("open {}", src_path.display()))?;
+                let zvol = std::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&zvol_rdsk)
+                    .with_context(|| {
+                        format!("open zvol {} for write", zvol_rdsk.display())
+                    })?;
+                let mut input = std::io::BufReader::new(xz_input);
+                let mut output = ProgressWriter {
+                    inner: std::io::BufWriter::new(zvol),
+                    pb: pb_clone,
+                    cancel,
+                };
+                lzma_rs::xz_decompress(&mut input, &mut output)
+                    .map_err(|e| anyhow::anyhow!("xz_decompress: {e}"))?;
+                output.inner.flush().context("flush zvol")?;
+                Ok(())
+            }
         }
     })
     .await
@@ -405,6 +503,33 @@ async fn write_to_zvol(
 
     pb.finish_and_clear();
     result
+}
+
+/// `Write` wrapper that reports progress and honors the SIGINT
+/// cancel flag. Used for the streaming xz→zvol path, where the
+/// decompressor drives writes via the `Write` trait.
+struct ProgressWriter<W: Write> {
+    inner: W,
+    pb: ProgressBar,
+    cancel: Arc<AtomicBool>,
+}
+
+impl<W: Write> Write for ProgressWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "interrupted by signal during xz decompression",
+            ));
+        }
+        let n = self.inner.write(buf)?;
+        self.pb.inc(n as u64);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 fn copy_with_progress(
@@ -553,5 +678,42 @@ mod tests {
     fn manifest_uuid_is_v5() {
         let u = stable_manifest_uuid("aa");
         assert_eq!(u.get_version_num(), 5);
+    }
+
+    #[test]
+    fn xz_vli_reads_single_byte() {
+        let (v, n) = read_xz_vli(&[0x42]).unwrap();
+        assert_eq!(v, 0x42);
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn xz_vli_reads_two_bytes() {
+        // 0x80 = continuation, 0x01 = high bits.
+        // value = 0x00 | (0x01 << 7) = 128
+        let (v, n) = read_xz_vli(&[0x80, 0x01]).unwrap();
+        assert_eq!(v, 128);
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn xz_vli_handles_extra_bytes_in_buffer() {
+        // Trailing garbage shouldn't matter; we stop on first byte without MSB.
+        let (v, n) = read_xz_vli(&[0x05, 0xff, 0xff]).unwrap();
+        assert_eq!(v, 5);
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn xz_vli_rejects_overlong_encoding() {
+        // 9 continuation bytes = invalid (max 9 bytes total).
+        let buf = [0x80u8; 10];
+        assert!(read_xz_vli(&buf).is_err());
+    }
+
+    #[test]
+    fn xz_vli_rejects_truncated() {
+        let buf = [0x80u8; 1];
+        assert!(read_xz_vli(&buf).is_err());
     }
 }
