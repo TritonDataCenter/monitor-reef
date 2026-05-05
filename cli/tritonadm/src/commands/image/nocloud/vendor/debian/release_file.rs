@@ -60,10 +60,8 @@ pub fn parse(body: &str) -> Result<ReleaseInfo> {
             break;
         }
     }
-    let codename =
-        codename.ok_or_else(|| anyhow::anyhow!("no Codename field in Release file"))?;
-    let version =
-        version.ok_or_else(|| anyhow::anyhow!("no Version field in Release file"))?;
+    let codename = codename.ok_or_else(|| anyhow::anyhow!("no Codename field in Release file"))?;
+    let version = version.ok_or_else(|| anyhow::anyhow!("no Version field in Release file"))?;
     Ok(ReleaseInfo { codename, version })
 }
 

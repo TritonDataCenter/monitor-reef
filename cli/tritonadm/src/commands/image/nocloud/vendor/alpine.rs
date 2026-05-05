@@ -31,11 +31,7 @@ impl VendorProfile for Alpine {
         "alpine"
     }
 
-    async fn resolve(
-        &self,
-        release: &str,
-        http: &reqwest::Client,
-    ) -> Result<ResolvedImage> {
+    async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let rj = releases::fetch(http)
             .await
             .with_context(|| "fetch alpine releases.json")?;
@@ -50,13 +46,14 @@ impl VendorProfile for Alpine {
             .unwrap_or(&resolved.branch)
             .to_string();
         let version = resolved.version;
-        let filename =
-            format!("nocloud_alpine-{version}-x86_64-uefi-cloudinit-r0.qcow2");
+        let filename = format!("nocloud_alpine-{version}-x86_64-uefi-cloudinit-r0.qcow2");
         let base = format!(
             "https://dl-cdn.alpinelinux.org/alpine/{}/releases/cloud/",
             resolved.branch
         );
-        let url: Url = format!("{base}{filename}").parse().context("alpine image url")?;
+        let url: Url = format!("{base}{filename}")
+            .parse()
+            .context("alpine image url")?;
         let sidecar_url: Url = format!("{base}{filename}.sha512")
             .parse()
             .context("alpine sha512 sidecar url")?;
@@ -71,8 +68,7 @@ impl VendorProfile for Alpine {
                 "Alpine Linux v{version} CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines."
             ),
-            homepage: Url::parse("https://alpinelinux.org/")
-                .context("alpine homepage url")?,
+            homepage: Url::parse("https://alpinelinux.org/").context("alpine homepage url")?,
             ssh_key: true,
             verifier: Box::new(Sha512SidecarTls { sidecar_url }),
             // Hash channel is SHA-512 sidecar; the pre-download UUID

@@ -57,11 +57,7 @@ impl VendorProfile for Debian {
         "debian"
     }
 
-    async fn resolve(
-        &self,
-        release: &str,
-        http: &reqwest::Client,
-    ) -> Result<ResolvedImage> {
+    async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let suite = token_to_suite(release);
         let info = release_file::fetch(http, suite)
             .await
@@ -99,8 +95,7 @@ impl VendorProfile for Debian {
                 "Debian {version} ({codename}) CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines."
             ),
-            homepage: Url::parse("https://www.debian.org/")
-                .context("debian homepage url")?,
+            homepage: Url::parse("https://www.debian.org/").context("debian homepage url")?,
             ssh_key: true,
             verifier: Box::new(Sha512SumsTls::new(sums_url, filename)),
             // Debian's hash channel is SHA-512, not SHA-256, so the

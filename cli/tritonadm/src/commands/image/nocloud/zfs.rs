@@ -24,8 +24,8 @@ pub async fn snap(snap_spec: &str) -> Result<()> {
 }
 
 pub async fn send_to_file(snap_spec: &str, out: &Path) -> Result<()> {
-    let out_file = std::fs::File::create(out)
-        .with_context(|| format!("create {}", out.display()))?;
+    let out_file =
+        std::fs::File::create(out).with_context(|| format!("create {}", out.display()))?;
     let status = Command::new("zfs")
         .args(["send", snap_spec])
         .stdout(Stdio::from(out_file))

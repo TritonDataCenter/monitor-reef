@@ -635,11 +635,7 @@ pub enum ImageCommand {
 }
 
 impl ImageCommand {
-    pub async fn run(
-        self,
-        imgapi_url: Result<String>,
-        updates_url: Option<&str>,
-    ) -> Result<()> {
+    pub async fn run(self, imgapi_url: Result<String>, updates_url: Option<&str>) -> Result<()> {
         // Dispatch fetch-nocloud before resolving IMGAPI: it has no use
         // for IMGAPI and must work in builder zones with no headnode.
         if let ImageCommand::FetchNocloud {

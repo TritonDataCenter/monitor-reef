@@ -79,8 +79,7 @@ pub trait VendorProfile: Send + Sync {
     // referenced by the POC dispatcher.
     #[allow(dead_code)]
     fn name(&self) -> &str;
-    async fn resolve(&self, release: &str, http: &reqwest::Client)
-        -> Result<ResolvedImage>;
+    async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage>;
 }
 
 pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {

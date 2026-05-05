@@ -78,8 +78,7 @@ impl Verifier for Sha256SumsTls {
         file_sha256_hex: &str,
         http: &reqwest::Client,
     ) -> Result<()> {
-        let expected =
-            fetch_and_parse_sums(http, &self.sums_url, &self.filename).await?;
+        let expected = fetch_and_parse_sums(http, &self.sums_url, &self.filename).await?;
         if file_sha256_hex != expected {
             anyhow::bail!(
                 "sha256 mismatch\n  expected: {expected} (from {})\n  actual:   {file_sha256_hex}",
@@ -110,8 +109,7 @@ impl Verifier for Sha512SumsTls {
         _file_sha256_hex: &str,
         http: &reqwest::Client,
     ) -> Result<()> {
-        let expected =
-            fetch_and_parse_sums(http, &self.sums_url, &self.filename).await?;
+        let expected = fetch_and_parse_sums(http, &self.sums_url, &self.filename).await?;
         let actual = sha512_file(file).await?;
         if actual != expected {
             anyhow::bail!(

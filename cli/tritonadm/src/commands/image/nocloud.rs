@@ -116,10 +116,7 @@ fn print_plan(
         .path_segments()
         .and_then(|mut s| s.next_back())
         .unwrap_or("(unknown)");
-    let stub = format!(
-        "{}-{}-{}",
-        opts.vendor, resolved.series, resolved.version
-    );
+    let stub = format!("{}-{}-{}", opts.vendor, resolved.series, resolved.version);
 
     println!("Resolved upstream image:");
     println!("  Vendor:        {}", opts.vendor);
@@ -142,7 +139,9 @@ fn print_plan(
         }
         None => {
             println!("  SHA-256:       (fetched from vendor at verify time)");
-            println!("  Manifest UUID: (derived after download — vendor publishes hash separately)");
+            println!(
+                "  Manifest UUID: (derived after download — vendor publishes hash separately)"
+            );
         }
     }
 
@@ -165,7 +164,10 @@ fn print_plan(
 
     println!();
     println!("Manifest fields that would be set:");
-    println!("  name:          {}-{}-nocloud", opts.vendor, resolved.series);
+    println!(
+        "  name:          {}-{}-nocloud",
+        opts.vendor, resolved.series
+    );
     println!("  version:       {}", resolved.version);
     println!("  os:            {}", resolved.os);
     println!("  ssh_key req'd: {}", resolved.ssh_key);
@@ -236,9 +238,7 @@ fn default_dataset() -> Result<String> {
         .args(["get", "-H", "-o", "value", "zoned", &dataset])
         .output()
         .context("spawn zfs get zoned")?;
-    if !zoned.status.success()
-        || String::from_utf8_lossy(&zoned.stdout).trim() != "on"
-    {
+    if !zoned.status.success() || String::from_utf8_lossy(&zoned.stdout).trim() != "on" {
         anyhow::bail!(
             "delegated dataset {dataset} not available or not zoned. \
              Pass --dataset to override."

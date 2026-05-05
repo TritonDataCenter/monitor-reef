@@ -62,10 +62,7 @@ pub struct PipelineOutputs {
     pub manifest_uuid: Uuid,
 }
 
-pub async fn run(
-    resolved: ResolvedImage,
-    opts: PipelineOptions<'_>,
-) -> Result<PipelineOutputs> {
+pub async fn run(resolved: ResolvedImage, opts: PipelineOptions<'_>) -> Result<PipelineOutputs> {
     // Cancel flag set by the SIGINT handler. Long-running loops (download,
     // qcow→zvol copy) check it and bail cleanly, which lets us run the
     // zvol-destroy cleanup before exit. Without this, the process would
@@ -174,7 +171,11 @@ async fn ensure_verified_source(
         return Ok(sha256);
     }
 
-    match resolved.verifier.verify(&downloaded, &sha256, opts.http).await {
+    match resolved
+        .verifier
+        .verify(&downloaded, &sha256, opts.http)
+        .await
+    {
         Ok(()) => Ok(sha256),
         Err(first_err) if started_with_cache => {
             eprintln!(
@@ -182,8 +183,7 @@ async fn ensure_verified_source(
                  redownloading once."
             );
             tokio::fs::remove_file(&downloaded).await.ok();
-            download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel)
-                .await?;
+            download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
             eprintln!("Hashing source image ...");
             let sha256 = verify::sha256_file(&downloaded).await?;
             resolved
@@ -254,9 +254,7 @@ async fn sweep_stale_datasets(parent: &str) {
         }
     }
     if destroyed + skipped > 0 {
-        eprintln!(
-            "Sweep summary: {destroyed} destroyed, {skipped} skipped (recent or in-use)"
-        );
+        eprintln!("Sweep summary: {destroyed} destroyed, {skipped} skipped (recent or in-use)");
     }
 }
 
@@ -386,8 +384,8 @@ async fn write_to_zvol(
                 // the reader file must be the same source as the
                 // header parse, but two reads of the same on-disk file
                 // satisfy that.
-                let dyn_qcow = qcow::open(&src_path)
-                    .map_err(|e| anyhow::anyhow!("open qcow2: {e}"))?;
+                let dyn_qcow =
+                    qcow::open(&src_path).map_err(|e| anyhow::anyhow!("open qcow2: {e}"))?;
                 let qcow2 = dyn_qcow.unwrap_qcow2();
                 let mut file = std::fs::File::open(&src_path)
                     .with_context(|| format!("reopen {}", src_path.display()))?;
@@ -531,15 +529,23 @@ mod tests {
     #[test]
     fn manifest_uuid_is_stable_per_sha256() {
         // Same input → same UUID every call.
-        let a = stable_manifest_uuid("5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d");
-        let b = stable_manifest_uuid("5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d");
+        let a = stable_manifest_uuid(
+            "5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d",
+        );
+        let b = stable_manifest_uuid(
+            "5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d",
+        );
         assert_eq!(a, b);
     }
 
     #[test]
     fn manifest_uuid_differs_for_different_sha256() {
-        let a = stable_manifest_uuid("5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d");
-        let b = stable_manifest_uuid("6e7016f2c9f4d3c00f48789eb6b9043ba2172ccc1b6b1eaf3ed1e29dd3e52bb3");
+        let a = stable_manifest_uuid(
+            "5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d",
+        );
+        let b = stable_manifest_uuid(
+            "6e7016f2c9f4d3c00f48789eb6b9043ba2172ccc1b6b1eaf3ed1e29dd3e52bb3",
+        );
         assert_ne!(a, b);
     }
 

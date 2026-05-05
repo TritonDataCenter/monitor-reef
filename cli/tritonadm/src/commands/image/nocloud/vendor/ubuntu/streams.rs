@@ -98,9 +98,7 @@ pub fn resolve(streams: &Streams, token: &str) -> Result<StreamsImage> {
             .iter()
             .copied()
             .find(|p| p.release == token || p.version == token)
-            .ok_or_else(|| {
-                anyhow::anyhow!("no Ubuntu product matches release token {token:?}")
-            })?
+            .ok_or_else(|| anyhow::anyhow!("no Ubuntu product matches release token {token:?}"))?
     };
 
     // Serial keys are date-stamped (`YYYYMMDD` or `YYYYMMDD.N`), so
@@ -111,16 +109,16 @@ pub fn resolve(streams: &Streams, token: &str) -> Result<StreamsImage> {
         .next_back()
         .ok_or_else(|| anyhow::anyhow!("no versions for {}", product.release))?;
 
-    let item = ver.items.get("disk1.img").ok_or_else(|| {
-        anyhow::anyhow!("no disk1.img item for {}/{serial}", product.release)
-    })?;
+    let item = ver
+        .items
+        .get("disk1.img")
+        .ok_or_else(|| anyhow::anyhow!("no disk1.img item for {}/{serial}", product.release))?;
     let sha256 = item
         .sha256
         .clone()
         .ok_or_else(|| anyhow::anyhow!("disk1.img item missing sha256"))?;
 
-    let url = Url::parse(&format!("{BASE_URL}{}", item.path))
-        .context("ubuntu disk1.img url")?;
+    let url = Url::parse(&format!("{BASE_URL}{}", item.path)).context("ubuntu disk1.img url")?;
 
     Ok(StreamsImage {
         codename: product.release.clone(),

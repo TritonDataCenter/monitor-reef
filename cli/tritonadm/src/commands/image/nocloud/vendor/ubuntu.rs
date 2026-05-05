@@ -64,11 +64,7 @@ impl VendorProfile for Ubuntu {
         "ubuntu"
     }
 
-    async fn resolve(
-        &self,
-        release: &str,
-        http: &reqwest::Client,
-    ) -> Result<ResolvedImage> {
+    async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         match resolve_via_streams(release, http).await {
             Ok(r) => Ok(r),
             Err(e) => {
@@ -82,10 +78,7 @@ impl VendorProfile for Ubuntu {
     }
 }
 
-async fn resolve_via_streams(
-    release: &str,
-    http: &reqwest::Client,
-) -> Result<ResolvedImage> {
+async fn resolve_via_streams(release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
     let index = streams::fetch(http).await?;
     let img = streams::resolve(&index, release)?;
 
@@ -118,10 +111,9 @@ async fn resolve_via_table(release: &str) -> Result<ResolvedImage> {
     let url: Url = format!("https://cloud-images.ubuntu.com/{series}/current/{filename}")
         .parse()
         .context("ubuntu image url")?;
-    let sums_url: Url =
-        format!("https://cloud-images.ubuntu.com/{series}/current/SHA256SUMS")
-            .parse()
-            .context("ubuntu SHA256SUMS url")?;
+    let sums_url: Url = format!("https://cloud-images.ubuntu.com/{series}/current/SHA256SUMS")
+        .parse()
+        .context("ubuntu SHA256SUMS url")?;
 
     // Without streams we don't know the upstream serial, so fall back
     // to today's date. Mirrors `target/triton-nocloud-images/build.sh`.
@@ -154,7 +146,11 @@ mod tests {
 
     #[test]
     fn latest_lts_is_in_series() {
-        assert!(SERIES.iter().any(|(s, _, is_lts)| *s == LATEST_LTS && *is_lts));
+        assert!(
+            SERIES
+                .iter()
+                .any(|(s, _, is_lts)| *s == LATEST_LTS && *is_lts)
+        );
     }
 
     #[test]
