@@ -327,35 +327,22 @@ Follow-ups (not in POC scope):
 - Xz source format (Talos, FreeBSD).
 - TOML profile loading from `--profile-dir`.
 
-## Known limitations / follow-ups
-
 ### Parallel builds
 
-Different `(vendor, release)` pairs run in parallel without conflict
-(unique build dataset UUIDs, separate cache and output dirs). The
-startup sweep does see the other run's dataset and try to destroy
-it; `zfs destroy` fails with "dataset is busy" and the build
-continues unaffected, but the failure should be logged differently
-from a real cleanup so an operator isn't misled.
+Different `(vendor, release)` pairs run in parallel without conflict.
 
-Same `(vendor, release)` pair in parallel is **not** supported:
+Same `(vendor, release)` pair in parallel is rejected fast: the
+pipeline takes a `std::fs::File::try_lock` (LOCK_EX | LOCK_NB) on
+`<workdir>/.lock` before doing any I/O. A second invocation prints
+a clear error and exits non-zero. The lock state lives on the file
+descriptor; the kernel releases it on any process exit (clean or
+otherwise), so a SIGKILL'd run never leaves a stuck lock.
 
-- Cache file race: both runs download to the same path; the second's
-  write can corrupt the first's read.
-- Output file race: both write to
-  `/var/tmp/tritonadm/nocloud/image/<vendor>-<series>/<stub>.x86_64.zfs.gz`
-  — last-writer-wins on the artifact and manifest.
-- Sweep race: as above.
-
-Reasonable fixes (not in POC):
-
-1. Make the sweep distinguish "destroyed" from "in use, skipped"
-   in its log output. Optionally restrict sweeping to datasets older
-   than a configurable threshold (zfs `creation` property) to avoid
-   touching another live build's dataset at all.
-2. Take a process-level `flock` on `<workdir>/.lock` to serialize
-   same-`(vendor, release)` runs while leaving different pairs free
-   to run concurrently.
+The startup sweep skips datasets younger than `SWEEP_MIN_AGE_SECS`
+(currently 1 hour) so it can't accidentally destroy another concurrent
+build's in-flight dataset. Older leftovers that happen to be busy
+are detected via the failed `zfs destroy` and logged as
+`busy/refused …; leaving in place` rather than silently dropped.
 
 ### Cleanup gaps
 

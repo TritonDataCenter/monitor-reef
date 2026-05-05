@@ -75,6 +75,41 @@ pub async fn list_children_with_prefix(parent: &str, prefix: &str) -> Result<Vec
         .collect())
 }
 
+/// Read the dataset's creation epoch (seconds since 1970-01-01 UTC).
+/// `zfs get -p` returns the raw seconds rather than a formatted date.
+pub async fn get_creation_epoch(dataset: &str) -> Result<u64> {
+    let out = Command::new("zfs")
+        .args(["get", "-H", "-p", "-o", "value", "creation", dataset])
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs get creation {dataset}"))?;
+    if !out.status.success() {
+        bail!(
+            "zfs get creation {dataset} exited {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.trim()
+        .parse::<u64>()
+        .with_context(|| format!("parse zfs creation epoch from {s:?}"))
+}
+
+/// Attempt to destroy a dataset; returns `Ok(true)` on success,
+/// `Ok(false)` if zfs refused (busy, missing, etc.). Used by the
+/// sweep, which wants to distinguish "destroyed stale leftover" from
+/// "skipped because another build is using it."
+pub async fn try_destroy_recursive(dataset: &str) -> Result<bool> {
+    let status = Command::new("zfs")
+        .args(["destroy", "-r", dataset])
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .with_context(|| format!("spawn zfs destroy {dataset}"))?;
+    Ok(status.success())
+}
+
 async fn run(args: &[&str]) -> Result<()> {
     let (cmd, rest) = args
         .split_first()

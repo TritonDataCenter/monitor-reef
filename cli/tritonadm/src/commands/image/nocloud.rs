@@ -14,7 +14,7 @@ mod vendor;
 mod verify;
 mod zfs;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -60,6 +60,18 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
         print_plan(&opts, &resolved, &dataset, &workdir, &output_dir);
         return Ok(());
     }
+
+    // Serialize concurrent builds of the same (vendor, series). Lock
+    // is keyed on the workdir, so different vendor/release pairs run
+    // in parallel without contention. flock state lives on the FD;
+    // the kernel releases it on any process exit, so a crashed run
+    // won't leave a stuck lock behind. The empty .lock file on disk
+    // is harmless.
+    tokio::fs::create_dir_all(&workdir)
+        .await
+        .with_context(|| format!("create {}", workdir.display()))?;
+    let _lock_guard = acquire_workdir_lock(&workdir)
+        .with_context(|| format!("acquire workdir lock for {}", workdir.display()))?;
 
     let outputs = pipeline::run(
         resolved,
@@ -157,6 +169,33 @@ fn print_plan(
 
     println!();
     println!("(--dry-run: nothing was downloaded, written, or created.)");
+}
+
+/// Acquire an exclusive `flock` on `<workdir>/.lock`, fail-fast if
+/// another process holds it. The returned `File` must outlive the
+/// pipeline; closing it (drop) releases the lock. The kernel also
+/// releases the lock on any process exit, so a SIGKILL'd run won't
+/// leave a stuck lock on disk. The empty `.lock` file itself is
+/// harmless and stays around between runs.
+fn acquire_workdir_lock(workdir: &Path) -> Result<std::fs::File> {
+    let lock_path = workdir.join(".lock");
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .with_context(|| format!("open {}", lock_path.display()))?;
+    // `std::fs::File::try_lock` (stable since Rust 1.89) wraps
+    // `flock(LOCK_EX | LOCK_NB)` with no `unsafe` in our code.
+    match lock_file.try_lock() {
+        Ok(()) => Ok(lock_file),
+        Err(std::fs::TryLockError::WouldBlock) => anyhow::bail!(
+            "another tritonadm fetch-nocloud build is already running for this \
+             (vendor, release); wait for it to finish, or pass a different \
+             --workdir to run concurrently"
+        ),
+        Err(std::fs::TryLockError::Error(e)) => Err(e).context("flock failed"),
+    }
 }
 
 fn preflight() -> Result<()> {

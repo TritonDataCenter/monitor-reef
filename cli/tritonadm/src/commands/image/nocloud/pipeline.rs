@@ -197,8 +197,14 @@ async fn ensure_verified_source(
     }
 }
 
+/// Datasets younger than this are assumed to be in active use by
+/// another concurrent build and are left alone. The threshold is
+/// generous so that even a slow download phase + zvol write + zfs
+/// send + gzip on a large image stays within the in-use window.
+const SWEEP_MIN_AGE_SECS: u64 = 3600;
+
 async fn sweep_stale_datasets(parent: &str) {
-    let stale = match zfs::list_children_with_prefix(parent, DATASET_PREFIX).await {
+    let candidates = match zfs::list_children_with_prefix(parent, DATASET_PREFIX).await {
         Ok(v) if v.is_empty() => return,
         Ok(v) => v,
         Err(e) => {
@@ -206,13 +212,51 @@ async fn sweep_stale_datasets(parent: &str) {
             return;
         }
     };
-    eprintln!(
-        "Found {} stale build dataset(s) from a previous run; cleaning up:",
-        stale.len()
-    );
-    for ds in &stale {
-        eprintln!("  destroying {ds}");
-        let _ = zfs::destroy_recursive(ds).await;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let mut destroyed = 0usize;
+    let mut skipped = 0usize;
+    for ds in &candidates {
+        let creation = match zfs::get_creation_epoch(ds).await {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("  skipping {ds}: cannot read creation time: {e}");
+                skipped += 1;
+                continue;
+            }
+        };
+        let age = now.saturating_sub(creation);
+        if age < SWEEP_MIN_AGE_SECS {
+            // Probably another build in flight; leave it alone.
+            skipped += 1;
+            continue;
+        }
+        match zfs::try_destroy_recursive(ds).await {
+            Ok(true) => {
+                eprintln!("  destroyed stale {ds} (age {age}s)");
+                destroyed += 1;
+            }
+            Ok(false) => {
+                // Dataset is old enough but zfs refused — most likely
+                // someone has the zvol open. Don't escalate; the next
+                // run will try again.
+                eprintln!("  busy/refused {ds} (age {age}s); leaving in place");
+                skipped += 1;
+            }
+            Err(e) => {
+                eprintln!("  error destroying {ds}: {e}");
+                skipped += 1;
+            }
+        }
+    }
+    if destroyed + skipped > 0 {
+        eprintln!(
+            "Sweep summary: {destroyed} destroyed, {skipped} skipped (recent or in-use)"
+        );
     }
 }
 
