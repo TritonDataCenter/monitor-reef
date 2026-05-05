@@ -21,7 +21,24 @@ use uuid::Uuid;
 
 use super::manifest::{self, ManifestInputs};
 use super::vendor::{ResolvedImage, SourceFormat};
+use super::verify;
 use super::zfs;
+
+/// UUID v5 namespace for tritonadm-generated nocloud images. Stable
+/// forever — derived from a stable URL via `NAMESPACE_URL`. Manifest
+/// UUIDs are then `v5(NAMESPACE, source_image_sha256_hex)`, so two
+/// runs against the same upstream image always produce the same
+/// manifest UUID, regardless of when or where the build runs.
+fn manifest_namespace() -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_URL,
+        b"https://tritondatacenter.com/tritonadm/nocloud",
+    )
+}
+
+fn stable_manifest_uuid(source_sha256_hex: &str) -> Uuid {
+    Uuid::new_v5(&manifest_namespace(), source_sha256_hex.as_bytes())
+}
 
 pub struct PipelineOptions<'a> {
     pub vendor: &'a str,
@@ -61,12 +78,18 @@ pub async fn run(
         download_with_progress(opts.http, resolved.url.as_str(), &downloaded).await?;
     }
 
+    // Hash once. The pipeline needs this for verification AND for
+    // deriving a stable manifest UUID; the Verifier trait takes a
+    // precomputed hex string so we don't double-hash a 600 MB file.
+    eprintln!("Hashing source image ...");
+    let source_sha256 = verify::sha256_file(&downloaded).await?;
+
     if opts.insecure_no_verify {
         eprintln!("WARNING: --insecure-no-verify, skipping verification");
     } else {
         resolved
             .verifier
-            .verify(&downloaded, opts.http)
+            .verify(&source_sha256, opts.http)
             .await
             .context("verification failed")?;
     }
@@ -85,6 +108,7 @@ pub async fn run(
     let result = build_image(
         &resolved,
         &downloaded,
+        &source_sha256,
         virtual_size_bytes,
         virtual_size_mib,
         &dataset,
@@ -104,6 +128,7 @@ pub async fn run(
 async fn build_image(
     resolved: &ResolvedImage,
     src_path: &Path,
+    source_sha256: &str,
     virtual_size_bytes: u64,
     virtual_size_mib: u64,
     dataset: &str,
@@ -150,7 +175,7 @@ async fn build_image(
     let sha1 = sha1_file(&gz_path).await?;
     let size = tokio::fs::metadata(&gz_path).await?.len();
 
-    let manifest_uuid = Uuid::new_v4();
+    let manifest_uuid = stable_manifest_uuid(source_sha256);
     let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let inputs = ManifestInputs {
         uuid: manifest_uuid,
@@ -343,4 +368,30 @@ async fn sha1_file(file: &Path) -> Result<String> {
         .context("digest stdout was not UTF-8")?
         .trim()
         .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_uuid_is_stable_per_sha256() {
+        // Same input → same UUID every call.
+        let a = stable_manifest_uuid("5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d");
+        let b = stable_manifest_uuid("5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn manifest_uuid_differs_for_different_sha256() {
+        let a = stable_manifest_uuid("5c3ddb00f60bc455dac0862fabe9d8bacec46c33ac1751143c5c3683404b110d");
+        let b = stable_manifest_uuid("6e7016f2c9f4d3c00f48789eb6b9043ba2172ccc1b6b1eaf3ed1e29dd3e52bb3");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn manifest_uuid_is_v5() {
+        let u = stable_manifest_uuid("aa");
+        assert_eq!(u.get_version_num(), 5);
+    }
 }

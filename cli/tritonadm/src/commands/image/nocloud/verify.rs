@@ -20,9 +20,18 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 use url::Url;
 
+/// A `Verifier` checks that a downloaded image's already-computed
+/// sha256 hex matches whatever upstream-published value the verifier
+/// considers authoritative. Hashing is the pipeline's responsibility,
+/// so we don't pay the SHA-256 cost twice (once for verification, once
+/// to derive the manifest UUID).
 #[async_trait]
 pub trait Verifier: Send + Sync {
-    async fn verify(&self, file: &Path, http: &reqwest::Client) -> Result<()>;
+    async fn verify(
+        &self,
+        file_sha256_hex: &str,
+        http: &reqwest::Client,
+    ) -> Result<()>;
 }
 
 // Used by the Ubuntu Simple Streams path (the streams JSON gives us
@@ -31,16 +40,18 @@ pub struct Sha256Pinned(pub String);
 
 #[async_trait]
 impl Verifier for Sha256Pinned {
-    async fn verify(&self, file: &Path, _http: &reqwest::Client) -> Result<()> {
-        let actual = sha256_file(file).await?;
-        if actual != self.0 {
+    async fn verify(
+        &self,
+        file_sha256_hex: &str,
+        _http: &reqwest::Client,
+    ) -> Result<()> {
+        if file_sha256_hex != self.0 {
             anyhow::bail!(
-                "sha256 mismatch for {}\n  expected: {}\n  actual:   {}",
-                file.display(),
-                self.0,
-                actual
+                "sha256 mismatch\n  expected: {}\n  actual:   {file_sha256_hex}",
+                self.0
             );
         }
+        eprintln!("Checksum OK: {file_sha256_hex}");
         Ok(())
     }
 }
@@ -58,7 +69,11 @@ impl Sha256SumsTls {
 
 #[async_trait]
 impl Verifier for Sha256SumsTls {
-    async fn verify(&self, file: &Path, http: &reqwest::Client) -> Result<()> {
+    async fn verify(
+        &self,
+        file_sha256_hex: &str,
+        http: &reqwest::Client,
+    ) -> Result<()> {
         eprintln!("Fetching {}", self.sums_url);
         let body = http
             .get(self.sums_url.clone())
@@ -79,17 +94,13 @@ impl Verifier for Sha256SumsTls {
             )
         })?;
 
-        let actual = sha256_file(file).await?;
-        if actual != expected {
+        if file_sha256_hex != expected {
             anyhow::bail!(
-                "sha256 mismatch for {}\n  expected: {} (from {})\n  actual:   {}",
-                file.display(),
-                expected,
-                self.sums_url,
-                actual
+                "sha256 mismatch\n  expected: {expected} (from {})\n  actual:   {file_sha256_hex}",
+                self.sums_url
             );
         }
-        eprintln!("Checksum OK: {}", expected);
+        eprintln!("Checksum OK: {expected}");
         Ok(())
     }
 }
