@@ -43,12 +43,16 @@ pub async fn run(client: &TypedClient, profile: &Profile, use_json: bool) -> Res
 
     // Best-effort revoke. Server-side failure shouldn't block us from
     // clearing the local file -- the user's intent is "end my session
-    // here", and a stale local token is the worst UX.
-    let revoke_result = client.inner().auth_logout().send().await;
-    let revoked = revoke_result.is_ok();
-    if let Err(e) = &revoke_result {
-        tracing::debug!("server-side logout failed (local token will still be removed): {e}");
-    }
+    // here", and a stale local token is the worst UX. The error is
+    // recovered into `revoked = false`, which drives the user-facing
+    // message below so the failure isn't silent.
+    let revoked = match client.inner().auth_logout().send().await {
+        Ok(_) => true,
+        Err(e) => {
+            tracing::debug!("server-side logout failed (local token will still be removed): {e}");
+            false
+        }
+    };
 
     // Remove the token file. Missing-is-fine; other errors propagate
     // so the user knows the local state didn't fully clean up.

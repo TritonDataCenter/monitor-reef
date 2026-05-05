@@ -20,11 +20,10 @@ pub type Uuid = uuid::Uuid;
 pub type Timestamp = chrono::DateTime<chrono::Utc>;
 
 /// Key-value metadata (values can be strings, booleans, or numbers)
-///
-/// Newtype wrapper rather than a type alias so the generated OpenAPI
-/// spec carries `MetadataObject` as a named schema rather than an
-/// anonymous `additionalProperties` object. See the note on `Tags`
-/// below for the full rationale.
+// Newtype rather than a type alias so the OpenAPI spec carries
+// `MetadataObject` as a named schema rather than an anonymous
+// `additionalProperties` object. See the note on `Tags` below for the full
+// rationale.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct MetadataObject(pub HashMap<String, Value>);
 
@@ -64,15 +63,11 @@ impl From<serde_json::Map<String, Value>> for MetadataObject {
 }
 
 /// Key-value tags (values can be strings, booleans, or numbers)
-///
-/// Newtype wrapper rather than a type alias so the generated OpenAPI
-/// spec carries `Tags` as a named schema rather than an anonymous
-/// `additionalProperties` object. A `pub type Tags = HashMap<String, Value>`
-/// is erased by schemars at compile time, causing every field typed
-/// `Tags` to inline the map shape and downstream code generators
-/// (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` /
-/// `map[string]interface{}` types per field. The newtype preserves
-/// the name so all clients see a single `Tags` type.
+// Newtype rather than a type alias so the OpenAPI spec carries `Tags` as a
+// named schema rather than an anonymous `additionalProperties` object. Type
+// aliases are erased before schema generation, which would inline the map
+// shape at every field and cause downstream-generated clients to emit
+// unnamed map types per field instead of one shared `Tags` type.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct Tags(pub HashMap<String, Value>);
 

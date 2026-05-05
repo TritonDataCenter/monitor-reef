@@ -382,7 +382,7 @@ impl TritonApi for TritonApiImpl {
         let cookie = build_auth_cookie("", 0, ctx.cookie_secure);
         let mut response =
             HttpResponseHeaders::new_unnamed(HttpResponseOk(LogoutResponse { ok: true }));
-        set_cookie_header(response.headers_mut(), cookie);
+        set_cookie_header(response.headers_mut(), cookie)?;
         Ok(response)
     }
 
@@ -457,17 +457,12 @@ fn build_auth_cookie(token: &str, max_age: u64, secure: bool) -> String {
     format!("auth={token}; HttpOnly{secure_flag}; SameSite=Strict; Path=/; Max-Age={max_age}")
 }
 
-fn set_cookie_header(headers: &mut http::HeaderMap, cookie: String) {
-    match http::HeaderValue::from_str(&cookie) {
-        Ok(value) => {
-            headers.insert(http::header::SET_COOKIE, value);
-        }
-        Err(e) => {
-            // Cookie content we construct is ASCII-safe; a failure here
-            // implies a bug in the token builder, not bad input.
-            warn!("failed to build Set-Cookie header: {e}");
-        }
-    }
+fn set_cookie_header(headers: &mut http::HeaderMap, cookie: String) -> Result<(), HttpError> {
+    let value = http::HeaderValue::from_str(&cookie).map_err(|e| {
+        HttpError::for_internal_error(format!("failed to build Set-Cookie header: {e}"))
+    })?;
+    headers.insert(http::header::SET_COOKIE, value);
+    Ok(())
 }
 
 /// Pull the bearer token from either `Authorization: Bearer ...` or the
@@ -734,7 +729,7 @@ async fn issue_subuser_login_response(
         refresh_token,
         user: user_info,
     }));
-    set_cookie_header(response.headers_mut(), cookie);
+    set_cookie_header(response.headers_mut(), cookie)?;
     Ok(response)
 }
 
@@ -793,7 +788,7 @@ async fn issue_login_response(
     let body = build_login_response(jwt, auth_info).await?;
     let cookie = build_auth_cookie(&body.token, jwt.access_ttl_secs(), cookie_secure);
     let mut response = HttpResponseHeaders::new_unnamed(HttpResponseOk(body));
-    set_cookie_header(response.headers_mut(), cookie);
+    set_cookie_header(response.headers_mut(), cookie)?;
     Ok(response)
 }
 
@@ -809,7 +804,7 @@ async fn issue_login_outcome(
     let cookie = build_auth_cookie(&body.token, jwt.access_ttl_secs(), cookie_secure);
     let mut response =
         HttpResponseHeaders::new_unnamed(HttpResponseOk(LoginOutcome::Complete(body)));
-    set_cookie_header(response.headers_mut(), cookie);
+    set_cookie_header(response.headers_mut(), cookie)?;
     Ok(response)
 }
 

@@ -109,14 +109,10 @@ pub struct Package {
 /// ```json
 /// {"us-central-1": "https://us-central-1.api.mnx.io"}
 /// ```
-///
-/// This is a newtype wrapper rather than a type alias because schemars
-/// (the JSON Schema generator used by Dropshot) erases type aliases at
-/// compile time. A `pub type Datacenters = HashMap<String, String>` produces
-/// an anonymous `Map_of_String` schema in OpenAPI, causing code generators
-/// (Progenitor, oapi-codegen) to emit unnamed map types. The newtype
-/// preserves the name in the schema so generated clients get a proper
-/// named type (e.g. `type Datacenters map[string]string` in Go).
+// Newtype rather than a type alias so the OpenAPI spec carries `Datacenters`
+// as a named schema rather than an anonymous map. Type aliases are erased
+// before schema generation, which would produce unnamed map types in
+// downstream-generated clients.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Datacenters(pub HashMap<String, String>);
 
@@ -158,14 +154,10 @@ pub struct AddForeignDatacenterRequest {
 /// ```json
 /// {"cmon": "https://cmon.example.com:9163", "docker": "tcp://docker.example.com:2376"}
 /// ```
-///
-/// This is a newtype wrapper rather than a type alias because schemars
-/// (the JSON Schema generator used by Dropshot) erases type aliases at
-/// compile time. A `pub type Services = HashMap<String, String>` produces
-/// an anonymous `Map_of_String` schema in OpenAPI, causing code generators
-/// (Progenitor, oapi-codegen) to emit unnamed map types. The newtype
-/// preserves the name in the schema so generated clients get a proper
-/// named type (e.g. `type Services map[string]string` in Go).
+// Newtype rather than a type alias so the OpenAPI spec carries `Services`
+// as a named schema rather than an anonymous map. Type aliases are erased
+// before schema generation, which would produce unnamed map types in
+// downstream-generated clients.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Services(pub HashMap<String, String>);
 
