@@ -1,0 +1,37 @@
+[package]
+name = "qcow"
+version = "1.2.0"
+edition = "2018"
+authors = ["Jordan McLeod <Jordan.McLeod@ll.mit.edu>"]
+description = "A library for working with QEMU qcow images"
+homepage = "https://panda.re"
+repository = "https://github.com/panda-re/qcow-rs"
+license = "MIT"
+keywords = ["qemu", "qcow", "qcow2", "disk", "image"]
+categories = ["emulators"]
+readme = "README.md"
+
+# Vendored fork of qcow 1.2.0. The only change vs. upstream is the
+# flate2 dependency below: upstream pins `zlib-ng-compat`, which forces
+# a CMake build of zlib-ng (libz-sys) and breaks any host without
+# cmake installed. We drop that feature so flate2 falls back to its
+# pure-Rust miniz_oxide backend, keeping the build hermetic.
+
+[dependencies]
+binread = "2.2"
+modular-bitfield = "0.11.2"
+thiserror = "1"
+flate2 = "1"
+zstd = "0.9.0"
+
+# Vendored upstream code: silence the parent workspace's strict lint
+# regime so we can keep the diff vs. crates.io minimal. We are not the
+# maintainers of this code, and policing its style is out of scope.
+[lints.rust]
+# Specific lint name (not the `warnings` group) so the allow survives
+# `-D warnings` on the clippy command line. The bitfield macro used by
+# qcow expands in a way that trips unused_parens on doc-commented fields.
+unused_parens = "allow"
+
+[lints.clippy]
+all = { level = "allow", priority = -1 }
