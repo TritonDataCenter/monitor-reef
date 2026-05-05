@@ -13,12 +13,16 @@
 //! schematic — vanilla Talos with no extensions, matching the bash
 //! builder this profile replaces.
 //!
-//! The factory does not publish per-image sha256/sha512 sidecars
-//! (the HEAD requests for `.sha256` and `.sha512` come back 402),
-//! and the `sha256sum.txt` in the upstream GitHub release covers
-//! only the official metal/ISO assets, not factory-built nocloud
-//! images. So the verifier is `TlsTrustOnly`: we explicitly note
-//! the trust model rather than silently skipping.
+//! The factory's API documents `.sha256` / `.sha512` checksum
+//! endpoints, but Sidero gates them behind an enterprise licence on
+//! the public `factory.talos.dev` (free-tier requests return
+//! `HTTP 402 "enterprise not enabled"`). Self-hosted or
+//! enterprise factories return the checksum normally. We probe the
+//! endpoint at resolve time: if it responds with a checksum, we use
+//! `Sha256SumsTls` against it; if it 402s, we fall back to
+//! `TlsTrustOnly` and explicitly note the trust model rather than
+//! silently skipping. Either way the operator can pin a hash via
+//! `--expected-sha256 <hex>`.
 //!
 //! Talos rejects ssh-key injection via cloud-init (kubelet/etcd is
 //! the only access path), so `ssh_key` is `false` in the manifest
@@ -31,7 +35,7 @@ use async_trait::async_trait;
 use url::Url;
 
 use super::{ResolvedImage, SourceFormat, VendorProfile};
-use crate::commands::image::nocloud::verify::TlsTrustOnly;
+use crate::commands::image::nocloud::verify::{Sha256SumsTls, TlsTrustOnly, Verifier};
 
 pub struct Talos;
 
@@ -65,11 +69,17 @@ impl VendorProfile for Talos {
             None => version.clone(),
         };
 
+        let filename = "nocloud-amd64.raw.xz";
         let url: Url = format!(
-            "https://factory.talos.dev/image/{DEFAULT_SCHEMATIC}/v{version}/nocloud-amd64.raw.xz"
+            "https://factory.talos.dev/image/{DEFAULT_SCHEMATIC}/v{version}/{filename}"
         )
         .parse()
         .context("talos factory image url")?;
+        let sums_url: Url = format!("{url}.sha256")
+            .parse()
+            .context("talos factory sha256 sidecar url")?;
+
+        let verifier = pick_verifier(http, sums_url, filename.to_string()).await;
 
         Ok(ResolvedImage {
             url,
@@ -86,10 +96,31 @@ impl VendorProfile for Talos {
             // Talos's API surface for in-image management is via
             // kubelet/etcd; cloud-init ssh-key injection is rejected.
             ssh_key: false,
-            verifier: Box::new(TlsTrustOnly {
-                note: "Talos factory does not publish per-image hashes".to_string(),
-            }),
+            verifier,
             expected_sha256: None,
         })
+    }
+}
+
+/// Probe the factory's `.sha256` endpoint. Self-hosted / enterprise
+/// factories return `200 <hex>  <filename>`; the public free-tier
+/// `factory.talos.dev` returns `402 enterprise not enabled`. On
+/// success we use `Sha256SumsTls`; on 402 we fall back to
+/// `TlsTrustOnly` with a note. The probe is a HEAD-equivalent GET
+/// of a small resource — single roundtrip, body discarded.
+async fn pick_verifier(
+    http: &reqwest::Client,
+    sums_url: Url,
+    filename: String,
+) -> Box<dyn Verifier> {
+    match http.get(sums_url.clone()).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            Box::new(Sha256SumsTls::new(sums_url, filename))
+        }
+        _ => Box::new(TlsTrustOnly {
+            note: "Talos public factory does not publish per-image hashes \
+                   (enterprise feature). Pass --expected-sha256 to pin a hash."
+                .to_string(),
+        }),
     }
 }
