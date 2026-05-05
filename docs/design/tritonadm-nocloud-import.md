@@ -137,7 +137,7 @@ The POC ships only `ubuntu`. The trait shape accommodates these follow-ups:
 
 | Vendor | Release discovery | Verifier (target) |
 |---|---|---|
-| `debian` | hardcoded codename table; `<codename>/latest/` URL pattern; build serial not exposed in URL | `Sha512SumsTls` (Debian publishes SHA-512) |
+| `debian` | apt `Release` file at `https://deb.debian.org/debian/dists/<suite>/Release` — same file apt uses to know what `stable` means today. Accepts symbolic suites (`stable`, `oldstable`, ...), codenames (`trixie`, `bookworm`, ...), and `latest` as an alias for `stable`. | `Sha512SumsTls` (Debian publishes SHA-512) |
 | `ubuntu` | Canonical Simple Streams (`com.ubuntu.cloud:released:download.json`); fallback to a small hardcoded series table if streams is unreachable | `Sha256Pinned` from streams JSON (primary); `Sha256SumsTls` in fallback |
 | `alpine` | hardcoded `MAJOR.MINOR` table | `Sha256Pinned` from vendor's per-image checksum file |
 | `freebsd` | hardcoded `MAJOR.MINOR` table | `CHECKSUM.SHA256` over TLS |

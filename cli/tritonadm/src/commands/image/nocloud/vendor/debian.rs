@@ -6,19 +6,30 @@
 
 //! Debian cloud-image vendor profile.
 //!
-//! Debian publishes generic cloud images under
-//! `https://cloud.debian.org/images/cloud/<codename>/latest/`. The
-//! `latest/` directory is a stable alias for the most recent build of
-//! that codename. We pick the `genericcloud` qcow2 — its cloud-init
-//! is configured to auto-detect the NoCloud datasource SmartOS
-//! provides on bhyve. The sibling `SHA512SUMS` file is published in
-//! SHA-512 (not SHA-256), so we use the `Sha512SumsTls` verifier
-//! rather than the SHA-256 path used by Ubuntu's fallback.
+//! Debian publishes generic cloud images at
+//! `https://cloud.debian.org/images/cloud/<codename>/latest/`. We pick
+//! the `genericcloud` qcow2 — its cloud-init auto-detects the NoCloud
+//! datasource SmartOS provides on bhyve. The sibling `SHA512SUMS`
+//! file is published in SHA-512 (not SHA-256), so we use the
+//! `Sha512SumsTls` verifier rather than the SHA-256 path used by
+//! Ubuntu's fallback.
 //!
-//! Debian doesn't publish a Simple Streams metadata feed, so release
-//! resolution is table-driven. The version field of the manifest is
-//! the build date because the `latest/` URL doesn't expose the
-//! upstream serial — improving this is a follow-up.
+//! Release resolution consults Debian's apt `Release` file at
+//! `https://deb.debian.org/debian/dists/<suite>/Release` — the same
+//! file apt itself uses to know what `stable` means today. This lets
+//! the user pass any of:
+//!
+//! - `latest` — alias for `stable`
+//! - symbolic suite names — `stable`, `oldstable`, `oldoldstable`,
+//!   `testing`, `unstable`
+//! - codenames — `trixie`, `bookworm`, `bullseye`, `forky`, `sid`, ...
+//!
+//! Since the build downloads a multi-hundred-megabyte image over the
+//! same network, requiring an additional small Release-file fetch
+//! adds no real fragility, and we use its `Codename` and `Version`
+//! fields directly. No hardcoded codename table.
+
+mod release_file;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -29,41 +40,15 @@ use crate::commands::image::nocloud::verify::Sha512SumsTls;
 
 pub struct Debian;
 
-/// Debian releases. Order matters only insofar as `latest` resolves
-/// to [`LATEST_STABLE`]. The major number is the integer used in the
-/// upstream filename pattern (`debian-<major>-genericcloud-amd64.qcow2`).
-const RELEASES: &[(&str, u32, &str)] = &[
-    ("trixie", 13, "13 Trixie (current stable)"),
-    ("bookworm", 12, "12 Bookworm (oldstable)"),
-    ("bullseye", 11, "11 Bullseye (older oldstable, LTS)"),
-];
-
-/// Codename that `--release latest` resolves to. Bump when Debian
-/// promotes a new release to stable.
-const LATEST_STABLE: &str = "trixie";
-
-fn resolve_to_release(release: &str) -> Result<(&'static str, u32, &'static str)> {
-    let r = release.trim();
-    if r == "latest" {
-        return RELEASES
-            .iter()
-            .find(|(c, _, _)| *c == LATEST_STABLE)
-            .copied()
-            .ok_or_else(|| anyhow::anyhow!("LATEST_STABLE {LATEST_STABLE} not in RELEASES"));
+/// Translate the user-facing release token to the suite path component
+/// used in the apt Release URL `dists/<suite>/Release`. `latest` is
+/// the only alias we own; everything else passes through unchanged
+/// and either resolves at upstream or 404s with a clear error.
+fn token_to_suite(release: &str) -> &str {
+    match release.trim() {
+        "latest" => "stable",
+        other => other,
     }
-    if let Some(entry) = RELEASES.iter().find(|(c, _, _)| *c == r) {
-        return Ok(*entry);
-    }
-    if let Ok(major) = r.parse::<u32>()
-        && let Some(entry) = RELEASES.iter().find(|(_, m, _)| *m == major)
-    {
-        return Ok(*entry);
-    }
-    let known: Vec<&str> = RELEASES.iter().map(|(c, _, _)| *c).collect();
-    anyhow::bail!(
-        "debian: unknown release {r:?}; try one of: {} or 'latest'",
-        known.join(", ")
-    );
 }
 
 #[async_trait]
@@ -75,9 +60,21 @@ impl VendorProfile for Debian {
     async fn resolve(
         &self,
         release: &str,
-        _http: &reqwest::Client,
+        http: &reqwest::Client,
     ) -> Result<ResolvedImage> {
-        let (codename, major, descr) = resolve_to_release(release)?;
+        let suite = token_to_suite(release);
+        let info = release_file::fetch(http, suite)
+            .await
+            .with_context(|| format!("resolve debian {release:?}"))?;
+
+        let codename = info.codename;
+        let version = info.version;
+        let major = release_file::major_of(&version).ok_or_else(|| {
+            anyhow::anyhow!(
+                "could not parse major version from upstream {version:?} for {codename}"
+            )
+        })?;
+
         let filename = format!("debian-{major}-genericcloud-amd64.qcow2");
         let url: Url =
             format!("https://cloud.debian.org/images/cloud/{codename}/latest/{filename}")
@@ -88,19 +85,18 @@ impl VendorProfile for Debian {
                 .parse()
                 .context("debian SHA512SUMS url")?;
 
-        // Build serial isn't trivially derivable from the `latest/` URL
-        // (the directory listing has it, but parsing HTML is fragile).
-        // Mirror our Ubuntu-fallback behavior: today's date.
-        let version = chrono::Utc::now().format("%Y%m%d").to_string();
-
         Ok(ResolvedImage {
             url,
             format: SourceFormat::Qcow2,
             os: "linux".to_string(),
-            series: codename.to_string(),
-            version,
+            series: codename.clone(),
+            // Use Debian's point-release version (e.g. "13.4") as the
+            // manifest version. Two builds against the same point
+            // release produce the same manifest version, while a
+            // point-release upgrade produces a new one.
+            version: version.clone(),
             description: format!(
-                "Debian {descr} CloudInit NoCloud compatible image. \
+                "Debian {version} ({codename}) CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines."
             ),
             homepage: Url::parse("https://www.debian.org/")
@@ -116,38 +112,30 @@ impl VendorProfile for Debian {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
     #[test]
-    fn latest_stable_is_in_releases() {
-        assert!(RELEASES.iter().any(|(c, _, _)| *c == LATEST_STABLE));
+    fn latest_aliases_to_stable() {
+        assert_eq!(token_to_suite("latest"), "stable");
     }
 
     #[test]
-    fn resolve_latest() {
-        let (codename, _, _) = resolve_to_release("latest").unwrap();
-        assert_eq!(codename, LATEST_STABLE);
+    fn codename_passes_through() {
+        assert_eq!(token_to_suite("trixie"), "trixie");
+        assert_eq!(token_to_suite("bookworm"), "bookworm");
     }
 
     #[test]
-    fn resolve_codename() {
-        let (codename, major, _) = resolve_to_release("trixie").unwrap();
-        assert_eq!(codename, "trixie");
-        assert_eq!(major, 13);
+    fn symbolic_suites_pass_through() {
+        assert_eq!(token_to_suite("stable"), "stable");
+        assert_eq!(token_to_suite("oldstable"), "oldstable");
+        assert_eq!(token_to_suite("oldoldstable"), "oldoldstable");
+        assert_eq!(token_to_suite("testing"), "testing");
     }
 
     #[test]
-    fn resolve_by_major() {
-        let (codename, major, _) = resolve_to_release("12").unwrap();
-        assert_eq!(codename, "bookworm");
-        assert_eq!(major, 12);
-    }
-
-    #[test]
-    fn resolve_unknown_errors() {
-        assert!(resolve_to_release("warty").is_err());
-        assert!(resolve_to_release("99").is_err());
+    fn whitespace_is_trimmed() {
+        assert_eq!(token_to_suite("  trixie  "), "trixie");
     }
 }
