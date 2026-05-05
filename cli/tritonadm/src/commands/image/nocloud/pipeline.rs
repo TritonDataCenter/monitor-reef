@@ -129,7 +129,10 @@ async fn run_inner(
     .await;
 
     eprintln!("Destroying zvol: {}", dataset);
-    let _ = zfs::destroy_recursive(&dataset).await;
+    // arch-lint: allow(no-error-swallowing) reason="cleanup runs from the failure path; failing to destroy the transient zvol must not mask the outer build error"
+    if let Err(e) = zfs::destroy_recursive(&dataset).await {
+        eprintln!("warning: could not destroy {dataset}: {e}");
+    }
 
     result
 }
@@ -180,7 +183,13 @@ async fn ensure_verified_source(
                 "Cached file failed verification ({first_err}); discarding and \
                  redownloading once."
             );
-            tokio::fs::remove_file(&downloaded).await.ok();
+            // arch-lint: allow(no-error-swallowing) reason="best-effort cache cleanup; the redownload below will also fail clearly if the path is unwritable"
+            if let Err(e) = tokio::fs::remove_file(&downloaded).await {
+                eprintln!(
+                    "warning: could not remove cached {}: {e}",
+                    downloaded.display()
+                );
+            }
             download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
             eprintln!("Hashing source image ...");
             let sha256 = verify::sha256_file(&downloaded).await?;
@@ -205,6 +214,7 @@ async fn sweep_stale_datasets(parent: &str) {
     let candidates = match zfs::list_children_with_prefix(parent, DATASET_PREFIX).await {
         Ok(v) if v.is_empty() => return,
         Ok(v) => v,
+        // arch-lint: allow(no-error-swallowing) reason="sweep is best-effort; failure to clean a stale dataset must not block a fresh build"
         Err(e) => {
             eprintln!("warning: could not list {parent} for stale datasets: {e}");
             return;
@@ -214,6 +224,7 @@ async fn sweep_stale_datasets(parent: &str) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
+        // arch-lint: allow(no-silent-result-drop) reason="system clock before UNIX epoch is impossible on this platform; defaulting to 0 makes sweep skip rather than panic"
         .unwrap_or(0);
 
     let mut destroyed = 0usize;
@@ -369,8 +380,10 @@ async fn read_virtual_size(path: &Path, format: SourceFormat) -> Result<u64> {
 /// loop walking back from the end.
 fn xz_uncompressed_size_from_footer(xz_path: &Path) -> Result<u64> {
     use std::io::{Read, Seek, SeekFrom};
-    let mut file = std::fs::File::open(xz_path)
-        .with_context(|| format!("open {}", xz_path.display()))?;
+    let mut file =
+        // arch-lint: allow(no-sync-io) reason="called only from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+        std::fs::File::open(xz_path).with_context(|| format!("open {}", xz_path.display()))?;
+    // arch-lint: allow(no-sync-io) reason="called only from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
     let file_len = file.metadata()?.len();
     if file_len < 12 {
         anyhow::bail!("xz file too short to contain a Stream Footer");
@@ -462,12 +475,14 @@ async fn write_to_zvol(
                 let dyn_qcow =
                     qcow::open(&src_path).map_err(|e| anyhow::anyhow!("open qcow2: {e}"))?;
                 let qcow2 = dyn_qcow.unwrap_qcow2();
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; downstream qcow crate API is sync"
                 let mut file = std::fs::File::open(&src_path)
                     .with_context(|| format!("reopen {}", src_path.display()))?;
                 let mut reader = qcow2.reader(&mut file);
                 copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
             }
             SourceFormat::Raw => {
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; copy_with_progress drives a sync read/write loop"
                 let mut reader = std::fs::File::open(&src_path)
                     .with_context(|| format!("open {}", src_path.display()))?;
                 copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
@@ -477,14 +492,13 @@ async fn write_to_zvol(
                 // zvol via lzma-rs, no intermediate `.raw` file.
                 // The progress bar / cancel flag piggyback on a
                 // ProgressWriter wrapper around the zvol file.
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; lzma-rs xz_decompress drives sync Read/Write"
                 let xz_input = std::fs::File::open(&src_path)
                     .with_context(|| format!("open {}", src_path.display()))?;
                 let zvol = std::fs::OpenOptions::new()
                     .write(true)
                     .open(&zvol_rdsk)
-                    .with_context(|| {
-                        format!("open zvol {} for write", zvol_rdsk.display())
-                    })?;
+                    .with_context(|| format!("open zvol {} for write", zvol_rdsk.display()))?;
                 let mut input = std::io::BufReader::new(xz_input);
                 let mut output = ProgressWriter {
                     inner: std::io::BufWriter::new(zvol),
@@ -577,7 +591,7 @@ async fn download_with_progress(
         .error_for_status()
         .with_context(|| format!("status from {url}"))?;
 
-    let total = resp.content_length().unwrap_or(0);
+    let total: u64 = resp.content_length().unwrap_or_default();
     let pb = if total > 0 {
         let pb = ProgressBar::new(total);
         pb.set_style(byte_progress_style("Downloading"));
@@ -624,6 +638,7 @@ async fn download_with_progress(
     Ok(())
 }
 
+// arch-lint: allow(no-silent-result-drop) reason="literal template is known-good at compile time; fallback is the identity for malformed templates"
 fn byte_progress_style(prefix: &str) -> ProgressStyle {
     ProgressStyle::with_template(&format!(
         "{prefix} [{{elapsed_precise}}] {{bar:40.cyan/blue}} \
@@ -632,6 +647,7 @@ fn byte_progress_style(prefix: &str) -> ProgressStyle {
     .unwrap_or_else(|_| ProgressStyle::default_bar())
 }
 
+// arch-lint: allow(no-silent-result-drop) reason="literal template is known-good at compile time; fallback is the identity for malformed templates"
 fn spinner_progress_style(prefix: &str) -> ProgressStyle {
     ProgressStyle::with_template(&format!(
         "{prefix} [{{elapsed_precise}}] {{spinner}} {{bytes}} ({{bytes_per_sec}})"

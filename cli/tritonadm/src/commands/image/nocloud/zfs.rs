@@ -24,8 +24,11 @@ pub async fn snap(snap_spec: &str) -> Result<()> {
 }
 
 pub async fn send_to_file(snap_spec: &str, out: &Path) -> Result<()> {
-    let out_file =
-        std::fs::File::create(out).with_context(|| format!("create {}", out.display()))?;
+    let out_file = tokio::fs::File::create(out)
+        .await
+        .with_context(|| format!("create {}", out.display()))?
+        .into_std()
+        .await;
     let status = Command::new("zfs")
         .args(["send", snap_spec])
         .stdout(Stdio::from(out_file))
@@ -39,13 +42,16 @@ pub async fn send_to_file(snap_spec: &str, out: &Path) -> Result<()> {
 }
 
 pub async fn destroy_recursive(dataset: &str) -> Result<()> {
-    // Best-effort cleanup. Errors are swallowed because this also runs
-    // from the failure path of a build, where the outer error is what
-    // we want to surface.
-    let _ = Command::new("zfs")
+    // Cleanup also runs from the failure path of a build; the caller
+    // is expected to log (not bail) so the outer error surfaces.
+    let status = Command::new("zfs")
         .args(["destroy", "-r", dataset])
         .status()
-        .await;
+        .await
+        .with_context(|| format!("spawn zfs destroy {dataset}"))?;
+    if !status.success() {
+        bail!("zfs destroy -r {dataset} exited {status}");
+    }
     Ok(())
 }
 

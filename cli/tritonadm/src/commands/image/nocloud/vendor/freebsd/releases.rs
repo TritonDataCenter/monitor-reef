@@ -30,9 +30,8 @@ pub async fn find_latest(http: &reqwest::Client) -> Result<String> {
         .text()
         .await
         .with_context(|| format!("read body of {VM_IMAGES_URL}"))?;
-    parse_latest_from_html(&body).ok_or_else(|| {
-        anyhow::anyhow!("no `X.Y-RELEASE/` entries found in {VM_IMAGES_URL}")
-    })
+    parse_latest_from_html(&body)
+        .ok_or_else(|| anyhow::anyhow!("no `X.Y-RELEASE/` entries found in {VM_IMAGES_URL}"))
 }
 
 fn parse_latest_from_html(body: &str) -> Option<String> {
@@ -59,9 +58,7 @@ pub fn parse_version(input: &str) -> Result<String> {
     let stripped = s.strip_suffix("-RELEASE").unwrap_or(s);
     let parts: Vec<&str> = stripped.split('.').collect();
     if parts.len() != 2 || parts.iter().any(|p| p.parse::<u32>().is_err()) {
-        anyhow::bail!(
-            "freebsd: expected version like '15.0' or '15.0-RELEASE', got {input:?}"
-        );
+        anyhow::bail!("freebsd: expected version like '15.0' or '15.0-RELEASE', got {input:?}");
     }
     Ok(stripped.to_string())
 }

@@ -156,11 +156,7 @@ impl Verifier for Sha256BsdSumsTls {
             .await
             .with_context(|| format!("read body of {}", self.sums_url))?;
         let expected = parse_bsd_sums_file(&body, &self.filename).ok_or_else(|| {
-            anyhow::anyhow!(
-                "filename {} not found in {}",
-                self.filename,
-                self.sums_url
-            )
+            anyhow::anyhow!("filename {} not found in {}", self.filename, self.sums_url)
         })?;
         if file_sha256_hex != expected {
             anyhow::bail!(
@@ -373,11 +369,17 @@ SHA256 (FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.raw.xz) = aaaaaaaaaaaaaaa
 # comment line
 ";
         assert_eq!(
-            parse_bsd_sums_file(body, "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-zfs.raw.xz"),
+            parse_bsd_sums_file(
+                body,
+                "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-zfs.raw.xz"
+            ),
             Some("311661446d4654a81a687afd6cbca72cf32848f5251f072a7d4067c42e173324".to_string())
         );
         assert_eq!(
-            parse_bsd_sums_file(body, "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.raw.xz"),
+            parse_bsd_sums_file(
+                body,
+                "FreeBSD-15.0-RELEASE-amd64-BASIC-CLOUDINIT-ufs.raw.xz"
+            ),
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
         );
         assert_eq!(parse_bsd_sums_file(body, "missing.raw.xz"), None);

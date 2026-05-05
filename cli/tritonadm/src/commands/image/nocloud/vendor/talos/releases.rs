@@ -52,9 +52,7 @@ pub fn parse_version(input: &str) -> Result<String> {
     let stripped = s.strip_prefix('v').unwrap_or(s);
     let parts: Vec<&str> = stripped.split('.').collect();
     if parts.len() != 3 || parts.iter().any(|p| p.parse::<u32>().is_err()) {
-        anyhow::bail!(
-            "talos: expected version like '1.12.7' or 'v1.12.7', got {input:?}"
-        );
+        anyhow::bail!("talos: expected version like '1.12.7' or 'v1.12.7', got {input:?}");
     }
     Ok(stripped.to_string())
 }

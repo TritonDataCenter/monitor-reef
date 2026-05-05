@@ -31,11 +31,7 @@ impl VendorProfile for FreeBsd {
         "freebsd"
     }
 
-    async fn resolve(
-        &self,
-        release: &str,
-        http: &reqwest::Client,
-    ) -> Result<ResolvedImage> {
+    async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let version = if release.trim() == "latest" {
             releases::find_latest(http).await?
         } else {
@@ -72,8 +68,7 @@ impl VendorProfile for FreeBsd {
                 "FreeBSD {version}-RELEASE CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines."
             ),
-            homepage: Url::parse("https://www.freebsd.org/")
-                .context("freebsd homepage url")?,
+            homepage: Url::parse("https://www.freebsd.org/").context("freebsd homepage url")?,
             ssh_key: true,
             verifier: Box::new(Sha256BsdSumsTls::new(sums_url, filename)),
             // BSD-style CHECKSUM.SHA256 is fetched at verify time,

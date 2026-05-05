@@ -42,8 +42,7 @@ pub struct Talos;
 /// The Talos default (empty) schematic. Schematic IDs are
 /// sha256(customizations_yaml); this is the well-known sha for "no
 /// customizations." Stable forever.
-const DEFAULT_SCHEMATIC: &str =
-    "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba";
+const DEFAULT_SCHEMATIC: &str = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba";
 
 #[async_trait]
 impl VendorProfile for Talos {
@@ -51,11 +50,7 @@ impl VendorProfile for Talos {
         "talos"
     }
 
-    async fn resolve(
-        &self,
-        release: &str,
-        http: &reqwest::Client,
-    ) -> Result<ResolvedImage> {
+    async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let version = if release.trim() == "latest" {
             releases::find_latest(http).await?
         } else {
@@ -70,11 +65,10 @@ impl VendorProfile for Talos {
         };
 
         let filename = "nocloud-amd64.raw.xz";
-        let url: Url = format!(
-            "https://factory.talos.dev/image/{DEFAULT_SCHEMATIC}/v{version}/{filename}"
-        )
-        .parse()
-        .context("talos factory image url")?;
+        let url: Url =
+            format!("https://factory.talos.dev/image/{DEFAULT_SCHEMATIC}/v{version}/{filename}")
+                .parse()
+                .context("talos factory image url")?;
         let sums_url: Url = format!("{url}.sha256")
             .parse()
             .context("talos factory sha256 sidecar url")?;
@@ -91,8 +85,7 @@ impl VendorProfile for Talos {
                 "Talos Linux v{version} CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines."
             ),
-            homepage: Url::parse("https://www.talos.dev/")
-                .context("talos homepage url")?,
+            homepage: Url::parse("https://www.talos.dev/").context("talos homepage url")?,
             // Talos's API surface for in-image management is via
             // kubelet/etcd; cloud-init ssh-key injection is rejected.
             ssh_key: false,
@@ -114,9 +107,7 @@ async fn pick_verifier(
     filename: String,
 ) -> Box<dyn Verifier> {
     match http.get(sums_url.clone()).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            Box::new(Sha256SumsTls::new(sums_url, filename))
-        }
+        Ok(resp) if resp.status().is_success() => Box::new(Sha256SumsTls::new(sums_url, filename)),
         _ => Box::new(TlsTrustOnly {
             note: "Talos public factory does not publish per-image hashes \
                    (enterprise feature). Pass --expected-sha256 to pin a hash."
