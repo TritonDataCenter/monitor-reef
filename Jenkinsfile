@@ -60,8 +60,9 @@ pipeline {
             // has it available via pkgsrc but not installed by default;
             // install it here so the build is self-contained. Mirrors the
             // manta-rebalancer branch's pattern for flex.
+            // Some of our rust libraries need cmake to compile deps.
             steps{
-                sh('pkgin -y in gsharutils')
+                sh('pkgin -y in cmake gsharutils')
             }
         }
         stage('build triton-api image') {
