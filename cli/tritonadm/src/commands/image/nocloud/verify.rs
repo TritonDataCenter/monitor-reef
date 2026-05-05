@@ -124,6 +124,49 @@ impl Verifier for Sha512SumsTls {
     }
 }
 
+/// Some vendors (Alpine) publish a per-image sidecar URL that is just
+/// the bare hash on a single line — no filename, no comment. Different
+/// shape from a `<HASH>SUMS` file but same threat model.
+pub struct Sha512SidecarTls {
+    pub sidecar_url: Url,
+}
+
+#[async_trait]
+impl Verifier for Sha512SidecarTls {
+    async fn verify(
+        &self,
+        file: &Path,
+        _file_sha256_hex: &str,
+        http: &reqwest::Client,
+    ) -> Result<()> {
+        eprintln!("Fetching {}", self.sidecar_url);
+        let body = http
+            .get(self.sidecar_url.clone())
+            .send()
+            .await
+            .with_context(|| format!("GET {}", self.sidecar_url))?
+            .error_for_status()
+            .with_context(|| format!("status from {}", self.sidecar_url))?
+            .text()
+            .await
+            .with_context(|| format!("read body of {}", self.sidecar_url))?;
+        let expected = body
+            .split_whitespace()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("empty sha512 sidecar at {}", self.sidecar_url))?
+            .to_string();
+        let actual = sha512_file(file).await?;
+        if actual != expected {
+            anyhow::bail!(
+                "sha512 mismatch\n  expected: {expected} (from {})\n  actual:   {actual}",
+                self.sidecar_url
+            );
+        }
+        eprintln!("Checksum OK (sha512): {expected}");
+        Ok(())
+    }
+}
+
 async fn fetch_and_parse_sums(
     http: &reqwest::Client,
     sums_url: &Url,

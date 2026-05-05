@@ -137,9 +137,9 @@ The POC ships only `ubuntu`. The trait shape accommodates these follow-ups:
 
 | Vendor | Release discovery | Verifier (target) |
 |---|---|---|
+| `alpine` | `https://alpinelinux.org/releases.json`. Accepts `latest` (newest release in `latest_stable` branch), branch (`3.23` or `v3.23`), or full version (`3.23.4`). | `Sha512SidecarTls` — per-image `<file>.sha512` containing only the bare hex hash |
 | `debian` | apt `Release` file at `https://deb.debian.org/debian/dists/<suite>/Release` — same file apt uses to know what `stable` means today. Accepts symbolic suites (`stable`, `oldstable`, ...), codenames (`trixie`, `bookworm`, ...), and `latest` as an alias for `stable`. | `Sha512SumsTls` (Debian publishes SHA-512) |
 | `ubuntu` | Canonical Simple Streams (`com.ubuntu.cloud:released:download.json`); fallback to a small hardcoded series table if streams is unreachable | `Sha256Pinned` from streams JSON (primary); `Sha256SumsTls` in fallback |
-| `alpine` | hardcoded `MAJOR.MINOR` table | `Sha256Pinned` from vendor's per-image checksum file |
 | `freebsd` | hardcoded `MAJOR.MINOR` table | `CHECKSUM.SHA256` over TLS |
 | `talos` | factory API (vendor-specific) | factory API (vendor-specific) |
 
@@ -357,7 +357,7 @@ are detected via the failed `zfs destroy` and logged as
 ### Image format / vendor follow-ups
 
 - `Xz` source format (Talos, FreeBSD).
-- Other vendors (Alpine, FreeBSD, Talos).
+- Other vendors (FreeBSD, Talos).
 - `Sha256SumsGpg` verifier for vendors that publish detached
   signatures (Debian, Ubuntu canonical-signed `SHA256SUMS.gpg`).
 - TOML profile loading from `--profile-dir`.
