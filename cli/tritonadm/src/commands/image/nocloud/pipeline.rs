@@ -595,15 +595,32 @@ async fn download_with_progress(
         .await
         .with_context(|| format!("create {}", dest.display()))?;
     let mut stream = resp;
+    let mut bytes_written: u64 = 0;
     while let Some(chunk) = stream.chunk().await? {
         if cancel.load(Ordering::Relaxed) {
             anyhow::bail!("interrupted by signal during download");
         }
         f.write_all(&chunk).await?;
+        bytes_written += chunk.len() as u64;
         pb.inc(chunk.len() as u64);
     }
     f.flush().await?;
     pb.finish_and_clear();
+
+    // Defense in depth: hyper should already error on body truncation
+    // when Content-Length is set, but a comparison here is cheap and
+    // catches HTTP/2 stream resets, mid-stream proxy issues, and
+    // edge cases where the server sent a wrong size header. A short
+    // download produces a clear error rather than silently feeding a
+    // truncated file into the verifier (which would also catch it,
+    // but with a less actionable "checksum mismatch" message).
+    if total > 0 && bytes_written != total {
+        anyhow::bail!(
+            "download truncated: got {bytes_written} bytes, expected {total} \
+             (from Content-Length) at {url}"
+        );
+    }
+
     Ok(())
 }
 
