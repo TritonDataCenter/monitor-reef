@@ -201,6 +201,30 @@ fn parse_bsd_sums_file(body: &str, filename: &str) -> Option<String> {
     None
 }
 
+/// Verifier of last resort for vendors that don't publish a
+/// machine-readable hash for the specific binary they serve. It
+/// trusts whatever the TLS connection delivered and logs a line so
+/// the operator knows there's no per-image hash check happening.
+/// Used by the Talos factory, which builds nocloud images
+/// dynamically from a content-addressed schematic and does not
+/// expose a sidecar `.sha256` for the resulting binary.
+pub struct TlsTrustOnly {
+    pub note: String,
+}
+
+#[async_trait]
+impl Verifier for TlsTrustOnly {
+    async fn verify(
+        &self,
+        _file: &Path,
+        _file_sha256_hex: &str,
+        _http: &reqwest::Client,
+    ) -> Result<()> {
+        eprintln!("Trust: TLS only — {}", self.note);
+        Ok(())
+    }
+}
+
 /// Some vendors (Alpine) publish a per-image sidecar URL that is just
 /// the bare hash on a single line — no filename, no comment. Different
 /// shape from a `<HASH>SUMS` file but same threat model.

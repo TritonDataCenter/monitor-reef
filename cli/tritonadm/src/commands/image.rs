@@ -125,6 +125,11 @@ pub enum ImageCommand {
         /// Skip checksum/signature verification (DANGEROUS, dev only)
         #[arg(long)]
         insecure_no_verify: bool,
+        /// Override the vendor's verifier with a pinned sha256 (hex).
+        /// Useful for vendors that don't publish a per-image hash
+        /// (e.g. Talos), or for pinning to a known-good build.
+        #[arg(long, value_name = "HEX")]
+        expected_sha256: Option<String>,
         /// Resolve metadata and print the build plan, but don't download,
         /// hash, write any files, or touch any datasets.
         #[arg(long)]
@@ -645,6 +650,7 @@ impl ImageCommand {
             workdir,
             dataset,
             insecure_no_verify,
+            expected_sha256,
             dry_run,
         } = self
         {
@@ -654,6 +660,7 @@ impl ImageCommand {
                 output_dir,
                 workdir,
                 insecure_no_verify,
+                expected_sha256,
                 dataset,
                 dry_run,
             })

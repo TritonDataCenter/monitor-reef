@@ -17,6 +17,7 @@ use super::verify::Verifier;
 pub mod alpine;
 pub mod debian;
 pub mod freebsd;
+pub mod talos;
 pub mod ubuntu;
 
 /// Built-in vendor profiles. Driven by clap's `ValueEnum` so the CLI
@@ -31,6 +32,7 @@ pub enum Vendor {
     Alpine,
     Debian,
     Freebsd,
+    Talos,
     Ubuntu,
 }
 
@@ -89,6 +91,7 @@ pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
         Vendor::Alpine => Box::new(alpine::Alpine),
         Vendor::Debian => Box::new(debian::Debian),
         Vendor::Freebsd => Box::new(freebsd::FreeBsd),
+        Vendor::Talos => Box::new(talos::Talos),
         Vendor::Ubuntu => Box::new(ubuntu::Ubuntu),
     }
 }

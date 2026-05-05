@@ -26,6 +26,7 @@ pub struct FetchOpts {
     pub output_dir: Option<PathBuf>,
     pub workdir: Option<PathBuf>,
     pub insecure_no_verify: bool,
+    pub expected_sha256: Option<String>,
     pub dataset: Option<String>,
     pub dry_run: bool,
 }
@@ -38,10 +39,26 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
 
-    let resolved = vendor_profile
+    let mut resolved = vendor_profile
         .resolve(&opts.release, &http)
         .await
         .with_context(|| format!("resolve {}/{}", opts.vendor, opts.release))?;
+
+    // `--expected-sha256 <hex>` overrides whatever verifier the vendor
+    // chose with a pinned-hash check. Useful for vendors that don't
+    // publish per-image hashes (Talos), and for one-off pinning when
+    // the operator has obtained a hash out-of-band.
+    if let Some(ref hex) = opts.expected_sha256 {
+        let hex = hex.trim().to_lowercase();
+        if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            anyhow::bail!(
+                "--expected-sha256 must be 64 lowercase hex chars, got {:?}",
+                opts.expected_sha256.as_deref().unwrap_or("")
+            );
+        }
+        resolved.verifier = Box::new(verify::Sha256Pinned(hex.clone()));
+        resolved.expected_sha256 = Some(hex);
+    }
 
     let dataset = match opts.dataset.clone() {
         Some(d) => d,
@@ -138,10 +155,8 @@ fn print_plan(
             println!("  Manifest UUID: {manifest_uuid}  (derived from sha256)");
         }
         None => {
-            println!("  SHA-256:       (fetched from vendor at verify time)");
-            println!(
-                "  Manifest UUID: (derived after download — vendor publishes hash separately)"
-            );
+            println!("  SHA-256:       (computed locally after download)");
+            println!("  Manifest UUID: (derived from local sha256 after download)");
         }
     }
 
