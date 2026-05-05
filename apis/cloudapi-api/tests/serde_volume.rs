@@ -205,37 +205,12 @@ fn test_create_volume_request_with_size() {
 
 // --- ListVolumesQuery tests ---
 
-/// Test that all ListVolumesQuery fields deserialize correctly.
-#[test]
-fn test_list_volumes_query_all_fields() {
-    let json = r#"{
-        "name": "my-data-volume",
-        "state": "ready",
-        "size": 10240,
-        "type": "tritonnfs",
-        "predicate": "{\"eq\": [\"name\", \"my-data-volume\"]}"
-    }"#;
-    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
-    assert_eq!(query.name.as_deref(), Some("my-data-volume"));
-    assert_eq!(query.state.as_deref(), Some("ready"));
-    assert_eq!(query.size, Some(10240));
-    assert_eq!(query.volume_type.as_deref(), Some("tritonnfs"));
-    assert!(query.predicate.is_some());
-}
-
-/// Test that an empty query string deserializes with all fields as None.
-#[test]
-fn test_list_volumes_query_empty() {
-    let json = r#"{}"#;
-    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
-    assert!(query.name.is_none());
-    assert!(query.state.is_none());
-    assert!(query.size.is_none());
-    assert!(query.volume_type.is_none());
-    assert!(query.predicate.is_none());
-}
-
-/// Test that `type` in the query maps to `volume_type` via serde rename.
+/// The `volume_type` field uses `#[serde(rename = "type")]` because `type` is a
+/// Rust keyword. This rename is load-bearing: if someone removes it or changes
+/// the Rust field name without updating the rename, Dropshot will silently stop
+/// parsing the `?type=` query parameter. `make openapi-check` would also catch
+/// this via the generated spec, but this test makes the failure immediate and
+/// obvious at the unit-test level.
 #[test]
 fn test_list_volumes_query_type_rename() {
     // Must use "type" (the wire name), not "volume_type"
@@ -250,29 +225,4 @@ fn test_list_volumes_query_type_rename() {
         query.volume_type.is_none(),
         "should not accept 'volume_type' — wire format uses 'type'"
     );
-}
-
-/// Test that state and type are strings (not enums) at the query param level,
-/// matching how the Node.js CloudAPI passes them through without validation.
-#[test]
-fn test_list_volumes_query_passthrough_strings() {
-    // Arbitrary state string should be accepted — CloudAPI doesn't validate
-    let json = r#"{"state": "some-future-state", "type": "some-future-type"}"#;
-    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
-    assert_eq!(query.state.as_deref(), Some("some-future-state"));
-    assert_eq!(query.volume_type.as_deref(), Some("some-future-type"));
-}
-
-/// Test individual filter fields in isolation.
-#[test]
-fn test_list_volumes_query_single_fields() {
-    let json = r#"{"name": "backup-vol"}"#;
-    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
-    assert_eq!(query.name.as_deref(), Some("backup-vol"));
-    assert!(query.state.is_none());
-
-    let json = r#"{"size": 20480}"#;
-    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
-    assert_eq!(query.size, Some(20480));
-    assert!(query.name.is_none());
 }

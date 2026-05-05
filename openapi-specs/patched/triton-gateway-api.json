@@ -13190,7 +13190,7 @@
             }
           },
           {
-            "description": "JSON-encoded krill predicate expression",
+            "description": "JSON-encoded predicate expression",
             "in": "query",
             "name": "predicate",
             "schema": {

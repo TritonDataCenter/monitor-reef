@@ -19107,7 +19107,7 @@ impl Client {
         builder::HeadUserKey::new(self)
     }
 
-    #[doc = "List volumes\n\nSends a `GET` request to `/{account}/volumes`\n\nArguments:\n- `account`: Account login name\n- `name`: Filter by volume name\n- `predicate`: JSON-encoded krill predicate expression\n- `size`: Filter by size (MiB)\n- `state`: Filter by state\n- `type_`: Filter by volume type\n```ignore\nlet response = client.list_volumes()\n    .account(account)\n    .name(name)\n    .predicate(predicate)\n    .size(size)\n    .state(state)\n    .type_(type_)\n    .send()\n    .await;\n```"]
+    #[doc = "List volumes\n\nSends a `GET` request to `/{account}/volumes`\n\nArguments:\n- `account`: Account login name\n- `name`: Filter by volume name\n- `predicate`: JSON-encoded predicate expression\n- `size`: Filter by size (MiB)\n- `state`: Filter by state\n- `type_`: Filter by volume type\n```ignore\nlet response = client.list_volumes()\n    .account(account)\n    .name(name)\n    .predicate(predicate)\n    .size(size)\n    .state(state)\n    .type_(type_)\n    .send()\n    .await;\n```"]
     pub fn list_volumes(&self) -> builder::ListVolumes<'_> {
         builder::ListVolumes::new(self)
     }

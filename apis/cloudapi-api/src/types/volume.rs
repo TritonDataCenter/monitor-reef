@@ -141,7 +141,7 @@ pub struct ListVolumesQuery {
     /// Filter by volume type
     #[serde(default, rename = "type")]
     pub volume_type: Option<String>,
-    /// JSON-encoded krill predicate expression
+    /// JSON-encoded predicate expression
     #[serde(default)]
     pub predicate: Option<String>,
 }

@@ -2920,7 +2920,7 @@ type ListVolumesParams struct {
 	// Name Filter by volume name
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
 
-	// Predicate JSON-encoded krill predicate expression
+	// Predicate JSON-encoded predicate expression
 	Predicate *string `form:"predicate,omitempty" json:"predicate,omitempty"`
 
 	// Size Filter by size (MiB)

@@ -8966,7 +8966,7 @@
           {
             "in": "query",
             "name": "predicate",
-            "description": "JSON-encoded krill predicate expression",
+            "description": "JSON-encoded predicate expression",
             "schema": {
               "nullable": true,
               "type": "string"
