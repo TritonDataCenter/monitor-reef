@@ -188,6 +188,67 @@ func TestIntegration_ListPackages_FilterByMemory(t *testing.T) {
 	}
 }
 
+func TestIntegration_ListPackages_FilterByBrand(t *testing.T) {
+	ctx := context.Background()
+
+	// List all packages to find one with a non-nil brand.
+	allResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
+	if err != nil {
+		t.Fatalf("ListPackages (unfiltered): %v", err)
+	}
+	if allResp.JSON200 == nil || len(*allResp.JSON200) == 0 {
+		t.Skip("no packages available")
+	}
+
+	// Find a package with brand set.
+	var targetBrand string
+	for _, pkg := range *allResp.JSON200 {
+		if pkg.Brand != nil {
+			brandBytes, err := pkg.Brand.MarshalJSON()
+			if err != nil {
+				continue
+			}
+			s := string(brandBytes)
+			if len(s) >= 2 && s[0] == '"' {
+				s = s[1 : len(s)-1]
+			}
+			if s != "" && s != "null" {
+				targetBrand = s
+				break
+			}
+		}
+	}
+	if targetBrand == "" {
+		t.Skip("no packages with brand set")
+	}
+
+	t.Logf("filtering by brand=%q (unfiltered count: %d)", targetBrand, len(*allResp.JSON200))
+
+	resp, err := testClient.ListPackagesWithResponse(ctx, testAccount, &cloudapi.ListPackagesParams{
+		Brand: ptr(targetBrand),
+	})
+	if err != nil {
+		t.Fatalf("ListPackages filtered by brand: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil || len(*resp.JSON200) == 0 {
+		t.Fatalf("expected at least one package with brand %q, got empty result", targetBrand)
+	}
+
+	t.Logf("filtered result: %d packages (vs %d unfiltered)", len(*resp.JSON200), len(*allResp.JSON200))
+	for _, pkg := range *resp.JSON200 {
+		t.Logf("  %s (brand=%v)", pkg.Name, pkg.Brand)
+	}
+
+	// Verify the filtered count is less than the unfiltered count
+	// (proves server-side filtering, not just returning everything).
+	if len(*resp.JSON200) >= len(*allResp.JSON200) {
+		t.Errorf("brand filter did not reduce results: filtered=%d, unfiltered=%d",
+			len(*resp.JSON200), len(*allResp.JSON200))
+	}
+}
+
 func TestIntegration_ListPackages_FilterNoMatch(t *testing.T) {
 	ctx := context.Background()
 
