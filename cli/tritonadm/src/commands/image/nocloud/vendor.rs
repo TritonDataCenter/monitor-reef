@@ -14,6 +14,7 @@ use url::Url;
 
 use super::verify::Verifier;
 
+pub mod debian;
 pub mod ubuntu;
 
 /// Built-in vendor profiles. Driven by clap's `ValueEnum` so the CLI
@@ -25,6 +26,7 @@ pub mod ubuntu;
 #[derive(clap::ValueEnum, serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Vendor {
+    Debian,
     Ubuntu,
 }
 
@@ -81,6 +83,7 @@ pub trait VendorProfile: Send + Sync {
 
 pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
     match vendor {
+        Vendor::Debian => Box::new(debian::Debian),
         Vendor::Ubuntu => Box::new(ubuntu::Ubuntu),
     }
 }

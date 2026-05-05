@@ -137,8 +137,8 @@ The POC ships only `ubuntu`. The trait shape accommodates these follow-ups:
 
 | Vendor | Release discovery | Verifier (target) |
 |---|---|---|
+| `debian` | hardcoded codename table; `<codename>/latest/` URL pattern; build serial not exposed in URL | `Sha512SumsTls` (Debian publishes SHA-512) |
 | `ubuntu` | Canonical Simple Streams (`com.ubuntu.cloud:released:download.json`); fallback to a small hardcoded series table if streams is unreachable | `Sha256Pinned` from streams JSON (primary); `Sha256SumsTls` in fallback |
-| `debian` | hardcoded codename → URL table | `Sha256SumsGpg` |
 | `alpine` | hardcoded `MAJOR.MINOR` table | `Sha256Pinned` from vendor's per-image checksum file |
 | `freebsd` | hardcoded `MAJOR.MINOR` table | `CHECKSUM.SHA256` over TLS |
 | `talos` | factory API (vendor-specific) | factory API (vendor-specific) |

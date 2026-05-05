@@ -174,7 +174,7 @@ async fn ensure_verified_source(
         return Ok(sha256);
     }
 
-    match resolved.verifier.verify(&sha256, opts.http).await {
+    match resolved.verifier.verify(&downloaded, &sha256, opts.http).await {
         Ok(()) => Ok(sha256),
         Err(first_err) if started_with_cache => {
             eprintln!(
@@ -188,7 +188,7 @@ async fn ensure_verified_source(
             let sha256 = verify::sha256_file(&downloaded).await?;
             resolved
                 .verifier
-                .verify(&sha256, opts.http)
+                .verify(&downloaded, &sha256, opts.http)
                 .await
                 .context("verification failed after fresh download")?;
             Ok(sha256)
