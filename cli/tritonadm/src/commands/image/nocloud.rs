@@ -18,8 +18,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+pub use vendor::Vendor;
+
 pub struct FetchOpts {
-    pub vendor: String,
+    pub vendor: Vendor,
     pub release: String,
     pub output_dir: Option<PathBuf>,
     pub workdir: Option<PathBuf>,
@@ -31,12 +33,12 @@ pub struct FetchOpts {
 pub async fn run(opts: FetchOpts) -> Result<()> {
     preflight()?;
 
-    let vendor = vendor::lookup(&opts.vendor)?;
+    let vendor_profile = vendor::lookup(opts.vendor);
     let http = triton_tls::build_http_client(false)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
 
-    let resolved = vendor
+    let resolved = vendor_profile
         .resolve(&opts.release, &http)
         .await
         .with_context(|| format!("resolve {}/{}", opts.vendor, opts.release))?;
@@ -73,10 +75,11 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
     let _lock_guard = acquire_workdir_lock(&workdir)
         .with_context(|| format!("acquire workdir lock for {}", workdir.display()))?;
 
+    let vendor_str = opts.vendor.to_string();
     let outputs = pipeline::run(
         resolved,
         pipeline::PipelineOptions {
-            vendor: &opts.vendor,
+            vendor: &vendor_str,
             workdir,
             output_dir,
             zfs_dataset: dataset,

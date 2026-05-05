@@ -104,9 +104,9 @@ pub enum ImageCommand {
     /// it into a SmartOS/Triton zvol image + IMGAPI manifest.
     #[command(name = "fetch-nocloud")]
     FetchNocloud {
-        /// Vendor profile (POC: ubuntu)
-        #[arg(long)]
-        vendor: String,
+        /// Upstream vendor profile.
+        #[arg(long, value_enum)]
+        vendor: nocloud::Vendor,
         /// Vendor-specific release token (e.g. "noble", "jammy", "latest")
         #[arg(long)]
         release: String,

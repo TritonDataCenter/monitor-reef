@@ -16,6 +16,24 @@ use super::verify::Verifier;
 
 pub mod ubuntu;
 
+/// Built-in vendor profiles. Driven by clap's `ValueEnum` so the CLI
+/// help auto-lists supported vendors and validates the argument
+/// before any I/O. The variant→string mapping is derived from
+/// `serde::Serialize` (kebab-case), and `Display` delegates to
+/// `crate::enum_to_display`, so adding a vendor is a single-line
+/// enum-variant addition with no string-matching boilerplate.
+#[derive(clap::ValueEnum, serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum Vendor {
+    Ubuntu,
+}
+
+impl std::fmt::Display for Vendor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&crate::enum_to_display(self))
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum SourceFormat {
     Qcow2,
@@ -61,11 +79,8 @@ pub trait VendorProfile: Send + Sync {
         -> Result<ResolvedImage>;
 }
 
-pub fn lookup(name: &str) -> Result<Box<dyn VendorProfile>> {
-    match name {
-        "ubuntu" => Ok(Box::new(ubuntu::Ubuntu)),
-        other => anyhow::bail!(
-            "unknown vendor: {other}; supported: ubuntu"
-        ),
+pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
+    match vendor {
+        Vendor::Ubuntu => Box::new(ubuntu::Ubuntu),
     }
 }
