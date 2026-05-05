@@ -1,0 +1,65 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! Vendor profiles. Each vendor implements `VendorProfile`, which knows
+//! how to resolve a release token (series name, version, or `latest`)
+//! into a concrete URL, format, manifest metadata, and verifier.
+
+use anyhow::Result;
+use async_trait::async_trait;
+use url::Url;
+
+use super::verify::Verifier;
+
+pub mod ubuntu;
+
+#[derive(Debug, Clone, Copy)]
+pub enum SourceFormat {
+    Qcow2,
+    // Xz/Raw are part of the pipeline match arms but not yet emitted by
+    // any vendor in the POC. They cover Debian (.raw), FreeBSD (.raw.xz),
+    // and Talos (.raw.xz) without future churn to the convert step.
+    #[allow(dead_code)]
+    Xz,
+    #[allow(dead_code)]
+    Raw,
+}
+
+pub struct ResolvedImage {
+    pub url: Url,
+    pub format: SourceFormat,
+    /// Image OS for the manifest (`linux`, `bsd`, ...).
+    pub os: String,
+    /// Canonical short release name (e.g. `noble`). Used in output
+    /// filenames and the manifest `name` field.
+    pub series: String,
+    /// Vendor-chosen version string (often a date stamp). Used as the
+    /// manifest `version` field.
+    pub version: String,
+    pub description: String,
+    pub homepage: Url,
+    pub ssh_key: bool,
+    pub verifier: Box<dyn Verifier>,
+}
+
+#[async_trait]
+pub trait VendorProfile: Send + Sync {
+    // Reserved for diagnostics/logging by future callers; not yet
+    // referenced by the POC dispatcher.
+    #[allow(dead_code)]
+    fn name(&self) -> &str;
+    async fn resolve(&self, release: &str, http: &reqwest::Client)
+        -> Result<ResolvedImage>;
+}
+
+pub fn lookup(name: &str) -> Result<Box<dyn VendorProfile>> {
+    match name {
+        "ubuntu" => Ok(Box::new(ubuntu::Ubuntu)),
+        other => anyhow::bail!(
+            "unknown vendor: {other}; supported: ubuntu"
+        ),
+    }
+}

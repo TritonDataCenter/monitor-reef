@@ -126,6 +126,7 @@ pretty_assertions = "1.4"
 progenitor = "0.13"
 progenitor-client = "0.13"
 progenitor-impl = "0.13"
+qcow = "1.2"
 rand = { version = "0.9", features = ["os_rng"] }
 # rand_core pinned to 0.6 because the workspace's crypto stack (p256,
 # p384, rsa, ed25519-dalek, ssh-key) uses rand_core 0.6 internally.

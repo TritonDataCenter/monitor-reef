@@ -1,6 +1,7 @@
 /target
 /tritonadm
 /cache
+/out
 /rust
 .env
 .idea/

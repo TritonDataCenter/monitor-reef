@@ -415,7 +415,7 @@ async fn main() -> Result<()> {
                 .await
         }
         Commands::Experimental { command } => command.run(),
-        Commands::Image { command } => command.run(&imgapi_url?, updates_url.as_deref()).await,
+        Commands::Image { command } => command.run(imgapi_url, updates_url.as_deref()).await,
         Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
         Commands::Sapi { command } => command.run(&sapi_url?).await,
         Commands::Mahi { command } => command.run(mahi_url, mahi_sitter_url).await,

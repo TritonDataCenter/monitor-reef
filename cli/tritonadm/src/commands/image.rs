@@ -6,6 +6,10 @@
 
 //! Image management commands for tritonadm (IMGAPI operations).
 
+mod nocloud;
+
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::Subcommand;
 use uuid::Uuid;
@@ -94,6 +98,33 @@ pub enum ImageCommand {
         /// File compression type (default: auto-detect from manifest)
         #[arg(short = 'c', long, value_enum)]
         compression: Option<types::FileCompression>,
+    },
+
+    /// Fetch a CloudInit nocloud image from an upstream vendor and convert
+    /// it into a SmartOS/Triton zvol image + IMGAPI manifest.
+    #[command(name = "fetch-nocloud")]
+    FetchNocloud {
+        /// Vendor profile (POC: ubuntu)
+        #[arg(long)]
+        vendor: String,
+        /// Vendor-specific release token (e.g. "noble", "jammy", "latest")
+        #[arg(long)]
+        release: String,
+        /// Output dir for *.zfs.gz and *.json
+        /// (default: ./out/image/<vendor>-<series>)
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+        /// Working dir for downloads / intermediates
+        /// (default: ./out/cache/<vendor>-<series>)
+        #[arg(long)]
+        workdir: Option<PathBuf>,
+        /// Override delegated dataset
+        /// (default: zones/<zonename>/data, or `zones` in the GZ)
+        #[arg(long)]
+        dataset: Option<String>,
+        /// Skip checksum/signature verification (DANGEROUS, dev only)
+        #[arg(long)]
+        insecure_no_verify: bool,
     },
 
     // ========================================================================
@@ -600,17 +631,48 @@ pub enum ImageCommand {
 }
 
 impl ImageCommand {
-    pub async fn run(self, imgapi_url: &str, updates_url: Option<&str>) -> Result<()> {
+    pub async fn run(
+        self,
+        imgapi_url: Result<String>,
+        updates_url: Option<&str>,
+    ) -> Result<()> {
+        // Dispatch fetch-nocloud before resolving IMGAPI: it has no use
+        // for IMGAPI and must work in builder zones with no headnode.
+        if let ImageCommand::FetchNocloud {
+            vendor,
+            release,
+            output_dir,
+            workdir,
+            dataset,
+            insecure_no_verify,
+        } = self
+        {
+            return nocloud::run(nocloud::FetchOpts {
+                vendor,
+                release,
+                output_dir,
+                workdir,
+                insecure_no_verify,
+                dataset,
+            })
+            .await;
+        }
+
+        let imgapi_url = imgapi_url?;
         let http = triton_tls::build_http_client(false)
             .await
             .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
-        let client = imgapi_client::Client::new_with_client(imgapi_url, http.clone());
-        let typed_client = imgapi_client::TypedClient::new_with_client(imgapi_url, http);
+        let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());
+        let typed_client = imgapi_client::TypedClient::new_with_client(&imgapi_url, http);
 
         match self {
             // ================================================================
             // Convenience
             // ================================================================
+            ImageCommand::FetchNocloud { .. } => {
+                unreachable!("fetch-nocloud dispatched before IMGAPI client setup")
+            }
+
             ImageCommand::Import {
                 manifest,
                 file,
