@@ -111,11 +111,11 @@ pub enum ImageCommand {
         #[arg(long)]
         release: String,
         /// Output dir for *.zfs.gz and *.json
-        /// (default: ./out/image/<vendor>-<series>)
+        /// (default: /var/tmp/tritonadm/nocloud/image/<vendor>-<series>)
         #[arg(long)]
         output_dir: Option<PathBuf>,
         /// Working dir for downloads / intermediates
-        /// (default: ./out/cache/<vendor>-<series>)
+        /// (default: /var/tmp/tritonadm/nocloud/cache/<vendor>-<series>)
         #[arg(long)]
         workdir: Option<PathBuf>,
         /// Override delegated dataset

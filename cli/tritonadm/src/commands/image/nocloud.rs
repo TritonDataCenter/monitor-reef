@@ -48,10 +48,10 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
     let stub = format!("{}-{}", opts.vendor, resolved.series);
     let workdir = opts
         .workdir
-        .unwrap_or_else(|| PathBuf::from(format!("./out/cache/{stub}")));
+        .unwrap_or_else(|| PathBuf::from(format!("/var/tmp/tritonadm/nocloud/cache/{stub}")));
     let output_dir = opts
         .output_dir
-        .unwrap_or_else(|| PathBuf::from(format!("./out/image/{stub}")));
+        .unwrap_or_else(|| PathBuf::from(format!("/var/tmp/tritonadm/nocloud/image/{stub}")));
 
     let outputs = pipeline::run(
         resolved,

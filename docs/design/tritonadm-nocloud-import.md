@@ -83,8 +83,8 @@ tritonadm image fetch-nocloud --vendor <name> --release <name|latest>
 | `--vendor` | Vendor profile name (e.g. `ubuntu`, `debian`, `alpine`). For the POC: only `ubuntu`. |
 | `--release` | Vendor-specific release token: a series name (`noble`), a version (`24.04`), or `latest`. Resolution is vendor-specific. |
 | `--target` | Where the image goes after build. Default: `file`. `smartos` shells out to `imgadm install -f <file> -m <manifest>` (GZ-only). `imgapi` calls into `tritonadm image import` machinery using the auto-detected IMGAPI URL. |
-| `--output-dir` | Directory for `*.zfs.gz` and `*.json`. Default: `./out/image/<vendor>-<release>/`. |
-| `--workdir` | Working directory for downloads and intermediate raw files. Default: `./out/cache/<vendor>-<release>/`. |
+| `--output-dir` | Directory for `*.zfs.gz` and `*.json`. Default: `/var/tmp/tritonadm/nocloud/image/<vendor>-<series>/`. |
+| `--workdir` | Working directory for downloads and intermediate raw files. Default: `/var/tmp/tritonadm/nocloud/cache/<vendor>-<series>/`. |
 | `--profile-dir` | Optional directory of TOML profile files for custom (non-baked-in) vendors. |
 | `--insecure-no-verify` | Skip checksum/signature verification. Development only. |
 | `--keep-cache` | Don't clean the working directory on success. |
