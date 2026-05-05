@@ -49,6 +49,32 @@ pub async fn destroy_recursive(dataset: &str) -> Result<()> {
     Ok(())
 }
 
+/// List immediate children of `parent` whose names match
+/// `<parent>/<prefix>...`. Returns full dataset names. Used for
+/// finding leftover datasets from a previous interrupted build.
+pub async fn list_children_with_prefix(parent: &str, prefix: &str) -> Result<Vec<String>> {
+    let out = Command::new("zfs")
+        .args(["list", "-H", "-o", "name", "-d", "1", parent])
+        .output()
+        .await
+        .with_context(|| format!("spawn zfs list {parent}"))?;
+    if !out.status.success() {
+        bail!(
+            "zfs list -d 1 {parent} exited {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let body = String::from_utf8_lossy(&out.stdout);
+    let prefix_full = format!("{parent}/{prefix}");
+    Ok(body
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with(&prefix_full))
+        .map(String::from)
+        .collect())
+}
+
 async fn run(args: &[&str]) -> Result<()> {
     let (cmd, rest) = args
         .split_first()

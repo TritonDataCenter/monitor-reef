@@ -13,6 +13,8 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -23,6 +25,11 @@ use super::manifest::{self, ManifestInputs};
 use super::vendor::{ResolvedImage, SourceFormat};
 use super::verify;
 use super::zfs;
+
+/// All transient build datasets are named `<parent>/<DATASET_PREFIX><uuid>`
+/// so a previous interrupted run can be detected and cleaned up by the
+/// next invocation, and so manual `zfs list | grep` is unambiguous.
+const DATASET_PREFIX: &str = "tritonadm-nocloud-";
 
 /// UUID v5 namespace for tritonadm-generated nocloud images. Stable
 /// forever — derived from a stable URL via `NAMESPACE_URL`. Manifest
@@ -59,54 +66,61 @@ pub async fn run(
     resolved: ResolvedImage,
     opts: PipelineOptions<'_>,
 ) -> Result<PipelineOutputs> {
+    // Cancel flag set by the SIGINT handler. Long-running loops (download,
+    // qcow→zvol copy) check it and bail cleanly, which lets us run the
+    // zvol-destroy cleanup before exit. Without this, the process would
+    // die mid-write and leave the dataset behind.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_for_signal = cancel.clone();
+    let signal_task = tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            eprintln!(
+                "\nSIGINT received; finishing in-flight work then cleaning up. \
+                 Send SIGTERM (kill <pid>) to force-quit."
+            );
+            cancel_for_signal.store(true, Ordering::Relaxed);
+        }
+    });
+
+    let result = run_inner(&resolved, &opts, &cancel).await;
+
+    signal_task.abort();
+    result
+}
+
+async fn run_inner(
+    resolved: &ResolvedImage,
+    opts: &PipelineOptions<'_>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<PipelineOutputs> {
     tokio::fs::create_dir_all(&opts.workdir).await?;
     tokio::fs::create_dir_all(&opts.output_dir).await?;
 
-    let src_filename = resolved
-        .url
-        .path_segments()
-        .and_then(|mut s| s.next_back())
-        .map(String::from)
-        .ok_or_else(|| anyhow::anyhow!("cannot derive filename from {}", resolved.url))?;
-    let downloaded = opts.workdir.join(&src_filename);
+    // Sweep stale datasets from a previous interrupted run before we
+    // create a new one. The prefix keeps this scoped to our own
+    // leftovers; we never touch datasets named anything else.
+    sweep_stale_datasets(&opts.zfs_dataset).await;
 
-    if tokio::fs::try_exists(&downloaded).await? {
-        eprintln!("Source image already downloaded: {}", src_filename);
-    } else {
-        eprintln!("Downloading {}", src_filename);
-        eprintln!("  URL: {}", resolved.url);
-        download_with_progress(opts.http, resolved.url.as_str(), &downloaded).await?;
-    }
+    let source_sha256 = ensure_verified_source(resolved, opts, cancel).await?;
 
-    // Hash once. The pipeline needs this for verification AND for
-    // deriving a stable manifest UUID; the Verifier trait takes a
-    // precomputed hex string so we don't double-hash a 600 MB file.
-    eprintln!("Hashing source image ...");
-    let source_sha256 = verify::sha256_file(&downloaded).await?;
-
-    if opts.insecure_no_verify {
-        eprintln!("WARNING: --insecure-no-verify, skipping verification");
-    } else {
-        resolved
-            .verifier
-            .verify(&source_sha256, opts.http)
-            .await
-            .context("verification failed")?;
-    }
-
-    let virtual_size_bytes = read_virtual_size(&downloaded, resolved.format).await?;
+    let virtual_size_bytes = read_virtual_size(
+        &opts.workdir.join(filename_from_url(&resolved.url)?),
+        resolved.format,
+    )
+    .await?;
     let virtual_size_mib = virtual_size_bytes.div_ceil(1024 * 1024);
 
     let build_uuid = Uuid::new_v4();
-    let dataset = format!("{}/{}", opts.zfs_dataset, build_uuid);
+    let dataset = format!("{}/{DATASET_PREFIX}{}", opts.zfs_dataset, build_uuid);
     let zvol_rdsk = PathBuf::from(format!("/dev/zvol/rdsk/{}", dataset));
 
     eprintln!(
         "Creating zvol: {} ({} MiB virtual)",
         dataset, virtual_size_mib
     );
+    let downloaded = opts.workdir.join(filename_from_url(&resolved.url)?);
     let result = build_image(
-        &resolved,
+        resolved,
         &downloaded,
         &source_sha256,
         virtual_size_bytes,
@@ -115,6 +129,7 @@ pub async fn run(
         &zvol_rdsk,
         &opts.output_dir,
         opts.vendor,
+        cancel,
     )
     .await;
 
@@ -122,6 +137,83 @@ pub async fn run(
     let _ = zfs::destroy_recursive(&dataset).await;
 
     result
+}
+
+fn filename_from_url(url: &url::Url) -> Result<String> {
+    url.path_segments()
+        .and_then(|mut s| s.next_back())
+        .map(String::from)
+        .ok_or_else(|| anyhow::anyhow!("cannot derive filename from {}", url))
+}
+
+/// Download (if needed), hash, and verify. On verification failure of
+/// a *cached* file, delete it and try once more with a fresh download —
+/// upstream serial may have moved while the cache survived.
+async fn ensure_verified_source(
+    resolved: &ResolvedImage,
+    opts: &PipelineOptions<'_>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<String> {
+    let src_filename = filename_from_url(&resolved.url)?;
+    let downloaded = opts.workdir.join(&src_filename);
+
+    let started_with_cache = tokio::fs::try_exists(&downloaded).await?;
+    if started_with_cache {
+        eprintln!("Source image already downloaded: {}", src_filename);
+    } else {
+        eprintln!("Downloading {}", src_filename);
+        eprintln!("  URL: {}", resolved.url);
+        download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel).await?;
+    }
+
+    eprintln!("Hashing source image ...");
+    let sha256 = verify::sha256_file(&downloaded).await?;
+
+    if opts.insecure_no_verify {
+        eprintln!("WARNING: --insecure-no-verify, skipping verification");
+        return Ok(sha256);
+    }
+
+    match resolved.verifier.verify(&sha256, opts.http).await {
+        Ok(()) => Ok(sha256),
+        Err(first_err) if started_with_cache => {
+            eprintln!(
+                "Cached file failed verification ({first_err}); discarding and \
+                 redownloading once."
+            );
+            tokio::fs::remove_file(&downloaded).await.ok();
+            download_with_progress(opts.http, resolved.url.as_str(), &downloaded, cancel)
+                .await?;
+            eprintln!("Hashing source image ...");
+            let sha256 = verify::sha256_file(&downloaded).await?;
+            resolved
+                .verifier
+                .verify(&sha256, opts.http)
+                .await
+                .context("verification failed after fresh download")?;
+            Ok(sha256)
+        }
+        Err(e) => Err(e.context("verification failed")),
+    }
+}
+
+async fn sweep_stale_datasets(parent: &str) {
+    let stale = match zfs::list_children_with_prefix(parent, DATASET_PREFIX).await {
+        Ok(v) if v.is_empty() => return,
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("warning: could not list {parent} for stale datasets: {e}");
+            return;
+        }
+    };
+    eprintln!(
+        "Found {} stale build dataset(s) from a previous run; cleaning up:",
+        stale.len()
+    );
+    for ds in &stale {
+        eprintln!("  destroying {ds}");
+        let _ = zfs::destroy_recursive(ds).await;
+    }
 }
 
 #[allow(clippy::too_many_arguments)] // local helper
@@ -135,6 +227,7 @@ async fn build_image(
     zvol_rdsk: &Path,
     output_dir: &Path,
     vendor: &str,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<PipelineOutputs> {
     zfs::create_zvol(dataset, virtual_size_mib).await?;
 
@@ -147,7 +240,14 @@ async fn build_image(
             SourceFormat::Xz => "xz",
         }
     );
-    write_to_zvol(src_path, resolved.format, zvol_rdsk, virtual_size_bytes).await?;
+    write_to_zvol(
+        src_path,
+        resolved.format,
+        zvol_rdsk,
+        virtual_size_bytes,
+        cancel,
+    )
+    .await?;
 
     let snap = format!("{dataset}@image");
     eprintln!("Snapshotting zvol ...");
@@ -223,6 +323,7 @@ async fn write_to_zvol(
     format: SourceFormat,
     zvol_rdsk: &Path,
     virtual_size: u64,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
     let pb = ProgressBar::new(virtual_size);
     pb.set_style(byte_progress_style("Writing"));
@@ -230,6 +331,7 @@ async fn write_to_zvol(
     let src_path = src_path.to_path_buf();
     let zvol_rdsk = zvol_rdsk.to_path_buf();
     let pb_clone = pb.clone();
+    let cancel = cancel.clone();
 
     let result = tokio::task::spawn_blocking(move || -> Result<()> {
         match format {
@@ -246,12 +348,12 @@ async fn write_to_zvol(
                 let mut file = std::fs::File::open(&src_path)
                     .with_context(|| format!("reopen {}", src_path.display()))?;
                 let mut reader = qcow2.reader(&mut file);
-                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone)
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
             }
             SourceFormat::Raw => {
                 let mut reader = std::fs::File::open(&src_path)
                     .with_context(|| format!("open {}", src_path.display()))?;
-                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone)
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
             }
             SourceFormat::Xz => bail!("xz source format not yet implemented"),
         }
@@ -268,6 +370,7 @@ fn copy_with_progress(
     zvol_rdsk: &Path,
     total: u64,
     pb: &ProgressBar,
+    cancel: &AtomicBool,
 ) -> Result<()> {
     let mut writer = std::fs::OpenOptions::new()
         .write(true)
@@ -276,6 +379,9 @@ fn copy_with_progress(
     let mut buf = vec![0u8; 1 << 20]; // 1 MiB
     let mut remaining = total;
     while remaining > 0 {
+        if cancel.load(Ordering::Relaxed) {
+            anyhow::bail!("interrupted by signal during zvol write");
+        }
         let to_read = std::cmp::min(buf.len() as u64, remaining) as usize;
         reader
             .read_exact(&mut buf[..to_read])
@@ -294,6 +400,7 @@ async fn download_with_progress(
     http: &reqwest::Client,
     url: &str,
     dest: &Path,
+    cancel: &Arc<AtomicBool>,
 ) -> Result<()> {
     let resp = http
         .get(url)
@@ -322,6 +429,9 @@ async fn download_with_progress(
         .with_context(|| format!("create {}", dest.display()))?;
     let mut stream = resp;
     while let Some(chunk) = stream.chunk().await? {
+        if cancel.load(Ordering::Relaxed) {
+            anyhow::bail!("interrupted by signal during download");
+        }
         f.write_all(&chunk).await?;
         pb.inc(chunk.len() as u64);
     }
