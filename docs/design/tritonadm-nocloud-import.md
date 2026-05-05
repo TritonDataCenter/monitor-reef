@@ -357,12 +357,39 @@ are detected via the failed `zfs destroy` and logged as
 ### Image format / vendor follow-ups
 
 - `Xz` source format (Talos, FreeBSD).
-- Other vendors (Debian, Alpine, FreeBSD, Talos).
+- Other vendors (Alpine, FreeBSD, Talos).
 - `Sha256SumsGpg` verifier for vendors that publish detached
   signatures (Debian, Ubuntu canonical-signed `SHA256SUMS.gpg`).
 - TOML profile loading from `--profile-dir`.
 - `--target smartos` (shells `imgadm install`).
 - `--target imgapi` (reuses `tritonadm image import` machinery).
+
+### Debian: testing / unstable / sid support
+
+The current Debian profile only resolves released suites (stable,
+oldstable, oldoldstable, plus their codenames). `testing`, `sid`,
+and `unstable` fail with `no Version field in Release file`.
+Three things would need to change to support them:
+
+1. **Tolerate a missing `Version` field.** Debian doesn't assign
+   point-release version numbers to development suites. The
+   manifest version would have to come from somewhere else — most
+   plausibly the `Last-Modified` header of the daily SHA512SUMS
+   file, or simply today's date (matches what the bash builder
+   does).
+2. **Use the daily-build URL prefix.** Released images live at
+   `cloud.debian.org/images/cloud/<codename>/latest/`. Development
+   images live at `cloud.debian.org/images/cloud/<codename>/daily/latest/`.
+3. **Branch the filename pattern.** Released suites use
+   `debian-<major>-genericcloud-amd64.qcow2`. Testing
+   (currently forky) uses `debian-<upcoming-major>-genericcloud-amd64-daily.qcow2`
+   — so the major comes from somewhere outside the apt Release
+   file. sid uses `debian-sid-genericcloud-amd64-daily.qcow2`,
+   substituting the codename for the major.
+
+Roughly ~30 lines of branching in the Debian vendor module.
+Tracked here so we can revisit if there's demand for "try the
+next Debian on SmartOS."
 
 ## Manifest field decisions
 
