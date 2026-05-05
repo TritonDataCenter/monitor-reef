@@ -135,13 +135,21 @@ Built-in verifier strategies:
 
 The POC ships only `ubuntu`. The trait shape accommodates these follow-ups:
 
-| Vendor | Release form | Verifier (target) |
+| Vendor | Release discovery | Verifier (target) |
 |---|---|---|
-| `ubuntu` | series (`noble`, `jammy`) or `latest` (= newest LTS) | `Sha256SumsTls` (POC), upgrade to `Sha256SumsGpg` |
-| `debian` | codename (`trixie`, `bookworm`) | `Sha256SumsGpg` |
-| `alpine` | `MAJOR.MINOR` (`3.23`) | `Sha256Pinned` from vendor's per-image checksum file |
-| `freebsd` | `MAJOR.MINOR` (`15.0`) | `CHECKSUM.SHA256` over TLS |
-| `talos` | version (`1.12.7`) + factory schematic ID | factory API (vendor-specific) |
+| `ubuntu` | Canonical Simple Streams (`com.ubuntu.cloud:released:download.json`); fallback to a small hardcoded series table if streams is unreachable | `Sha256Pinned` from streams JSON (primary); `Sha256SumsTls` in fallback |
+| `debian` | hardcoded codename → URL table | `Sha256SumsGpg` |
+| `alpine` | hardcoded `MAJOR.MINOR` table | `Sha256Pinned` from vendor's per-image checksum file |
+| `freebsd` | hardcoded `MAJOR.MINOR` table | `CHECKSUM.SHA256` over TLS |
+| `talos` | factory API (vendor-specific) | factory API (vendor-specific) |
+
+Ubuntu's Simple Streams gives us three things over a hardcoded table:
+no tool update needed when a new LTS ships (`latest` resolves to whatever
+is currently flagged supported and LTS); the manifest `version` is the
+canonical upstream build serial (e.g. `20260321`) instead of "today's
+date"; and the streams JSON has the sha256 inline, so the verifier is a
+plain `Sha256Pinned` rather than a second TLS roundtrip to fetch a
+`SHA256SUMS` file. The fallback table is the air-gapped escape hatch.
 
 Vendor-specific code is the whole point of this tool; it is appropriate to
 keep it under code review rather than as data files.

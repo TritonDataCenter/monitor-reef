@@ -25,11 +25,8 @@ pub trait Verifier: Send + Sync {
     async fn verify(&self, file: &Path, http: &reqwest::Client) -> Result<()>;
 }
 
-// Sha256Pinned covers the static-conf style (single URL + literal hash)
-// used by .conf files in target/triton-nocloud-images. Wired into TOML
-// profile loading in follow-up work; kept here so the trait surface is
-// stable across vendor additions.
-#[allow(dead_code)]
+// Used by the Ubuntu Simple Streams path (the streams JSON gives us
+// the sha256 directly, so we pin it) and by future TOML profiles.
 pub struct Sha256Pinned(pub String);
 
 #[async_trait]

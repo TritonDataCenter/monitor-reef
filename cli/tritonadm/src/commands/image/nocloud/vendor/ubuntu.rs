@@ -6,21 +6,27 @@
 
 //! Ubuntu cloud-image vendor profile.
 //!
-//! Ubuntu publishes nocloud-compatible cloud images at
-//! `https://cloud-images.ubuntu.com/<series>/current/<series>-server-cloudimg-amd64.img`,
-//! with a sibling `SHA256SUMS` file. The `current/` path is a stable
-//! alias for the latest build of that series.
+//! Resolves a release token (`latest`, `noble`, `24.04`, ...) to a
+//! concrete cloud image. The primary path consults Canonical's Simple
+//! Streams metadata feed, which gives us the canonical upstream build
+//! serial, the exact item URL, and the sha256 in one TLS roundtrip.
+//! On streams failure (network, schema change), we fall back to a
+//! small hardcoded series table that points at the
+//! `<series>/current/` alias and verifies via `SHA256SUMS`.
+
+mod streams;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
 use super::{ResolvedImage, SourceFormat, VendorProfile};
-use crate::commands::image::nocloud::verify::Sha256SumsTls;
+use crate::commands::image::nocloud::verify::{Sha256Pinned, Sha256SumsTls};
 
 pub struct Ubuntu;
 
-/// Known series. The third tuple element marks LTS-ness; `latest`
+/// Fallback series table. Used only if the Simple Streams metadata is
+/// unreachable. The third tuple element marks LTS-ness; `latest`
 /// resolves to [`LATEST_LTS`] (which must appear in this list).
 const SERIES: &[(&str, &str, bool)] = &[
     ("noble", "24.04 LTS Noble Numbat", true),
@@ -29,7 +35,9 @@ const SERIES: &[(&str, &str, bool)] = &[
     ("oracular", "24.10 Oracular Oriole", false),
 ];
 
-/// Series that `--release latest` resolves to. Bump on each new LTS.
+/// Series that `--release latest` resolves to in fallback mode. Bump
+/// on each new LTS. The streams path is preferred and self-updating;
+/// this is the air-gapped escape hatch.
 const LATEST_LTS: &str = "noble";
 
 fn resolve_to_series(release: &str) -> Result<&'static str> {
@@ -59,40 +67,79 @@ impl VendorProfile for Ubuntu {
     async fn resolve(
         &self,
         release: &str,
-        _http: &reqwest::Client,
+        http: &reqwest::Client,
     ) -> Result<ResolvedImage> {
-        let series = resolve_to_series(release)?.to_string();
-        let filename = format!("{series}-server-cloudimg-amd64.img");
-        let url: Url =
-            format!("https://cloud-images.ubuntu.com/{series}/current/{filename}")
-                .parse()
-                .context("ubuntu image url")?;
-        let sums_url: Url =
-            format!("https://cloud-images.ubuntu.com/{series}/current/SHA256SUMS")
-                .parse()
-                .context("ubuntu SHA256SUMS url")?;
-
-        // Date-stamped version. Mirrors triton-nocloud-images/build.sh,
-        // which also uses the build date as `img_version` because the
-        // upstream serial is not trivially derivable from the URL
-        // structure.
-        let version = chrono::Utc::now().format("%Y%m%d").to_string();
-
-        Ok(ResolvedImage {
-            url,
-            format: SourceFormat::Qcow2,
-            os: "linux".to_string(),
-            series: series.clone(),
-            version,
-            description: format!(
-                "Ubuntu {series} CloudInit NoCloud compatible image. \
-                 Built to run on bhyve virtual machines."
-            ),
-            homepage: Url::parse("https://ubuntu.com/").context("ubuntu homepage url")?,
-            ssh_key: true,
-            verifier: Box::new(Sha256SumsTls::new(sums_url, filename)),
-        })
+        match resolve_via_streams(release, http).await {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                eprintln!(
+                    "warning: Ubuntu Simple Streams resolution failed ({e}); \
+                     falling back to hardcoded series table"
+                );
+                resolve_via_table(release).await
+            }
+        }
     }
+}
+
+async fn resolve_via_streams(
+    release: &str,
+    http: &reqwest::Client,
+) -> Result<ResolvedImage> {
+    let index = streams::fetch(http).await?;
+    let img = streams::resolve(&index, release)?;
+
+    let description = format!(
+        "Ubuntu {} ({}) CloudInit NoCloud compatible image. \
+         Built to run on bhyve virtual machines.",
+        img.release_title, img.codename
+    );
+
+    Ok(ResolvedImage {
+        url: img.url,
+        format: SourceFormat::Qcow2,
+        os: "linux".to_string(),
+        series: img.codename,
+        // Use the upstream build serial as the manifest version. Two
+        // runs against the same upstream produce the same manifest
+        // version, which matches what IMGAPI consumers expect.
+        version: img.serial,
+        description,
+        homepage: Url::parse("https://ubuntu.com/").context("ubuntu homepage url")?,
+        ssh_key: true,
+        verifier: Box::new(Sha256Pinned(img.sha256)),
+    })
+}
+
+async fn resolve_via_table(release: &str) -> Result<ResolvedImage> {
+    let series = resolve_to_series(release)?.to_string();
+    let filename = format!("{series}-server-cloudimg-amd64.img");
+    let url: Url = format!("https://cloud-images.ubuntu.com/{series}/current/{filename}")
+        .parse()
+        .context("ubuntu image url")?;
+    let sums_url: Url =
+        format!("https://cloud-images.ubuntu.com/{series}/current/SHA256SUMS")
+            .parse()
+            .context("ubuntu SHA256SUMS url")?;
+
+    // Without streams we don't know the upstream serial, so fall back
+    // to today's date. Mirrors `target/triton-nocloud-images/build.sh`.
+    let version = chrono::Utc::now().format("%Y%m%d").to_string();
+
+    Ok(ResolvedImage {
+        url,
+        format: SourceFormat::Qcow2,
+        os: "linux".to_string(),
+        series: series.clone(),
+        version,
+        description: format!(
+            "Ubuntu {series} CloudInit NoCloud compatible image. \
+             Built to run on bhyve virtual machines."
+        ),
+        homepage: Url::parse("https://ubuntu.com/").context("ubuntu homepage url")?,
+        ssh_key: true,
+        verifier: Box::new(Sha256SumsTls::new(sums_url, filename)),
+    })
 }
 
 #[cfg(test)]
