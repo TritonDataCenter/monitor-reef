@@ -1,0 +1,33 @@
+# Plan 9 — 9legacy distribution, raw QEMU image.
+#
+# Upstream:
+#
+#   http://9legacy.org/download/9legacy-qemu.img.bz2
+#
+# Note: `.img.bz2` (raw image inside bz2), NOT `.qcow2.img.bz2`.
+# After `bunzip2`, the result is a plain raw disk image — `format`
+# below is `raw`, not `qcow2`. The bytes have been stable since
+# 2019-04-21, so pinning the hash is a one-time operator action
+# with effectively zero rot risk.
+#
+# 9legacy publishes a `9legacychecksums.txt` log file, but only for
+# the ISO artifacts (`9legacy.iso.bz2`, `9legacy-new.iso.bz2`); the
+# qemu image is not listed. Same as the stanleylieber profile: the
+# operator computes the hash locally on the decompressed bytes.
+#
+# Operator workflow (one-time):
+#
+#   curl -LO http://9legacy.org/download/9legacy-qemu.img.bz2
+#   bunzip2 9legacy-qemu.img.bz2
+#   mv 9legacy-qemu.img /var/tmp/tritonadm/staging/
+#   sha256sum /var/tmp/tritonadm/staging/9legacy-qemu.img
+
+url         = "file:///var/tmp/tritonadm/staging/9legacy-qemu.img"
+format      = "raw"
+os          = "plan9"
+series      = "plan9-9legacy"
+version     = "2019-04-21"
+sha256      = "0000000000000000000000000000000000000000000000000000000000000000"  # replace
+description = "Plan 9 (9legacy distribution), raw QEMU image, decompressed locally."
+homepage    = "http://9legacy.org/"
+ssh_key     = false

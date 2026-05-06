@@ -176,25 +176,66 @@ Two patterns recur across these:
 
 ### External: TOML profiles for pinned URLs
 
-For private/internal builds and quick experiments, a directory of TOML files
-can contribute additional vendor profiles. These do not implement custom
-release resolution — they pin a single (URL, sha256) pair plus metadata.
+A TOML profile is a single file that pins one fully-resolved
+`(url, sha256, metadata)` tuple. There is **no release-resolution
+step** — the file *is* the resolved image — so TOML covers any
+vendor whose discovery logic doesn't fit a built-in profile, plus
+the "I want a specific older build of a built-in vendor" case (e.g.
+pin AlmaLinux 9.4 instead of whatever `--release latest` happens to
+return today).
 
-```toml
-# ~/.config/tritonadm/nocloud-vendors/internal-rocky-9.toml
-name = "internal-rocky-9"
-url = "https://internal.example.com/rocky-9-cloudinit.qcow2"
-format = "qcow2"
-os = "linux"
-version = "9.4-2026-05-01"
-description = "Internal Rocky 9 nocloud build"
-homepage = "https://internal.example.com/"
-sha256 = "..."
-ssh_key = true
-```
+Loaded only when `--profile-dir DIR` is passed, or from
+`~/.config/tritonadm/nocloud-vendors/` if it exists. Built-in
+profiles take precedence on name conflicts.
 
-Loaded only when `--profile-dir` is passed, or from
-`~/.config/tritonadm/nocloud-vendors/` if it exists. Not part of the POC.
+#### Schema
+
+| Field         | Required | Type         | Notes                                                                      |
+|---------------|----------|--------------|----------------------------------------------------------------------------|
+| `url`         | yes      | URL          | `https://`, `http://`, or `file://`. See "Local files" below.              |
+| `format`      | yes      | enum         | `qcow2`, `xz`, `raw`, `vmdk`, `raw_gz`. Must match what the bytes are.     |
+| `os`          | yes      | string       | Free-form; flows into manifest `os` (e.g. `linux`, `bsd`, `illumos`, `plan9`). |
+| `series`      | yes      | string       | Manifest `name` and output filename stem (e.g. `alma9`, `plan9-fossil`).   |
+| `version`     | yes      | string       | Manifest `version` (e.g. `9.7-20260501`, `2019-04-21`).                    |
+| `sha256`      | yes      | 64 hex chars | Pipeline pins this; verifier is `Sha256Pinned`. The only verifier strategy a TOML can express. |
+| `description` | yes      | string       | Manifest `description`.                                                    |
+| `homepage`    | yes      | URL          | Manifest `homepage`.                                                       |
+| `ssh_key`     | yes      | bool         | Whether the manifest declares cloud-init / nocloud SSH-key support.        |
+
+#### Local files via `file://`
+
+For images that arrive in a wrapper format the pipeline doesn't
+support (`.bz2`, `.zst`, etc.), or from origins without TLS / without
+a published per-file checksum, the operator's path is:
+
+1. Download the artifact.
+2. Decompress it locally into one of the supported formats.
+3. `sha256sum` the result, paste into the TOML.
+4. Set `url = "file:///absolute/path/to/decompressed.qcow2"`.
+
+`file://` URLs skip the download step entirely; the pipeline reads
+the path directly. Relative `file://./foo` URLs (when supported)
+resolve against the TOML file's directory. The TOML is privileged
+input — there is no sandbox on what `file://` can point at.
+
+#### Worked examples
+
+Three sample profiles live under
+[`docs/design/examples/nocloud-vendors/`](examples/nocloud-vendors/):
+
+- **`alma-9.4-pinned.toml`** — pins the final AlmaLinux 9.4
+  GenericCloud build (now in the vault). Demonstrates "any specific
+  build of a built-in vendor" — the live built-in profile only
+  enumerates the current `9.7+` series, but the TOML reaches into
+  `vault.almalinux.org` directly.
+- **`plan9-fossil-stanleylieber.toml`** — Plan 9 from Bell Labs,
+  fossil-only QEMU image (qcow2 wrapped in bz2). Operator
+  decompresses locally, points `url` at the resulting `.qcow2`.
+  Demonstrates `file://` + qcow2.
+- **`plan9-9legacy.toml`** — 9legacy distribution, raw QEMU image
+  wrapped in bz2. Demonstrates `file://` + `format = "raw"` and
+  shows that two TOML profiles can target the same `os` from
+  different upstreams.
 
 ## Pipeline
 
