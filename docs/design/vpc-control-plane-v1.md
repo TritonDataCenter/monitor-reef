@@ -10,8 +10,8 @@ Copyright 2026 Edgecast Cloud LLC.
 
 > Owner: Agent A (VPC control plane).
 > Status: design baseline approved by manager 2026-05-05;
-> implementation pending (start at H-1).
-> Last updated: 2026-05-05 (manager rulings folded in; see §11).
+> implementation in progress (H-1 committed; H-2 store slice implemented).
+> Last updated: 2026-05-06 (H-2 store-record clarification).
 > Scope: `tritond` source-of-truth for tenant network intent.
 > Out of scope: Proteus blueprint compilation, edge dataplane, packet
 > path, UI work — those are owned by Agents B/C/D/E.
@@ -233,6 +233,9 @@ pub struct NatGateway {
     /// tritond fills this in atomically with create. Operator does
     /// not pick the edge cluster directly in v1.
     pub edge_cluster_id: Option<Uuid>,
+    /// Monotonic desired-state generation. Create starts at 1;
+    /// future wire-affecting mutations increment it atomically.
+    pub desired_generation: u64,
     /// Realized-state pointer; see §6.
     pub realized: RealizedNetworkState,
     pub created_at: DateTime<Utc>,
@@ -1033,7 +1036,7 @@ change). Tests + docs ride with the code in the same commit.
 | # | Slice | Touches | Tests |
 |---|-------|---------|-------|
 | H-1 | `RealizedNetworkState`, `Realization`, `RealizerId`, `RealizationStatus`, `NetworkResourceId` types + `RealizedNetworkState::from_rows` helper + `record_network_realization` and `list_network_realizations` store trait methods + MemStore impl + FdbStore impl. **No retrofit onto `Vpc`/`Subnet`/`FloatingIp`** (manager ruling). | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: helper rollup; round-trip; backward-generation rejection (StoreError::Conflict); same-generation status downgrade allowed; idempotent re-report; multi-realizer rows; distinct resources isolated; pre-realization list returns empty (not 404); kind-tag stability for both enums |
-| H-2 | `NatGateway` record (store layer only): types, trait, MemStore, FdbStore. Carries `realized: RealizedNetworkState` from inception (new struct, no widening). Address allocator extends the existing FIP pool to record `{kind, id}` so FIP+NAT cannot collide. | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: create/get/list/delete, within-VPC name uniqueness, cross-VPC same name OK, shared-pool collision impossible, delete frees address |
+| H-2 | `NatGateway` record (store layer only): types, trait, MemStore, FdbStore. The stored row carries `desired_generation` from inception; the public view returns a computed `realized: RealizedNetworkState` without storing that denormalization. Address allocator extends the existing FIP pool to record `{kind, id}` so FIP+NAT cannot collide. | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: create/get/list/delete, within-VPC name uniqueness, cross-VPC same name OK, shared-pool collision impossible, delete frees address |
 | H-3 | `NatGateway` API surface + handlers + `tcadm net nat-gw` + integration tests. Copies the `tests/vpcs.rs` template. **Includes `make openapi-generate` + `make clients-generate`** (new endpoints). | `apis/tritond-api/src/lib.rs`, `services/tritond/src/{lib,auth}.rs`, `cli/tcadm/src/{main,commands}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/nat_gateways.rs` | integration: cross-tenant 404, within-VPC name unique, address from pool, anonymous → 404. **Does not** include the delete-when-route-references → 409 test (deferred to H-6 when `Route` exists; manager ruling). |
 | H-4 | `RouteTable` record + `Vpc.main_route_table_id` (atomic with VPC create) + `Subnet.route_table_id` (defaults to parent VPC's main RT). **Widens `Vpc` and `Subnet` — slice intentionally runs `make openapi-generate` + `make clients-generate` and updates affected tests** (manager ruling: no silent widening). | `libs/tritond-store/src/{types,lib,mem,fdb}.rs`, `apis/tritond-api/src/lib.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/{vpcs,subnets}.rs` | unit: VPC create produces main RT, subnet create defaults to main RT; integration: existing VPC + subnet tests round-trip new fields |
 | H-5 | `RouteTable` API surface + handlers + `tcadm net route-table` | API + service + CLI + tests | integration: list/create/get/delete; main RT delete → 409 (not 404); RT-with-routes delete → 409; RT-with-subnet-associations delete → 409; cross-VPC 404 |
@@ -1059,9 +1062,10 @@ Implement **H-1 + H-2 + H-3 as a tight three-commit cluster**, in
 that order (manager green-light 2026-05-05):
 
 * H-1 because every *new* network resource (starting with NAT GW
-  in H-2) embeds a `RealizedNetworkState` from inception; landing
-  the type, helpers, and store reporting machinery first avoids
-  reshuffling them across H-2..H-9. **H-1 explicitly does not
+  in H-2) carries a desired generation and returns a computed
+  `RealizedNetworkState` view from inception; landing the type,
+  helpers, and store reporting machinery first avoids reshuffling
+  them across H-2..H-9. **H-1 explicitly does not
   retrofit `realized` onto `Vpc` / `Subnet` / `FloatingIp`** —
   those land in dedicated slices (H-4, H-11) per manager ruling.
 * H-2 + H-3 because NAT gateway is the smallest reasonable

@@ -50,6 +50,9 @@
 //! subnet/by_id/<uuid>               -> JSON-encoded Subnet
 //! subnet/by_vpc/<vpc>/<name>        -> uuid hyphenated bytes
 //! subnet/in_vpc/<vpc>/<subnet>      -> empty (membership index)
+//! nat_gateway/by_id/<uuid>          -> JSON-encoded NatGatewayRecord
+//! nat_gateway/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
+//! nat_gateway/in_vpc/<vpc>/<nat>    -> empty (membership index)
 //! ssh_key/by_id/<uuid>              -> JSON-encoded SshKey
 //! ssh_key/by_public/<name>          -> uuid hyphenated bytes
 //! ssh_key/by_silo/<silo>/<name>     -> uuid hyphenated bytes
@@ -91,8 +94,10 @@
 //! floating_ip/by_id/<uuid>          -> JSON-encoded FloatingIp
 //! floating_ip/by_project/<p>/<name> -> uuid hyphenated bytes
 //! floating_ip/in_project/<p>/<fip>  -> empty (membership index)
-//! floating_ip/alloc/v4/<addr>       -> empty (pool allocation, v4)
-//! floating_ip/alloc/v6/<addr>       -> empty (pool allocation, v6)
+//! floating_ip/alloc/v4/<addr>       -> holder bytes, e.g. floating_ip:<uuid>
+//!                                      or nat_gateway:<uuid>
+//! floating_ip/alloc/v6/<addr>       -> holder bytes, e.g. floating_ip:<uuid>
+//!                                      or nat_gateway:<uuid>
 //! job/by_id/<uuid>                  -> JSON-encoded ProvisioningJob
 //! job/pending/<seq-be-u64>          -> uuid hyphenated bytes (FIFO queue)
 //! job/seq/counter                   -> next seq, big-endian u64
@@ -124,15 +129,16 @@ use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
 use rand::Rng;
 use uuid::Uuid;
 
+use crate::types::NatGatewayRecord;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Silo, SshKey, SshKeyScope,
-    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    generate_claim_code, generate_poll_token,
+    LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
+    RealizerId, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -318,6 +324,22 @@ impl FdbStore {
 
     fn subnet_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
         format!("subnet/in_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn nat_gateway_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("nat_gateway/by_id/{id}").into_bytes()
+    }
+
+    fn nat_gateway_by_vpc_name_key(vpc_id: Uuid, name: &str) -> Vec<u8> {
+        format!("nat_gateway/by_vpc/{vpc_id}/{name}").into_bytes()
+    }
+
+    fn nat_gateway_in_vpc_key(vpc_id: Uuid, nat_gateway_id: Uuid) -> Vec<u8> {
+        format!("nat_gateway/in_vpc/{vpc_id}/{nat_gateway_id}").into_bytes()
+    }
+
+    fn nat_gateway_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
+        format!("nat_gateway/in_vpc/{vpc_id}/").into_bytes()
     }
 
     fn ssh_key_by_id_key(id: Uuid) -> Vec<u8> {
@@ -558,6 +580,10 @@ impl FdbStore {
 
     fn floating_ip_alloc_v6_prefix() -> &'static [u8] {
         b"floating_ip/alloc/v6/"
+    }
+
+    fn public_ip_holder_value(resource: NetworkResourceId) -> Vec<u8> {
+        format!("{}:{}", resource.kind_tag(), resource.id()).into_bytes()
     }
 
     fn job_by_id_key(id: Uuid) -> Vec<u8> {
@@ -1993,6 +2019,268 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_nat_gateway(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewNatGateway,
+    ) -> Result<NatGateway, StoreError> {
+        let vpc_check_key = Self::vpc_by_id_key(vpc_id);
+        let by_name_key = Self::nat_gateway_by_vpc_name_key(vpc_id, &req.name);
+        let alloc_v4_prefix = Self::floating_ip_alloc_v4_prefix().to_vec();
+        let alloc_v6_prefix = Self::floating_ip_alloc_v6_prefix().to_vec();
+        let (v4_begin, v4_end) = prefix_range(&alloc_v4_prefix);
+        let (v6_begin, v6_end) = prefix_range(&alloc_v6_prefix);
+        let v4_prefix_len = alloc_v4_prefix.len();
+        let v6_prefix_len = alloc_v6_prefix.len();
+
+        let nat_gateway_id = Uuid::new_v4();
+        let by_id_key = Self::nat_gateway_by_id_key(nat_gateway_id);
+        let in_vpc_key = Self::nat_gateway_in_vpc_key(vpc_id, nat_gateway_id);
+        let id_str = nat_gateway_id.to_string();
+
+        enum Outcome {
+            Created(Box<NatGatewayRecord>),
+            VpcMissingOrWrongParent,
+            NameTaken,
+            PoolExhausted,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let vpc_check_key = vpc_check_key.clone();
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_vpc_key = in_vpc_key.clone();
+                let v4_begin = v4_begin.clone();
+                let v4_end = v4_end.clone();
+                let v6_begin = v6_begin.clone();
+                let v6_end = v6_end.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    let vpc_bytes = match tr.get(&vpc_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::VpcMissingOrWrongParent),
+                    };
+                    let vpc: Vpc = match serde_json::from_slice(&vpc_bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::VpcMissingOrWrongParent),
+                    };
+                    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+                        return Ok(Outcome::VpcMissingOrWrongParent);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+
+                    let public_address: std::net::IpAddr = match req.family {
+                        AddressFamily::V4 => {
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(v4_begin),
+                                end: KeySelector::first_greater_or_equal(v4_end),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            let mut allocated: std::collections::HashSet<std::net::Ipv4Addr> =
+                                std::collections::HashSet::new();
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[v4_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv4Addr>()
+                                {
+                                    allocated.insert(ip);
+                                }
+                            }
+                            drop(kvs);
+                            match crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated) {
+                                Some(ip) => ip.into(),
+                                None => return Ok(Outcome::PoolExhausted),
+                            }
+                        }
+                        AddressFamily::V6 => {
+                            let opt = RangeOption {
+                                begin: KeySelector::first_greater_or_equal(v6_begin),
+                                end: KeySelector::first_greater_or_equal(v6_end),
+                                ..RangeOption::default()
+                            };
+                            let kvs = tr.get_range(&opt, 1, false).await?;
+                            let mut allocated: std::collections::HashSet<std::net::Ipv6Addr> =
+                                std::collections::HashSet::new();
+                            for kv in kvs.iter() {
+                                let suffix = &kv.key()[v6_prefix_len..];
+                                if let Ok(s) = std::str::from_utf8(suffix)
+                                    && let Ok(ip) = s.parse::<std::net::Ipv6Addr>()
+                                {
+                                    allocated.insert(ip);
+                                }
+                            }
+                            drop(kvs);
+                            match crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated) {
+                                Some(ip) => ip.into(),
+                                None => return Ok(Outcome::PoolExhausted),
+                            }
+                        }
+                    };
+
+                    let now = Utc::now();
+                    let record = NatGatewayRecord {
+                        id: nat_gateway_id,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        name: req.name.clone(),
+                        description: req.description.unwrap_or_default(),
+                        family: req.family,
+                        public_address,
+                        edge_cluster_id: None,
+                        desired_generation: 1,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    let value = match serde_json::to_vec(&record) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_vpc_key, b"");
+                    let holder = Self::public_ip_holder_value(NetworkResourceId::NatGateway {
+                        id: nat_gateway_id,
+                    });
+                    match public_address {
+                        std::net::IpAddr::V4(v4) => {
+                            tr.set(&Self::floating_ip_alloc_v4_key(v4), &holder);
+                        }
+                        std::net::IpAddr::V6(v6) => {
+                            tr.set(&Self::floating_ip_alloc_v6_key(v6), &holder);
+                        }
+                    }
+                    Ok(Outcome::Created(Box::new(record)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(record)) => Ok((*record).into_view(Vec::new())),
+            Ok(Outcome::VpcMissingOrWrongParent) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "nat gateway with name {:?} already exists in vpc {vpc_id}",
+                req.name
+            ))),
+            Ok(Outcome::PoolExhausted) => {
+                Err(StoreError::Backend("public ip pool exhausted".to_string()))
+            }
+            Ok(Outcome::SerializeFailed(e)) => {
+                Err(StoreError::Backend(format!("serialize nat gateway: {e}")))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<NatGateway, StoreError> {
+        let record = self.read_nat_gateway_record(nat_gateway_id).await?;
+        let rows = self.list_network_realizations(record.resource_id()).await?;
+        Ok(record.into_view(rows))
+    }
+
+    async fn list_nat_gateways_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<NatGateway>, StoreError> {
+        let prefix = Self::nat_gateway_in_vpc_prefix(vpc_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("nat gateway index uuid: {e}")))?;
+            match self.get_nat_gateway(id).await {
+                Ok(nat) => out.push(nat),
+                Err(StoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::nat_gateway_by_id_key(nat_gateway_id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Corrupt(String),
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let record: NatGatewayRecord = match serde_json::from_slice(&bytes) {
+                        Ok(n) => n,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    let by_name_key =
+                        Self::nat_gateway_by_vpc_name_key(record.vpc_id, &record.name);
+                    let in_vpc_key = Self::nat_gateway_in_vpc_key(record.vpc_id, record.id);
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_vpc_key);
+                    match record.public_address {
+                        std::net::IpAddr::V4(v4) => {
+                            tr.clear(&Self::floating_ip_alloc_v4_key(v4));
+                        }
+                        std::net::IpAddr::V6(v6) => {
+                            tr.clear(&Self::floating_ip_alloc_v6_key(v6));
+                        }
+                    }
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => {
+                Err(StoreError::Backend(format!("deserialize nat gateway: {e}")))
+            }
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
@@ -3628,12 +3916,14 @@ impl Store for FdbStore {
                     tr.set(&by_id_key, &value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_project_key, b"");
+                    let holder =
+                        Self::public_ip_holder_value(NetworkResourceId::FloatingIp { id: fip_id });
                     match address {
                         std::net::IpAddr::V4(v4) => {
-                            tr.set(&Self::floating_ip_alloc_v4_key(v4), b"");
+                            tr.set(&Self::floating_ip_alloc_v4_key(v4), &holder);
                         }
                         std::net::IpAddr::V6(v6) => {
-                            tr.set(&Self::floating_ip_alloc_v6_key(v6), b"");
+                            tr.set(&Self::floating_ip_alloc_v6_key(v6), &holder);
                         }
                     }
                     Ok(Outcome::Created(Box::new(fip)))
@@ -4968,6 +5258,16 @@ impl FdbStore {
             })
             .await;
         result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn read_nat_gateway_record(
+        &self,
+        nat_gateway_id: Uuid,
+    ) -> Result<NatGatewayRecord, StoreError> {
+        let key = Self::nat_gateway_by_id_key(nat_gateway_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize nat gateway: {e}")))
     }
 
     /// Shared body for the per-scope `create_image_*` methods.

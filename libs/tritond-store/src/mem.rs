@@ -18,15 +18,16 @@ use rand::Rng;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use crate::types::NatGatewayRecord;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Silo, SshKey, SshKeyScope,
-    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    generate_claim_code, generate_poll_token,
+    LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
+    RealizerId, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
@@ -120,6 +121,10 @@ struct Inner {
     /// `(vpc_id, name)` → subnet_id index for within-vpc name
     /// uniqueness.
     subnet_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    nat_gateways_by_id: HashMap<Uuid, NatGatewayRecord>,
+    /// `(vpc_id, name)` → nat_gateway_id index for within-VPC name
+    /// uniqueness.
+    nat_gateway_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
     ssh_keys_by_id: HashMap<Uuid, SshKey>,
     /// Per-scope name + fingerprint uniqueness indexes. Each
     /// scope-kind has its own pair of maps so two scopes whose
@@ -167,10 +172,11 @@ struct Inner {
     /// `(project_id, name)` → fip_id index for within-project name
     /// uniqueness.
     floating_ip_id_by_project_name: HashMap<(Uuid, String), Uuid>,
-    /// Pool-wide allocation tracking. The same set covers both
-    /// the v4 and v6 pools (they're disjoint by family).
-    allocated_floating_ipv4: HashSet<Ipv4Addr>,
-    allocated_floating_ipv6: HashSet<Ipv6Addr>,
+    /// Shared public-address allocation tracking. FloatingIp and
+    /// NatGateway both reserve from these Phase 0 pools, and the
+    /// value records the owning `{kind}:{uuid}` for diagnostics.
+    public_ipv4_allocations: HashMap<Ipv4Addr, String>,
+    public_ipv6_allocations: HashMap<Ipv6Addr, String>,
     /// CN registrations keyed by `server_uuid`.
     cns_by_server_uuid: HashMap<Uuid, Cn>,
     /// `claim_code` (normalized) → `server_uuid`. Only populated for
@@ -209,6 +215,28 @@ impl Default for MemStore {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn public_ip_holder(kind: &str, id: Uuid) -> String {
+    format!("{kind}:{id}")
+}
+
+fn realization_rows(
+    realizations: &HashMap<(NetworkResourceId, RealizerId), Realization>,
+    resource: NetworkResourceId,
+) -> Vec<Realization> {
+    let mut rows: Vec<Realization> = realizations
+        .iter()
+        .filter(|((r, _), _)| *r == resource)
+        .map(|(_, row)| row.clone())
+        .collect();
+    rows.sort_by(|a, b| {
+        a.realizer
+            .kind_tag()
+            .cmp(b.realizer.kind_tag())
+            .then_with(|| a.realizer.id().cmp(&b.realizer.id()))
+    });
+    rows
 }
 
 #[async_trait]
@@ -799,6 +827,119 @@ impl Store for MemStore {
         guard
             .subnet_id_by_vpc_name
             .remove(&(subnet.vpc_id, subnet.name));
+        Ok(())
+    }
+
+    async fn create_nat_gateway(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewNatGateway,
+    ) -> Result<NatGateway, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+            return Err(StoreError::NotFound);
+        }
+
+        let name_key = (vpc_id, req.name.clone());
+        if guard.nat_gateway_id_by_vpc_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "nat gateway with name {:?} already exists in vpc {vpc_id}",
+                req.name
+            )));
+        }
+
+        let public_address: IpAddr = match req.family {
+            AddressFamily::V4 => {
+                let allocated = guard.public_ipv4_allocations.keys().copied().collect();
+                crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated)
+                    .ok_or_else(|| StoreError::Backend("public ipv4 pool exhausted".to_string()))?
+                    .into()
+            }
+            AddressFamily::V6 => {
+                let allocated = guard.public_ipv6_allocations.keys().copied().collect();
+                crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated)
+                    .ok_or_else(|| StoreError::Backend("public ipv6 pool exhausted".to_string()))?
+                    .into()
+            }
+        };
+
+        let now = Utc::now();
+        let record = NatGatewayRecord {
+            id: Uuid::new_v4(),
+            tenant_id,
+            project_id,
+            vpc_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            family: req.family,
+            public_address,
+            edge_cluster_id: None,
+            desired_generation: 1,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let holder = public_ip_holder("nat_gateway", record.id);
+        match public_address {
+            IpAddr::V4(v4) => {
+                guard.public_ipv4_allocations.insert(v4, holder);
+            }
+            IpAddr::V6(v6) => {
+                guard.public_ipv6_allocations.insert(v6, holder);
+            }
+        }
+        guard.nat_gateway_id_by_vpc_name.insert(name_key, record.id);
+        guard.nat_gateways_by_id.insert(record.id, record.clone());
+
+        Ok(record.into_view(Vec::new()))
+    }
+
+    async fn get_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<NatGateway, StoreError> {
+        let guard = self.inner.read().await;
+        let record = guard
+            .nat_gateways_by_id
+            .get(&nat_gateway_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        let rows = realization_rows(&guard.network_realizations, record.resource_id());
+        Ok(record.into_view(rows))
+    }
+
+    async fn list_nat_gateways_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<NatGateway>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .nat_gateways_by_id
+            .values()
+            .filter(|n| n.vpc_id == vpc_id)
+            .cloned()
+            .map(|record| {
+                let rows = realization_rows(&guard.network_realizations, record.resource_id());
+                record.into_view(rows)
+            })
+            .collect())
+    }
+
+    async fn delete_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let record = guard
+            .nat_gateways_by_id
+            .remove(&nat_gateway_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .nat_gateway_id_by_vpc_name
+            .remove(&(record.vpc_id, record.name));
+        match record.public_address {
+            IpAddr::V4(v4) => {
+                guard.public_ipv4_allocations.remove(&v4);
+            }
+            IpAddr::V6(v6) => {
+                guard.public_ipv6_allocations.remove(&v6);
+            }
+        }
         Ok(())
     }
 
@@ -1900,28 +2041,22 @@ impl Store for MemStore {
         }
         let address: IpAddr = match req.family {
             AddressFamily::V4 => {
-                crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &guard.allocated_floating_ipv4)
+                let allocated = guard.public_ipv4_allocations.keys().copied().collect();
+                crate::types::allocate_ipv4(FLOATING_IP_V4_POOL, &allocated)
                     .ok_or_else(|| {
                         StoreError::Backend("floating ip v4 pool exhausted".to_string())
                     })?
                     .into()
             }
             AddressFamily::V6 => {
-                crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &guard.allocated_floating_ipv6)
+                let allocated = guard.public_ipv6_allocations.keys().copied().collect();
+                crate::types::allocate_ipv6(FLOATING_IP_V6_POOL, &allocated)
                     .ok_or_else(|| {
                         StoreError::Backend("floating ip v6 pool exhausted".to_string())
                     })?
                     .into()
             }
         };
-        match address {
-            IpAddr::V4(v4) => {
-                guard.allocated_floating_ipv4.insert(v4);
-            }
-            IpAddr::V6(v6) => {
-                guard.allocated_floating_ipv6.insert(v6);
-            }
-        }
         let now = Utc::now();
         let fip = FloatingIp {
             id: Uuid::new_v4(),
@@ -1937,6 +2072,15 @@ impl Store for MemStore {
         guard
             .floating_ip_id_by_project_name
             .insert(name_key, fip.id);
+        let holder = public_ip_holder("floating_ip", fip.id);
+        match address {
+            IpAddr::V4(v4) => {
+                guard.public_ipv4_allocations.insert(v4, holder);
+            }
+            IpAddr::V6(v6) => {
+                guard.public_ipv6_allocations.insert(v6, holder);
+            }
+        }
         guard.floating_ips_by_id.insert(fip.id, fip.clone());
         Ok(fip)
     }
@@ -1990,10 +2134,10 @@ impl Store for MemStore {
             .remove(&(project_id, name));
         match address {
             IpAddr::V4(v4) => {
-                guard.allocated_floating_ipv4.remove(&v4);
+                guard.public_ipv4_allocations.remove(&v4);
             }
             IpAddr::V6(v6) => {
-                guard.allocated_floating_ipv6.remove(&v6);
+                guard.public_ipv6_allocations.remove(&v6);
             }
         }
         Ok(())
@@ -2513,19 +2657,7 @@ impl Store for MemStore {
         resource: NetworkResourceId,
     ) -> Result<Vec<Realization>, StoreError> {
         let inner = self.inner.read().await;
-        let mut rows: Vec<Realization> = inner
-            .network_realizations
-            .iter()
-            .filter(|((r, _), _)| *r == resource)
-            .map(|(_, row)| row.clone())
-            .collect();
-        rows.sort_by(|a, b| {
-            a.realizer
-                .kind_tag()
-                .cmp(b.realizer.kind_tag())
-                .then_with(|| a.realizer.id().cmp(&b.realizer.id()))
-        });
-        Ok(rows)
+        Ok(realization_rows(&inner.network_realizations, resource))
     }
 }
 
@@ -4819,6 +4951,285 @@ mod tests {
             description: None,
             family,
         }
+    }
+
+    fn nat_req(name: &str, family: AddressFamily) -> NewNatGateway {
+        NewNatGateway {
+            name: name.to_string(),
+            description: None,
+            family,
+        }
+    }
+
+    async fn make_vpc(
+        store: &MemStore,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        name: &str,
+        ipv4_block: &str,
+    ) -> Vpc {
+        store
+            .create_vpc(
+                tenant_id,
+                project_id,
+                NewVpc {
+                    name: name.to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr(ipv4_block)),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn nat_gateway_v4_round_trip_with_realized_view() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        assert_eq!(nat.tenant_id, tenant_id);
+        assert_eq!(nat.project_id, project_id);
+        assert_eq!(nat.vpc_id, vpc.id);
+        assert_eq!(nat.desired_generation, 1);
+        assert_eq!(nat.realized.desired_generation, 1);
+        assert!(nat.realized.applied_generation.is_none());
+        assert!(nat.realized.realizations.is_empty());
+        assert!(nat.edge_cluster_id.is_none());
+        match nat.public_address {
+            IpAddr::V4(v4) => assert_eq!(v4.octets(), [203, 0, 113, 2]),
+            other => panic!("expected v4, got {other:?}"),
+        }
+
+        let fetched = store.get_nat_gateway(nat.id).await.unwrap();
+        assert_eq!(fetched, nat);
+
+        store
+            .record_network_realization(
+                NetworkResourceId::NatGateway { id: nat.id },
+                RealizerId::EdgeCluster { id: Uuid::new_v4() },
+                1,
+                RealizationStatus::Applied,
+                Some("edge dataplane applied".to_string()),
+            )
+            .await
+            .unwrap();
+
+        let realized = store.get_nat_gateway(nat.id).await.unwrap();
+        assert_eq!(realized.realized.desired_generation, 1);
+        assert_eq!(realized.realized.applied_generation, Some(1));
+        assert_eq!(realized.realized.realizations.len(), 1);
+
+        let listed = store.list_nat_gateways_in_vpc(vpc.id).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0], realized);
+    }
+
+    #[tokio::test]
+    async fn nat_gateway_v6_allocates_from_pool() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress6", AddressFamily::V6),
+            )
+            .await
+            .unwrap();
+        match nat.public_address {
+            IpAddr::V6(v6) => {
+                let expected: std::net::Ipv6Addr = "2001:db8::2".parse().unwrap();
+                assert_eq!(v6, expected);
+            }
+            other => panic!("expected v6, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_nat_gateway_name_within_vpc_conflicts() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+        store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V6),
+            )
+            .await
+            .expect_err("duplicate NAT name within a VPC must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn same_nat_gateway_name_in_different_vpcs_does_not_conflict() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc_a = make_vpc(&store, tenant_id, project_id, "a", "10.0.0.0/24").await;
+        let vpc_b = make_vpc(&store, tenant_id, project_id, "b", "10.0.1.0/24").await;
+
+        store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc_a.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc_b.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .expect("same NAT name in a different VPC must be allowed");
+    }
+
+    #[tokio::test]
+    async fn create_nat_gateway_in_unknown_vpc_is_not_found() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let err = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                Uuid::new_v4(),
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .expect_err("unknown VPC should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn create_nat_gateway_under_vpc_in_wrong_project_is_not_found() {
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "ops".to_string(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant_id = silo.default_tenant_id;
+        let project_a = store
+            .create_project(
+                tenant_id,
+                NewProject {
+                    name: "a".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let project_b = store
+            .create_project(
+                tenant_id,
+                NewProject {
+                    name: "b".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let vpc = make_vpc(&store, tenant_id, project_a.id, "a", "10.0.0.0/24").await;
+
+        let err = store
+            .create_nat_gateway(
+                tenant_id,
+                project_b.id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .expect_err("wrong project should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn nat_gateway_and_floating_ip_share_public_pool() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req("public", AddressFamily::V4))
+            .await
+            .unwrap();
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(fip.address, nat.public_address);
+        match (fip.address, nat.public_address) {
+            (IpAddr::V4(fip_v4), IpAddr::V4(nat_v4)) => {
+                assert_eq!(fip_v4.octets(), [203, 0, 113, 2]);
+                assert_eq!(nat_v4.octets(), [203, 0, 113, 3]);
+            }
+            other => panic!("expected two v4 addresses, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_nat_gateway_frees_public_address() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        store.delete_nat_gateway(nat.id).await.unwrap();
+        let err = store
+            .get_nat_gateway(nat.id)
+            .await
+            .expect_err("deleted NAT should not be found");
+        assert!(matches!(err, StoreError::NotFound));
+
+        let fip = store
+            .create_floating_ip(tenant_id, project_id, fip_req("public", AddressFamily::V4))
+            .await
+            .unwrap();
+        assert_eq!(fip.address, nat.public_address);
     }
 
     #[tokio::test]

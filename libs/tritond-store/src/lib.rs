@@ -36,13 +36,13 @@ pub use types::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment,
     IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, Instance,
     InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
-    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Realization, RealizationStatus, RealizedNetworkState, RealizerId, Silo,
-    SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE,
-    Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
-    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
-    normalize_claim_code,
+    LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
+    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
+    RealizedNetworkState, RealizerId, Silo, SshKey, SshKeyScope, Subnet, SystemKey,
+    TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, derive_ssh_key_id, format_claim_code,
+    generate_claim_code, generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -343,6 +343,43 @@ pub trait Store: Send + Sync + 'static {
     /// Delete a subnet by id. Returns [`StoreError::NotFound`] if the
     /// id does not exist.
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // NAT gateways (vpc-scoped, allocated from the shared public pool)
+    // ------------------------------------------------------------------
+
+    /// Create a NAT gateway inside a VPC.
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * The VPC must exist and match `tenant_id` + `project_id`.
+    ///   Mismatch returns [`StoreError::NotFound`] to preserve the
+    ///   cross-tenant probe invariant.
+    /// * `name` must be unique within the VPC.
+    /// * `public_address` is allocated from the same Phase 0 pool
+    ///   used by [`FloatingIp`], so FIP and NAT addresses cannot
+    ///   collide.
+    /// * `desired_generation` starts at 1. Future wire-affecting
+    ///   mutations increment it atomically.
+    async fn create_nat_gateway(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewNatGateway,
+    ) -> Result<NatGateway, StoreError>;
+
+    /// Look up a NAT gateway by id. Handlers add tenant + project +
+    /// VPC rechecks on top.
+    async fn get_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<NatGateway, StoreError>;
+
+    /// List every NAT gateway in a VPC.
+    async fn list_nat_gateways_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<NatGateway>, StoreError>;
+
+    /// Delete a NAT gateway and release its public address. The
+    /// referencing-route guard lands with the Route slice because
+    /// routes do not exist yet in H-2.
+    async fn delete_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // SSH keys (multi-scope catalog: Public / Silo / Tenant / Project / User)

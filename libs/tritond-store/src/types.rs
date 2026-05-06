@@ -293,6 +293,96 @@ pub struct NewSubnet {
     pub ipv6_block: Option<Ipv6Network>,
 }
 
+/// Project-owned VPC egress point. A NAT gateway reserves one public
+/// address from the same Phase 0 public pool used by [`FloatingIp`],
+/// then downstream edge realization decides where and how that
+/// address is programmed.
+///
+/// The stored record carries `desired_generation`; [`Self::realized`]
+/// is computed from the realization rows at read time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NatGateway {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// Public address family requested at create time.
+    pub family: AddressFamily,
+    /// Public source address reserved for egress.
+    pub public_address: IpAddr,
+    /// Edge cluster selected to host this NAT gateway. `None` until
+    /// edge placement lands in the Agent D/E slices.
+    #[serde(default)]
+    pub edge_cluster_id: Option<Uuid>,
+    /// Monotonic desired-state generation. Create starts at 1;
+    /// future wire-affecting mutations increment it atomically.
+    pub desired_generation: u64,
+    /// Read-time projection of the per-realizer rows for this NAT
+    /// gateway. This is not stored as a denormalized field.
+    pub realized: RealizedNetworkState,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for creating a [`NatGateway`]. Parentage is inferred
+/// from the tenant/project/VPC URL path. The server assigns the id,
+/// public address, generation, and timestamps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewNatGateway {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub family: AddressFamily,
+}
+
+/// Stored form of [`NatGateway`]. Kept separate from the wire view so
+/// the realization roll-up is never persisted and cannot drift.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct NatGatewayRecord {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub family: AddressFamily,
+    pub public_address: IpAddr,
+    #[serde(default)]
+    pub edge_cluster_id: Option<Uuid>,
+    pub desired_generation: u64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl NatGatewayRecord {
+    #[must_use]
+    pub(crate) fn resource_id(&self) -> NetworkResourceId {
+        NetworkResourceId::NatGateway { id: self.id }
+    }
+
+    #[must_use]
+    pub(crate) fn into_view(self, rows: Vec<Realization>) -> NatGateway {
+        let realized = RealizedNetworkState::from_rows(self.desired_generation, rows);
+        NatGateway {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            project_id: self.project_id,
+            vpc_id: self.vpc_id,
+            name: self.name,
+            description: self.description,
+            family: self.family,
+            public_address: self.public_address,
+            edge_cluster_id: self.edge_cluster_id,
+            desired_generation: self.desired_generation,
+            realized,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
 /// Validate a candidate subnet's CIDRs against its parent VPC and the
 /// peer subnets already in the same VPC. Shared by both store
 /// backends (`MemStore` and `FdbStore`) so the invariants stay in
