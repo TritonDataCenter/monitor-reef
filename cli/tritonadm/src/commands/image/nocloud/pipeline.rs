@@ -370,11 +370,21 @@ async fn read_virtual_size(path: &Path, format: SourceFormat) -> Result<u64> {
             .await
             .context("xz footer parse task panicked")?
         }
-        SourceFormat::Vmdk => Err(anyhow::anyhow!(
-            "VMDK conversion is not yet implemented; \
-             release resolution works for `--vendor omnios --dry-run`, \
-             but the full pipeline needs a vendored vmdk reader."
-        )),
+        SourceFormat::Vmdk => {
+            // VmdkReader::open spins up its own internal tokio
+            // runtime, which conflicts with running on a tokio worker.
+            // Hop to a blocking task so the nested runtime is allowed.
+            tokio::task::spawn_blocking(move || -> Result<u64> {
+                let path_str = path
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("vmdk path is not utf-8: {path:?}"))?;
+                let reader = vmdkrs::vmdk_reader::VmdkReader::open(path_str)
+                    .map_err(|e| anyhow::anyhow!("open vmdk {path_str}: {e}"))?;
+                Ok(reader.image_size)
+            })
+            .await
+            .context("vmdk header read task panicked")?
+        }
     }
 }
 
@@ -516,9 +526,16 @@ async fn write_to_zvol(
                 output.inner.flush().context("flush zvol")?;
                 Ok(())
             }
-            SourceFormat::Vmdk => Err(anyhow::anyhow!(
-                "VMDK conversion is not yet implemented; pending a vendored vmdk reader"
-            )),
+            SourceFormat::Vmdk => {
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; copy_with_progress drives a sync read/write loop"
+                let path_str = src_path.to_str().ok_or_else(|| {
+                    anyhow::anyhow!("vmdk path is not utf-8: {}", src_path.display())
+                })?;
+                let inner = vmdkrs::vmdk_reader::VmdkReader::open(path_str)
+                    .map_err(|e| anyhow::anyhow!("open vmdk {path_str}: {e}"))?;
+                let mut reader = VmdkReadAdapter { inner, offset: 0 };
+                copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
+            }
         }
     })
     .await
@@ -526,6 +543,29 @@ async fn write_to_zvol(
 
     pb.finish_and_clear();
     result
+}
+
+/// `Read` adapter that turns vmdk-rs's offset-addressed
+/// `read_at_offset` API into a streamable `Read` impl, so the
+/// existing zero-skipping `copy_with_progress` loop drives it
+/// the same way it drives qcow2 and raw sources.
+struct VmdkReadAdapter {
+    inner: vmdkrs::vmdk_reader::VmdkReader,
+    offset: u64,
+}
+
+impl Read for VmdkReadAdapter {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let n = self
+            .inner
+            .read_at_offset(self.offset, buf)
+            .map_err(|e| std::io::Error::other(format!("vmdk read: {e}")))?;
+        self.offset += n as u64;
+        Ok(n)
+    }
 }
 
 /// `Write` wrapper that reports progress and honors the SIGINT

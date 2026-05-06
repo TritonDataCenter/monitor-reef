@@ -47,6 +47,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 triton-tls = { workspace = true }
 url = { workspace = true }
+vmdk-rs = { workspace = true }
 uuid = { workspace = true }
 vmapi-client = { workspace = true }
 
