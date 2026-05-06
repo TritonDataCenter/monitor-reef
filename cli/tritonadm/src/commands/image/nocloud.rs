@@ -20,6 +20,28 @@ use anyhow::{Context, Result};
 
 pub use vendor::Vendor;
 
+/// What to do with the produced `*.zfs.gz` + `*.json` pair.
+#[derive(clap::ValueEnum, serde::Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Target {
+    /// Leave the artifacts in `--output-dir` and print the
+    /// `imgadm install` invocation that would import them.
+    #[default]
+    File,
+    /// Run `imgadm install -m <manifest> -f <gz>` against the
+    /// local SmartOS image store. GZ-only.
+    Smartos,
+    /// Push the manifest+file to IMGAPI via the existing
+    /// `tritonadm image import` machinery.
+    Imgapi,
+}
+
+impl std::fmt::Display for Target {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&crate::enum_to_display(self))
+    }
+}
+
 pub struct FetchOpts {
     pub vendor: Vendor,
     pub release: String,
@@ -29,10 +51,31 @@ pub struct FetchOpts {
     pub expected_sha256: Option<String>,
     pub dataset: Option<String>,
     pub dry_run: bool,
+    pub target: Target,
+    /// Lazy IMGAPI URL, only consumed for `Target::Imgapi`. Passed
+    /// through as a `Result` so File / Smartos targets don't fail
+    /// when no headnode is reachable from the builder zone.
+    pub imgapi_url: Result<String>,
+    pub updates_url: Option<String>,
 }
 
 pub async fn run(opts: FetchOpts) -> Result<()> {
     preflight()?;
+
+    // Check target-specific preconditions before anything expensive.
+    let zone = current_zone()?;
+    if opts.target == Target::Smartos && zone != "global" {
+        anyhow::bail!(
+            "--target smartos requires running in the SmartOS GZ \
+             (zonename={zone}); produce files with --target file and \
+             run `imgadm install` from the GZ instead"
+        );
+    }
+    if opts.target == Target::Imgapi
+        && let Err(e) = opts.imgapi_url.as_ref()
+    {
+        anyhow::bail!("--target imgapi requires a working IMGAPI URL: {e}");
+    }
 
     let vendor_profile = vendor::lookup(opts.vendor);
     let http = triton_tls::build_http_client(false)
@@ -112,13 +155,75 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
     println!("  Manifest: {}", outputs.manifest_path.display());
     println!("  UUID:     {}", outputs.manifest_uuid);
     println!();
-    println!("To install on this SmartOS host:");
-    println!(
-        "  imgadm install -f {} -m {}",
-        outputs.gz_path.display(),
-        outputs.manifest_path.display()
-    );
+
+    match opts.target {
+        Target::File => {
+            println!("To install on this SmartOS host:");
+            println!(
+                "  imgadm install -f {} -m {}",
+                outputs.gz_path.display(),
+                outputs.manifest_path.display()
+            );
+        }
+        Target::Smartos => {
+            install_via_imgadm(&outputs.gz_path, &outputs.manifest_path).await?;
+            println!("Installed image {} via imgadm.", outputs.manifest_uuid);
+        }
+        Target::Imgapi => {
+            push_to_imgapi(&opts, &outputs).await?;
+        }
+    }
     Ok(())
+}
+
+/// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are
+/// passed in `-m`/`-f` order to mirror what the operator sees when
+/// `--target file` prints the suggested invocation. GZ-only; the
+/// caller must have rejected NGZs already.
+async fn install_via_imgadm(gz: &Path, manifest: &Path) -> Result<()> {
+    println!("Installing into the local SmartOS image store via imgadm...");
+    let status = tokio::process::Command::new("imgadm")
+        .arg("install")
+        .arg("-m")
+        .arg(manifest)
+        .arg("-f")
+        .arg(gz)
+        .status()
+        .await
+        .context("spawn imgadm install")?;
+    if !status.success() {
+        anyhow::bail!("imgadm install exited {status}");
+    }
+    Ok(())
+}
+
+/// Push the produced manifest+file to IMGAPI by reusing the
+/// `tritonadm image import` code path. Compression is left as
+/// `None` so the helper picks `gzip` from the manifest's
+/// `files[0].compression` (always set by our pipeline).
+async fn push_to_imgapi(opts: &FetchOpts, outputs: &pipeline::PipelineOutputs) -> Result<()> {
+    let imgapi_url = opts
+        .imgapi_url
+        .as_ref()
+        .map_err(|e| anyhow::anyhow!("{e}"))?
+        .clone();
+    let http = triton_tls::build_http_client(false)
+        .await
+        .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
+    let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());
+    let typed_client = imgapi_client::TypedClient::new_with_client(&imgapi_url, http);
+
+    let manifest = outputs.manifest_path.to_string_lossy().into_owned();
+    let file = outputs.gz_path.to_string_lossy().into_owned();
+    super::import_manifest_and_file(
+        &client,
+        &typed_client,
+        &manifest,
+        &file,
+        None,
+        opts.updates_url.as_deref(),
+    )
+    .await
 }
 
 fn print_plan(
@@ -136,6 +241,7 @@ fn print_plan(
     let stub = format!("{}-{}-{}", opts.vendor, resolved.series, resolved.version);
 
     println!("Resolved upstream image:");
+    println!("  Target:        {}", opts.target);
     println!("  Vendor:        {}", opts.vendor);
     println!("  Codename:      {}", resolved.series);
     println!("  Version:       {}", resolved.version);
@@ -233,18 +339,24 @@ fn preflight() -> Result<()> {
     Ok(())
 }
 
-/// Default dataset for the temporary build zvol.
-///
-/// In an NGZ this is the delegated dataset (`zones/<zone>/data` with
-/// `zoned=on`); in the GZ we drop directly under `zones`.
-fn default_dataset() -> Result<String> {
+/// Run `zonename` and return its trimmed output (`global` for the GZ,
+/// the zone name for NGZs).
+fn current_zone() -> Result<String> {
     let zone = std::process::Command::new("zonename")
         .output()
         .context("spawn zonename")?;
     if !zone.status.success() {
         anyhow::bail!("zonename exited {}", zone.status);
     }
-    let zone = String::from_utf8_lossy(&zone.stdout).trim().to_string();
+    Ok(String::from_utf8_lossy(&zone.stdout).trim().to_string())
+}
+
+/// Default dataset for the temporary build zvol.
+///
+/// In an NGZ this is the delegated dataset (`zones/<zone>/data` with
+/// `zoned=on`); in the GZ we drop directly under `zones`.
+fn default_dataset() -> Result<String> {
+    let zone = current_zone()?;
     if zone == "global" {
         return Ok("zones".to_string());
     }

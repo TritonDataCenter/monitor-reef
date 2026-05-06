@@ -131,9 +131,7 @@ Built-in verifier strategies:
   verification with an embedded vendor pubkey. Future work; trait shape
   is fixed now to avoid churn later.
 
-### Built-in vendor list (this design)
-
-The POC ships only `ubuntu`. The trait shape accommodates these follow-ups:
+### Built-in vendor list
 
 | Vendor | Release discovery | Verifier (target) |
 |---|---|---|
@@ -142,8 +140,6 @@ The POC ships only `ubuntu`. The trait shape accommodates these follow-ups:
 | `freebsd` | HTML directory listing at `https://download.freebsd.org/releases/VM-IMAGES/`. Accepts `latest` (highest `X.Y-RELEASE/` entry) and explicit versions like `15.0` or `15.0-RELEASE`. | `Sha256BsdSumsTls` — BSD-traditional `SHA256 (filename) = hex` |
 | `talos` | `https://api.github.com/repos/siderolabs/talos/releases/latest` for `latest`; explicit semver (`1.12.7` or `v1.12.7`) accepted. Image fetched from the Talos Image Factory at `https://factory.talos.dev/image/<schematic>/v<ver>/nocloud-amd64.raw.xz` with the canonical empty schematic baked in. | `TlsTrustOnly` — Talos Factory does not publish per-image hashes; users wanting a hash check should pass `--expected-sha256 <hex>`. `ssh_key=false` in the manifest because Talos rejects ssh-key injection. |
 | `ubuntu` | Canonical Simple Streams (`com.ubuntu.cloud:released:download.json`); fallback to a small hardcoded series table if streams is unreachable | `Sha256Pinned` from streams JSON (primary); `Sha256SumsTls` in fallback |
-| `freebsd` | hardcoded `MAJOR.MINOR` table | `CHECKSUM.SHA256` over TLS |
-| `talos` | factory API (vendor-specific) | factory API (vendor-specific) |
 
 Ubuntu's Simple Streams gives us three things over a hardcoded table:
 no tool update needed when a new LTS ships (`latest` resolves to whatever
@@ -195,7 +191,9 @@ zvol's character device is opened directly.
    - `Qcow2` — parse the header via `qcow::open` and read
      `qcow2.header.size`.
    - `Raw` — `len()` of the file.
-   - `Xz` — deferred.
+   - `Xz` — read the trailing Stream Footer + Index (no
+     decompression) and sum the per-Record Uncompressed Size VLIs.
+     Single-stream xz only; cloud images we've seen all qualify.
 5. Create a zvol of exactly that size (rounded up to MiB):
    `zfs create -V <size>m <dataset>/<build-uuid>`.
 6. Stream the decoded raw bytes into `/dev/zvol/rdsk/<dataset>`:
@@ -203,7 +201,9 @@ zvol's character device is opened directly.
      `tokio::task::spawn_blocking`, copy 1 MiB chunks into the zvol
      with a second `indicatif` progress bar.
    - `Raw` — same loop, source is `std::fs::File`.
-   - `Xz` — deferred (xz2 + same loop).
+   - `Xz` — `lzma_rs::xz_decompress` driving a `ProgressWriter`
+     wrapper on the zvol, again inside `spawn_blocking`. No
+     intermediate `.raw` file.
 7. `zfs snap <dataset>@image`.
 8. `zfs send <dataset>@image > <output>.zfs`.
 9. Compress with `gzip -f` (shell out; no value in pulling in `flate2`
@@ -306,28 +306,40 @@ In this builder NGZ (`5f7163ee-bdde-4638-a22e-a1915233e159`,
 For GZ testing, build the binary, run elfedit per `portable-binaries.md`,
 copy out, and run `tritonadm image fetch-nocloud --target smartos`.
 
-## POC status
+## Status
 
-Implemented and verified in this builder NGZ on 2026-05-05:
+Implemented and verified in this builder NGZ:
 
-- `tritonadm image fetch-nocloud --vendor ubuntu --release noble`
-  end-to-end produces a valid `*.zfs.gz` + `*.json` pair.
-- Run time on first invocation (cold cache): ~3 minutes; download
-  dominates.
-- Output: `image_size = 3584 MiB` (the actual qcow2 virtual disk size),
-  not the previously-hardcoded 10240.
-- 8 unit tests pass (`cargo test -p tritonadm`); clippy is clean.
-- No external binary dependencies beyond `zfs(8)`, `gzip(1)`, and
-  `digest(1)` (illumos SHA-1) — qcow2 decoding is fully in-process.
+- `tritonadm image fetch-nocloud` end-to-end for **ubuntu**, **debian**,
+  **alpine**, **freebsd**, and **talos**, producing a valid
+  `*.zfs.gz` + `*.json` pair.
+- Source formats: **qcow2**, **raw**, and **xz** (single-stream, virtual
+  size read from the trailing Index without decompressing).
+- `image_size` is derived from the actual upstream virtual disk size
+  rather than a hardcoded constant.
+- `--vendor` is a clap `ValueEnum`; manifest UUIDs are stable
+  (derived from the upstream sha256), so re-running for the same
+  upstream image produces an identical UUID.
+- Workdir flock prevents concurrent same-`(vendor, release)` builds;
+  startup sweep cleans older leftover datasets; SIGINT handler
+  best-effort-cleans the in-flight dataset.
+- `--dry-run`, `--expected-sha256` override, and Content-Length
+  assertion on download.
+- `--target` selects the delivery mode: `file` (default), `smartos`
+  (shells `imgadm install -m <manifest> -f <gz>`, GZ-only) or
+  `imgapi` (reuses the `tritonadm image import` code path against
+  the auto-detected IMGAPI URL).
+- Tests: 46 unit tests pass; clippy is clean.
+- No external binary dependencies beyond `zfs(8)`, `gzip(1)`,
+  `digest(1)` (illumos SHA-1), and — for `--target smartos` —
+  `imgadm(1M)`. qcow2 and xz decoding are fully in-process.
 
-Follow-ups (not in POC scope):
+Outstanding follow-ups:
 
-- `--target smartos` (shells out to `imgadm install`).
-- `--target imgapi` (reuses `tritonadm image import` machinery).
-- Other vendors: Debian, Alpine, FreeBSD, Talos.
-- `Sha256SumsGpg` verifier with embedded vendor pubkeys.
-- Xz source format (Talos, FreeBSD).
+- `Sha256SumsGpg` verifier with embedded vendor pubkeys (Debian,
+  Ubuntu canonical-signed `SHA256SUMS.gpg`).
 - TOML profile loading from `--profile-dir`.
+- Debian `testing` / `sid` / `unstable` (deferred; see below).
 
 ### Parallel builds
 
@@ -355,16 +367,6 @@ are detected via the failed `zfs destroy` and logged as
   process group, so a TTY-delivered SIGINT reaches them directly.
   A signal delivered via `kill <pid>` to just our PID would not
   reach them, and the cleanup would race with their completion.
-
-### Image format / vendor follow-ups
-
-- `Xz` source format (Talos, FreeBSD).
-- Other vendors (FreeBSD, Talos).
-- `Sha256SumsGpg` verifier for vendors that publish detached
-  signatures (Debian, Ubuntu canonical-signed `SHA256SUMS.gpg`).
-- TOML profile loading from `--profile-dir`.
-- `--target smartos` (shells `imgadm install`).
-- `--target imgapi` (reuses `tritonadm image import` machinery).
 
 ### Debian: testing / unstable / sid support
 
