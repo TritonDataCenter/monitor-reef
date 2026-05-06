@@ -59,24 +59,23 @@ pub struct FetchOpts {
     pub updates_url: Option<String>,
 }
 
-pub async fn run(opts: FetchOpts) -> Result<()> {
-    preflight()?;
-
-    // Check target-specific preconditions before anything expensive.
-    let zone = current_zone()?;
-    if opts.target == Target::Smartos && zone != "global" {
-        anyhow::bail!(
-            "--target smartos requires running in the SmartOS GZ \
-             (zonename={zone}); produce files with --target file and \
-             run `imgadm install` from the GZ instead"
+pub async fn run(mut opts: FetchOpts) -> Result<()> {
+    // Auto-promote to --dry-run on non-SmartOS hosts so a developer
+    // can smoke-test vendor metadata fetching from a Mac/Linux box
+    // without remembering the flag. The build itself still requires
+    // SmartOS; this just lets the resolve-and-print path succeed.
+    let on_smartos = is_smartos()?;
+    if !on_smartos && !opts.dry_run {
+        eprintln!(
+            "note: not running on SmartOS; forcing --dry-run \
+             (real builds require zfs(8) and a delegated dataset)"
         );
-    }
-    if opts.target == Target::Imgapi
-        && let Err(e) = opts.imgapi_url.as_ref()
-    {
-        anyhow::bail!("--target imgapi requires a working IMGAPI URL: {e}");
+        opts.dry_run = true;
     }
 
+    // Vendor resolution is just HTTP, so it runs anywhere — doing it
+    // before the SmartOS-specific preflights lets `--dry-run` exercise
+    // release resolution + verifier wiring on a dev box.
     let vendor_profile = vendor::lookup(opts.vendor);
     let http = triton_tls::build_http_client(false)
         .await
@@ -103,11 +102,6 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
         resolved.expected_sha256 = Some(hex);
     }
 
-    let dataset = match opts.dataset.clone() {
-        Some(d) => d,
-        None => default_dataset()?,
-    };
-
     let stub = format!("{}-{}", opts.vendor, resolved.series);
     let workdir = opts
         .workdir
@@ -119,9 +113,38 @@ pub async fn run(opts: FetchOpts) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from(format!("/var/tmp/tritonadm/nocloud/image/{stub}")));
 
     if opts.dry_run {
+        // Best-effort dataset display: use --dataset if given, else try
+        // default_dataset() (works on SmartOS), else a placeholder so
+        // the plan still renders on a dev box.
+        let dataset = opts
+            .dataset
+            .clone()
+            .or_else(|| default_dataset().ok())
+            .unwrap_or_else(|| "(default: zones/<zone>/data, resolved at runtime)".to_string());
         print_plan(&opts, &resolved, &dataset, &workdir, &output_dir);
         return Ok(());
     }
+
+    // From here on we are committing to a real build, which requires
+    // SmartOS, a usable target, and a delegated dataset.
+    let zone = current_zone()?;
+    if opts.target == Target::Smartos && zone != "global" {
+        anyhow::bail!(
+            "--target smartos requires running in the SmartOS GZ \
+             (zonename={zone}); produce files with --target file and \
+             run `imgadm install` from the GZ instead"
+        );
+    }
+    if opts.target == Target::Imgapi
+        && let Err(e) = opts.imgapi_url.as_ref()
+    {
+        anyhow::bail!("--target imgapi requires a working IMGAPI URL: {e}");
+    }
+
+    let dataset = match opts.dataset.clone() {
+        Some(d) => d,
+        None => default_dataset()?,
+    };
 
     // Serialize concurrent builds of the same (vendor, series). Lock
     // is keyed on the workdir, so different vendor/release pairs run
@@ -324,19 +347,16 @@ fn acquire_workdir_lock(workdir: &Path) -> Result<std::fs::File> {
     }
 }
 
-fn preflight() -> Result<()> {
+/// Detect whether we're running on SmartOS. `uname -v` on illumos
+/// distros starts with `joyent_…`. Any other prefix (Darwin, Linux,
+/// FreeBSD, …) means a dev box where dry-run is the only sensible
+/// thing to do.
+fn is_smartos() -> Result<bool> {
     let v = std::process::Command::new("uname")
         .arg("-v")
         .output()
         .context("spawn uname -v")?;
-    let v = String::from_utf8_lossy(&v.stdout);
-    if !v.starts_with("joyent_") {
-        anyhow::bail!(
-            "tritonadm image fetch-nocloud requires SmartOS (uname -v: {})",
-            v.trim()
-        );
-    }
-    Ok(())
+    Ok(String::from_utf8_lossy(&v.stdout).starts_with("joyent_"))
 }
 
 /// Run `zonename` and return its trimmed output (`global` for the GZ,
