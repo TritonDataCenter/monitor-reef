@@ -142,6 +142,10 @@ permit(
         Action::"subnet_create",
         Action::"subnet_get",
         Action::"subnet_delete",
+        Action::"route_table_list",
+        Action::"route_table_create",
+        Action::"route_table_get",
+        Action::"route_table_delete",
         Action::"nat_gateway_list",
         Action::"nat_gateway_create",
         Action::"nat_gateway_get",
@@ -363,6 +367,10 @@ pub enum Action {
     SubnetCreate,
     SubnetGet,
     SubnetDelete,
+    RouteTableList,
+    RouteTableCreate,
+    RouteTableGet,
+    RouteTableDelete,
     NatGatewayList,
     NatGatewayCreate,
     NatGatewayGet,
@@ -492,6 +500,10 @@ impl Action {
             Action::SubnetCreate => "subnet_create",
             Action::SubnetGet => "subnet_get",
             Action::SubnetDelete => "subnet_delete",
+            Action::RouteTableList => "route_table_list",
+            Action::RouteTableCreate => "route_table_create",
+            Action::RouteTableGet => "route_table_get",
+            Action::RouteTableDelete => "route_table_delete",
             Action::NatGatewayList => "nat_gateway_list",
             Action::NatGatewayCreate => "nat_gateway_create",
             Action::NatGatewayGet => "nat_gateway_get",
@@ -1027,6 +1039,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::VpcGet
         | Action::SubnetList
         | Action::SubnetGet
+        | Action::RouteTableList
+        | Action::RouteTableGet
         | Action::NatGatewayList
         | Action::NatGatewayGet
         | Action::SshKeyList
@@ -1058,6 +1072,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::VpcDelete
         | Action::SubnetCreate
         | Action::SubnetDelete
+        | Action::RouteTableCreate
+        | Action::RouteTableDelete
         | Action::NatGatewayCreate
         | Action::NatGatewayDelete
         | Action::SshKeyCreate

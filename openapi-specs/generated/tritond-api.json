@@ -3939,6 +3939,253 @@
         }
       }
     },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables": {
+      "get": {
+        "tags": [
+          "route-tables"
+        ],
+        "summary": "List route tables inside a VPC.",
+        "operationId": "list_vpc_route_tables",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_RouteTable",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RouteTable"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "route-tables"
+        ],
+        "summary": "Create a non-main route table in a VPC. Returns 409 if the",
+        "description": "name is already in use within the VPC.",
+        "operationId": "create_vpc_route_table",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewRouteTable"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteTable"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}": {
+      "get": {
+        "tags": [
+          "route-tables"
+        ],
+        "summary": "Read a single route table.",
+        "operationId": "get_vpc_route_table",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "route_table_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteTable"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "route-tables"
+        ],
+        "summary": "Delete a non-main route table. Returns 409 while subnets or",
+        "description": "routes still reference the table.",
+        "operationId": "delete_vpc_route_table",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "route_table_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
       "get": {
         "tags": [
@@ -5968,6 +6215,23 @@
           "memory_bytes"
         ]
       },
+      "NewRouteTable": {
+        "description": "Request body for creating an additional route table in a VPC. Parentage is inferred from the URL path once the public API lands.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "NewSilo": {
         "description": "Request body for creating a silo.\n\nDistinct from [`Silo`] because the server assigns `id` and `created_at`. `description` is optional on the wire and stored as an empty string when omitted.",
         "type": "object",
@@ -6705,6 +6969,52 @@
           "state"
         ]
       },
+      "RouteTable": {
+        "description": "Named set of routes inside a VPC. Every VPC has one auto-created main table; additional tables can be created and later associated to subnets when the route-table API lands.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_main": {
+            "description": "True for the table created atomically with the VPC. Main route tables cannot be deleted directly; they are removed with the parent VPC.",
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "id",
+          "is_main",
+          "name",
+          "project_id",
+          "tenant_id",
+          "vpc_id"
+        ]
+      },
       "Silo": {
         "description": "A tenancy boundary. Every Triton Cloud resource ultimately rolls up to a silo; in production each silo is bound to its own identity provider. Phase 0 carries only the bare-minimum identifying fields.",
         "type": "object",
@@ -7155,6 +7465,9 @@
     },
     {
       "name": "quotas"
+    },
+    {
+      "name": "route-tables"
     },
     {
       "name": "silos"

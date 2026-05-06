@@ -995,6 +995,154 @@ fn print_nat_gateway(n: &tritond_client::types::NatGateway) {
     println!("  updated:            {}", n.updated_at);
 }
 
+fn print_route_table(rt: &tritond_client::types::RouteTable) {
+    println!("RouteTable {} in vpc {}", rt.id, rt.vpc_id);
+    println!("  name:        {}", rt.name);
+    println!("  description: {}", rt.description);
+    println!("  is_main:     {}", rt.is_main);
+    println!("  created:     {}", rt.created_at);
+}
+
+/// List route tables in a VPC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_table_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let route_tables = client
+        .list_vpc_route_tables()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("list route tables")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&route_tables)?);
+        return Ok(());
+    }
+    if route_tables.is_empty() {
+        println!("(no route tables)");
+        return Ok(());
+    }
+    for rt in route_tables {
+        println!(
+            "{}  main={}  {}",
+            rt.id,
+            if rt.is_main { "yes" } else { "no" },
+            rt.name
+        );
+    }
+    Ok(())
+}
+
+/// Create a route table in a VPC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_table_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    name: String,
+    description: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let route_table = client
+        .create_vpc_route_table()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .body(tritond_client::types::NewRouteTable {
+            name,
+            description: Some(description),
+        })
+        .send()
+        .await
+        .context("create route table")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&route_table)?);
+    } else {
+        println!("Created route table {} in vpc {vpc_id}", route_table.id);
+        print_route_table(&route_table);
+    }
+    Ok(())
+}
+
+/// Read a single route table.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_table_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    route_table_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let route_table = client
+        .get_vpc_route_table()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .route_table_id(route_table_id)
+        .send()
+        .await
+        .context("get route table")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&route_table)?);
+    } else {
+        print_route_table(&route_table);
+    }
+    Ok(())
+}
+
+/// Delete a route table.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_table_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    route_table_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_route_table()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .route_table_id(route_table_id)
+        .send()
+        .await
+        .context("delete route table")?;
+    println!("Deleted route table {route_table_id} from vpc {vpc_id}");
+    Ok(())
+}
+
 /// List NAT gateways in a VPC.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds

@@ -44,13 +44,15 @@ use tritond_api::{
     RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath,
     TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
     TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcSubnetPath,
+    TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
         LifecycleStateKind, NatGateway, NewFloatingIp, NewImage, NewInstance, NewJob,
-        NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
-        Project, ProvisioningJob, Quota, Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
+        NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey, NewSubnet,
+        NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RouteTable, Silo, SshKey,
+        SshKeyScope, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1623,6 +1625,209 @@ impl TritondApi for TritondServiceImpl {
             )
             .await;
         Ok(HttpResponseDeleted())
+    }
+
+    async fn list_vpc_route_tables(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<RouteTable>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteTableList,
+            tenant_id,
+        )
+        .await?;
+
+        let vpc = ctx
+            .store
+            .get_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+            return Err(not_found());
+        }
+        let route_tables = ctx
+            .store
+            .list_route_tables_in_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(route_tables))
+    }
+
+    async fn create_vpc_route_table(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewRouteTable>,
+    ) -> Result<HttpResponseCreated<RouteTable>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteTableCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        match ctx
+            .store
+            .create_route_table(tenant_id, project_id, vpc_id, req)
+            .await
+        {
+            Ok(route_table) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteTableCreate,
+                        request_id,
+                        Some(format!("RouteTable::\"{}\"", route_table.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("RouteTable::\"{}\"", route_table.id)),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "name": route_table.name,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(route_table))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteTableCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_vpc_route_table(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTablePath>,
+    ) -> Result<HttpResponseOk<RouteTable>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcRouteTablePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteTableGet,
+            tenant_id,
+        )
+        .await?;
+        let route_table = ctx
+            .store
+            .get_route_table(route_table_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if route_table.tenant_id != tenant_id
+            || route_table.project_id != project_id
+            || route_table.vpc_id != vpc_id
+        {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(route_table))
+    }
+
+    async fn delete_vpc_route_table(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTablePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcRouteTablePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteTableDelete,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let route_table = ctx
+            .store
+            .get_route_table(route_table_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if route_table.tenant_id != tenant_id
+            || route_table.project_id != project_id
+            || route_table.vpc_id != vpc_id
+        {
+            return Err(not_found());
+        }
+        match ctx.store.delete_route_table(route_table_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteTableDelete,
+                        request_id,
+                        Some(format!("RouteTable::\"{route_table_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("RouteTable::\"{route_table_id}\"")),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteTableDelete,
+                        request_id,
+                        Some(format!("RouteTable::\"{route_table_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 
     async fn list_vpc_nat_gateways(

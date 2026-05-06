@@ -3232,6 +3232,46 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for creating an additional route table in a VPC. Parentage is inferred from the URL path once the public API lands."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating an additional route table in a VPC. Parentage is inferred from the URL path once the public API lands.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewRouteTable {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub name: ::std::string::String,
+    }
+
+    impl NewRouteTable {
+        pub fn builder() -> builder::NewRouteTable {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for creating a silo.\n\nDistinct from [`Silo`] because the server assigns `id` and `created_at`. `description` is optional on the wire and stored as an empty string when omitted."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4591,6 +4631,80 @@ pub mod types {
 
     impl RegisterStatusResponse {
         pub fn builder() -> builder::RegisterStatusResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "Named set of routes inside a VPC. Every VPC has one auto-created main table; additional tables can be created and later associated to subnets when the route-table API lands."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Named set of routes inside a VPC. Every VPC has one auto-created main table; additional tables can be created and later associated to subnets when the route-table API lands.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"is_main\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"tenant_id\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"is_main\": {"]
+    #[doc = "      \"description\": \"True for the table created atomically with the VPC. Main route tables cannot be deleted directly; they are removed with the parent VPC.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RouteTable {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        #[doc = "True for the table created atomically with the VPC. Main route tables cannot be deleted directly; they are removed with the parent VPC."]
+        pub is_main: bool,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl RouteTable {
+        pub fn builder() -> builder::RouteTable {
             Default::default()
         }
     }
@@ -8701,6 +8815,68 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NewRouteTable {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewRouteTable {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NewRouteTable {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewRouteTable> for super::NewRouteTable {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewRouteTable,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewRouteTable> for NewRouteTable {
+            fn from(value: super::NewRouteTable) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewSilo {
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -10378,6 +10554,152 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct RouteTable {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            is_main: ::std::result::Result<bool, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RouteTable {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    is_main: Err("no value supplied for is_main".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl RouteTable {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn is_main<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_main = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_main: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RouteTable> for super::RouteTable {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RouteTable,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    id: value.id?,
+                    is_main: value.is_main?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    tenant_id: value.tenant_id?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RouteTable> for RouteTable {
+            fn from(value: super::RouteTable) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    id: Ok(value.id),
+                    is_main: Ok(value.is_main),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    tenant_id: Ok(value.tenant_id),
+                    vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Silo {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -11670,6 +11992,26 @@ impl Client {
     #[doc = "Delete a NAT gateway and release its public address\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`\n\n```ignore\nlet response = client.delete_vpc_nat_gateway()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .nat_gateway_id(nat_gateway_id)\n    .send()\n    .await;\n```"]
     pub fn delete_vpc_nat_gateway(&self) -> builder::DeleteVpcNatGateway<'_> {
         builder::DeleteVpcNatGateway::new(self)
+    }
+
+    #[doc = "List route tables inside a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`\n\n```ignore\nlet response = client.list_vpc_route_tables()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn list_vpc_route_tables(&self) -> builder::ListVpcRouteTables<'_> {
+        builder::ListVpcRouteTables::new(self)
+    }
+
+    #[doc = "Create a non-main route table in a VPC. Returns 409 if the\n\nname is already in use within the VPC.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`\n\n```ignore\nlet response = client.create_vpc_route_table()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_vpc_route_table(&self) -> builder::CreateVpcRouteTable<'_> {
+        builder::CreateVpcRouteTable::new(self)
+    }
+
+    #[doc = "Read a single route table\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`\n\n```ignore\nlet response = client.get_vpc_route_table()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .send()\n    .await;\n```"]
+    pub fn get_vpc_route_table(&self) -> builder::GetVpcRouteTable<'_> {
+        builder::GetVpcRouteTable::new(self)
+    }
+
+    #[doc = "Delete a non-main route table. Returns 409 while subnets or\n\nroutes still reference the table.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`\n\n```ignore\nlet response = client.delete_vpc_route_table()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .route_table_id(route_table_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_route_table(&self) -> builder::DeleteVpcRouteTable<'_> {
+        builder::DeleteVpcRouteTable::new(self)
     }
 
     #[doc = "List the subnets inside a VPC. Returns 404 when the tenant\n\nproject, or VPC does not exist (or is in the wrong parent).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.list_vpc_subnets()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
@@ -19233,6 +19575,474 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_vpc_nat_gateway",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_vpc_route_tables`]\n\n[`Client::list_vpc_route_tables`]: super::Client::list_vpc_route_tables"]
+    #[derive(Debug, Clone)]
+    pub struct ListVpcRouteTables<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListVpcRouteTables<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::RouteTable>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_vpc_route_tables",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_vpc_route_table`]\n\n[`Client::create_vpc_route_table`]: super::Client::create_vpc_route_table"]
+    #[derive(Debug, Clone)]
+    pub struct CreateVpcRouteTable<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewRouteTable, String>,
+    }
+
+    impl<'a> CreateVpcRouteTable<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewRouteTable>,
+            <V as std::convert::TryInto<types::NewRouteTable>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewRouteTable` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewRouteTable) -> types::builder::NewRouteTable,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables`"]
+        pub async fn send(self) -> Result<ResponseValue<types::RouteTable>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewRouteTable::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_vpc_route_table",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_vpc_route_table`]\n\n[`Client::get_vpc_route_table`]: super::Client::get_vpc_route_table"]
+    #[derive(Debug, Clone)]
+    pub struct GetVpcRouteTable<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        route_table_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetVpcRouteTable<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                route_table_id: Err("route_table_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn route_table_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.route_table_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for route_table_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::RouteTable>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                route_table_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let route_table_id = route_table_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&route_table_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_vpc_route_table",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_route_table`]\n\n[`Client::delete_vpc_route_table`]: super::Client::delete_vpc_route_table"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcRouteTable<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        route_table_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteVpcRouteTable<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                route_table_id: Err("route_table_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn route_table_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.route_table_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for route_table_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                route_table_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let route_table_id = route_table_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/route-tables/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&route_table_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_route_table",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

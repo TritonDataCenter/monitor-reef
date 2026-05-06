@@ -30,9 +30,9 @@ use uuid::Uuid;
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
     CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
-    NatGateway, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota, NewSilo,
-    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
-    Subnet, Tenant, Vpc,
+    NatGateway, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota,
+    NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, RouteTable, Silo, SshKey, Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -402,6 +402,16 @@ pub struct TenantProjectVpcSubnetPath {
     pub project_id: Uuid,
     pub vpc_id: Uuid,
     pub subnet_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single route table
+/// inside a VPC inside a project inside a tenant.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantProjectVpcRouteTablePath {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub route_table_id: Uuid,
 }
 
 /// Path parameters for endpoints that operate on a single NAT gateway
@@ -1134,6 +1144,53 @@ pub trait TritondApi {
     async fn delete_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcSubnetPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List route tables inside a VPC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables",
+        tags = ["route-tables"],
+    }]
+    async fn list_vpc_route_tables(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<RouteTable>>, HttpError>;
+
+    /// Create a non-main route table in a VPC. Returns 409 if the
+    /// name is already in use within the VPC.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables",
+        tags = ["route-tables"],
+    }]
+    async fn create_vpc_route_table(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewRouteTable>,
+    ) -> Result<HttpResponseCreated<RouteTable>, HttpError>;
+
+    /// Read a single route table.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}",
+        tags = ["route-tables"],
+    }]
+    async fn get_vpc_route_table(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTablePath>,
+    ) -> Result<HttpResponseOk<RouteTable>, HttpError>;
+
+    /// Delete a non-main route table. Returns 409 while subnets or
+    /// routes still reference the table.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}",
+        tags = ["route-tables"],
+    }]
+    async fn delete_vpc_route_table(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTablePath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List NAT gateways inside a VPC.

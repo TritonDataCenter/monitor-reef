@@ -656,10 +656,55 @@ enum TenantProjectFloatingIpCommand {
 
 #[derive(Subcommand)]
 enum NetCommand {
+    /// Manage VPC route tables.
+    RouteTable {
+        #[command(subcommand)]
+        command: NetRouteTableCommand,
+    },
     /// Manage VPC NAT gateways.
     NatGw {
         #[command(subcommand)]
         command: NetNatGwCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetRouteTableCommand {
+    /// List route tables in a VPC.
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a route table in a VPC.
+    Create {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single route table.
+    Get {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a route table.
+    Delete {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
     },
 }
 
@@ -2064,6 +2109,78 @@ async fn main() -> Result<()> {
             },
         },
         Commands::Net { command } => match command {
+            NetCommand::RouteTable { command } => match command {
+                NetRouteTableCommand::List {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    json,
+                } => {
+                    commands::net_route_table_list(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    )
+                    .await
+                }
+                NetRouteTableCommand::Create {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    name,
+                    description,
+                    json,
+                } => {
+                    commands::net_route_table_create(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        name,
+                        description,
+                        json,
+                    )
+                    .await
+                }
+                NetRouteTableCommand::Get {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    route_table_id,
+                    json,
+                } => {
+                    commands::net_route_table_get(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                        json,
+                    )
+                    .await
+                }
+                NetRouteTableCommand::Delete {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    route_table_id,
+                } => {
+                    commands::net_route_table_delete(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                    )
+                    .await
+                }
+            },
             NetCommand::NatGw { command } => match command {
                 NetNatGwCommand::List {
                     tenant_id,
