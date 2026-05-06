@@ -23,6 +23,8 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 
+use crate::commands::image::nocloud::verify::parse_bsd_sums_file;
+
 const REPO_BASE: &str = "https://download.rockylinux.org/pub/rocky/";
 
 #[derive(Debug)]
@@ -32,9 +34,11 @@ pub struct Resolved {
     /// and `.x86_64.qcow2` suffix (e.g. `9.7-20251123.2`). Used as
     /// the manifest version.
     pub build: String,
-    pub filename: String,
     pub url: String,
-    pub sidecar_url: String,
+    /// Upstream sha256 from the per-file `.CHECKSUM` sidecar,
+    /// fetched at resolve time so `--dry-run` can show the
+    /// derived manifest UUID without downloading the qcow2.
+    pub sha256: String,
 }
 
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {
@@ -71,14 +75,34 @@ pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> 
 
     let url = format!("{images_base}{filename}");
     let sidecar_url = format!("{url}.CHECKSUM");
+    let sha256 = fetch_sidecar_hash(http, &sidecar_url, &filename).await?;
 
     Ok(Resolved {
         major,
         build,
-        filename,
         url,
-        sidecar_url,
+        sha256,
     })
+}
+
+async fn fetch_sidecar_hash(
+    http: &reqwest::Client,
+    sidecar_url: &str,
+    filename: &str,
+) -> Result<String> {
+    eprintln!("Fetching {sidecar_url}");
+    let body = http
+        .get(sidecar_url)
+        .send()
+        .await
+        .with_context(|| format!("GET {sidecar_url}"))?
+        .error_for_status()
+        .with_context(|| format!("status from {sidecar_url}"))?
+        .text()
+        .await
+        .with_context(|| format!("read body of {sidecar_url}"))?;
+    parse_bsd_sums_file(&body, filename)
+        .ok_or_else(|| anyhow::anyhow!("CHECKSUM at {sidecar_url} has no entry for {filename}"))
 }
 
 async fn fetch_majors(http: &reqwest::Client) -> Result<Vec<u32>> {
