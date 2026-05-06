@@ -14,6 +14,7 @@ use url::Url;
 
 use super::verify::Verifier;
 
+pub mod alma;
 pub mod alpine;
 pub mod debian;
 pub mod fedora;
@@ -30,6 +31,7 @@ pub mod ubuntu;
 #[derive(clap::ValueEnum, serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Vendor {
+    Alma,
     Alpine,
     Debian,
     Fedora,
@@ -89,6 +91,7 @@ pub trait VendorProfile: Send + Sync {
 
 pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
     match vendor {
+        Vendor::Alma => Box::new(alma::Alma),
         Vendor::Alpine => Box::new(alpine::Alpine),
         Vendor::Debian => Box::new(debian::Debian),
         Vendor::Fedora => Box::new(fedora::Fedora),
