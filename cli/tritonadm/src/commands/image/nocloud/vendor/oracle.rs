@@ -22,8 +22,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
-use crate::commands::image::nocloud::verify::Sha256Pinned;
+use super::{PinnedQcow2, ResolvedImage, VendorProfile};
 
 pub struct Oracle;
 
@@ -36,23 +35,18 @@ impl VendorProfile for Oracle {
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let resolved = releases::resolve(http, release).await?;
         let url: Url = resolved.url.parse().context("oracle image url")?;
-        let version = resolved.version();
-
-        Ok(ResolvedImage {
+        PinnedQcow2 {
             url,
-            format: SourceFormat::Qcow2,
-            os: "linux".to_string(),
             series: format!("oracle{}", resolved.major),
-            version: version.clone(),
+            version: resolved.version(),
             description: format!(
                 "Oracle Linux {}.{} CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines.",
                 resolved.major, resolved.update
             ),
-            homepage: Url::parse("https://www.oracle.com/linux/").context("oracle homepage url")?,
-            ssh_key: true,
-            verifier: Box::new(Sha256Pinned(resolved.sha256.clone())),
-            expected_sha256: Some(resolved.sha256),
-        })
+            homepage: "https://www.oracle.com/linux/",
+            sha256: resolved.sha256,
+        }
+        .into_resolved("oracle")
     }
 }

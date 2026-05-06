@@ -21,11 +21,12 @@
 //! `Sha256BsdSumsTls` verifier handles.
 
 use anyhow::{Context, Result};
-use regex::Regex;
 
+use crate::commands::image::nocloud::vendor::dirlist;
 use crate::commands::image::nocloud::verify::parse_bsd_sums_file;
 
 const REPO_BASE: &str = "https://download.rockylinux.org/pub/rocky/";
+const MAJOR_DIR_RE: &str = r#"href="(\d+)/""#;
 
 #[derive(Debug)]
 pub struct Resolved {
@@ -44,7 +45,7 @@ pub struct Resolved {
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {
     let token = release.trim();
     let major = if token.eq_ignore_ascii_case("latest") {
-        let majors = fetch_majors(http).await?;
+        let majors = dirlist::fetch_numeric_subdirs(http, REPO_BASE, MAJOR_DIR_RE, None).await?;
         majors
             .iter()
             .max()
@@ -105,35 +106,6 @@ async fn fetch_sidecar_hash(
         .ok_or_else(|| anyhow::anyhow!("CHECKSUM at {sidecar_url} has no entry for {filename}"))
 }
 
-async fn fetch_majors(http: &reqwest::Client) -> Result<Vec<u32>> {
-    eprintln!("Fetching Rocky directory listing ...");
-    let body = http
-        .get(REPO_BASE)
-        .send()
-        .await
-        .with_context(|| format!("GET {REPO_BASE}"))?
-        .error_for_status()
-        .with_context(|| format!("status from {REPO_BASE}"))?
-        .text()
-        .await
-        .with_context(|| format!("read body of {REPO_BASE}"))?;
-    Ok(parse_majors_from_html(&body))
-}
-
-fn parse_majors_from_html(body: &str) -> Vec<u32> {
-    let re = match Regex::new(r#"href="(\d+)/""#) {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
-    let mut majors: Vec<u32> = re
-        .captures_iter(body)
-        .filter_map(|c| c.get(1)?.as_str().parse().ok())
-        .collect();
-    majors.sort();
-    majors.dedup();
-    majors
-}
-
 fn parse_major(input: &str) -> Result<String> {
     let s = input.trim();
     if s.is_empty() || !s.chars().all(|c| c.is_ascii_digit()) {
@@ -177,12 +149,6 @@ fn strip_filename_chrome(filename: &str, major: &str) -> Option<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_majors_extracts_numeric_dirs() {
-        let body = r#"href="8/" href="9/" href="10/" href="vault/""#;
-        assert_eq!(parse_majors_from_html(body), vec![8, 9, 10]);
-    }
 
     #[test]
     fn parse_major_accepts_integer_only() {

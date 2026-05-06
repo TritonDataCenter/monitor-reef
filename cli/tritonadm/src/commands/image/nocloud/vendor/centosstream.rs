@@ -19,8 +19,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
-use crate::commands::image::nocloud::verify::Sha256Pinned;
+use super::{PinnedQcow2, ResolvedImage, VendorProfile};
 
 pub struct CentosStream;
 
@@ -33,23 +32,18 @@ impl VendorProfile for CentosStream {
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let resolved = releases::resolve(http, release).await?;
         let url: Url = resolved.url.parse().context("centos-stream image url")?;
-
-        Ok(ResolvedImage {
+        PinnedQcow2 {
             url,
-            format: SourceFormat::Qcow2,
-            os: "linux".to_string(),
             series: format!("centos{}", resolved.stream),
-            version: resolved.build.clone(),
+            version: resolved.build,
             description: format!(
                 "CentOS Stream {} CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines.",
                 resolved.stream
             ),
-            homepage: Url::parse("https://www.centos.org/")
-                .context("centos-stream homepage url")?,
-            ssh_key: true,
-            verifier: Box::new(Sha256Pinned(resolved.sha256.clone())),
-            expected_sha256: Some(resolved.sha256),
-        })
+            homepage: "https://www.centos.org/",
+            sha256: resolved.sha256,
+        }
+        .into_resolved("centos-stream")
     }
 }

@@ -18,11 +18,12 @@
 //! aliases.
 
 use anyhow::{Context, Result};
-use regex::Regex;
 
+use crate::commands::image::nocloud::vendor::dirlist;
 use crate::commands::image::nocloud::verify::parse_sums_file;
 
 const REPO_BASE: &str = "https://repo.almalinux.org/almalinux/";
+const MAJOR_DIR_RE: &str = r#"href="(\d+)/""#;
 
 #[derive(Debug)]
 pub struct Resolved {
@@ -43,7 +44,7 @@ pub struct Resolved {
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {
     let token = release.trim();
     let major = if token.eq_ignore_ascii_case("latest") {
-        let majors = fetch_majors(http).await?;
+        let majors = dirlist::fetch_numeric_subdirs(http, REPO_BASE, MAJOR_DIR_RE, None).await?;
         majors
             .iter()
             .max()
@@ -80,35 +81,6 @@ pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> 
         sha256,
         url,
     })
-}
-
-async fn fetch_majors(http: &reqwest::Client) -> Result<Vec<u32>> {
-    eprintln!("Fetching AlmaLinux directory listing ...");
-    let body = http
-        .get(REPO_BASE)
-        .send()
-        .await
-        .with_context(|| format!("GET {REPO_BASE}"))?
-        .error_for_status()
-        .with_context(|| format!("status from {REPO_BASE}"))?
-        .text()
-        .await
-        .with_context(|| format!("read body of {REPO_BASE}"))?;
-    Ok(parse_majors_from_html(&body))
-}
-
-fn parse_majors_from_html(body: &str) -> Vec<u32> {
-    let re = match Regex::new(r#"href="(\d+)/""#) {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
-    let mut majors: Vec<u32> = re
-        .captures_iter(body)
-        .filter_map(|c| c.get(1)?.as_str().parse().ok())
-        .collect();
-    majors.sort();
-    majors.dedup();
-    majors
 }
 
 fn parse_major(input: &str) -> Result<String> {
@@ -181,24 +153,6 @@ fn strip_filename_chrome(filename: &str, major: &str) -> Option<String> {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_majors_extracts_numeric_dirs_only() {
-        let body = r#"
-            <a href="8/">8/</a>
-            <a href="9/">9/</a>
-            <a href="10/">10/</a>
-            <a href="vault/">vault/</a>
-            <a href="testing/">testing/</a>
-        "#;
-        assert_eq!(parse_majors_from_html(body), vec![8, 9, 10]);
-    }
-
-    #[test]
-    fn parse_majors_dedupes_and_sorts() {
-        let body = r#"href="9/" href="9/" href="8/""#;
-        assert_eq!(parse_majors_from_html(body), vec![8, 9]);
-    }
 
     #[test]
     fn parse_major_accepts_integer_only() {

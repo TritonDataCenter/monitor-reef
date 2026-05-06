@@ -21,8 +21,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
-use crate::commands::image::nocloud::verify::Sha256Pinned;
+use super::{PinnedQcow2, ResolvedImage, VendorProfile};
 
 pub struct Rocky;
 
@@ -35,22 +34,18 @@ impl VendorProfile for Rocky {
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let resolved = releases::resolve(http, release).await?;
         let url: Url = resolved.url.parse().context("rocky image url")?;
-
-        Ok(ResolvedImage {
+        PinnedQcow2 {
             url,
-            format: SourceFormat::Qcow2,
-            os: "linux".to_string(),
             series: format!("rocky{}", resolved.major),
-            version: resolved.build.clone(),
+            version: resolved.build,
             description: format!(
                 "Rocky Linux {} CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines.",
                 resolved.major
             ),
-            homepage: Url::parse("https://rockylinux.org/").context("rocky homepage url")?,
-            ssh_key: true,
-            verifier: Box::new(Sha256Pinned(resolved.sha256.clone())),
-            expected_sha256: Some(resolved.sha256),
-        })
+            homepage: "https://rockylinux.org/",
+            sha256: resolved.sha256,
+        }
+        .into_resolved("rocky")
     }
 }

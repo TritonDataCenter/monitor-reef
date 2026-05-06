@@ -8,17 +8,18 @@
 //! how to resolve a release token (series name, version, or `latest`)
 //! into a concrete URL, format, manifest metadata, and verifier.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::verify::Verifier;
+use super::verify::{Sha256Pinned, Verifier};
 
 pub mod alma;
 pub mod alpine;
 pub mod arch;
 pub mod centosstream;
 pub mod debian;
+pub mod dirlist;
 pub mod fedora;
 pub mod freebsd;
 pub mod omnios;
@@ -111,6 +112,40 @@ pub trait VendorProfile: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage>;
+}
+
+/// Builder for the common "linux qcow2 with vendor-pinned sha256"
+/// `ResolvedImage` shape used by the RHEL-derivative profiles
+/// (alma, rocky, oracle, centosstream, fedora, opensuse). All of them
+/// share `SourceFormat::Qcow2`, `os = "linux"`, `ssh_key = true`, and
+/// a `Sha256Pinned` verifier driven by a hash that release discovery
+/// already extracted; the only per-vendor variation is the series,
+/// version, description, and homepage strings.
+pub(super) struct PinnedQcow2 {
+    pub url: Url,
+    pub series: String,
+    pub version: String,
+    pub description: String,
+    pub homepage: &'static str,
+    pub sha256: String,
+}
+
+impl PinnedQcow2 {
+    pub fn into_resolved(self, vendor_label: &str) -> Result<ResolvedImage> {
+        Ok(ResolvedImage {
+            url: self.url,
+            format: SourceFormat::Qcow2,
+            os: "linux".to_string(),
+            series: self.series,
+            version: self.version,
+            description: self.description,
+            homepage: Url::parse(self.homepage)
+                .with_context(|| format!("{vendor_label} homepage url"))?,
+            ssh_key: true,
+            verifier: Box::new(Sha256Pinned(self.sha256.clone())),
+            expected_sha256: Some(self.sha256),
+        })
+    }
 }
 
 pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {

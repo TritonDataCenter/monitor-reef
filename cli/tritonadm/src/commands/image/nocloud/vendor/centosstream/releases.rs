@@ -21,11 +21,12 @@
 //! metadata time and `--dry-run` can show the manifest UUID.
 
 use anyhow::{Context, Result};
-use regex::Regex;
 
+use crate::commands::image::nocloud::vendor::dirlist;
 use crate::commands::image::nocloud::verify::parse_bsd_sums_file;
 
 const STREAMS_BASE: &str = "https://cloud.centos.org/centos/";
+const STREAM_DIR_RE: &str = r#"href="(\d+)-stream/""#;
 
 /// `cloud.centos.org` sits behind CloudFront, which 403s requests
 /// with a missing or empty User-Agent. Setting any non-empty value
@@ -46,7 +47,9 @@ pub struct Resolved {
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {
     let token = release.trim();
     let stream = if token.eq_ignore_ascii_case("latest") {
-        let streams = fetch_streams(http).await?;
+        let streams =
+            dirlist::fetch_numeric_subdirs(http, STREAMS_BASE, STREAM_DIR_RE, Some(USER_AGENT))
+                .await?;
         streams
             .iter()
             .max()
@@ -86,36 +89,6 @@ pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> 
         url,
         sha256,
     })
-}
-
-async fn fetch_streams(http: &reqwest::Client) -> Result<Vec<u32>> {
-    eprintln!("Fetching CentOS streams listing ...");
-    let body = http
-        .get(STREAMS_BASE)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await
-        .with_context(|| format!("GET {STREAMS_BASE}"))?
-        .error_for_status()
-        .with_context(|| format!("status from {STREAMS_BASE}"))?
-        .text()
-        .await
-        .with_context(|| format!("read body of {STREAMS_BASE}"))?;
-    Ok(parse_streams_from_html(&body))
-}
-
-fn parse_streams_from_html(body: &str) -> Vec<u32> {
-    let re = match Regex::new(r#"href="(\d+)-stream/""#) {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
-    let mut streams: Vec<u32> = re
-        .captures_iter(body)
-        .filter_map(|c| c.get(1)?.as_str().parse().ok())
-        .collect();
-    streams.sort();
-    streams.dedup();
-    streams
 }
 
 fn parse_stream(input: &str) -> Result<String> {
@@ -184,17 +157,6 @@ async fn fetch_sidecar_hash(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_streams_extracts_numeric() {
-        let body = r#"
-            <a href="8-stream/">8-stream/</a>
-            <a href="9-stream/">9-stream/</a>
-            <a href="10-stream/">10-stream/</a>
-            <a href="archive/">archive/</a>
-        "#;
-        assert_eq!(parse_streams_from_html(body), vec![8, 9, 10]);
-    }
 
     #[test]
     fn parse_stream_accepts_bare_or_suffixed() {

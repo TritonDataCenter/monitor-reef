@@ -22,8 +22,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
-use crate::commands::image::nocloud::verify::Sha256Pinned;
+use super::{PinnedQcow2, ResolvedImage, VendorProfile};
 
 pub struct Alma;
 
@@ -36,24 +35,20 @@ impl VendorProfile for Alma {
     async fn resolve(&self, release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {
         let resolved = releases::resolve(http, release).await?;
         let url: Url = resolved.url.parse().context("alma image url")?;
-
-        Ok(ResolvedImage {
+        PinnedQcow2 {
             url,
-            format: SourceFormat::Qcow2,
-            os: "linux".to_string(),
             series: format!("alma{}", resolved.major),
             // Build identifier (e.g. `9.7-20260501`) so distinct
             // rebuilds dedupe in the manifest.
-            version: resolved.build.clone(),
+            version: resolved.build,
             description: format!(
                 "AlmaLinux {} CloudInit NoCloud compatible image. \
                  Built to run on bhyve virtual machines.",
                 resolved.major
             ),
-            homepage: Url::parse("https://almalinux.org/").context("alma homepage url")?,
-            ssh_key: true,
-            verifier: Box::new(Sha256Pinned(resolved.sha256.clone())),
-            expected_sha256: Some(resolved.sha256),
-        })
+            homepage: "https://almalinux.org/",
+            sha256: resolved.sha256,
+        }
+        .into_resolved("alma")
     }
 }
