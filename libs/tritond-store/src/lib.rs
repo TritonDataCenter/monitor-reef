@@ -32,18 +32,18 @@ pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
-    CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnState, CnView, Disk, DiskKind,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment,
-    IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, Instance,
-    InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
-    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable, RouteTarget, Silo,
-    SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE,
-    Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
-    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
-    normalize_claim_code,
+    CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, Disk,
+    DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp,
+    FloatingIpAttachment, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
+    Instance, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus, JobStatusKind,
+    LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
+    NewInstance, NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
+    NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Realization, RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable,
+    RouteTarget, Silo, SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
+    TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
+    generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -985,6 +985,11 @@ pub trait Store: Send + Sync + 'static {
 
     /// List CNs, optionally filtered by state. Order is unspecified.
     async fn list_cns(&self, state_filter: Option<CnState>) -> Result<Vec<Cn>, StoreError>;
+
+    /// Set the operator-controlled placement role for a CN.
+    ///
+    /// Returns [`StoreError::NotFound`] if the CN does not exist.
+    async fn set_cn_role(&self, server_uuid: Uuid, role: CnRole) -> Result<Cn, StoreError>;
 
     /// Atomically attach a freshly-minted bound API key to a CN.
     ///

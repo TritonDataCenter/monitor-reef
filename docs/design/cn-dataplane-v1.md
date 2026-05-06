@@ -73,6 +73,19 @@ The current `tritonagent` already has these working pieces:
   disks, and FIP attachments in the store, then enqueues a best-effort
   host delete job.
 
+## 2.1 CN Placement Role
+
+Every registered CN carries an operator-controlled placement role:
+`tenant`, `edge`, or `both`. New registrations default to `tenant` so the
+existing lab fleet remains tenant-workload capable until an operator opts a
+node into edge placement.
+
+Operators set the role through `POST /v2/cns/{server_uuid}/role`, exposed by
+`tcadm cn label set <server_uuid> --role <tenant|edge|both>`. The role is a
+placement admission signal only; it does not change agent authentication,
+heartbeats, or job-claim binding. The north/south edge placer consumes
+`edge` and `both` records when assigning firehyve/fhrun edge instances.
+
 ## 3. Current gaps
 
 The host realization path is still Phase 0 shaped:

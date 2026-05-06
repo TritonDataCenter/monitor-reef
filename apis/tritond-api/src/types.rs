@@ -18,11 +18,11 @@ pub use tritond_audit::{
     EventHash as AuditEventHash, Outcome as AuditOutcome, VerifyOutcome as AuditVerifyOutcome,
 };
 pub use tritond_store::{
-    AddressFamily, ApiKeyScope, ApiKeyView, AutoApproveWindow, CnState, CnView, Disk, DiskKind,
-    FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, ImageScope,
-    Instance, JobKind, JobOutcome, JobStatus, LifecycleState, LifecycleStateKind, NatGateway,
-    NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway,
-    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable,
-    RouteTarget, Silo, SshKey, SshKeyScope, Subnet, Tenant, UserView, Vpc,
+    AddressFamily, ApiKeyScope, ApiKeyView, AutoApproveWindow, CnRole, CnState, CnView, Disk,
+    DiskKind, FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility,
+    ImageScope, Instance, JobKind, JobOutcome, JobStatus, LifecycleState, LifecycleStateKind,
+    NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob,
+    NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet,
+    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route,
+    RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Subnet, Tenant, UserView, Vpc,
 };

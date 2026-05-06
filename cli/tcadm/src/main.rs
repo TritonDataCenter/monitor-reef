@@ -1195,10 +1195,29 @@ enum CnCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Operator-controlled CN labels.
+    Label {
+        #[command(subcommand)]
+        command: CnLabelCommand,
+    },
     /// Auto-approve window controls.
     AutoApprove {
         #[command(subcommand)]
         command: AutoApproveCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum CnLabelCommand {
+    /// Set placement labels used by the vnext placers.
+    Set {
+        server_uuid: Uuid,
+        /// Placement role. `tenant` is default; `edge` is eligible
+        /// for firehyve/fhrun north/south edge instances.
+        #[arg(long, value_enum)]
+        role: CnRoleArg,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1241,6 +1260,24 @@ impl From<CnStateArg> for tritond_client::types::CnState {
             CnStateArg::Pending => tritond_client::types::CnState::Pending,
             CnStateArg::Approved => tritond_client::types::CnState::Approved,
             CnStateArg::Disabled => tritond_client::types::CnState::Disabled,
+        }
+    }
+}
+
+/// CLI mirror of [`tritond_client::types::CnRole`].
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum CnRoleArg {
+    Tenant,
+    Edge,
+    Both,
+}
+
+impl From<CnRoleArg> for tritond_client::types::CnRole {
+    fn from(arg: CnRoleArg) -> Self {
+        match arg {
+            CnRoleArg::Tenant => tritond_client::types::CnRole::Tenant,
+            CnRoleArg::Edge => tritond_client::types::CnRole::Edge,
+            CnRoleArg::Both => tritond_client::types::CnRole::Both,
         }
     }
 }
@@ -1326,6 +1363,22 @@ async fn main() -> Result<()> {
             CnCommand::Disable { server_uuid, json } => {
                 commands::cn_disable(cli.endpoint, cli.api_key, server_uuid, json).await
             }
+            CnCommand::Label { command } => match command {
+                CnLabelCommand::Set {
+                    server_uuid,
+                    role,
+                    json,
+                } => {
+                    commands::cn_label_set(
+                        cli.endpoint,
+                        cli.api_key,
+                        server_uuid,
+                        role.into(),
+                        json,
+                    )
+                    .await
+                }
+            },
             CnCommand::AutoApprove { command } => match command {
                 AutoApproveCommand::Status { json } => {
                     commands::cn_auto_approve_status(cli.endpoint, cli.api_key, json).await

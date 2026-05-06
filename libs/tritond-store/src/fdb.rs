@@ -141,7 +141,7 @@ use uuid::Uuid;
 
 use crate::types::NatGatewayRecord;
 use crate::{
-    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
@@ -5122,6 +5122,7 @@ impl Store for FdbStore {
                                     hostname,
                                     admin_ip,
                                     state: CnState::Pending,
+                                    role: existing.role,
                                     registered_at: existing.registered_at,
                                     approved_at: None,
                                     last_seen: Some(now),
@@ -5173,6 +5174,7 @@ impl Store for FdbStore {
                         hostname,
                         admin_ip,
                         state,
+                        role: CnRole::default(),
                         registered_at: now,
                         approved_at: if auto_approved { Some(now) } else { None },
                         last_seen: Some(now),
@@ -5302,6 +5304,42 @@ impl Store for FdbStore {
             }
         }
         Ok(out)
+    }
+
+    async fn set_cn_role(&self, server_uuid: Uuid, role: CnRole) -> Result<Cn, StoreError> {
+        enum Outcome {
+            Updated(Box<Cn>),
+            NotFound,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    cn.role = role;
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    Ok(Outcome::Updated(Box::new(cn)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated(cn)) => Ok(*cn),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 
     async fn approve_cn(
@@ -6275,6 +6313,7 @@ mod cn_tests {
         assert!(cn.bound_api_key_id.is_none());
         assert!(cn.pending_credential.is_none());
         assert!(cn.approved_at.is_none());
+        assert_eq!(cn.role, CnRole::Tenant);
 
         purge_cn(&store, id).await;
     }
@@ -6343,6 +6382,39 @@ mod cn_tests {
         assert_eq!(updated.hostname, "h2");
         assert_eq!(updated.last_seen, Some(later));
         assert_eq!(updated.sysinfo, serde_json::json!({"updated": true}));
+
+        purge_cn(&store, id).await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn set_cn_role_updates_registered_cn() {
+        let store = fdb_test_store();
+        let id = Uuid::new_v4();
+        purge_cn(&store, id).await;
+        purge_window(&store).await;
+
+        let now = Utc::now();
+        store
+            .register_cn(id, "edge-a".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("register");
+
+        let updated = store.set_cn_role(id, CnRole::Edge).await.expect("set role");
+        assert_eq!(updated.role, CnRole::Edge);
+        assert_eq!(store.get_cn(id).await.expect("get").role, CnRole::Edge);
+
+        let refreshed = store
+            .register_cn(id, "edge-a-renamed".into(), None, sysinfo_fixture(), now)
+            .await
+            .expect("re-register");
+        assert_eq!(refreshed.role, CnRole::Edge);
+
+        let err = store
+            .set_cn_role(Uuid::new_v4(), CnRole::Both)
+            .await
+            .expect_err("unknown cn");
+        assert!(matches!(err, StoreError::NotFound));
 
         purge_cn(&store, id).await;
     }

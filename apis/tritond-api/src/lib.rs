@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
-    CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
+    CnRole, CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
     NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject,
     NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
     Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo,
@@ -378,6 +378,12 @@ pub struct CnListQuery {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ApproveCnRequest {
     pub code: String,
+}
+
+/// Request body for `POST /v2/cns/{server_uuid}/role`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SetCnRoleRequest {
+    pub role: CnRole,
 }
 
 /// Request body for `POST /v2/cns/auto-approve`.
@@ -927,6 +933,18 @@ pub trait TritondApi {
     async fn disable_cn(
         rqctx: RequestContext<Self::Context>,
         path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// Set the placement role for a compute node. Operator-only.
+    #[endpoint {
+        method = POST,
+        path = "/v2/cns/{server_uuid}/role",
+        tags = ["cns"],
+    }]
+    async fn set_cn_role(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+        body: TypedBody<SetCnRoleRequest>,
     ) -> Result<HttpResponseOk<CnView>, HttpError>;
 
     /// Read the current auto-approve window, if open.

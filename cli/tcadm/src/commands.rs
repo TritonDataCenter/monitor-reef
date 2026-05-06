@@ -3019,6 +3019,14 @@ fn cn_state_label(state: &tritond_client::types::CnState) -> &'static str {
     }
 }
 
+fn cn_role_label(role: &tritond_client::types::CnRole) -> &'static str {
+    match role {
+        tritond_client::types::CnRole::Tenant => "tenant",
+        tritond_client::types::CnRole::Edge => "edge",
+        tritond_client::types::CnRole::Both => "both",
+    }
+}
+
 fn fmt_opt_ipv4(opt: &Option<std::net::Ipv4Addr>) -> String {
     opt.as_ref()
         .map(|ip| ip.to_string())
@@ -3057,15 +3065,16 @@ pub async fn cn_list(
     // Tab-separated table mirroring the existing `silo project vpc list`
     // approach: hand-rolled, no extra dependency, easy to grep / awk.
     println!(
-        "{:<36}  {:<24}  {:<9}  {:<15}  REGISTERED_AT",
-        "SERVER_UUID", "HOSTNAME", "STATE", "ADMIN_IP"
+        "{:<36}  {:<24}  {:<9}  {:<7}  {:<15}  REGISTERED_AT",
+        "SERVER_UUID", "HOSTNAME", "STATE", "ROLE", "ADMIN_IP"
     );
     for cn in cns {
         println!(
-            "{:<36}  {:<24}  {:<9}  {:<15}  {}",
+            "{:<36}  {:<24}  {:<9}  {:<7}  {:<15}  {}",
             cn.server_uuid,
             cn.hostname,
             cn_state_label(&cn.state),
+            cn_role_label(&cn.role),
             fmt_opt_ipv4(&cn.admin_ip),
             cn.registered_at.to_rfc3339(),
         );
@@ -3096,6 +3105,7 @@ pub async fn cn_show(
     }
     println!("Cn {}", cn.server_uuid);
     println!("  state:            {}", cn_state_label(&cn.state));
+    println!("  role:             {}", cn_role_label(&cn.role));
     println!("  hostname:         {}", cn.hostname);
     println!("  admin_ip:         {}", fmt_opt_ipv4(&cn.admin_ip));
     println!("  registered_at:    {}", cn.registered_at.to_rfc3339());
@@ -3156,6 +3166,37 @@ pub async fn cn_approve(
     println!(
         "Approved CN {}; bound api key id {}",
         cn.server_uuid, key_id
+    );
+    Ok(())
+}
+
+/// Set a CN placement label.
+pub async fn cn_label_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    server_uuid: Uuid,
+    role: tritond_client::types::CnRole,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let cn = client
+        .set_cn_role()
+        .server_uuid(server_uuid)
+        .body(tritond_client::types::SetCnRoleRequest { role })
+        .send()
+        .await
+        .context("set cn role")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cn)?);
+        return Ok(());
+    }
+    println!(
+        "Set CN {} role to {}",
+        cn.server_uuid,
+        cn_role_label(&cn.role)
     );
     Ok(())
 }

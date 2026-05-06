@@ -1883,6 +1883,24 @@ pub enum CnState {
     Disabled,
 }
 
+/// Placement role for a compute node.
+///
+/// M1 starts every CN as tenant-capable. Operators can mark a CN as
+/// edge-only, or both tenant and edge, before the edge placer starts
+/// assigning firehyve/fhrun north/south instances.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum CnRole {
+    /// Eligible for tenant workload placement.
+    #[default]
+    Tenant,
+    /// Eligible for north/south edge placement.
+    Edge,
+    /// Eligible for tenant workload and north/south edge placement.
+    Both,
+}
+
 /// A compute node registered with the control plane.
 ///
 /// Identity is the SmartOS `server_uuid` (read from
@@ -1900,6 +1918,11 @@ pub struct Cn {
     /// IP X"); not used as an authentication signal.
     pub admin_ip: Option<Ipv4Addr>,
     pub state: CnState,
+    /// Operator-controlled placement role. Defaults to tenant so
+    /// existing lab CNs keep accepting tenant workloads until
+    /// explicitly marked as edge-capable.
+    #[serde(default)]
+    pub role: CnRole,
     pub registered_at: DateTime<Utc>,
     /// When the Pending → Approved transition happened. `None`
     /// while still Pending.
@@ -1954,6 +1977,7 @@ pub struct CnView {
     pub hostname: String,
     pub admin_ip: Option<Ipv4Addr>,
     pub state: CnState,
+    pub role: CnRole,
     pub registered_at: DateTime<Utc>,
     pub approved_at: Option<DateTime<Utc>>,
     pub last_seen: Option<DateTime<Utc>>,
@@ -1975,6 +1999,7 @@ impl From<Cn> for CnView {
             hostname: cn.hostname,
             admin_ip: cn.admin_ip,
             state: cn.state,
+            role: cn.role,
             registered_at: cn.registered_at,
             approved_at: cn.approved_at,
             last_seen: cn.last_seen,

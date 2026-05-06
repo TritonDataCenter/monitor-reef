@@ -54,8 +54,8 @@ use tritond_api::{
     CnListQuery, CnPath, CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery,
     LoginRequest, NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
     OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest, RegisterCnRequest,
-    RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse, SiloPath, SiloTenantPath,
-    SshKeyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SiloPath,
+    SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
     TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
     TenantProjectPath, TenantProjectVpcNatGatewayPath, TenantProjectVpcPath,
     TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
@@ -4873,6 +4873,48 @@ impl TritondApi for TritondServiceImpl {
                 serde_json::json!({
                     "server_uuid": server_uuid,
                     "previous_state": cn.state,
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(CnView::from(cn)))
+    }
+
+    async fn set_cn_role(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+        body: TypedBody<SetCnRoleRequest>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::CnSetRole,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let server_uuid = path.into_inner().server_uuid;
+        let req = body.into_inner();
+
+        let cn = ctx
+            .store
+            .set_cn_role(server_uuid, req.role)
+            .await
+            .map_err(store_error_to_http)?;
+
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::CnSetRole,
+                request_id,
+                Some(format!("Cn::\"{server_uuid}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("Cn::\"{server_uuid}\"")),
+                },
+                serde_json::json!({
+                    "server_uuid": server_uuid,
+                    "role": cn.role,
                 }),
             )
             .await;

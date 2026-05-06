@@ -25,8 +25,8 @@ use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::Client;
 use tritond_client::types::{
-    AgentStatusRequest, ApproveCnRequest, ClaimJobRequest, CnState, LoginRequest,
-    OpenAutoApproveRequest, RegisterCnRequest,
+    AgentStatusRequest, ApproveCnRequest, ClaimJobRequest, CnRole, CnState, LoginRequest,
+    OpenAutoApproveRequest, RegisterCnRequest, SetCnRoleRequest,
 };
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
@@ -460,6 +460,57 @@ async fn list_cns_filters_by_state() {
 
     let all = session.list_cns().send().await.unwrap().into_inner();
     assert_eq!(all.len(), 2);
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn root_can_set_cn_role_label() {
+    let test = TestServer::start().await;
+    let anon = test.anonymous_client();
+    let root = root_session(&test).await;
+    let server_uuid = Uuid::new_v4();
+    let registered = anon
+        .agent_register()
+        .body(RegisterCnRequest {
+            server_uuid,
+            hostname: "edge-a".to_string(),
+            admin_ip: Some("10.99.99.40".parse().unwrap()),
+            sysinfo: fixture_sysinfo(server_uuid, "edge-a"),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let approved = root
+        .approve_cn()
+        .body(ApproveCnRequest {
+            code: registered.claim_code.unwrap(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(approved.role, CnRole::Tenant);
+
+    let updated = root
+        .set_cn_role()
+        .server_uuid(server_uuid)
+        .body(SetCnRoleRequest { role: CnRole::Edge })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(updated.role, CnRole::Edge);
+
+    let shown = root
+        .get_cn()
+        .server_uuid(server_uuid)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(shown.role, CnRole::Edge);
 
     test.close().await;
 }

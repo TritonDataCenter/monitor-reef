@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::types::NatGatewayRecord;
 use crate::{
-    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
@@ -2625,6 +2625,7 @@ impl Store for MemStore {
                 hostname,
                 admin_ip,
                 state: CnState::Pending,
+                role: existing.role,
                 registered_at: existing.registered_at,
                 approved_at: None,
                 last_seen: Some(now),
@@ -2663,6 +2664,7 @@ impl Store for MemStore {
             hostname,
             admin_ip,
             state,
+            role: CnRole::default(),
             registered_at: now,
             approved_at: if auto_approved { Some(now) } else { None },
             last_seen: Some(now),
@@ -2743,6 +2745,16 @@ impl Store for MemStore {
             .cloned()
             .collect();
         Ok(cns)
+    }
+
+    async fn set_cn_role(&self, server_uuid: Uuid, role: CnRole) -> Result<Cn, StoreError> {
+        let mut guard = self.inner.write().await;
+        let cn = guard
+            .cns_by_server_uuid
+            .get_mut(&server_uuid)
+            .ok_or(StoreError::NotFound)?;
+        cn.role = role;
+        Ok(cn.clone())
     }
 
     async fn approve_cn(
@@ -6332,6 +6344,7 @@ mod tests {
         assert!(cn.bound_api_key_id.is_none());
         assert!(cn.pending_credential.is_none());
         assert!(cn.approved_at.is_none());
+        assert_eq!(cn.role, CnRole::Tenant);
     }
 
     #[tokio::test]
@@ -6551,6 +6564,33 @@ mod tests {
         assert_eq!(approved[0].server_uuid, a.server_uuid);
         let all = store.list_cns(None).await.unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn set_cn_role_updates_registered_cn() {
+        let store = MemStore::new();
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        store
+            .register_cn(id, "edge-a".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+
+        let updated = store.set_cn_role(id, CnRole::Edge).await.unwrap();
+        assert_eq!(updated.role, CnRole::Edge);
+        assert_eq!(store.get_cn(id).await.unwrap().role, CnRole::Edge);
+
+        let refreshed = store
+            .register_cn(id, "edge-a-renamed".into(), None, sysinfo_fixture(), now)
+            .await
+            .unwrap();
+        assert_eq!(refreshed.role, CnRole::Edge);
+
+        let err = store
+            .set_cn_role(Uuid::new_v4(), CnRole::Both)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     // ------------------------------------------------------------------

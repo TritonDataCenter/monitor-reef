@@ -467,6 +467,8 @@ pub enum Action {
     CnApprove,
     /// Disable a CN; revokes the bound key.
     CnDisable,
+    /// Set a CN's operator-controlled placement role.
+    CnSetRole,
     /// Read the current auto-approve window state.
     AutoApproveGet,
     /// Open (or replace) the auto-approve window.
@@ -566,6 +568,7 @@ impl Action {
             Action::CnGet => "cn_get",
             Action::CnApprove => "cn_approve",
             Action::CnDisable => "cn_disable",
+            Action::CnSetRole => "cn_set_role",
             Action::AutoApproveGet => "auto_approve_get",
             Action::AutoApproveSet => "auto_approve_set",
             Action::AutoApproveClear => "auto_approve_clear",
@@ -1134,6 +1137,7 @@ fn is_read_action(action: Action) -> bool {
         // operator-only via Cedar.
         | Action::CnApprove
         | Action::CnDisable
+        | Action::CnSetRole
         | Action::AutoApproveSet
         | Action::AutoApproveClear => false,
         // CN reads.

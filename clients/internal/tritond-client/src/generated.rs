@@ -992,6 +992,111 @@ pub mod types {
         }
     }
 
+    #[doc = "Placement role for a compute node.\n\nM1 starts every CN as tenant-capable. Operators can mark a CN as edge-only, or both tenant and edge, before the edge placer starts assigning firehyve/fhrun north/south instances."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Placement role for a compute node.\\n\\nM1 starts every CN as tenant-capable. Operators can mark a CN as edge-only, or both tenant and edge, before the edge placer starts assigning firehyve/fhrun north/south instances.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Eligible for tenant workload placement.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"tenant\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Eligible for north/south edge placement.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"edge\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Eligible for tenant workload and north/south edge placement.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"both\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum CnRole {
+        #[doc = "Eligible for tenant workload placement."]
+        #[serde(rename = "tenant")]
+        Tenant,
+        #[doc = "Eligible for north/south edge placement."]
+        #[serde(rename = "edge")]
+        Edge,
+        #[doc = "Eligible for tenant workload and north/south edge placement."]
+        #[serde(rename = "both")]
+        Both,
+    }
+
+    impl ::std::fmt::Display for CnRole {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Tenant => f.write_str("tenant"),
+                Self::Edge => f.write_str("edge"),
+                Self::Both => f.write_str("both"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for CnRole {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "tenant" => Ok(Self::Tenant),
+                "edge" => Ok(Self::Edge),
+                "both" => Ok(Self::Both),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for CnRole {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for CnRole {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for CnRole {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Lifecycle state of a compute-node registration."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1108,6 +1213,7 @@ pub mod types {
     #[doc = "  \"required\": ["]
     #[doc = "    \"hostname\","]
     #[doc = "    \"registered_at\","]
+    #[doc = "    \"role\","]
     #[doc = "    \"server_uuid\","]
     #[doc = "    \"state\","]
     #[doc = "    \"sysinfo\""]
@@ -1165,6 +1271,9 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
+    #[doc = "    \"role\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CnRole\""]
+    #[doc = "    },"]
     #[doc = "    \"server_uuid\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
@@ -1199,6 +1308,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_status: ::std::option::Option<::serde_json::Value>,
         pub registered_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub role: CnRole,
         pub server_uuid: ::uuid::Uuid,
         pub state: CnState,
         pub sysinfo: ::serde_json::Value,
@@ -5290,6 +5400,38 @@ pub mod types {
         FloatingIp { floating_ip_id: ::uuid::Uuid },
     }
 
+    #[doc = "Request body for `POST /v2/cns/{server_uuid}/role`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/cns/{server_uuid}/role`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"role\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"role\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CnRole\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct SetCnRoleRequest {
+        pub role: CnRole,
+    }
+
+    impl SetCnRoleRequest {
+        pub fn builder() -> builder::SetCnRoleRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "A tenancy boundary. Every Triton Cloud resource ultimately rolls up to a silo; in production each silo is bound to its own identity provider. Phase 0 carries only the bare-minimum identifying fields."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6967,6 +7109,7 @@ pub mod types {
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
             >,
+            role: ::std::result::Result<super::CnRole, ::std::string::String>,
             server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             state: ::std::result::Result<super::CnState, ::std::string::String>,
             sysinfo: ::std::result::Result<::serde_json::Value, ::std::string::String>,
@@ -6984,6 +7127,7 @@ pub mod types {
                     last_seen: Ok(Default::default()),
                     last_status: Ok(Default::default()),
                     registered_at: Err("no value supplied for registered_at".to_string()),
+                    role: Err("no value supplied for role".to_string()),
                     server_uuid: Err("no value supplied for server_uuid".to_string()),
                     state: Err("no value supplied for state".to_string()),
                     sysinfo: Err("no value supplied for sysinfo".to_string()),
@@ -7088,6 +7232,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for registered_at: {e}"));
                 self
             }
+            pub fn role<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CnRole>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.role = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for role: {e}"));
+                self
+            }
             pub fn server_uuid<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -7135,6 +7289,7 @@ pub mod types {
                     last_seen: value.last_seen?,
                     last_status: value.last_status?,
                     registered_at: value.registered_at?,
+                    role: value.role?,
                     server_uuid: value.server_uuid?,
                     state: value.state?,
                     sysinfo: value.sysinfo?,
@@ -7154,6 +7309,7 @@ pub mod types {
                     last_seen: Ok(value.last_seen),
                     last_status: Ok(value.last_status),
                     registered_at: Ok(value.registered_at),
+                    role: Ok(value.role),
                     server_uuid: Ok(value.server_uuid),
                     state: Ok(value.state),
                     sysinfo: Ok(value.sysinfo),
@@ -11725,6 +11881,49 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct SetCnRoleRequest {
+            role: ::std::result::Result<super::CnRole, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for SetCnRoleRequest {
+            fn default() -> Self {
+                Self {
+                    role: Err("no value supplied for role".to_string()),
+                }
+            }
+        }
+
+        impl SetCnRoleRequest {
+            pub fn role<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CnRole>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.role = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for role: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<SetCnRoleRequest> for super::SetCnRoleRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetCnRoleRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { role: value.role? })
+            }
+        }
+
+        impl ::std::convert::From<super::SetCnRoleRequest> for SetCnRoleRequest {
+            fn from(value: super::SetCnRoleRequest) -> Self {
+                Self {
+                    role: Ok(value.role),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Silo {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -12722,6 +12921,11 @@ impl Client {
     #[doc = "Disable a compute node. Revokes the bound API key and\n\nflips state to Disabled. The record is retained for audit visibility; a second call is idempotent.\n\nSends a `POST` request to `/v2/cns/{server_uuid}/disable`\n\n```ignore\nlet response = client.disable_cn()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
     pub fn disable_cn(&self) -> builder::DisableCn<'_> {
         builder::DisableCn::new(self)
+    }
+
+    #[doc = "Set the placement role for a compute node. Operator-only\n\nSends a `POST` request to `/v2/cns/{server_uuid}/role`\n\n```ignore\nlet response = client.set_cn_role()\n    .server_uuid(server_uuid)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_cn_role(&self) -> builder::SetCnRole<'_> {
+        builder::SetCnRole::new(self)
     }
 
     #[doc = "Liveness check. Returns service status and version string\n\nSends a `GET` request to `/v2/health`\n\n```ignore\nlet response = client.health()\n    .send()\n    .await;\n```"]
@@ -15126,6 +15330,107 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "disable_cn",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::set_cn_role`]\n\n[`Client::set_cn_role`]: super::Client::set_cn_role"]
+    #[derive(Debug, Clone)]
+    pub struct SetCnRole<'a> {
+        client: &'a super::Client,
+        server_uuid: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::SetCnRoleRequest, String>,
+    }
+
+    impl<'a> SetCnRole<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                server_uuid: Err("server_uuid was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn server_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.server_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for server_uuid failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetCnRoleRequest>,
+            <V as std::convert::TryInto<types::SetCnRoleRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetCnRoleRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SetCnRoleRequest,
+                ) -> types::builder::SetCnRoleRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/cns/{server_uuid}/role`"]
+        pub async fn send(self) -> Result<ResponseValue<types::CnView>, Error<types::Error>> {
+            let Self {
+                client,
+                server_uuid,
+                body,
+            } = self;
+            let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetCnRoleRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/cns/{}/role",
+                client.baseurl,
+                encode_path(&server_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_cn_role",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

@@ -1055,6 +1055,54 @@
         }
       }
     },
+    "/v2/cns/{server_uuid}/role": {
+      "post": {
+        "tags": [
+          "cns"
+        ],
+        "summary": "Set the placement role for a compute node. Operator-only.",
+        "operationId": "set_cn_role",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCnRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CnView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/health": {
       "get": {
         "tags": [
@@ -5325,6 +5373,32 @@
           }
         }
       },
+      "CnRole": {
+        "description": "Placement role for a compute node.\n\nM1 starts every CN as tenant-capable. Operators can mark a CN as edge-only, or both tenant and edge, before the edge placer starts assigning firehyve/fhrun north/south instances.",
+        "oneOf": [
+          {
+            "description": "Eligible for tenant workload placement.",
+            "type": "string",
+            "enum": [
+              "tenant"
+            ]
+          },
+          {
+            "description": "Eligible for north/south edge placement.",
+            "type": "string",
+            "enum": [
+              "edge"
+            ]
+          },
+          {
+            "description": "Eligible for tenant workload and north/south edge placement.",
+            "type": "string",
+            "enum": [
+              "both"
+            ]
+          }
+        ]
+      },
       "CnState": {
         "description": "Lifecycle state of a compute-node registration.",
         "oneOf": [
@@ -5396,6 +5470,9 @@
             "type": "string",
             "format": "date-time"
           },
+          "role": {
+            "$ref": "#/components/schemas/CnRole"
+          },
           "server_uuid": {
             "type": "string",
             "format": "uuid"
@@ -5408,6 +5485,7 @@
         "required": [
           "hostname",
           "registered_at",
+          "role",
           "server_uuid",
           "state",
           "sysinfo"
@@ -7785,6 +7863,18 @@
               "kind"
             ]
           }
+        ]
+      },
+      "SetCnRoleRequest": {
+        "description": "Request body for `POST /v2/cns/{server_uuid}/role`.",
+        "type": "object",
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/CnRole"
+          }
+        },
+        "required": [
+          "role"
         ]
       },
       "Silo": {
