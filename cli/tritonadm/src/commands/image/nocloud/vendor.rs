@@ -21,6 +21,7 @@ pub mod centosstream;
 pub mod debian;
 pub mod fedora;
 pub mod freebsd;
+pub mod opensuse;
 pub mod oracle;
 pub mod rocky;
 pub mod talos;
@@ -42,6 +43,7 @@ pub enum Vendor {
     Debian,
     Fedora,
     Freebsd,
+    Opensuse,
     Oracle,
     Rocky,
     Talos,
@@ -106,6 +108,7 @@ pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
         Vendor::Debian => Box::new(debian::Debian),
         Vendor::Fedora => Box::new(fedora::Fedora),
         Vendor::Freebsd => Box::new(freebsd::FreeBsd),
+        Vendor::Opensuse => Box::new(opensuse::OpenSuse),
         Vendor::Oracle => Box::new(oracle::Oracle),
         Vendor::Rocky => Box::new(rocky::Rocky),
         Vendor::Talos => Box::new(talos::Talos),
