@@ -21,6 +21,7 @@ pub mod centosstream;
 pub mod debian;
 pub mod fedora;
 pub mod freebsd;
+pub mod omnios;
 pub mod openbsd;
 pub mod opensuse;
 pub mod oracle;
@@ -44,6 +45,7 @@ pub enum Vendor {
     Debian,
     Fedora,
     Freebsd,
+    Omnios,
     Openbsd,
     Opensuse,
     Oracle,
@@ -67,6 +69,10 @@ pub enum SourceFormat {
     // touch the convert step.
     #[allow(dead_code)]
     Raw,
+    /// VMDK (VMware Virtual Disk). Used by OmniOS's cloud images.
+    /// The release-resolution path is wired up; the conversion step
+    /// is deferred pending a vendored vmdk reader.
+    Vmdk,
 }
 
 pub struct ResolvedImage {
@@ -110,6 +116,7 @@ pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
         Vendor::Debian => Box::new(debian::Debian),
         Vendor::Fedora => Box::new(fedora::Fedora),
         Vendor::Freebsd => Box::new(freebsd::FreeBsd),
+        Vendor::Omnios => Box::new(omnios::Omnios),
         Vendor::Openbsd => Box::new(openbsd::OpenBsd),
         Vendor::Opensuse => Box::new(opensuse::OpenSuse),
         Vendor::Oracle => Box::new(oracle::Oracle),

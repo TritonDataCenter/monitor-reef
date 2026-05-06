@@ -290,6 +290,7 @@ async fn build_image(
             SourceFormat::Qcow2 => "qcow2",
             SourceFormat::Raw => "raw",
             SourceFormat::Xz => "xz",
+            SourceFormat::Vmdk => "vmdk",
         }
     );
     write_to_zvol(src_path, src_format, zvol_rdsk, virtual_size_bytes, cancel).await?;
@@ -369,6 +370,11 @@ async fn read_virtual_size(path: &Path, format: SourceFormat) -> Result<u64> {
             .await
             .context("xz footer parse task panicked")?
         }
+        SourceFormat::Vmdk => Err(anyhow::anyhow!(
+            "VMDK conversion is not yet implemented; \
+             release resolution works for `--vendor omnios --dry-run`, \
+             but the full pipeline needs a vendored vmdk reader."
+        )),
     }
 }
 
@@ -510,6 +516,9 @@ async fn write_to_zvol(
                 output.inner.flush().context("flush zvol")?;
                 Ok(())
             }
+            SourceFormat::Vmdk => Err(anyhow::anyhow!(
+                "VMDK conversion is not yet implemented; pending a vendored vmdk reader"
+            )),
         }
     })
     .await

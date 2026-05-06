@@ -275,6 +275,7 @@ fn print_plan(
             vendor::SourceFormat::Qcow2 => "qcow2",
             vendor::SourceFormat::Raw => "raw",
             vendor::SourceFormat::Xz => "xz",
+            vendor::SourceFormat::Vmdk => "vmdk",
         }
     );
     match &resolved.expected_sha256 {
