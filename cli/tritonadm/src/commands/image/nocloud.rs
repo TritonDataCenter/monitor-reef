@@ -43,8 +43,15 @@ impl std::fmt::Display for Target {
 }
 
 pub struct FetchOpts {
-    pub vendor: Vendor,
-    pub release: String,
+    /// Built-in vendor profile. Set when invoked as
+    /// `--vendor X --release Y`; `None` when `vendor_toml` is set.
+    pub vendor: Option<Vendor>,
+    /// Vendor-specific release token. Required with `vendor`; unused
+    /// with `vendor_toml`.
+    pub release: Option<String>,
+    /// External TOML profile path. Set when invoked as
+    /// `--vendor-toml PATH`; mutually exclusive with `vendor`.
+    pub vendor_toml: Option<PathBuf>,
     pub output_dir: Option<PathBuf>,
     pub workdir: Option<PathBuf>,
     pub insecure_no_verify: bool,
@@ -76,15 +83,28 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
     // Vendor resolution is just HTTP, so it runs anywhere — doing it
     // before the SmartOS-specific preflights lets `--dry-run` exercise
     // release resolution + verifier wiring on a dev box.
-    let vendor_profile = vendor::lookup(opts.vendor);
     let http = triton_tls::build_http_client(false)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
 
-    let mut resolved = vendor_profile
-        .resolve(&opts.release, &http)
-        .await
-        .with_context(|| format!("resolve {}/{}", opts.vendor, opts.release))?;
+    let (vendor_label, mut resolved) = match (&opts.vendor_toml, opts.vendor, &opts.release) {
+        (Some(path), None, _) => vendor::custom_toml::load(path)
+            .await
+            .with_context(|| format!("load TOML profile {}", path.display()))?,
+        (None, Some(vendor), Some(release)) => {
+            let profile = vendor::lookup(vendor);
+            let resolved = profile
+                .resolve(release, &http)
+                .await
+                .with_context(|| format!("resolve {vendor}/{release}"))?;
+            (vendor.to_string(), resolved)
+        }
+        // clap's `required_unless_present` / `conflicts_with_all`
+        // already enforces the valid combinations, so anything else
+        // means the dispatcher in image.rs got out of sync with this
+        // module — a programmer bug, not user input.
+        _ => anyhow::bail!("internal: invalid (--vendor, --release, --vendor-toml) combination"),
+    };
 
     // `--expected-sha256 <hex>` overrides whatever verifier the vendor
     // chose with a pinned-hash check. Useful for vendors that don't
@@ -102,7 +122,7 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
         resolved.expected_sha256 = Some(hex);
     }
 
-    let stub = format!("{}-{}", opts.vendor, resolved.series);
+    let stub = format!("{}-{}", vendor_label, resolved.series);
     let workdir = opts
         .workdir
         .clone()
@@ -121,7 +141,14 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
             .clone()
             .or_else(|| default_dataset().ok())
             .unwrap_or_else(|| "(default: zones/<zone>/data, resolved at runtime)".to_string());
-        print_plan(&opts, &resolved, &dataset, &workdir, &output_dir);
+        print_plan(
+            &opts,
+            &vendor_label,
+            &resolved,
+            &dataset,
+            &workdir,
+            &output_dir,
+        );
         return Ok(());
     }
 
@@ -158,11 +185,10 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
     let _lock_guard = acquire_workdir_lock(&workdir)
         .with_context(|| format!("acquire workdir lock for {}", workdir.display()))?;
 
-    let vendor_str = opts.vendor.to_string();
     let outputs = pipeline::run(
         resolved,
         pipeline::PipelineOptions {
-            vendor: &vendor_str,
+            vendor: &vendor_label,
             workdir,
             output_dir,
             zfs_dataset: dataset,
@@ -251,6 +277,7 @@ async fn push_to_imgapi(opts: &FetchOpts, outputs: &pipeline::PipelineOutputs) -
 
 fn print_plan(
     opts: &FetchOpts,
+    vendor_label: &str,
     resolved: &vendor::ResolvedImage,
     dataset: &str,
     workdir: &std::path::Path,
@@ -261,11 +288,11 @@ fn print_plan(
         .path_segments()
         .and_then(|mut s| s.next_back())
         .unwrap_or("(unknown)");
-    let stub = format!("{}-{}-{}", opts.vendor, resolved.series, resolved.version);
+    let stub = format!("{}-{}-{}", vendor_label, resolved.series, resolved.version);
 
     println!("Resolved upstream image:");
     println!("  Target:        {}", opts.target);
-    println!("  Vendor:        {}", opts.vendor);
+    println!("  Vendor:        {}", vendor_label);
     println!("  Codename:      {}", resolved.series);
     println!("  Version:       {}", resolved.version);
     println!("  URL:           {}", resolved.url);
@@ -292,8 +319,19 @@ fn print_plan(
     }
 
     println!();
+    if resolved.url.scheme() == "file" {
+        // file:// sources are read in place — no workdir cache.
+        println!("Source file (read in place):");
+        match resolved.url.to_file_path() {
+            Ok(p) => println!("  {}", p.display()),
+            Err(()) => println!("  {} (not a usable file:// path)", resolved.url),
+        }
+        println!();
+    }
     println!("Would write to:");
-    println!("  Cache file:    {}", workdir.join(src_filename).display());
+    if resolved.url.scheme() != "file" {
+        println!("  Cache file:    {}", workdir.join(src_filename).display());
+    }
     println!(
         "  Image:         {}",
         output_dir.join(format!("{stub}.x86_64.zfs.gz")).display()
@@ -312,7 +350,7 @@ fn print_plan(
     println!("Manifest fields that would be set:");
     println!(
         "  name:          {}-{}-nocloud",
-        opts.vendor, resolved.series
+        vendor_label, resolved.series
     );
     println!("  version:       {}", resolved.version);
     println!("  os:            {}", resolved.os);

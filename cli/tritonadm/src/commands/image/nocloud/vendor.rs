@@ -18,6 +18,7 @@ pub mod alma;
 pub mod alpine;
 pub mod arch;
 pub mod centosstream;
+pub mod custom_toml;
 pub mod debian;
 pub mod dirlist;
 pub mod fedora;
@@ -63,14 +64,11 @@ impl std::fmt::Display for Vendor {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourceFormat {
     Qcow2,
     Xz,
-    // Raw is wired through the pipeline but not currently emitted by
-    // any vendor — kept so that future raw-image vendors don't need to
-    // touch the convert step.
-    #[allow(dead_code)]
     Raw,
     /// VMDK (VMware Virtual Disk). Used by OmniOS's cloud images.
     /// The release-resolution path is wired up; the conversion step

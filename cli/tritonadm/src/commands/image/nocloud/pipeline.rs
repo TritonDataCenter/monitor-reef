@@ -98,9 +98,7 @@ async fn run_inner(
     // leftovers; we never touch datasets named anything else.
     sweep_stale_datasets(&opts.zfs_dataset).await;
 
-    let source_sha256 = ensure_verified_source(resolved, opts, cancel).await?;
-
-    let downloaded = opts.workdir.join(filename_from_url(&resolved.url)?);
+    let (downloaded, source_sha256) = ensure_verified_source(resolved, opts, cancel).await?;
 
     let virtual_size_bytes = read_virtual_size(&downloaded, resolved.format).await?;
     let virtual_size_mib = virtual_size_bytes.div_ceil(1024 * 1024);
@@ -144,14 +142,28 @@ fn filename_from_url(url: &url::Url) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("cannot derive filename from {}", url))
 }
 
-/// Download (if needed), hash, and verify. On verification failure of
-/// a *cached* file, delete it and try once more with a fresh download —
-/// upstream serial may have moved while the cache survived.
+/// Download (if needed), hash, and verify. Returns the path to the
+/// (now-verified) source bytes and their sha256.
+///
+/// For `file://` URLs (used by TOML profiles pointing at operator-
+/// staged images), the source is read in place — no download, no
+/// caching, no redownload-on-cache-fail. The verifier still runs;
+/// for `Sha256Pinned` (the only verifier a TOML can express) that's
+/// just a hex compare against the file's hash.
+///
+/// For http(s) URLs, the file is cached in `opts.workdir`. On
+/// verification failure of a *cached* file, delete it and try once
+/// more with a fresh download — upstream serial may have moved
+/// while the cache survived.
 async fn ensure_verified_source(
     resolved: &ResolvedImage,
     opts: &PipelineOptions<'_>,
     cancel: &Arc<AtomicBool>,
-) -> Result<String> {
+) -> Result<(PathBuf, String)> {
+    if resolved.url.scheme() == "file" {
+        return verify_local_file(resolved, opts).await;
+    }
+
     let src_filename = filename_from_url(&resolved.url)?;
     let downloaded = opts.workdir.join(&src_filename);
 
@@ -169,7 +181,7 @@ async fn ensure_verified_source(
 
     if opts.insecure_no_verify {
         eprintln!("WARNING: --insecure-no-verify, skipping verification");
-        return Ok(sha256);
+        return Ok((downloaded, sha256));
     }
 
     match resolved
@@ -177,7 +189,7 @@ async fn ensure_verified_source(
         .verify(&downloaded, &sha256, opts.http)
         .await
     {
-        Ok(()) => Ok(sha256),
+        Ok(()) => Ok((downloaded, sha256)),
         Err(first_err) if started_with_cache => {
             eprintln!(
                 "Cached file failed verification ({first_err}); discarding and \
@@ -198,10 +210,49 @@ async fn ensure_verified_source(
                 .verify(&downloaded, &sha256, opts.http)
                 .await
                 .context("verification failed after fresh download")?;
-            Ok(sha256)
+            Ok((downloaded, sha256))
         }
         Err(e) => Err(e.context("verification failed")),
     }
+}
+
+/// `file://` source: the operator has already staged the bytes
+/// somewhere on the local filesystem (typically because the upstream
+/// is a wrapper format we don't decode, or has no published checksum
+/// to fetch over the network). We hash the file in place and run the
+/// verifier — no download phase, no workdir caching.
+async fn verify_local_file(
+    resolved: &ResolvedImage,
+    opts: &PipelineOptions<'_>,
+) -> Result<(PathBuf, String)> {
+    let path = resolved.url.to_file_path().map_err(|()| {
+        anyhow::anyhow!(
+            "{} is not a usable file:// URL (need an absolute path, e.g. file:///abs/path)",
+            resolved.url
+        )
+    })?;
+    if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+        anyhow::bail!(
+            "file:// source does not exist: {} \
+             (did the operator forget to decompress / move the staged image?)",
+            path.display()
+        );
+    }
+    eprintln!("Using local file: {}", path.display());
+    eprintln!("Hashing source image ...");
+    let sha256 = verify::sha256_file(&path).await?;
+
+    if opts.insecure_no_verify {
+        eprintln!("WARNING: --insecure-no-verify, skipping verification");
+        return Ok((path, sha256));
+    }
+
+    resolved
+        .verifier
+        .verify(&path, &sha256, opts.http)
+        .await
+        .context("verification failed")?;
+    Ok((path, sha256))
 }
 
 /// Datasets younger than this are assumed to be in active use by

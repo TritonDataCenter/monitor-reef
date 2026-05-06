@@ -198,12 +198,19 @@ pub enum ImageCommand {
     /// it into a SmartOS/Triton zvol image + IMGAPI manifest.
     #[command(name = "fetch-nocloud")]
     FetchNocloud {
-        /// Upstream vendor profile.
-        #[arg(long, value_enum)]
-        vendor: nocloud::Vendor,
-        /// Vendor-specific release token (e.g. "noble", "jammy", "latest")
-        #[arg(long)]
-        release: String,
+        /// Upstream vendor profile. Mutually exclusive with --vendor-toml.
+        #[arg(long, value_enum, required_unless_present = "vendor_toml")]
+        vendor: Option<nocloud::Vendor>,
+        /// Vendor-specific release token (e.g. "noble", "jammy", "latest").
+        /// Required with --vendor; ignored with --vendor-toml.
+        #[arg(long, required_unless_present = "vendor_toml")]
+        release: Option<String>,
+        /// Path to a TOML profile that pins a fully-resolved
+        /// (url, sha256, metadata) tuple. See
+        /// docs/design/examples/nocloud-vendors/ for the schema and
+        /// worked examples. Mutually exclusive with --vendor.
+        #[arg(long, value_name = "PATH", conflicts_with_all = ["vendor", "release"])]
+        vendor_toml: Option<PathBuf>,
         /// Where to deliver the produced manifest + image:
         ///   `file`     leave artifacts in --output-dir (default);
         ///   `smartos`  shell `imgadm install` against the local SmartOS
@@ -747,6 +754,7 @@ impl ImageCommand {
         if let ImageCommand::FetchNocloud {
             vendor,
             release,
+            vendor_toml,
             target,
             output_dir,
             workdir,
@@ -759,6 +767,7 @@ impl ImageCommand {
             return nocloud::run(nocloud::FetchOpts {
                 vendor,
                 release,
+                vendor_toml,
                 output_dir,
                 workdir,
                 insecure_no_verify,
