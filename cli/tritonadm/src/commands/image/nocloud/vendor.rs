@@ -75,10 +75,10 @@ pub enum SourceFormat {
     /// The release-resolution path is wired up; the conversion step
     /// is deferred pending a vendored vmdk reader.
     Vmdk,
-    /// gzipped tarball of a VMware VM directory containing a VMDK
-    /// descriptor + extent files. Used by SmartOS (`smartos-<rel>.vmwarevm.tar.gz`).
-    /// The pipeline extracts the tarball before opening the VMDK.
-    VmdkInTarGz,
+    /// gzipped raw disk image. Used by SmartOS
+    /// (`smartos-<rel>-USB.img.gz`). The pipeline streams a
+    /// gzip decoder straight into the zvol, no intermediate file.
+    RawGz,
 }
 
 pub struct ResolvedImage {

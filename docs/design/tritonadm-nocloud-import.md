@@ -222,9 +222,10 @@ device is opened directly.
    - `Vmdk` — open via `vmdkrs::VmdkReader::open` (inside
      `spawn_blocking` because the crate spins its own internal
      tokio runtime) and read `image_size` from the header chain.
-   - `VmdkInTarGz` — gunzip + untar to a sibling
-     `<basename>.extracted/` dir (idempotent across reruns), then
-     find the smallest `.vmdk` (the descriptor) and open as Vmdk.
+   - `RawGz` — read the trailing 4-byte gzip `ISIZE` field
+     (uncompressed size mod 2^32). SmartOS USB images are well
+     under 4 GiB so the modulus is not a concern; we sanity-check
+     the gzip magic at offset 0 to refuse non-gzip input early.
 5. Create a zvol of exactly that size (rounded up to MiB):
    `zfs create -V <size>m <dataset>/<build-uuid>`.
 6. Stream the decoded raw bytes into `/dev/zvol/rdsk/<dataset>`:
@@ -235,9 +236,11 @@ device is opened directly.
    - `Xz` — `lzma_rs::xz_decompress` driving a `ProgressWriter`
      wrapper on the zvol, again inside `spawn_blocking`. No
      intermediate `.raw` file.
-   - `Vmdk` / `VmdkInTarGz` — `VmdkReadAdapter` wraps the crate's
-     offset-addressed `read_at_offset` API as a `Read` impl so the
-     same 1 MiB copy loop drives it.
+   - `Vmdk` — `VmdkReadAdapter` wraps the crate's offset-addressed
+     `read_at_offset` API as a `Read` impl so the same 1 MiB copy
+     loop drives it.
+   - `RawGz` — `flate2::read::GzDecoder` wraps the source file and
+     the same 1 MiB copy loop drives it. SmartOS uses this format.
 
    **Sparse skip**: each 1 MiB chunk is checked for `all == 0`
    bytes. If yes, the writer seeks past the chunk instead of
@@ -361,7 +364,7 @@ cli/tritonadm/src/commands/
                                  #   shared parse_sums_file / parse_bsd_sums_file
             pipeline.rs          # download → verify → zvol → snap → send → gzip;
                                  #   sparse-skip in copy_with_progress;
-                                 #   tar+flate2 extract for VmdkInTarGz
+                                 #   gzip ISIZE for RawGz virtual-size
             zfs.rs               # zfs(8) shellout (create_zvol, snap,
                                  #   send_to_file, destroy_recursive, sweep helpers)
             manifest.rs          # build serde_json::Value manifest from ResolvedImage
@@ -407,10 +410,8 @@ Implemented and verified in this builder NGZ:
   producing a valid `*.zfs.gz` + `*.json` pair.
 - Source formats: **qcow2**, **raw**, **xz** (single-stream, virtual
   size read from the trailing Index without decompressing), **vmdk**
-  (via vendored `libs/vmdk`), and **vmdk-in-tar.gz** (gunzip + untar
-  to a sibling `.extracted/` dir, then point the vmdk reader at the
-  smallest `.vmdk` — the descriptor — so it can resolve flat
-  extents alongside).
+  (via vendored `libs/vmdk`), and **raw.gz** (gzip-decoded straight
+  to the zvol; SmartOS USB image).
 - `image_size` is derived from the actual upstream virtual disk size
   rather than a hardcoded constant.
 - `--vendor` is a clap `ValueEnum`; manifest UUIDs are stable

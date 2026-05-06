@@ -276,7 +276,7 @@ fn print_plan(
             vendor::SourceFormat::Raw => "raw",
             vendor::SourceFormat::Xz => "xz",
             vendor::SourceFormat::Vmdk => "vmdk",
-            vendor::SourceFormat::VmdkInTarGz => "vmdk-in-tar.gz",
+            vendor::SourceFormat::RawGz => "raw.gz",
         }
     );
     match &resolved.expected_sha256 {

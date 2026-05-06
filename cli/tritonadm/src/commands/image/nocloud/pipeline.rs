@@ -291,7 +291,7 @@ async fn build_image(
             SourceFormat::Raw => "raw",
             SourceFormat::Xz => "xz",
             SourceFormat::Vmdk => "vmdk",
-            SourceFormat::VmdkInTarGz => "vmdk-in-tar.gz",
+            SourceFormat::RawGz => "raw.gz",
         }
     );
     write_to_zvol(src_path, src_format, zvol_rdsk, virtual_size_bytes, cancel).await?;
@@ -386,104 +386,36 @@ async fn read_virtual_size(path: &Path, format: SourceFormat) -> Result<u64> {
             .await
             .context("vmdk header read task panicked")?
         }
-        SourceFormat::VmdkInTarGz => tokio::task::spawn_blocking(move || -> Result<u64> {
-            let vmdk_path = extract_vmdk_in_tar_gz(&path)?;
-            let path_str = vmdk_path.to_str().ok_or_else(|| {
-                anyhow::anyhow!("extracted vmdk path is not utf-8: {vmdk_path:?}")
-            })?;
-            let reader = vmdkrs::vmdk_reader::VmdkReader::open(path_str)
-                .map_err(|e| anyhow::anyhow!("open vmdk {path_str}: {e}"))?;
-            Ok(reader.image_size)
-        })
-        .await
-        .context("vmdk-in-tar.gz extract+header task panicked")?,
-    }
-}
-
-/// Extract a `.vmwarevm.tar.gz` to a sibling directory, returning the
-/// path of the `.vmdk` descriptor file inside it. Idempotent: if the
-/// extracted directory already exists, we trust it. The `vmdk-rs`
-/// reader resolves descriptor → extent file references relative to
-/// the descriptor's location, so the rest of `SmartOS.vmwarevm/`
-/// (the `.img` extent) needs to land in the same dir.
-fn extract_vmdk_in_tar_gz(tarball: &Path) -> Result<PathBuf> {
-    let parent = tarball.parent().unwrap_or_else(|| Path::new("."));
-    let stem = tarball
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| anyhow::anyhow!("tarball path has no filename: {tarball:?}"))?;
-    // Trim the longest matching compound suffix.
-    let dir_stem = stem
-        .strip_suffix(".tar.gz")
-        .or_else(|| stem.strip_suffix(".tgz"))
-        .unwrap_or(stem);
-    let extracted = parent.join(format!("{dir_stem}.extracted"));
-
-    // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; std::fs is fine here"
-    let already_extracted = extracted.exists();
-    if !already_extracted {
-        eprintln!("Extracting {} → {}", tarball.display(), extracted.display());
-        let tarball_owned = tarball.to_path_buf();
-        // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; tar+flate2 drive sync Read"
-        let f = std::fs::File::open(&tarball_owned)
-            .with_context(|| format!("open {}", tarball_owned.display()))?;
-        let gz = flate2::read::GzDecoder::new(f);
-        let mut archive = tar::Archive::new(gz);
-        archive.set_preserve_permissions(false);
-        // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; std::fs is fine here"
-        std::fs::create_dir_all(&extracted)
-            .with_context(|| format!("mkdir {}", extracted.display()))?;
-        archive
-            .unpack(&extracted)
-            .with_context(|| format!("untar to {}", extracted.display()))?;
-    } else {
-        eprintln!("Reusing extracted {}", extracted.display());
-    }
-
-    find_vmdk_descriptor(&extracted)?
-        .ok_or_else(|| anyhow::anyhow!("no .vmdk descriptor inside {}", extracted.display()))
-}
-
-/// Find the smallest `.vmdk` file in a directory (recursively),
-/// which is the text descriptor — the larger ones are extent
-/// blobs we don't want to open directly. SmartOS's tarball ships
-/// `SmartOS.vmwarevm/SmartOS.vmdk` (~325 bytes) referencing a
-/// sibling `smartos.img`; that 325-byte descriptor is what
-/// `vmdk-rs` should open.
-fn find_vmdk_descriptor(dir: &Path) -> Result<Option<PathBuf>> {
-    let mut best: Option<(u64, PathBuf)> = None;
-    walk_vmdk_files(dir, &mut |path, size| match &best {
-        Some((b, _)) if *b <= size => {}
-        _ => best = Some((size, path.to_path_buf())),
-    })?;
-    Ok(best.map(|(_, p)| p))
-}
-
-fn walk_vmdk_files(dir: &Path, cb: &mut dyn FnMut(&Path, u64)) -> Result<()> {
-    // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; std::fs is fine here"
-    let entries = std::fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))?;
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        let ft = entry.file_type()?;
-        // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; std::fs is fine here"
-        let is_dir = ft.is_dir();
-        // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; std::fs is fine here"
-        let is_file = ft.is_file();
-        if is_dir {
-            walk_vmdk_files(&path, cb)?;
-        } else if is_file
-            && path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("vmdk"))
-                .unwrap_or(false)
-        {
-            // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; std::fs is fine here"
-            let len = entry.metadata()?.len();
-            cb(&path, len);
+        SourceFormat::RawGz => {
+            tokio::task::spawn_blocking(move || -> Result<u64> { gzip_isize(&path) })
+                .await
+                .context("gzip ISIZE read task panicked")?
         }
     }
-    Ok(())
+}
+
+/// Read a gzip member's `ISIZE` trailer (the last 4 bytes of the
+/// file): the original uncompressed length mod 2^32. SmartOS USB
+/// images are well under 4 GiB so the modulus is not a concern;
+/// we still sanity-check the magic bytes at the start of the
+/// stream to refuse non-gzip input early.
+fn gzip_isize(path: &Path) -> Result<u64> {
+    // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+    let mut file = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    // arch-lint: allow(no-sync-io) reason="called from tokio::task::spawn_blocking; the lint cannot see across the function boundary"
+    let file_len = file.metadata()?.len();
+    if file_len < 18 {
+        anyhow::bail!("gzip file too short to contain a header + trailer");
+    }
+    let mut magic = [0u8; 2];
+    file.read_exact(&mut magic)?;
+    if magic != [0x1f, 0x8b] {
+        anyhow::bail!("gzip magic mismatch (not a gzip file?)");
+    }
+    file.seek(SeekFrom::End(-4))?;
+    let mut isize_bytes = [0u8; 4];
+    file.read_exact(&mut isize_bytes)?;
+    Ok(u32::from_le_bytes(isize_bytes) as u64)
 }
 
 /// Parse an xz file's Stream Footer + Index without decompressing
@@ -634,15 +566,15 @@ async fn write_to_zvol(
                 let mut reader = VmdkReadAdapter { inner, offset: 0 };
                 copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
             }
-            SourceFormat::VmdkInTarGz => {
-                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; tar+flate2 are sync"
-                let vmdk_path = extract_vmdk_in_tar_gz(&src_path)?;
-                let path_str = vmdk_path.to_str().ok_or_else(|| {
-                    anyhow::anyhow!("extracted vmdk path is not utf-8: {}", vmdk_path.display())
-                })?;
-                let inner = vmdkrs::vmdk_reader::VmdkReader::open(path_str)
-                    .map_err(|e| anyhow::anyhow!("open vmdk {path_str}: {e}"))?;
-                let mut reader = VmdkReadAdapter { inner, offset: 0 };
+            SourceFormat::RawGz => {
+                // Stream the decompressed bytes straight into the
+                // zvol via flate2, no intermediate `.raw` file. Goes
+                // through copy_with_progress so all-zero chunks are
+                // skipped and the zvol stays sparse.
+                // arch-lint: allow(no-sync-io) reason="inside tokio::task::spawn_blocking; flate2 drives sync Read"
+                let gz_input = std::fs::File::open(&src_path)
+                    .with_context(|| format!("open {}", src_path.display()))?;
+                let mut reader = flate2::read::GzDecoder::new(std::io::BufReader::new(gz_input));
                 copy_with_progress(&mut reader, &zvol_rdsk, virtual_size, &pb_clone, &cancel)
             }
         }

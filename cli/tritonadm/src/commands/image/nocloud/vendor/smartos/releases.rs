@@ -8,12 +8,11 @@
 //! `https://us-central.manta.mnx.io/Joyent_Dev/public/SmartOS/`.
 //!
 //! Each release has a dated directory like `20260430T145637Z/` with
-//! a `smartos-<rel>.vmwarevm.tar.gz` plus `sha256sums.txt`. A
-//! sibling `latest` text file at the parent directory holds a
-//! Manta path pointing at the current release dir. SmartOS is a
-//! rolling release with no streams or majors — so the only tokens
-//! we accept are `latest` and an explicit
-//! `<YYYYMMDD>T<HHMMSS>Z` timestamp.
+//! a `smartos-<rel>-USB.img.gz` plus `sha256sums.txt`. A sibling
+//! `latest` text file at the parent directory holds a Manta path
+//! pointing at the current release dir. SmartOS is a rolling
+//! release with no streams or majors — so the only tokens we accept
+//! are `latest` and an explicit `<YYYYMMDD>T<HHMMSS>Z` timestamp.
 
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -41,7 +40,7 @@ pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> 
     };
 
     let dir = format!("{SMARTOS_BASE}{release_id}/");
-    let filename = format!("smartos-{release_id}.vmwarevm.tar.gz");
+    let filename = format!("smartos-{release_id}-USB.img.gz");
     let url = format!("{dir}{filename}");
     let sums_url = format!("{dir}sha256sums.txt");
 
