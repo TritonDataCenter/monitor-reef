@@ -105,6 +105,14 @@ async fn process(job: &ProvisioningJob, store: &Arc<dyn Store>) -> JobOutcome {
         // the time the job is enqueued, and there is no zone to
         // destroy under the stub.
         JobKind::Delete { .. } => Ok(()),
+        JobKind::EdgeApply {
+            edge_instance_id, ..
+        } => Err(format!(
+            "edge apply job {edge_instance_id} requires a bound tritonagent"
+        )),
+        JobKind::EdgeReap { edge_instance_id } => Err(format!(
+            "edge reap job {edge_instance_id} requires a bound tritonagent"
+        )),
         // `JobKind` is `#[non_exhaustive]`; future variants will need
         // their own arms before the queue can usefully process them.
         _ => Err(format!("unsupported job kind: {:?}", job.kind)),

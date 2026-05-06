@@ -76,7 +76,7 @@ handlers + tests + CLI):
   (`libs/tritond-store/src/types.rs:1617`).
 * `tritonagent` registration / approval / heartbeat / job-claim
   loop is real; vmadm-driven Provision/Stop/Restart already wires
-  through `JobKind` (`libs/tritond-store/src/types.rs:1229`).
+  through `JobKind` (`libs/tritond-store/src/types.rs:1596`).
 
 ## 3. Network gaps (the v1 problem)
 
@@ -450,6 +450,30 @@ Tenant-facing create/update/delete remains absent for v1. Later S10
 slices add the NAT materializer that creates these records and fills
 `NatGateway.edge_cluster_id`, then the operator read surface can list
 clusters for debugging.
+
+The materializer dispatches edge runtime work through the existing
+agent job queue. S10 extends `JobKind` with edge targets while
+keeping VM lifecycle jobs instance-only:
+
+```rust
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum JobKind {
+    Provision { instance_id: Uuid },
+    Stop { instance_id: Uuid },
+    Restart { instance_id: Uuid },
+    Delete { instance_id: Uuid },
+    EdgeApply { edge_instance_id: Uuid, manifest_bytes: Vec<u8> },
+    EdgeReap { edge_instance_id: Uuid },
+}
+```
+
+`manifest_bytes` is the exact JSON fhrun manifest rendered by
+`services/tritond/src/edge.rs`; v1 manifests set
+`dataplane.backend = "nftables"` and leave `"afxdp"` as a future
+backend value behind the same field. Edge jobs are pinned to the CN
+that owns the edge instance by `ProvisioningJob.target_cn_uuid`.
+Unbound claimers continue to see only unrouted work, so the in-process
+stub provisioner cannot accidentally consume routed edge applies.
 
 ## 5. Schema changes to existing resources
 
@@ -1035,6 +1059,15 @@ graph at the source.
 * Agent A renders the stable edge manifest contract and stores
   cluster placement state. Agent D/E materializes that contract via
   firehyve/fhrun and reports realization against the edge cluster.
+* Edge runtime work arrives as existing agent jobs, not a separate
+  control-plane queue:
+  `JobKind::EdgeApply { edge_instance_id, manifest_bytes }` to
+  apply/update one fhrun manifest, and
+  `JobKind::EdgeReap { edge_instance_id }` to remove one no-longer
+  desired edge instance.
+* Edge jobs are routed with `target_cn_uuid = Some(server_uuid)`.
+  A bound `tritonagent` may claim them on its CN; unbound claimers
+  see only `target_cn_uuid = None` jobs.
 * Agent A guarantees that NAT GW / FIP records carry an
   `edge_cluster_id` whenever termination is edge-side, so Agent E
   has a concrete cluster to render against.
@@ -1073,7 +1106,7 @@ change). Tests + docs ride with the code in the same commit.
 | H-9 | `NicSecurityGroupAttachment` store + API + CLI + tests. Default-deny-inbound applies when zero SGs attached. | API + service + CLI + tests | integration: attach/detach atomic; instance delete cascades detach (matches FloatingIp pattern); delete-attached SG → 409 |
 | H-10 | `Subnet` route-table reassociation (`PUT .../subnets/{id}/route-table`); bumps subnet `desired_generation`. | API + service + CLI + tests | integration: reassoc bumps generation; idempotent set-to-current is a no-op |
 | H-11 | `FloatingIp` adds `termination` + `edge_cluster_id` + `realized: RealizedNetworkState`. **Widens an existing public API struct — slice intentionally runs `make openapi-generate` + `make clients-generate` and updates `tests/floating_ips.rs`** (manager ruling: no silent widening). | types + handlers + API + client (regen) + tests | integration: existing FIP attach/detach tests still pass; defaults are `CnTerminated` + `edge_cluster_id = None` + `realized` = empty |
-| H-12 / S10 | `EdgeCluster` store records: durable cluster, bound-resource index, computed realized view, and store-only CRUD for the NAT materializer. No tenant-facing CRUD yet. | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: create/get/list/list-by-resource/delete; duplicate name; missing resource; kind/resource mismatch; duplicate bound resource |
+| H-12 / S10 | `EdgeCluster` store records and edge job contract: durable cluster, bound-resource index, computed realized view, store-only CRUD for the NAT materializer, plus `JobKind::EdgeApply` / `EdgeReap` routed through the existing agent queue. No tenant-facing CRUD yet. | `libs/tritond-store/src/{types,lib,mem,fdb}.rs`, `services/tritond/src/{lib,provisioner}.rs`, `services/tritonagent/src/lib.rs` | unit: create/get/list/list-by-resource/delete; duplicate name; missing resource; kind/resource mismatch; duplicate bound resource; edge job serde/claim/blueprint |
 | H-13 | **Done.** `POST /v2/agent/network-realization` handler + Agent-scope auth gating. Requires a CN-bound Agent key, validates the reported resource exists, enforces `RealizerId::Cn` matches the bound CN, and stores the row through `record_network_realization`. | `apis/tritond-api/src/{lib,types}.rs`, `services/tritond/src/{lib,auth}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/agent.rs` | integration: per-CN bound key required; unbound Agent key denied; backward-generation report → 409; multiple CN realizers produce distinct rows on the NatGateway realized view |
 | H-14 | `tcadm net realized` UX (read-only across realized resource kinds) | CLI + tests | smoke: `tcadm net realized --resource nat_gateway:<id>` shows desired vs applied; `--watch` polls until applied == desired |
 

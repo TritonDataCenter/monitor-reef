@@ -1580,15 +1580,16 @@ pub struct NewInstanceNic {
     pub name: String,
 }
 
-/// What a provisioning job asks an agent to do.
+/// What a control-plane job asks an agent to do.
 ///
-/// Each variant carries the target `instance_id` so an agent can
-/// look up the current state, do the work, and drive the lifecycle
-/// forward without needing the issuer to embed extra context.
+/// Instance variants carry a target `instance_id` so an agent can
+/// look up VM state and drive the lifecycle forward. Edge variants
+/// carry an `edge_instance_id`; `manifest_bytes` is the exact fhrun
+/// manifest payload the target CN should apply.
 ///
-/// Phase 0 has exactly three kinds. A future slice may add others
-/// (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so
-/// adding a variant is not a breaking change for matchers.
+/// This enum is `#[non_exhaustive]` so adding post-v1 variants (for
+/// example Migrate, Resize, or AF_XDP-specific edge work) is not a
+/// breaking change for downstream matchers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
@@ -1614,19 +1615,124 @@ pub enum JobKind {
     /// slice promotes this to a Deleting → Deleted lifecycle
     /// gated on agent ack.
     Delete { instance_id: Uuid },
+    /// Apply or update a firehyve/fhrun edge instance on the
+    /// target CN. The manifest is JSON bytes rendered by tritond
+    /// from the EdgeCluster's desired state; the agent persists it
+    /// to the host runtime path and asks fhrun/firehyve to converge.
+    EdgeApply {
+        edge_instance_id: Uuid,
+        manifest_bytes: Vec<u8>,
+    },
+    /// Reap a firehyve/fhrun edge instance that no longer has a
+    /// desired EdgeCluster binding.
+    EdgeReap { edge_instance_id: Uuid },
 }
 
 impl JobKind {
-    /// Convenience: extract the target instance id without a
-    /// full match.
+    /// Extract the target VM instance id when this is an
+    /// instance-lifecycle job.
     #[must_use]
-    pub fn instance_id(&self) -> Uuid {
+    pub fn instance_id(&self) -> Option<Uuid> {
         match self {
             JobKind::Provision { instance_id }
             | JobKind::Stop { instance_id }
             | JobKind::Restart { instance_id }
-            | JobKind::Delete { instance_id } => *instance_id,
+            | JobKind::Delete { instance_id } => Some(*instance_id),
+            JobKind::EdgeApply { .. } | JobKind::EdgeReap { .. } => None,
         }
+    }
+
+    /// Extract the target edge instance id when this is edge work.
+    #[must_use]
+    pub fn edge_instance_id(&self) -> Option<Uuid> {
+        match self {
+            JobKind::EdgeApply {
+                edge_instance_id, ..
+            }
+            | JobKind::EdgeReap { edge_instance_id } => Some(*edge_instance_id),
+            JobKind::Provision { .. }
+            | JobKind::Stop { .. }
+            | JobKind::Restart { .. }
+            | JobKind::Delete { .. } => None,
+        }
+    }
+
+    /// Stable target id used for logs and queue diagnostics.
+    #[must_use]
+    pub fn target_id(&self) -> Uuid {
+        self.instance_id()
+            .or_else(|| self.edge_instance_id())
+            .expect("every JobKind variant carries a target uuid")
+    }
+}
+
+#[cfg(test)]
+mod job_kind_tests {
+    use super::*;
+
+    #[test]
+    fn instance_id_only_applies_to_instance_jobs() {
+        let instance_id = Uuid::new_v4();
+        let edge_instance_id = Uuid::new_v4();
+
+        assert_eq!(
+            JobKind::Provision { instance_id }.instance_id(),
+            Some(instance_id)
+        );
+        assert_eq!(JobKind::EdgeReap { edge_instance_id }.instance_id(), None);
+    }
+
+    #[test]
+    fn edge_apply_manifest_bytes_round_trip() {
+        let edge_instance_id = Uuid::new_v4();
+        let manifest_bytes = br#"{"dataplane":{"backend":"nftables"}}"#.to_vec();
+        let kind = JobKind::EdgeApply {
+            edge_instance_id,
+            manifest_bytes: manifest_bytes.clone(),
+        };
+
+        assert_eq!(kind.instance_id(), None);
+        assert_eq!(kind.edge_instance_id(), Some(edge_instance_id));
+        assert_eq!(kind.target_id(), edge_instance_id);
+
+        let json = serde_json::to_value(&kind).unwrap();
+        assert_eq!(json["kind"].as_str(), Some("edge_apply"));
+        assert_eq!(
+            json["edge_instance_id"],
+            serde_json::Value::String(edge_instance_id.to_string())
+        );
+        assert_eq!(
+            json["manifest_bytes"],
+            serde_json::Value::Array(
+                manifest_bytes
+                    .iter()
+                    .map(|byte| serde_json::Value::from(*byte))
+                    .collect()
+            )
+        );
+
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, kind);
+    }
+
+    #[test]
+    fn edge_reap_target_round_trip() {
+        let edge_instance_id = Uuid::new_v4();
+        let kind = JobKind::EdgeReap { edge_instance_id };
+
+        assert_eq!(kind.instance_id(), None);
+        assert_eq!(kind.edge_instance_id(), Some(edge_instance_id));
+        assert_eq!(kind.target_id(), edge_instance_id);
+
+        let json = serde_json::to_value(&kind).unwrap();
+        assert_eq!(json["kind"].as_str(), Some("edge_reap"));
+        assert_eq!(
+            json["edge_instance_id"],
+            serde_json::Value::String(edge_instance_id.to_string())
+        );
+
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, kind);
     }
 }
 

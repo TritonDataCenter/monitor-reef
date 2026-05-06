@@ -545,6 +545,43 @@ async fn blueprint_returns_kind_and_instance_when_present() {
 }
 
 #[tokio::test]
+async fn blueprint_returns_empty_instance_payload_for_edge_jobs() {
+    let test = TestServer::start().await;
+    let secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let client = test.bearer_client(&secret);
+
+    let edge_instance_id = Uuid::new_v4();
+    let manifest_bytes = br#"{"dataplane":{"backend":"nftables"}}"#.to_vec();
+    let job = test
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::EdgeApply {
+                edge_instance_id,
+                manifest_bytes,
+            },
+            target_cn_uuid: None,
+        })
+        .await
+        .unwrap();
+
+    let bp = client
+        .agent_job_blueprint()
+        .job_id(job.id)
+        .send()
+        .await
+        .expect("edge job blueprint should not require a VM instance")
+        .into_inner();
+    assert_eq!(bp.job_id, job.id);
+    assert!(bp.instance.is_none());
+    assert!(bp.image.is_none());
+    assert!(bp.nics.is_empty());
+    assert!(bp.disks.is_empty());
+    assert!(bp.ssh_public_keys.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
 async fn blueprint_denied_to_read_only_scope() {
     let test = TestServer::start().await;
     let phantom_instance = Uuid::new_v4();
@@ -803,7 +840,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
         .expect("queue had the Provision job we just enqueued");
     assert!(matches!(
         claimed.kind,
-        tritond_client::types::JobKind::Provision(_),
+        tritond_client::types::JobKind::Provision { .. },
     ));
 
     // The claim handler should have advanced Pending → Provisioning.
@@ -1072,7 +1109,9 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
         .job
         .expect("queue should hold the Delete job we just enqueued");
     match claimed.kind {
-        tritond_client::types::JobKind::Delete(target) => assert_eq!(target, instance_id),
+        tritond_client::types::JobKind::Delete {
+            instance_id: target,
+        } => assert_eq!(target, instance_id),
         other => panic!("expected Delete, got {other:?}"),
     }
 

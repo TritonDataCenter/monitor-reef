@@ -5833,8 +5833,7 @@ fn too_many_requests(retry_after: std::time::Duration) -> HttpError {
 /// has nothing to advance. CAS failures are logged but do not
 /// propagate — the job is already in InProgress regardless.
 async fn drive_lifecycle_for_claim(store: &dyn Store, job: &ProvisioningJob) {
-    if matches!(job.kind, JobKind::Provision { .. }) {
-        let instance_id = job.kind.instance_id();
+    if let JobKind::Provision { instance_id } = job.kind {
         if let Err(e) = store
             .transition_instance_lifecycle(
                 instance_id,
@@ -5879,7 +5878,6 @@ pub(crate) async fn drive_lifecycle_for_complete(
     if matches!(job.kind, JobKind::Delete { .. }) {
         return;
     }
-    let instance_id = job.kind.instance_id();
     let (expected_from, target): (&[LifecycleStateKind], LifecycleState) =
         match (&job.kind, outcome) {
             (JobKind::Provision { .. }, JobOutcome::Completed) => {
@@ -5904,6 +5902,9 @@ pub(crate) async fn drive_lifecycle_for_complete(
             ),
             _ => return,
         };
+    let Some(instance_id) = job.kind.instance_id() else {
+        return;
+    };
     if let Err(e) = store
         .transition_instance_lifecycle(instance_id, expected_from, target.clone())
         .await
@@ -6045,7 +6046,17 @@ async fn build_blueprint(
     store: &dyn Store,
     job: &ProvisioningJob,
 ) -> Result<ProvisioningBlueprint, HttpError> {
-    let instance_id = job.kind.instance_id();
+    let Some(instance_id) = job.kind.instance_id() else {
+        return Ok(ProvisioningBlueprint {
+            job_id: job.id,
+            kind: job.kind.clone(),
+            instance: None,
+            image: None,
+            nics: Vec::new(),
+            disks: Vec::new(),
+            ssh_public_keys: Vec::new(),
+        });
+    };
     let instance = match store.get_instance(instance_id).await {
         Ok(i) => Some(i),
         Err(StoreError::NotFound) => None,
@@ -6279,7 +6290,7 @@ async fn enforce_port_instance_claimed_by_bound_cn(
         .map_err(store_error_to_http)?;
     for job in jobs
         .iter()
-        .filter(|job| job.kind.instance_id() == instance_id)
+        .filter(|job| job.kind.instance_id() == Some(instance_id))
         .filter(|job| matches!(job.status, JobStatus::InProgress))
     {
         if enforce_job_belongs_to_bound_cn(job, bound_cn).is_ok() {

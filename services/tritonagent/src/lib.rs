@@ -334,7 +334,7 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
     // call. A runtime "unsupported" surprise here would be
     // strictly worse.
     match &job.kind {
-        JobKind::Provision(instance_id) => {
+        JobKind::Provision { instance_id } => {
             // The instance must still exist — a concurrent operator
             // delete races to None.
             if blueprint.instance.is_none() {
@@ -378,18 +378,28 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
                 return Err(err).context("create VM after Proteus port realization");
             }
         }
-        JobKind::Stop(instance_id) => {
+        JobKind::Stop { instance_id } => {
             vmadm::stop_zone(*instance_id).await?;
         }
-        JobKind::Restart(instance_id) => {
+        JobKind::Restart { instance_id } => {
             vmadm::reboot_zone(*instance_id).await?;
         }
-        JobKind::Delete(instance_id) => {
+        JobKind::Delete { instance_id } => {
             // The blueprint won't have an `instance` for Delete
             // jobs (tritond's record is already cleared); the
             // agent acts on the kind alone. `delete_zone` is
             // idempotent against zone-not-found.
             vmadm::delete_zone(*instance_id).await?;
+        }
+        JobKind::EdgeApply {
+            edge_instance_id, ..
+        } => {
+            anyhow::bail!(
+                "edge apply job {edge_instance_id} is not implemented in tritonagent yet"
+            );
+        }
+        JobKind::EdgeReap { edge_instance_id } => {
+            anyhow::bail!("edge reap job {edge_instance_id} is not implemented in tritonagent yet");
         }
     }
 
@@ -750,7 +760,9 @@ mod tests {
     fn sample_provisioning_blueprint(nic: Nic) -> ProvisioningBlueprint {
         ProvisioningBlueprint {
             job_id: Uuid::new_v4(),
-            kind: JobKind::Provision(nic.instance_id),
+            kind: JobKind::Provision {
+                instance_id: nic.instance_id,
+            },
             instance: None,
             image: None,
             nics: vec![nic],

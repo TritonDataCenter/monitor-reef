@@ -520,7 +520,9 @@ mod tests {
         };
         ProvisioningBlueprint {
             job_id,
-            kind: JobKind::Provision(inst_id),
+            kind: JobKind::Provision {
+                instance_id: inst_id,
+            },
             instance: Some(instance),
             image: Some(image),
             nics: vec![nic],

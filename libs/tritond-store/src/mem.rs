@@ -6550,6 +6550,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn edge_apply_jobs_round_trip_through_queue() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let edge_instance_id = Uuid::new_v4();
+        let manifest_bytes = br#"{"dataplane":{"backend":"nftables"}}"#.to_vec();
+        let queued = store
+            .enqueue_job(NewJob {
+                kind: JobKind::EdgeApply {
+                    edge_instance_id,
+                    manifest_bytes: manifest_bytes.clone(),
+                },
+                target_cn_uuid: Some(cn),
+            })
+            .await
+            .unwrap();
+
+        let err = store
+            .claim_next_job("stub", None)
+            .await
+            .expect_err("unbound claimers must not claim routed edge jobs");
+        assert!(matches!(err, StoreError::NotFound));
+
+        let claimed = store.claim_next_job("edge-agent", Some(cn)).await.unwrap();
+        assert_eq!(claimed.id, queued.id);
+        assert_eq!(claimed.kind.edge_instance_id(), Some(edge_instance_id));
+        match claimed.kind {
+            JobKind::EdgeApply {
+                edge_instance_id: id,
+                manifest_bytes: bytes,
+            } => {
+                assert_eq!(id, edge_instance_id);
+                assert_eq!(bytes, manifest_bytes);
+            }
+            other => panic!("expected edge apply job, got {other:?}"),
+        }
+
+        let done = store
+            .complete_job(claimed.id, JobOutcome::Completed)
+            .await
+            .unwrap();
+        assert!(matches!(done.status, JobStatus::Completed));
+    }
+
+    #[tokio::test]
     async fn claim_empty_queue_is_not_found() {
         let store = MemStore::new();
         let err = store

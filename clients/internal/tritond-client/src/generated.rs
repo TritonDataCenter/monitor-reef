@@ -2309,13 +2309,13 @@ pub mod types {
         }
     }
 
-    #[doc = "What a provisioning job asks an agent to do.\n\nEach variant carries the target `instance_id` so an agent can look up the current state, do the work, and drive the lifecycle forward without needing the issuer to embed extra context.\n\nPhase 0 has exactly three kinds. A future slice may add others (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so adding a variant is not a breaking change for matchers."]
+    #[doc = "What a control-plane job asks an agent to do.\n\nInstance variants carry a target `instance_id` so an agent can look up VM state and drive the lifecycle forward. Edge variants carry an `edge_instance_id`; `manifest_bytes` is the exact fhrun manifest payload the target CN should apply.\n\nThis enum is `#[non_exhaustive]` so adding post-v1 variants (for example Migrate, Resize, or AF_XDP-specific edge work) is not a breaking change for downstream matchers."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"What a provisioning job asks an agent to do.\\n\\nEach variant carries the target `instance_id` so an agent can look up the current state, do the work, and drive the lifecycle forward without needing the issuer to embed extra context.\\n\\nPhase 0 has exactly three kinds. A future slice may add others (Migrate, Resize, etc.) — this enum is `#[non_exhaustive]` so adding a variant is not a breaking change for matchers.\","]
+    #[doc = "  \"description\": \"What a control-plane job asks an agent to do.\\n\\nInstance variants carry a target `instance_id` so an agent can look up VM state and drive the lifecycle forward. Edge variants carry an `edge_instance_id`; `manifest_bytes` is the exact fhrun manifest payload the target CN should apply.\\n\\nThis enum is `#[non_exhaustive]` so adding post-v1 variants (for example Migrate, Resize, or AF_XDP-specific edge work) is not a breaking change for downstream matchers.\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"description\": \"Drive a Pending instance through Provisioning → Running. Used both for first-time create and for `start` (which transitions Stopped → Pending and then enqueues a Provision).\","]
@@ -2396,6 +2396,55 @@ pub mod types {
     #[doc = "          ]"]
     #[doc = "        }"]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path and asks fhrun/firehyve to converge.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"edge_instance_id\","]
+    #[doc = "        \"kind\","]
+    #[doc = "        \"manifest_bytes\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"edge_instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"edge_apply\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"manifest_bytes\": {"]
+    #[doc = "          \"type\": \"array\","]
+    #[doc = "          \"items\": {"]
+    #[doc = "            \"type\": \"integer\","]
+    #[doc = "            \"format\": \"uint8\","]
+    #[doc = "            \"minimum\": 0.0"]
+    #[doc = "          }"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Reap a firehyve/fhrun edge instance that no longer has a desired EdgeCluster binding.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"edge_instance_id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"edge_instance_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"edge_reap\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
     #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
@@ -2404,20 +2453,29 @@ pub mod types {
     #[derive(
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
-    #[serde(tag = "kind", content = "instance_id")]
+    #[serde(tag = "kind")]
     pub enum JobKind {
         #[doc = "Drive a Pending instance through Provisioning → Running. Used both for first-time create and for `start` (which transitions Stopped → Pending and then enqueues a Provision)."]
         #[serde(rename = "provision")]
-        Provision(::uuid::Uuid),
+        Provision { instance_id: ::uuid::Uuid },
         #[doc = "Drive a Running instance through Stopping → Stopped."]
         #[serde(rename = "stop")]
-        Stop(::uuid::Uuid),
+        Stop { instance_id: ::uuid::Uuid },
         #[doc = "Drive a Running instance through Stopping → Pending → Provisioning → Running. The agent is responsible for the whole cycle; the operator never sees Pending in between."]
         #[serde(rename = "restart")]
-        Restart(::uuid::Uuid),
+        Restart { instance_id: ::uuid::Uuid },
         #[doc = "Best-effort `vmadm delete` follow-up, enqueued by the `instance_delete` handler *after* the tritond record is already cleared. The agent's vmadm-delete must be idempotent — on a host where the zone never existed (e.g. agent crashed before its prior Provision), the agent reports `Completed` rather than `Failed`. v0 trade-off: if the agent is unreachable, the zone leaks until an operator runs `vmadm delete` manually. A future slice promotes this to a Deleting → Deleted lifecycle gated on agent ack."]
         #[serde(rename = "delete")]
-        Delete(::uuid::Uuid),
+        Delete { instance_id: ::uuid::Uuid },
+        #[doc = "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path and asks fhrun/firehyve to converge."]
+        #[serde(rename = "edge_apply")]
+        EdgeApply {
+            edge_instance_id: ::uuid::Uuid,
+            manifest_bytes: ::std::vec::Vec<u8>,
+        },
+        #[doc = "Reap a firehyve/fhrun edge instance that no longer has a desired EdgeCluster binding."]
+        #[serde(rename = "edge_reap")]
+        EdgeReap { edge_instance_id: ::uuid::Uuid },
     }
 
     #[doc = "Outcome a worker reports when finishing a job.\n\nWire-stable: rides as the body of `POST /v2/agent/jobs/{id}/complete` when a real `tritonagent` is reporting back. The serde tag is `kind` and the case is snake_case — matches every other tagged enum on the wire (e.g. [`JobStatus`])."]
