@@ -10,7 +10,7 @@
 //! device → snap → send → gzip → manifest. No qemu-img dependency;
 //! qcow2 decoding lives in the `qcow` crate.
 
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -567,9 +567,20 @@ fn copy_with_progress(
         reader
             .read_exact(&mut buf[..to_read])
             .with_context(|| format!("read source ({remaining} bytes remaining)"))?;
-        writer
-            .write_all(&buf[..to_read])
-            .with_context(|| format!("write zvol ({} bytes written)", total - remaining))?;
+        // qcow2 unallocated clusters surface as zero-filled buffers
+        // through the reader API. Skipping the write keeps the zvol
+        // sparse (no block allocated, no I/O) and shrinks the resulting
+        // `zfs send` stream — important for cloud images where the
+        // virtual disk is much larger than the actual data footprint.
+        if buf[..to_read].iter().all(|&b| b == 0) {
+            writer
+                .seek(SeekFrom::Current(to_read as i64))
+                .with_context(|| format!("seek zvol ({} bytes written)", total - remaining))?;
+        } else {
+            writer
+                .write_all(&buf[..to_read])
+                .with_context(|| format!("write zvol ({} bytes written)", total - remaining))?;
+        }
         remaining -= to_read as u64;
         pb.inc(to_read as u64);
     }
