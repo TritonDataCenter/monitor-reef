@@ -19,6 +19,7 @@ pub mod alpine;
 pub mod debian;
 pub mod fedora;
 pub mod freebsd;
+pub mod rocky;
 pub mod talos;
 pub mod ubuntu;
 
@@ -36,6 +37,7 @@ pub enum Vendor {
     Debian,
     Fedora,
     Freebsd,
+    Rocky,
     Talos,
     Ubuntu,
 }
@@ -96,6 +98,7 @@ pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
         Vendor::Debian => Box::new(debian::Debian),
         Vendor::Fedora => Box::new(fedora::Fedora),
         Vendor::Freebsd => Box::new(freebsd::FreeBsd),
+        Vendor::Rocky => Box::new(rocky::Rocky),
         Vendor::Talos => Box::new(talos::Talos),
         Vendor::Ubuntu => Box::new(ubuntu::Ubuntu),
     }
