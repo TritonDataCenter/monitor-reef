@@ -34,6 +34,7 @@
 pub mod credentials;
 pub mod images;
 pub mod platform;
+pub mod proteus;
 pub mod registration;
 pub mod status;
 pub mod vmadm;

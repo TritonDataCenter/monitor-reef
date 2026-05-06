@@ -515,7 +515,7 @@ commit. Build and audit run per `monitor-reef/AGENTS.md`.
 | C-2 | Pure bhyve `vmadm` payload builder | `services/tritonagent/src/vmadm.rs` plus docs note | unit tests for CPU/RAM, boot disk, NIC order, NoCloud/SSH metadata, missing fields |
 | C-3 | Structured provisioning phase errors | `services/tritonagent/src/lib.rs`, `vmadm.rs`, docs | unit tests for phase labels and `JobOutcome::Failed` message formatting |
 | C-4 | Use `tritond-cn-platform::VmadmTool` in agent vmadm path | `services/tritonagent/src/vmadm.rs` | mock-script tests for create/stop/reboot/delete idempotence |
-| C-5 | Add Proteus adapter trait with fake backend only | new small module under `services/tritonagent/src/` | fake lifecycle tests for create/apply/start/pause/delete/status |
+| C-5 | Add Proteus userspace adapter with fake backend tests | `services/tritonagent/src/proteus.rs` | fake lifecycle tests for create/apply/start/pause/delete/status |
 | C-6 | Extend blueprint model with network ports after Agent B contract | API/client regeneration, agent consume path | serialization tests and agent-side validation tests |
 | C-7 | Report network realization after apply after Agent A endpoint | agent report path | handler/client integration test once endpoint exists |
 | C-8 | Provision ordering: image, Proteus ports, vmadm create, port start | agent job driver | fake end-to-end provision success and cleanup-on-failure tests |
