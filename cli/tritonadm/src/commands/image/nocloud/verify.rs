@@ -173,7 +173,7 @@ impl Verifier for Sha256BsdSumsTls {
 /// non-comment line is `SHA256 (filename) = hex`. Whitespace is
 /// flexible. Mixed formats (some lines BSD, some Linux) are not
 /// supported, but vendors don't mix.
-fn parse_bsd_sums_file(body: &str, filename: &str) -> Option<String> {
+pub(super) fn parse_bsd_sums_file(body: &str, filename: &str) -> Option<String> {
     let needle_open = format!("({filename})");
     for line in body.lines() {
         let line = line.trim();
@@ -289,7 +289,7 @@ async fn fetch_and_parse_sums(
 /// is stripped; whitespace-as-separator handles single-space or
 /// multi-space delimiters. The hash function isn't validated here —
 /// callers tell upstream which hash they're expecting via the URL.
-fn parse_sums_file(body: &str, filename: &str) -> Option<String> {
+pub(super) fn parse_sums_file(body: &str, filename: &str) -> Option<String> {
     for line in body.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {

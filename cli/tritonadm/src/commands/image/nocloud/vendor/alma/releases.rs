@@ -20,6 +20,8 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 
+use crate::commands::image::nocloud::verify::parse_sums_file;
+
 const REPO_BASE: &str = "https://repo.almalinux.org/almalinux/";
 
 #[derive(Debug)]
@@ -126,7 +128,7 @@ fn resolve_dated_for_latest(
     major: &str,
     latest_filename: &str,
 ) -> Result<(String, String)> {
-    let sha256 = parse_sums(body, latest_filename)
+    let sha256 = parse_sums_file(body, latest_filename)
         .ok_or_else(|| anyhow::anyhow!("CHECKSUM has no entry for {latest_filename}"))?;
     let prefix = format!("AlmaLinux-{major}-GenericCloud-");
     let dated = body
@@ -173,25 +175,6 @@ fn strip_filename_chrome(filename: &str, major: &str) -> Option<String> {
     let stripped = filename.strip_prefix(&prefix)?;
     let stripped = stripped.strip_suffix(".x86_64.qcow2")?;
     Some(stripped.to_string())
-}
-
-/// Linux-style `<hash>  <filename>` line lookup. Filename is matched
-/// exactly. Same shape as `verify::parse_sums_file`, kept private here
-/// to avoid a circular module dep.
-fn parse_sums(body: &str, filename: &str) -> Option<String> {
-    for line in body.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let mut parts = line.splitn(2, char::is_whitespace);
-        let hash = parts.next()?.trim();
-        let rest = parts.next()?.trim().trim_start_matches('*');
-        if rest == filename {
-            return Some(hash.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
