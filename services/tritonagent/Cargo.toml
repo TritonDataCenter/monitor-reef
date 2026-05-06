@@ -24,10 +24,12 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 hostname = { workspace = true }
+postcard = { workspace = true }
 proteus-api = { path = "../../../proteus/crates/proteus-api", features = ["std"] }
 proteus-ioctl = { path = "../../../proteus/crates/proteus-ioctl" }
 reqwest = { workspace = true }

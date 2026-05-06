@@ -18,6 +18,8 @@
 //!   stub this.
 //! * `--poll-interval-secs` / `TRITONAGENT_POLL_INTERVAL_SECS` —
 //!   default 5
+//! * `--proteus-dev` / `TRITONAGENT_PROTEUS_DEV` — Proteus device
+//!   node. Default `/dev/proteus`.
 //! * `--dry-run` / `TRITONAGENT_DRY_RUN`
 //!
 //! There is no longer an `--api-key` flag: on first boot the agent
@@ -75,6 +77,14 @@ struct Cli {
     /// Sleep between empty-queue polls.
     #[arg(long, env = "TRITONAGENT_POLL_INTERVAL_SECS", default_value_t = 5)]
     poll_interval_secs: u64,
+
+    /// Proteus kernel device path used for per-NIC port realization.
+    #[arg(
+        long,
+        env = "TRITONAGENT_PROTEUS_DEV",
+        default_value_t = String::from(tritonagent::DEFAULT_PROTEUS_DEVICE),
+    )]
+    proteus_dev: String,
 
     /// When set, skip `vmadm` entirely and mark every claimed
     /// job `Completed`. Useful for transport-only smoke testing
@@ -144,6 +154,7 @@ async fn main() -> Result<()> {
         // identity, and that identity is the SmartOS server_uuid.
         agent_id: server_uuid.to_string(),
         poll_interval: Duration::from_secs(cli.poll_interval_secs),
+        proteus_dev: PathBuf::from(cli.proteus_dev),
         dry_run: cli.dry_run,
         spawn_heartbeater: !cli.no_heartbeater,
     };

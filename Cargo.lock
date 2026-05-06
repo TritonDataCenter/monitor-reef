@@ -5796,11 +5796,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "dropshot",
  "futures-util",
  "hostname 0.4.2",
+ "postcard",
  "proteus-api",
  "proteus-ioctl",
  "reqwest 0.13.2",

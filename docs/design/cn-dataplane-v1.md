@@ -308,6 +308,15 @@ base64 payload is a postcard-encoded
 initial provision apply; later network-update slices must store and
 increment a per-port desired generation.
 
+The first tritonagent integration consumes this endpoint per NIC during
+Provision jobs. It treats `Nic.id` as the v1 Proteus `PortId`, decodes the
+opaque `PortBlueprint`, opens the configured Proteus device
+(`/dev/proteus` by default), and calls create/apply/start before `vmadm
+create`. Until Agent B returns the precise affected-resource list, the
+agent reports the applied port generation against the enclosing VPC as a
+coarse CN realization row; later slices replace that with the compiler's
+resource mapping.
+
 ## 6. Proteus port lifecycle
 
 The current Proteus API exposes the needed primitive lifecycle:
