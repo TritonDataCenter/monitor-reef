@@ -1926,3 +1926,394 @@ mod cn_tests {
         assert!(token.bytes().all(|b| b.is_ascii_hexdigit()));
     }
 }
+
+// ---------------------------------------------------------------------
+// Realized network state (Agent A, Slice H-1)
+// ---------------------------------------------------------------------
+//
+// `tritond` is the desired-state authority. Realizers
+// (`tritonagent` per CN, the future firehyve/fhrun-managed edge
+// runtime per VPC) report what they actually programmed via
+// `POST /v2/agent/network-realization` (Slice H-13). The control
+// plane stores one row per `(resource, realizer)` tuple; the
+// `RealizedNetworkState` view rolls those rows up at read time.
+//
+// `desired_generation` lives directly on each network resource
+// record (every new v1 resource carries `desired_generation: u64`
+// and bumps it atomically with every wire-affecting mutation).
+// The `RealizedNetworkState` field on a wire response is computed
+// at serialize time from `(desired_generation, list_network_realizations(resource))`,
+// not stored as a denormalization — a denormalized copy on the
+// resource record would silently drift from the per-realizer rows
+// every time a realizer reported.
+//
+// Existing public structs (`Vpc`, `Subnet`, `FloatingIp`) gain
+// `desired_generation` only via dedicated slices that intentionally
+// include OpenAPI/client regen + tests (manager ruling 2026-05-05).
+
+/// Outcome a realizer reports at a given generation. The variant
+/// set is deliberately small in v1: `Accepted` for "agent received
+/// the blueprint and handed it to its dataplane" (Agent B's
+/// `accepted_generation`); `Applied` for "dataplane confirmed the
+/// generation active" (the canonical terminal report); `Failed` for
+/// terminal apply failure with a short message. The enum is
+/// `#[non_exhaustive]` so post-v1 additions (e.g. `Compiling`,
+/// `Pending`) can land without breaking downstream matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RealizationStatus {
+    /// The realizer accepted the work and handed the blueprint to
+    /// its backing dataplane. Aligns with Agent B's
+    /// `accepted_generation` concept (see
+    /// `proteus/docs/tritond-integration-v1.md`).
+    Accepted,
+    /// The dataplane confirmed the generation active (e.g. Proteus
+    /// `GetGenerationStatus` returned `applied_generation >=
+    /// generation` on the realizer's port).
+    Applied,
+    /// The realizer failed to converge to this generation. The
+    /// associated message should describe the phase (image fetch,
+    /// blueprint apply, port start, ...).
+    Failed,
+}
+
+/// Identity of a realizer reporting a [`Realization`]. v1 ships
+/// `Cn` (per-server `tritonagent`, identified by SmartOS
+/// `server_uuid`) and `EdgeCluster` (firehyve/fhrun-managed edge
+/// microVMs, populated when Agent E begins reporting).
+///
+/// Wire shape: `{ "kind": "cn", "id": "<uuid>" }` /
+/// `{ "kind": "edge_cluster", "id": "<uuid>" }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RealizerId {
+    /// SmartOS compute node identified by its `server_uuid`.
+    Cn { id: Uuid },
+    /// Firehyve / fhrun-managed edge cluster identified by its
+    /// `EdgeCluster.id`. Reserved for Agent E reporting; the
+    /// reference type lands in H-12.
+    EdgeCluster { id: Uuid },
+}
+
+impl RealizerId {
+    /// Stable wire-format kind tag. Matches the
+    /// `#[serde(tag = "kind", rename_all = "snake_case")]` shape
+    /// so the FDB key segment and the JSON wire tag are the same
+    /// string.
+    #[must_use]
+    pub fn kind_tag(self) -> &'static str {
+        match self {
+            RealizerId::Cn { .. } => "cn",
+            RealizerId::EdgeCluster { .. } => "edge_cluster",
+            // No catch-all: adding a `#[non_exhaustive]` variant is
+            // a deliberate code change that should also extend the
+            // wire tag map below in the same commit.
+        }
+    }
+
+    /// The realizer id, regardless of variant.
+    #[must_use]
+    pub fn id(self) -> Uuid {
+        match self {
+            RealizerId::Cn { id } | RealizerId::EdgeCluster { id } => id,
+        }
+    }
+}
+
+/// Tagged identity of a network resource that may have realization
+/// rows. The realization endpoint (Slice H-13) dispatches into the
+/// matching record by `(kind, id)`. v1 ships variants for every
+/// resource the design doc names (§6); the `#[non_exhaustive]`
+/// posture allows post-v1 additions.
+///
+/// Wire shape: `{ "kind": "nat_gateway", "id": "<uuid>" }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum NetworkResourceId {
+    /// A `Vpc`. Populated after H-4 widens `Vpc` with
+    /// `desired_generation`.
+    Vpc { id: Uuid },
+    /// A `Subnet`. Populated after H-4 widens `Subnet` with
+    /// `desired_generation`.
+    Subnet { id: Uuid },
+    /// A `RouteTable`. Populated when H-5 lands.
+    RouteTable { id: Uuid },
+    /// A `Route`. Populated when H-6 lands.
+    Route { id: Uuid },
+    /// A `SecurityGroup`. Populated when H-7 lands.
+    SecurityGroup { id: Uuid },
+    /// A `SecurityGroupRule`. Populated when H-8 lands.
+    SecurityGroupRule { id: Uuid },
+    /// A NIC↔SG attachment. Populated when H-9 lands.
+    NicSecurityGroupAttachment { id: Uuid },
+    /// A `NatGateway`. Populated when H-2 lands. This is the first
+    /// realized resource the codebase will exercise end-to-end
+    /// (intent + realization) in the H-1..H-3 cluster.
+    NatGateway { id: Uuid },
+    /// A `FloatingIp`. Populated when H-11 widens the existing
+    /// `FloatingIp` struct with `desired_generation` + termination
+    /// fields.
+    FloatingIp { id: Uuid },
+}
+
+impl NetworkResourceId {
+    /// Stable wire-format kind tag. Matches the
+    /// `#[serde(tag = "kind", rename_all = "snake_case")]` shape
+    /// so the FDB key segment and the JSON wire tag are the same
+    /// string. Used by `FdbStore` to compose
+    /// `network_realization/<kind>/<id>/<realizer_kind>/<realizer_id>`
+    /// keys.
+    #[must_use]
+    pub fn kind_tag(self) -> &'static str {
+        match self {
+            NetworkResourceId::Vpc { .. } => "vpc",
+            NetworkResourceId::Subnet { .. } => "subnet",
+            NetworkResourceId::RouteTable { .. } => "route_table",
+            NetworkResourceId::Route { .. } => "route",
+            NetworkResourceId::SecurityGroup { .. } => "security_group",
+            NetworkResourceId::SecurityGroupRule { .. } => "security_group_rule",
+            NetworkResourceId::NicSecurityGroupAttachment { .. } => "nic_security_group_attachment",
+            NetworkResourceId::NatGateway { .. } => "nat_gateway",
+            NetworkResourceId::FloatingIp { .. } => "floating_ip",
+        }
+    }
+
+    /// The resource id, regardless of variant.
+    #[must_use]
+    pub fn id(self) -> Uuid {
+        match self {
+            NetworkResourceId::Vpc { id }
+            | NetworkResourceId::Subnet { id }
+            | NetworkResourceId::RouteTable { id }
+            | NetworkResourceId::Route { id }
+            | NetworkResourceId::SecurityGroup { id }
+            | NetworkResourceId::SecurityGroupRule { id }
+            | NetworkResourceId::NicSecurityGroupAttachment { id }
+            | NetworkResourceId::NatGateway { id }
+            | NetworkResourceId::FloatingIp { id } => id,
+        }
+    }
+}
+
+/// Per-realizer realization row. One per `(resource, realizer)`
+/// tuple; written by [`crate::Store::record_network_realization`]
+/// and read back by [`crate::Store::list_network_realizations`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Realization {
+    /// Which CN or edge cluster reported this row.
+    pub realizer: RealizerId,
+    /// Generation the realizer reports for the resource. Monotonic
+    /// per `(resource, realizer)`: a write with `generation <
+    /// existing.generation` is rejected with
+    /// [`crate::StoreError::Conflict`] (the "backward report" case
+    /// the Agent C contract calls out).
+    pub generation: u64,
+    /// Realizer-side outcome at this generation.
+    pub status: RealizationStatus,
+    /// Wall-clock time the row was last upserted by the realizer.
+    pub last_reported_at: DateTime<Utc>,
+    /// Free-form short diagnostic from the realizer. Surfaced
+    /// verbatim in `tcadm net realized`. Kept short — detailed
+    /// stderr belongs in agent logs and future support bundles, not
+    /// in unbounded control-plane rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// Rolled-up realization view of a single network resource. Computed
+/// at read time from the resource's `desired_generation` field plus
+/// the per-realizer rows in the `network_realization/...` keyspace.
+///
+/// **Not a denormalization.** The resource record stores
+/// `desired_generation: u64` directly; this view is synthesized by
+/// [`RealizedNetworkState::from_rows`] when the resource is
+/// serialized for a wire response. Storing the rolled-up view would
+/// drift from the per-realizer rows on every realizer report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RealizedNetworkState {
+    /// Desired generation of the resource. Monotonically increased
+    /// by `tritond` on every wire-affecting mutation.
+    pub desired_generation: u64,
+    /// Highest generation any realizer has reported with
+    /// [`RealizationStatus::Applied`]. `None` if no realizer has
+    /// applied anything yet. Useful as a coarse "did anything take?"
+    /// signal; "did the dataplane converge everywhere?" requires
+    /// inspecting [`Self::realizations`] against the expected
+    /// realizer set.
+    #[serde(default)]
+    pub applied_generation: Option<u64>,
+    /// Per-realizer rows, sorted by `(realizer.kind_tag(),
+    /// realizer.id())` for deterministic output.
+    pub realizations: Vec<Realization>,
+}
+
+impl RealizedNetworkState {
+    /// Roll `(desired_generation, rows)` up into a
+    /// [`RealizedNetworkState`]. Sorts `rows` deterministically and
+    /// computes `applied_generation` as the max generation across
+    /// rows whose status is [`RealizationStatus::Applied`].
+    ///
+    /// This is the canonical projection callers should use; both
+    /// MemStore and FdbStore return rows in the same sorted order,
+    /// so re-running this helper on an already-sorted vec is
+    /// idempotent.
+    #[must_use]
+    pub fn from_rows(desired_generation: u64, mut rows: Vec<Realization>) -> Self {
+        rows.sort_by(|a, b| {
+            a.realizer
+                .kind_tag()
+                .cmp(b.realizer.kind_tag())
+                .then_with(|| a.realizer.id().cmp(&b.realizer.id()))
+        });
+        let applied_generation = rows
+            .iter()
+            .filter(|r| matches!(r.status, RealizationStatus::Applied))
+            .map(|r| r.generation)
+            .max();
+        Self {
+            desired_generation,
+            applied_generation,
+            realizations: rows,
+        }
+    }
+}
+
+#[cfg(test)]
+mod realized_state_tests {
+    use super::*;
+
+    fn cn(uuid: &str) -> RealizerId {
+        RealizerId::Cn {
+            id: Uuid::parse_str(uuid).unwrap(),
+        }
+    }
+
+    fn row(realizer: RealizerId, generation: u64, status: RealizationStatus) -> Realization {
+        Realization {
+            realizer,
+            generation,
+            status,
+            last_reported_at: Utc::now(),
+            message: None,
+        }
+    }
+
+    #[test]
+    fn from_rows_sets_applied_to_max_applied_generation() {
+        let r1 = cn("11111111-1111-1111-1111-111111111111");
+        let r2 = cn("22222222-2222-2222-2222-222222222222");
+        let view = RealizedNetworkState::from_rows(
+            10,
+            vec![
+                row(r1, 7, RealizationStatus::Applied),
+                row(r2, 9, RealizationStatus::Applied),
+                row(
+                    RealizerId::EdgeCluster {
+                        id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+                    },
+                    11,
+                    RealizationStatus::Failed,
+                ),
+            ],
+        );
+        assert_eq!(view.desired_generation, 10);
+        // Applied 9 wins; the Failed-at-11 row is ignored for the
+        // applied summary.
+        assert_eq!(view.applied_generation, Some(9));
+        assert_eq!(view.realizations.len(), 3);
+    }
+
+    #[test]
+    fn from_rows_no_applied_yields_none() {
+        let view = RealizedNetworkState::from_rows(
+            5,
+            vec![row(
+                cn("11111111-1111-1111-1111-111111111111"),
+                3,
+                RealizationStatus::Accepted,
+            )],
+        );
+        assert_eq!(view.applied_generation, None);
+    }
+
+    #[test]
+    fn from_rows_sorts_deterministically() {
+        let r1 = cn("11111111-1111-1111-1111-111111111111");
+        let r2 = cn("22222222-2222-2222-2222-222222222222");
+        let edge = RealizerId::EdgeCluster {
+            id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+        };
+        // Feed in unsorted: edge first (kind_tag "edge_cluster" >
+        // "cn" alphabetically), then r2, then r1.
+        let view = RealizedNetworkState::from_rows(
+            1,
+            vec![
+                row(edge, 1, RealizationStatus::Applied),
+                row(r2, 1, RealizationStatus::Applied),
+                row(r1, 1, RealizationStatus::Applied),
+            ],
+        );
+        // Expect: cn rows first (by id ascending), edge_cluster
+        // last.
+        assert_eq!(view.realizations[0].realizer, r1);
+        assert_eq!(view.realizations[1].realizer, r2);
+        assert_eq!(view.realizations[2].realizer, edge);
+    }
+
+    #[test]
+    fn empty_rows_yields_empty_view() {
+        let view = RealizedNetworkState::from_rows(0, vec![]);
+        assert_eq!(view.desired_generation, 0);
+        assert_eq!(view.applied_generation, None);
+        assert!(view.realizations.is_empty());
+    }
+
+    #[test]
+    fn network_resource_id_kind_tags_are_stable() {
+        // Spot-check that the kind_tag matches the serde wire tag
+        // exactly. If a future refactor renames a tag, the
+        // FDB-keyspace layout breaks silently — this test catches
+        // the drift before it ships.
+        let id = Uuid::nil();
+        let cases: &[(NetworkResourceId, &str)] = &[
+            (NetworkResourceId::Vpc { id }, "vpc"),
+            (NetworkResourceId::Subnet { id }, "subnet"),
+            (NetworkResourceId::RouteTable { id }, "route_table"),
+            (NetworkResourceId::Route { id }, "route"),
+            (NetworkResourceId::SecurityGroup { id }, "security_group"),
+            (
+                NetworkResourceId::SecurityGroupRule { id },
+                "security_group_rule",
+            ),
+            (
+                NetworkResourceId::NicSecurityGroupAttachment { id },
+                "nic_security_group_attachment",
+            ),
+            (NetworkResourceId::NatGateway { id }, "nat_gateway"),
+            (NetworkResourceId::FloatingIp { id }, "floating_ip"),
+        ];
+        for (resource, want) in cases {
+            assert_eq!(resource.kind_tag(), *want);
+            // Round-trip through serde and check the wire tag.
+            let json = serde_json::to_value(resource).unwrap();
+            assert_eq!(json["kind"].as_str().unwrap(), *want);
+        }
+    }
+
+    #[test]
+    fn realizer_id_kind_tags_are_stable() {
+        let id = Uuid::nil();
+        let cases: &[(RealizerId, &str)] = &[
+            (RealizerId::Cn { id }, "cn"),
+            (RealizerId::EdgeCluster { id }, "edge_cluster"),
+        ];
+        for (realizer, want) in cases {
+            assert_eq!(realizer.kind_tag(), *want);
+            let json = serde_json::to_value(realizer).unwrap();
+            assert_eq!(json["kind"].as_str().unwrap(), *want);
+        }
+    }
+}

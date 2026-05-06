@@ -451,76 +451,113 @@ H-4 (Vpc + Subnet) and H-11 (FloatingIp).
 ## 6. Desired vs realized state
 
 The dataplane is asynchronous. The control plane records *intent*;
-agents (`tritonagent`, future `fhrun` edge runtime) report what
-they actually programmed. v1 ships a single realized-state record
-per network resource:
+realizers (`tritonagent` per CN, future fhrun-managed edge runtime
+per VPC) report what they actually programmed.
+
+Every new v1 network resource record carries a single
+`desired_generation: u64` field. The store keeps per-realizer
+realization rows in their own keyspace
+(`network_realization/<kind>/<id>/<realizer_kind>/<realizer_id>`).
+The wire-visible `RealizedNetworkState` field on a resource
+response is **computed at read time** from
+`(desired_generation, list_network_realizations(resource))` — it is
+not stored as a denormalization on the resource record. A
+denormalized copy would silently drift from the per-realizer rows
+on every realizer report.
 
 ```rust
 pub struct RealizedNetworkState {
-    /// Monotonically increasing per-resource counter incremented
-    /// every time desired state changes. Agents report which
-    /// generation they have applied.
+    /// Mirrors the resource record's `desired_generation` field.
+    /// Monotonically increased by tritond on every wire-affecting
+    /// mutation.
     pub desired_generation: u64,
-    /// Most-recent generation any agent reported applying. None
-    /// while never applied.
+    /// Highest generation any realizer has reported with
+    /// `RealizationStatus::Applied`. None until any realizer
+    /// applies.
     pub applied_generation: Option<u64>,
-    /// Per-CN (or per-edge-cluster) realization state. Empty until
-    /// at least one agent has reported.
+    /// Per-realizer rows, sorted by `(realizer.kind_tag(),
+    /// realizer.id())`.
     pub realizations: Vec<Realization>,
 }
 
 pub struct Realization {
-    /// CN or edge cluster running the realization.
     pub realizer: RealizerId,
     pub generation: u64,
     pub status: RealizationStatus,
     pub last_reported_at: DateTime<Utc>,
-    /// Free-form diagnostic from the realizer. Surfaced verbatim
-    /// in `tcadm net realized`.
+    /// Short free-form diagnostic. Detailed stderr stays in agent
+    /// logs / future support bundles, not in unbounded
+    /// control-plane rows.
     pub message: Option<String>,
 }
 
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum RealizerId {
-    Cn(Uuid),
-    EdgeCluster(Uuid),
+    Cn { id: Uuid },
+    EdgeCluster { id: Uuid },
 }
 
 #[non_exhaustive]
 pub enum RealizationStatus {
-    Pending,
+    /// Realizer accepted the work and handed the blueprint to its
+    /// dataplane. Aligns with Agent B's `accepted_generation`
+    /// concept (see `proteus/docs/tritond-integration-v1.md`).
+    Accepted,
+    /// Dataplane confirmed the generation active.
     Applied,
+    /// Realizer failed to converge. `message` describes the phase.
     Failed,
 }
+
+impl RealizedNetworkState {
+    /// Canonical projection. Sort + roll up per-realizer rows.
+    pub fn from_rows(desired_generation: u64, rows: Vec<Realization>) -> Self;
+}
 ```
+
+The variant set is deliberately small. `#[non_exhaustive]` allows
+post-v1 additions (e.g. `Compiling`, `Pending`) when downstream
+needs them; Agent C calls out that they may want to report a
+non-terminal state if Proteus exposes a stable in-progress
+status, but v1 does not require it.
 
 Generation rules:
 
 * every store mutation that changes wire-affecting fields (CIDRs,
-  rules, route targets, attachments) increments
-  `desired_generation` atomically with the write.
-* `applied_generation` is monotonically updated by the realizer
-  reports endpoint (Agent C / Agent E).
-* `applied_generation > desired_generation` is treated as a bug
-  (the realizer has reported a future generation) and the report
-  is rejected with a 409 — never silently accepted.
+  rules, route targets, attachments) increments the resource
+  record's `desired_generation: u64` atomically with the write.
+* `record_network_realization(resource, realizer, generation,
+  status, message)` upserts the per-realizer row. A write with
+  `generation < existing.generation` is rejected with
+  `StoreError::Conflict` (the API edge surfaces this as 409 — the
+  "backward report" case the Agent C contract calls out).
+  Idempotent at the same generation; status downgrades at the same
+  generation are allowed (the dataplane could fail at a previously
+  applied generation due to a transient issue).
+* `applied_generation` is computed by `from_rows` as the max
+  generation across rows whose status is `Applied`.
 
 Rule of thumb (manager-amended 2026-05-05):
 
 * **New resources** introduced by v1 (`RouteTable`, `Route`,
   `NatGateway`, `SecurityGroup`, `SecurityGroupRule`,
-  `NicSecurityGroupAttachment`) carry `realized: RealizedNetworkState`
-  from inception — they have no prior wire shape to widen.
+  `NicSecurityGroupAttachment`) carry `desired_generation: u64`
+  from inception and project a `realized: RealizedNetworkState`
+  view at read time.
 * **Existing resources** (`Vpc`, `Subnet`, `FloatingIp`) gain
-  `realized` only via dedicated slices (H-4 for Vpc + Subnet,
-  H-11 for FloatingIp) that intentionally include OpenAPI regen,
-  client regen, and updated tests.
-* **H-1 ships only the `RealizedNetworkState` types, helpers, and
-  store reporting machinery (with focused unit tests). H-1 does
-  not retrofit the field onto any existing struct.**
+  `desired_generation` only via dedicated slices (H-4 for Vpc +
+  Subnet, H-11 for FloatingIp) that intentionally include OpenAPI
+  regen, client regen, and updated tests.
+* **H-1 ships only the `RealizedNetworkState` types, the helper
+  (`from_rows`), and the two store trait methods
+  (`record_network_realization`, `list_network_realizations`),
+  with focused unit tests. H-1 does not retrofit any existing
+  struct and does not ship the HTTP endpoint** (the endpoint lands
+  in H-13 once at least one realized resource exists).
 * The single realization report endpoint accepts
   `(resource_id, realizer, generation, status, message)` and
-  writes into the right resource's vector by id. This keeps the
+  writes into `record_network_realization`. This keeps the
   realized surface small (one endpoint) while the intent surface
   is broad.
 
@@ -633,17 +670,23 @@ trait Store {
     async fn set_subnet_route_table(&self, subnet_id: Uuid, route_table_id: Uuid)
         -> Result<Subnet, StoreError>;
 
-    // realized-state reporting
+    // realized-state reporting (Slice H-1)
     async fn record_network_realization(
         &self, resource: NetworkResourceId, realizer: RealizerId,
         generation: u64, status: RealizationStatus, message: Option<String>,
     ) -> Result<(), StoreError>;
+    async fn list_network_realizations(
+        &self, resource: NetworkResourceId,
+    ) -> Result<Vec<Realization>, StoreError>;
 }
 ```
 
 `NetworkResourceId` is an enum tagged with the resource kind so a
 single endpoint can dispatch into the matching record (e.g.
-`{ kind: "nat_gateway", id: <uuid> }`).
+`{ kind: "nat_gateway", id: <uuid> }`). Callers project the rows
+returned by `list_network_realizations` into a
+`RealizedNetworkState` view via the canonical helper
+`RealizedNetworkState::from_rows(desired_generation, rows)`.
 
 ### 8.2 FDB key prefixes
 
@@ -989,7 +1032,7 @@ change). Tests + docs ride with the code in the same commit.
 
 | # | Slice | Touches | Tests |
 |---|-------|---------|-------|
-| H-1 | `RealizedNetworkState` type + helpers + `record_network_realization` store trait + MemStore impl + FdbStore impl. **No retrofit onto `Vpc`/`Subnet`/`FloatingIp`** (manager ruling). | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: round-trip, generation monotonicity, backward-generation rejection, multi-realizer rows |
+| H-1 | `RealizedNetworkState`, `Realization`, `RealizerId`, `RealizationStatus`, `NetworkResourceId` types + `RealizedNetworkState::from_rows` helper + `record_network_realization` and `list_network_realizations` store trait methods + MemStore impl + FdbStore impl. **No retrofit onto `Vpc`/`Subnet`/`FloatingIp`** (manager ruling). | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: helper rollup; round-trip; backward-generation rejection (StoreError::Conflict); same-generation status downgrade allowed; idempotent re-report; multi-realizer rows; distinct resources isolated; pre-realization list returns empty (not 404); kind-tag stability for both enums |
 | H-2 | `NatGateway` record (store layer only): types, trait, MemStore, FdbStore. Carries `realized: RealizedNetworkState` from inception (new struct, no widening). Address allocator extends the existing FIP pool to record `{kind, id}` so FIP+NAT cannot collide. | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: create/get/list/delete, within-VPC name uniqueness, cross-VPC same name OK, shared-pool collision impossible, delete frees address |
 | H-3 | `NatGateway` API surface + handlers + `tcadm net nat-gw` + integration tests. Copies the `tests/vpcs.rs` template. **Includes `make openapi-generate` + `make clients-generate`** (new endpoints). | `apis/tritond-api/src/lib.rs`, `services/tritond/src/{lib,auth}.rs`, `cli/tcadm/src/{main,commands}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/nat_gateways.rs` | integration: cross-tenant 404, within-VPC name unique, address from pool, anonymous → 404. **Does not** include the delete-when-route-references → 409 test (deferred to H-6 when `Route` exists; manager ruling). |
 | H-4 | `RouteTable` record + `Vpc.main_route_table_id` (atomic with VPC create) + `Subnet.route_table_id` (defaults to parent VPC's main RT). **Widens `Vpc` and `Subnet` — slice intentionally runs `make openapi-generate` + `make clients-generate` and updates affected tests** (manager ruling: no silent widening). | `libs/tritond-store/src/{types,lib,mem,fdb}.rs`, `apis/tritond-api/src/lib.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/{vpcs,subnets}.rs` | unit: VPC create produces main RT, subnet create defaults to main RT; integration: existing VPC + subnet tests round-trip new fields |

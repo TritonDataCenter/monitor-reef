@@ -36,12 +36,13 @@ pub use types::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment,
     IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, Instance,
     InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
-    LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewProject,
-    NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
-    TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
-    generate_poll_token, normalize_claim_code,
+    LifecycleStateKind, NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
+    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
+    ProvisioningJob, Quota, Realization, RealizationStatus, RealizedNetworkState, RealizerId, Silo,
+    SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE,
+    Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
+    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
+    normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -966,4 +967,45 @@ pub trait Store: Send + Sync + 'static {
     /// `register_cn` to decide whether to short-circuit to
     /// Approved.
     async fn try_consume_auto_approve_slot(&self, now: DateTime<Utc>) -> Result<bool, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Realized network state (Agent A, Slice H-1)
+    // ------------------------------------------------------------------
+
+    /// Record a realization row for `(resource, realizer)`. Upserts
+    /// the existing row when `generation >= existing.generation`;
+    /// rejects with [`StoreError::Conflict`] when `generation <
+    /// existing.generation` (the realizer is reporting a stale
+    /// generation, the "backward report" case the Agent C contract
+    /// calls out).
+    ///
+    /// Idempotent at the same generation: re-writing the same
+    /// `(status, message)` is a no-op other than `last_reported_at`.
+    /// Status downgrades at the same generation are allowed (the
+    /// dataplane could subsequently fail at a previously-applied
+    /// generation due to a transient issue).
+    ///
+    /// The store does not validate that `resource.id()` actually
+    /// points at an existing record; that check is enforced at the
+    /// API edge by Slice H-13 so the dispatch can return a clean
+    /// 404 before falling through to this method.
+    async fn record_network_realization(
+        &self,
+        resource: NetworkResourceId,
+        realizer: RealizerId,
+        generation: u64,
+        status: RealizationStatus,
+        message: Option<String>,
+    ) -> Result<(), StoreError>;
+
+    /// Read every per-realizer row for `resource`, sorted by
+    /// `(realizer.kind_tag(), realizer.id())`. Returns an empty
+    /// vector when no realizer has reported yet — this is the
+    /// normal pre-realization state, *not* a not-found condition.
+    /// Callers project the rows into a [`RealizedNetworkState`] view
+    /// via [`RealizedNetworkState::from_rows`].
+    async fn list_network_realizations(
+        &self,
+        resource: NetworkResourceId,
+    ) -> Result<Vec<Realization>, StoreError>;
 }

@@ -102,6 +102,15 @@
 //! cn/by_state/<state>/<server_uuid> -> empty (membership index)
 //! auto_approve/window               -> JSON-encoded AutoApproveWindow (singleton)
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
+//! network_realization/<kind>/<resource_id>/<realizer_kind>/<realizer_id>
+//!                                   -> JSON-encoded Realization
+//!                                      (Slice H-1; <kind> matches the
+//!                                       NetworkResourceId serde wire tag,
+//!                                       <realizer_kind> matches the
+//!                                       RealizerId serde wire tag —
+//!                                       both kept in lockstep with
+//!                                       `NetworkResourceId::kind_tag` and
+//!                                       `RealizerId::kind_tag`.)
 //! ```
 //!
 //! Each multi-key write happens in a single transaction so name
@@ -119,10 +128,11 @@ use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
-    NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
+    LifecycleState, LifecycleStateKind, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
+    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
+    ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Silo, SshKey, SshKeyScope,
+    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -591,6 +601,28 @@ impl FdbStore {
 
     fn auto_approve_window_key() -> &'static [u8] {
         b"auto_approve/window"
+    }
+
+    /// Key for one realization row. `network_realization/<kind>/<resource_id>/<realizer_kind>/<realizer_id>`.
+    fn network_realization_key(resource: NetworkResourceId, realizer: RealizerId) -> Vec<u8> {
+        format!(
+            "network_realization/{}/{}/{}/{}",
+            resource.kind_tag(),
+            resource.id(),
+            realizer.kind_tag(),
+            realizer.id(),
+        )
+        .into_bytes()
+    }
+
+    /// Prefix scan for every realizer's row on a given resource.
+    fn network_realization_resource_prefix(resource: NetworkResourceId) -> Vec<u8> {
+        format!(
+            "network_realization/{}/{}/",
+            resource.kind_tag(),
+            resource.id(),
+        )
+        .into_bytes()
     }
 }
 
@@ -4691,6 +4723,111 @@ impl Store for FdbStore {
             })
             .await;
         result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    // ------------------------------------------------------------------
+    // Realized network state (Slice H-1)
+    // ------------------------------------------------------------------
+
+    async fn record_network_realization(
+        &self,
+        resource: NetworkResourceId,
+        realizer: RealizerId,
+        generation: u64,
+        status: RealizationStatus,
+        message: Option<String>,
+    ) -> Result<(), StoreError> {
+        let key = Self::network_realization_key(resource, realizer);
+
+        enum Outcome {
+            Stored,
+            Backward { existing: u64 },
+            SerializeFailed,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let message = message.clone();
+                async move {
+                    if let Some(bytes) = tr.get(&key, false).await?
+                        && let Ok(existing) = serde_json::from_slice::<Realization>(&bytes)
+                        && existing.generation > generation
+                    {
+                        return Ok(Outcome::Backward {
+                            existing: existing.generation,
+                        });
+                    }
+                    let row = Realization {
+                        realizer,
+                        generation,
+                        status,
+                        last_reported_at: Utc::now(),
+                        message,
+                    };
+                    let value = match serde_json::to_vec(&row) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::SerializeFailed),
+                    };
+                    tr.set(&key, &value);
+                    Ok(Outcome::Stored)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Stored) => Ok(()),
+            Ok(Outcome::Backward { existing }) => Err(StoreError::Conflict(format!(
+                "backward generation report for {} {}: existing={existing}, attempted={generation}",
+                resource.kind_tag(),
+                resource.id(),
+            ))),
+            Ok(Outcome::SerializeFailed) => {
+                Err(StoreError::Backend("serialize realization row".to_string()))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_network_realizations(
+        &self,
+        resource: NetworkResourceId,
+    ) -> Result<Vec<Realization>, StoreError> {
+        let prefix = Self::network_realization_resource_prefix(resource);
+        let (begin, end) = prefix_range(&prefix);
+
+        let result: Result<Vec<Realization>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 0, false).await?;
+                    let mut rows: Vec<Realization> = Vec::with_capacity(kvs.len());
+                    for kv in kvs.iter() {
+                        if let Ok(row) = serde_json::from_slice::<Realization>(kv.value()) {
+                            rows.push(row);
+                        }
+                    }
+                    Ok(rows)
+                }
+            })
+            .await;
+
+        let mut rows = result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        rows.sort_by(|a, b| {
+            a.realizer
+                .kind_tag()
+                .cmp(b.realizer.kind_tag())
+                .then_with(|| a.realizer.id().cmp(&b.realizer.id()))
+        });
+        Ok(rows)
     }
 }
 

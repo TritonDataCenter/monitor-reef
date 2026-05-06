@@ -22,10 +22,11 @@ use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnState, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject,
-    NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
+    LifecycleState, LifecycleStateKind, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
+    NewJob, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
+    ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Silo, SshKey, SshKeyScope,
+    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
@@ -180,6 +181,11 @@ struct Inner {
     cn_server_uuid_by_poll_token: HashMap<String, Uuid>,
     /// Singleton auto-approve window. `None` when closed.
     auto_approve_window: Option<AutoApproveWindow>,
+    /// Per-`(resource, realizer)` realization rows. Mirrors the FDB
+    /// `network_realization/<kind>/<id>/<realizer_kind>/<realizer_id>`
+    /// keyspace. Written by [`Store::record_network_realization`];
+    /// read back by [`Store::list_network_realizations`].
+    network_realizations: HashMap<(NetworkResourceId, RealizerId), Realization>,
 }
 
 /// In-process [`Store`] implementation.
@@ -2465,6 +2471,61 @@ impl Store for MemStore {
     ) -> Result<bool, StoreError> {
         let mut guard = self.inner.write().await;
         Ok(mem_try_consume_window(&mut guard, now))
+    }
+
+    // ------------------------------------------------------------------
+    // Realized network state (Slice H-1)
+    // ------------------------------------------------------------------
+
+    async fn record_network_realization(
+        &self,
+        resource: NetworkResourceId,
+        realizer: RealizerId,
+        generation: u64,
+        status: RealizationStatus,
+        message: Option<String>,
+    ) -> Result<(), StoreError> {
+        let mut inner = self.inner.write().await;
+        if let Some(existing) = inner.network_realizations.get(&(resource, realizer))
+            && existing.generation > generation
+        {
+            return Err(StoreError::Conflict(format!(
+                "backward generation report for {} {}: existing={}, attempted={}",
+                resource.kind_tag(),
+                resource.id(),
+                existing.generation,
+                generation,
+            )));
+        }
+        let row = Realization {
+            realizer,
+            generation,
+            status,
+            last_reported_at: Utc::now(),
+            message,
+        };
+        inner.network_realizations.insert((resource, realizer), row);
+        Ok(())
+    }
+
+    async fn list_network_realizations(
+        &self,
+        resource: NetworkResourceId,
+    ) -> Result<Vec<Realization>, StoreError> {
+        let inner = self.inner.read().await;
+        let mut rows: Vec<Realization> = inner
+            .network_realizations
+            .iter()
+            .filter(|((r, _), _)| *r == resource)
+            .map(|(_, row)| row.clone())
+            .collect();
+        rows.sort_by(|a, b| {
+            a.realizer
+                .kind_tag()
+                .cmp(b.realizer.kind_tag())
+                .then_with(|| a.realizer.id().cmp(&b.realizer.id()))
+        });
+        Ok(rows)
     }
 }
 
@@ -5612,5 +5673,167 @@ mod tests {
         assert_eq!(approved[0].server_uuid, a.server_uuid);
         let all = store.list_cns(None).await.unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    // ------------------------------------------------------------------
+    // Realized network state (Slice H-1)
+    // ------------------------------------------------------------------
+
+    fn cn(uuid: Uuid) -> RealizerId {
+        RealizerId::Cn { id: uuid }
+    }
+
+    fn nat(uuid: Uuid) -> NetworkResourceId {
+        NetworkResourceId::NatGateway { id: uuid }
+    }
+
+    #[tokio::test]
+    async fn realization_round_trips() {
+        let store = MemStore::new();
+        let resource = nat(Uuid::new_v4());
+        let realizer = cn(Uuid::new_v4());
+        store
+            .record_network_realization(
+                resource,
+                realizer,
+                3,
+                RealizationStatus::Applied,
+                Some("ok".into()),
+            )
+            .await
+            .unwrap();
+
+        let rows = store.list_network_realizations(resource).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].generation, 3);
+        assert_eq!(rows[0].status, RealizationStatus::Applied);
+        assert_eq!(rows[0].message.as_deref(), Some("ok"));
+    }
+
+    #[tokio::test]
+    async fn realization_backward_generation_rejected() {
+        let store = MemStore::new();
+        let resource = nat(Uuid::new_v4());
+        let realizer = cn(Uuid::new_v4());
+        store
+            .record_network_realization(resource, realizer, 7, RealizationStatus::Applied, None)
+            .await
+            .unwrap();
+        let err = store
+            .record_network_realization(resource, realizer, 5, RealizationStatus::Applied, None)
+            .await
+            .unwrap_err();
+        match err {
+            StoreError::Conflict(msg) => assert!(
+                msg.contains("backward generation"),
+                "unexpected message: {msg}"
+            ),
+            other => panic!("expected Conflict, got {other:?}"),
+        }
+        // Existing row is unchanged.
+        let rows = store.list_network_realizations(resource).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].generation, 7);
+    }
+
+    #[tokio::test]
+    async fn realization_same_generation_status_change_allowed() {
+        // Applied(5) followed by Failed(5) is legal — the dataplane
+        // could subsequently fail at a previously-applied
+        // generation due to a transient issue.
+        let store = MemStore::new();
+        let resource = nat(Uuid::new_v4());
+        let realizer = cn(Uuid::new_v4());
+        store
+            .record_network_realization(resource, realizer, 5, RealizationStatus::Applied, None)
+            .await
+            .unwrap();
+        store
+            .record_network_realization(
+                resource,
+                realizer,
+                5,
+                RealizationStatus::Failed,
+                Some("kernel transport: ENOTCONN".into()),
+            )
+            .await
+            .unwrap();
+        let rows = store.list_network_realizations(resource).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, RealizationStatus::Failed);
+    }
+
+    #[tokio::test]
+    async fn realization_idempotent_at_same_generation() {
+        let store = MemStore::new();
+        let resource = nat(Uuid::new_v4());
+        let realizer = cn(Uuid::new_v4());
+        for _ in 0..3 {
+            store
+                .record_network_realization(resource, realizer, 9, RealizationStatus::Applied, None)
+                .await
+                .unwrap();
+        }
+        let rows = store.list_network_realizations(resource).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].generation, 9);
+    }
+
+    #[tokio::test]
+    async fn realization_multi_realizer_rows_coexist() {
+        let store = MemStore::new();
+        let resource = nat(Uuid::new_v4());
+        let cn1 = cn(Uuid::new_v4());
+        let cn2 = cn(Uuid::new_v4());
+        let edge = RealizerId::EdgeCluster { id: Uuid::new_v4() };
+        store
+            .record_network_realization(resource, cn1, 1, RealizationStatus::Applied, None)
+            .await
+            .unwrap();
+        store
+            .record_network_realization(resource, cn2, 2, RealizationStatus::Accepted, None)
+            .await
+            .unwrap();
+        store
+            .record_network_realization(resource, edge, 3, RealizationStatus::Applied, None)
+            .await
+            .unwrap();
+        let rows = store.list_network_realizations(resource).await.unwrap();
+        assert_eq!(rows.len(), 3);
+        // Sorted: cn rows first (by uuid asc), edge_cluster last.
+        assert_eq!(rows[2].realizer, edge);
+    }
+
+    #[tokio::test]
+    async fn realization_distinct_resources_isolated() {
+        let store = MemStore::new();
+        let nat1 = nat(Uuid::new_v4());
+        let nat2 = nat(Uuid::new_v4());
+        let realizer = cn(Uuid::new_v4());
+        store
+            .record_network_realization(nat1, realizer, 1, RealizationStatus::Applied, None)
+            .await
+            .unwrap();
+        store
+            .record_network_realization(nat2, realizer, 9, RealizationStatus::Applied, None)
+            .await
+            .unwrap();
+        let rows1 = store.list_network_realizations(nat1).await.unwrap();
+        assert_eq!(rows1.len(), 1);
+        assert_eq!(rows1[0].generation, 1);
+        let rows2 = store.list_network_realizations(nat2).await.unwrap();
+        assert_eq!(rows2.len(), 1);
+        assert_eq!(rows2[0].generation, 9);
+    }
+
+    #[tokio::test]
+    async fn realization_unreported_resource_lists_empty() {
+        // Pre-realization state is empty rows, NOT NotFound.
+        let store = MemStore::new();
+        let rows = store
+            .list_network_realizations(nat(Uuid::new_v4()))
+            .await
+            .unwrap();
+        assert!(rows.is_empty());
     }
 }
