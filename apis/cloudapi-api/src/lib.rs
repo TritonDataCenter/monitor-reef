@@ -799,6 +799,7 @@ pub trait CloudApi {
     async fn list_packages(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
+        query: Query<ListPackagesQuery>,
     ) -> Result<HttpResponseOk<Vec<Package>>, HttpError>;
 
     /// Head packages
@@ -810,6 +811,7 @@ pub trait CloudApi {
     async fn head_packages(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
+        query: Query<ListPackagesQuery>,
     ) -> Result<Response<Body>, HttpError>;
 
     /// Get package
@@ -1971,6 +1973,7 @@ pub trait CloudApi {
     async fn list_volumes(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
+        query: Query<ListVolumesQuery>,
     ) -> Result<HttpResponseOk<Vec<Volume>>, HttpError>;
 
     /// Create volume

@@ -279,6 +279,210 @@ fn test_volume_sizes() {
     );
 }
 
+/// Test `triton volume list -j --name=X` filters by name
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_list_filter_by_name() {
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    // List all volumes to find a known name.
+    let (stdout, _, success) = common::run_triton_with_profile(["volume", "list", "-j"]);
+    assert!(success, "volume list -j should succeed");
+
+    let all_volumes: Vec<serde_json::Value> = common::json_stream_parse(&stdout);
+    if all_volumes.is_empty() {
+        eprintln!("Skipping: no volumes available");
+        return;
+    }
+
+    let target_name = all_volumes[0]["name"]
+        .as_str()
+        .expect("Volume should have name");
+
+    // Filter by that name.
+    let (filtered_stdout, _, success) =
+        common::run_triton_with_profile(["volume", "list", "-j", "--name", target_name]);
+    assert!(success, "filtered volume list should succeed");
+
+    let filtered: Vec<serde_json::Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one volume with name {target_name}"
+    );
+    for vol in &filtered {
+        assert_eq!(
+            vol["name"].as_str(),
+            Some(target_name),
+            "all results should match the filter name"
+        );
+    }
+}
+
+/// Test `triton volume list -j --state=X` filters by state
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_list_filter_by_state() {
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    // List all volumes to find a known state.
+    let (stdout, _, success) = common::run_triton_with_profile(["volume", "list", "-j"]);
+    assert!(success, "volume list -j should succeed");
+
+    let all_volumes: Vec<serde_json::Value> = common::json_stream_parse(&stdout);
+    if all_volumes.is_empty() {
+        eprintln!("Skipping: no volumes available");
+        return;
+    }
+
+    let target_state = all_volumes[0]["state"]
+        .as_str()
+        .expect("Volume should have state");
+
+    // Filter by that state.
+    let (filtered_stdout, _, success) =
+        common::run_triton_with_profile(["volume", "list", "-j", "--state", target_state]);
+    assert!(success, "filtered volume list should succeed");
+
+    let filtered: Vec<serde_json::Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one volume with state {target_state}"
+    );
+    for vol in &filtered {
+        assert_eq!(
+            vol["state"].as_str(),
+            Some(target_state),
+            "all results should match the filter state"
+        );
+    }
+}
+
+/// Test `triton volume list -j --size=X` filters by size
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_list_filter_by_size() {
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    // List all volumes to find a known size.
+    let (stdout, _, success) = common::run_triton_with_profile(["volume", "list", "-j"]);
+    assert!(success, "volume list -j should succeed");
+
+    let all_volumes: Vec<serde_json::Value> = common::json_stream_parse(&stdout);
+    if all_volumes.is_empty() {
+        eprintln!("Skipping: no volumes available");
+        return;
+    }
+
+    let target_size = all_volumes[0]["size"]
+        .as_u64()
+        .expect("Volume should have size");
+
+    // Filter by that size.
+    let (filtered_stdout, _, success) = common::run_triton_with_profile([
+        "volume",
+        "list",
+        "-j",
+        "--size",
+        &target_size.to_string(),
+    ]);
+    assert!(success, "filtered volume list should succeed");
+
+    let filtered: Vec<serde_json::Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one volume with size {target_size}"
+    );
+    for vol in &filtered {
+        assert_eq!(
+            vol["size"].as_u64(),
+            Some(target_size),
+            "all results should match the filter size"
+        );
+    }
+}
+
+/// Test `triton volume list -j --type=tritonnfs` filters by type
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_list_filter_by_type() {
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    // List all volumes to find a known type.
+    let (stdout, _, success) = common::run_triton_with_profile(["volume", "list", "-j"]);
+    assert!(success, "volume list -j should succeed");
+
+    let all_volumes: Vec<serde_json::Value> = common::json_stream_parse(&stdout);
+    if all_volumes.is_empty() {
+        eprintln!("Skipping: no volumes available");
+        return;
+    }
+
+    let target_type = all_volumes[0]["type"]
+        .as_str()
+        .expect("Volume should have type");
+
+    // Filter by that type.
+    let (filtered_stdout, _, success) =
+        common::run_triton_with_profile(["volume", "list", "-j", "--type", target_type]);
+    assert!(success, "filtered volume list should succeed");
+
+    let filtered: Vec<serde_json::Value> = common::json_stream_parse(&filtered_stdout);
+    assert!(
+        !filtered.is_empty(),
+        "expected at least one volume with type {target_type}"
+    );
+    for vol in &filtered {
+        assert_eq!(
+            vol["type"].as_str(),
+            Some(target_type),
+            "all results should match the filter type"
+        );
+    }
+}
+
+/// Test `triton volume list -j --name=nonexistent` returns empty
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_list_filter_no_match() {
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    let (stdout, _, success) = common::run_triton_with_profile([
+        "volume",
+        "list",
+        "-j",
+        "--name",
+        "nonexistent-volume-zzz",
+    ]);
+    assert!(success, "filtered volume list should succeed");
+
+    let filtered: Vec<serde_json::Value> = common::json_stream_parse(&stdout);
+    assert!(
+        filtered.is_empty(),
+        "expected empty result for bogus filter, got {} volumes",
+        filtered.len()
+    );
+}
+
 // =============================================================================
 // Write operation tests - require config.json with allowWriteActions: true
 // and allowVolumesTests: true (default)

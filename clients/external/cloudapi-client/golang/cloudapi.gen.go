@@ -1411,9 +1411,9 @@ type EnableFirewallRequest struct {
 	Origin *string `json:"origin,omitempty"`
 }
 
-// Error CloudAPI error response
+// Error Error response from a Node.js Triton service
 type Error struct {
-	// Code Error code (e.g., "InvalidCredentials", "ResourceNotFound")
+	// Code Error code (e.g., "ResourceNotFound", "InvalidArgument")
 	Code string `json:"code"`
 
 	// Message Human-readable error message
@@ -2847,6 +2847,90 @@ type ResizeMachineDiskJSONBody = interface{}
 type ResizeMachineDiskParams struct {
 	// Action Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.
 	Action *DiskAction `form:"action,omitempty" json:"action,omitempty"`
+}
+
+// ListPackagesParams defines parameters for ListPackages.
+type ListPackagesParams struct {
+	// Brand Filter by brand
+	Brand *string `form:"brand,omitempty" json:"brand,omitempty"`
+
+	// Disk Filter by disk (MiB)
+	Disk *uint64 `form:"disk,omitempty" json:"disk,omitempty"`
+
+	// FlexibleDisk Filter by flexible disk flag
+	FlexibleDisk *bool `form:"flexible_disk,omitempty" json:"flexible_disk,omitempty"`
+
+	// Group Filter by group
+	Group *string `form:"group,omitempty" json:"group,omitempty"`
+
+	// Lwps Filter by max lightweight processes
+	Lwps *uint32 `form:"lwps,omitempty" json:"lwps,omitempty"`
+
+	// Memory Filter by memory (MiB)
+	Memory *uint64 `form:"memory,omitempty" json:"memory,omitempty"`
+
+	// Name Filter by package name
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Swap Filter by swap (MiB)
+	Swap *uint64 `form:"swap,omitempty" json:"swap,omitempty"`
+
+	// Vcpus Filter by virtual CPUs
+	Vcpus *uint32 `form:"vcpus,omitempty" json:"vcpus,omitempty"`
+
+	// Version Filter by version
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
+}
+
+// HeadPackagesParams defines parameters for HeadPackages.
+type HeadPackagesParams struct {
+	// Brand Filter by brand
+	Brand *string `form:"brand,omitempty" json:"brand,omitempty"`
+
+	// Disk Filter by disk (MiB)
+	Disk *uint64 `form:"disk,omitempty" json:"disk,omitempty"`
+
+	// FlexibleDisk Filter by flexible disk flag
+	FlexibleDisk *bool `form:"flexible_disk,omitempty" json:"flexible_disk,omitempty"`
+
+	// Group Filter by group
+	Group *string `form:"group,omitempty" json:"group,omitempty"`
+
+	// Lwps Filter by max lightweight processes
+	Lwps *uint32 `form:"lwps,omitempty" json:"lwps,omitempty"`
+
+	// Memory Filter by memory (MiB)
+	Memory *uint64 `form:"memory,omitempty" json:"memory,omitempty"`
+
+	// Name Filter by package name
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Swap Filter by swap (MiB)
+	Swap *uint64 `form:"swap,omitempty" json:"swap,omitempty"`
+
+	// Vcpus Filter by virtual CPUs
+	Vcpus *uint32 `form:"vcpus,omitempty" json:"vcpus,omitempty"`
+
+	// Version Filter by version
+	Version *string `form:"version,omitempty" json:"version,omitempty"`
+}
+
+// ListVolumesParams defines parameters for ListVolumes.
+type ListVolumesParams struct {
+	// Name Filter by volume name
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Predicate JSON-encoded predicate expression
+	Predicate *string `form:"predicate,omitempty" json:"predicate,omitempty"`
+
+	// Size Filter by size (MiB)
+	Size *uint64 `form:"size,omitempty" json:"size,omitempty"`
+
+	// State Filter by state
+	State *string `form:"state,omitempty" json:"state,omitempty"`
+
+	// Type Filter by volume type
+	Type *string `form:"type,omitempty" json:"type,omitempty"`
 }
 
 // UpdateVolumeJSONBody defines parameters for UpdateVolume.
@@ -4706,10 +4790,10 @@ type ClientInterface interface {
 	UpdateNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPackages request
-	ListPackages(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListPackages(ctx context.Context, account string, params *ListPackagesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// HeadPackages request
-	HeadPackages(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	HeadPackages(ctx context.Context, account string, params *HeadPackagesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReplacePackagesCollectionRoleTagsWithBody request with any body
 	ReplacePackagesCollectionRoleTagsWithBody(ctx context.Context, account string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4901,7 +4985,7 @@ type ClientInterface interface {
 	ReplaceUserKeyRoleTags(ctx context.Context, account string, uuid string, name string, body ReplaceUserKeyRoleTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListVolumes request
-	ListVolumes(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListVolumes(ctx context.Context, account string, params *ListVolumesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateVolumeWithBody request with any body
 	CreateVolumeWithBody(ctx context.Context, account string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -6903,8 +6987,8 @@ func (c *Client) UpdateNetworkIP(ctx context.Context, account string, network op
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListPackages(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListPackagesRequest(c.Server, account)
+func (c *Client) ListPackages(ctx context.Context, account string, params *ListPackagesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPackagesRequest(c.Server, account, params)
 	if err != nil {
 		return nil, err
 	}
@@ -6915,8 +6999,8 @@ func (c *Client) ListPackages(ctx context.Context, account string, reqEditors ..
 	return c.Client.Do(req)
 }
 
-func (c *Client) HeadPackages(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHeadPackagesRequest(c.Server, account)
+func (c *Client) HeadPackages(ctx context.Context, account string, params *HeadPackagesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHeadPackagesRequest(c.Server, account, params)
 	if err != nil {
 		return nil, err
 	}
@@ -7767,8 +7851,8 @@ func (c *Client) ReplaceUserKeyRoleTags(ctx context.Context, account string, uui
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListVolumes(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListVolumesRequest(c.Server, account)
+func (c *Client) ListVolumes(ctx context.Context, account string, params *ListVolumesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListVolumesRequest(c.Server, account, params)
 	if err != nil {
 		return nil, err
 	}
@@ -14275,7 +14359,7 @@ func NewUpdateNetworkIPRequestWithBody(server string, account string, network op
 }
 
 // NewListPackagesRequest generates requests for ListPackages
-func NewListPackagesRequest(server string, account string) (*http.Request, error) {
+func NewListPackagesRequest(server string, account string, params *ListPackagesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -14298,6 +14382,172 @@ func NewListPackagesRequest(server string, account string) (*http.Request, error
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Brand != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "brand", *params.Brand, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Disk != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "disk", *params.Disk, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.FlexibleDisk != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "flexible_disk", *params.FlexibleDisk, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Group != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "group", *params.Group, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Lwps != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "lwps", *params.Lwps, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint32"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Memory != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "memory", *params.Memory, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Name != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "name", *params.Name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Swap != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "swap", *params.Swap, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Vcpus != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "vcpus", *params.Vcpus, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint32"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Version != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "version", *params.Version, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -14309,7 +14559,7 @@ func NewListPackagesRequest(server string, account string) (*http.Request, error
 }
 
 // NewHeadPackagesRequest generates requests for HeadPackages
-func NewHeadPackagesRequest(server string, account string) (*http.Request, error) {
+func NewHeadPackagesRequest(server string, account string, params *HeadPackagesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -14332,6 +14582,172 @@ func NewHeadPackagesRequest(server string, account string) (*http.Request, error
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Brand != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "brand", *params.Brand, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Disk != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "disk", *params.Disk, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.FlexibleDisk != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "flexible_disk", *params.FlexibleDisk, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Group != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "group", *params.Group, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Lwps != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "lwps", *params.Lwps, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint32"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Memory != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "memory", *params.Memory, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Name != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "name", *params.Name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Swap != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "swap", *params.Swap, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Vcpus != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "vcpus", *params.Vcpus, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint32"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Version != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "version", *params.Version, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("HEAD", queryURL.String(), nil)
@@ -16576,7 +16992,7 @@ func NewReplaceUserKeyRoleTagsRequestWithBody(server string, account string, uui
 }
 
 // NewListVolumesRequest generates requests for ListVolumes
-func NewListVolumesRequest(server string, account string) (*http.Request, error) {
+func NewListVolumesRequest(server string, account string, params *ListVolumesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -16599,6 +17015,92 @@ func NewListVolumesRequest(server string, account string) (*http.Request, error)
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Name != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "name", *params.Name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Predicate != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "predicate", *params.Predicate, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Size != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "size", *params.Size, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "uint64"}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -17351,10 +17853,10 @@ type ClientWithResponsesInterface interface {
 	UpdateNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNetworkIPResponse, error)
 
 	// ListPackagesWithResponse request
-	ListPackagesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*ListPackagesResponse, error)
+	ListPackagesWithResponse(ctx context.Context, account string, params *ListPackagesParams, reqEditors ...RequestEditorFn) (*ListPackagesResponse, error)
 
 	// HeadPackagesWithResponse request
-	HeadPackagesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*HeadPackagesResponse, error)
+	HeadPackagesWithResponse(ctx context.Context, account string, params *HeadPackagesParams, reqEditors ...RequestEditorFn) (*HeadPackagesResponse, error)
 
 	// ReplacePackagesCollectionRoleTagsWithBodyWithResponse request with any body
 	ReplacePackagesCollectionRoleTagsWithBodyWithResponse(ctx context.Context, account string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReplacePackagesCollectionRoleTagsResponse, error)
@@ -17546,7 +18048,7 @@ type ClientWithResponsesInterface interface {
 	ReplaceUserKeyRoleTagsWithResponse(ctx context.Context, account string, uuid string, name string, body ReplaceUserKeyRoleTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*ReplaceUserKeyRoleTagsResponse, error)
 
 	// ListVolumesWithResponse request
-	ListVolumesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*ListVolumesResponse, error)
+	ListVolumesWithResponse(ctx context.Context, account string, params *ListVolumesParams, reqEditors ...RequestEditorFn) (*ListVolumesResponse, error)
 
 	// CreateVolumeWithBodyWithResponse request with any body
 	CreateVolumeWithBodyWithResponse(ctx context.Context, account string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateVolumeResponse, error)
@@ -23315,8 +23817,8 @@ func (c *ClientWithResponses) UpdateNetworkIPWithResponse(ctx context.Context, a
 }
 
 // ListPackagesWithResponse request returning *ListPackagesResponse
-func (c *ClientWithResponses) ListPackagesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*ListPackagesResponse, error) {
-	rsp, err := c.ListPackages(ctx, account, reqEditors...)
+func (c *ClientWithResponses) ListPackagesWithResponse(ctx context.Context, account string, params *ListPackagesParams, reqEditors ...RequestEditorFn) (*ListPackagesResponse, error) {
+	rsp, err := c.ListPackages(ctx, account, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -23324,8 +23826,8 @@ func (c *ClientWithResponses) ListPackagesWithResponse(ctx context.Context, acco
 }
 
 // HeadPackagesWithResponse request returning *HeadPackagesResponse
-func (c *ClientWithResponses) HeadPackagesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*HeadPackagesResponse, error) {
-	rsp, err := c.HeadPackages(ctx, account, reqEditors...)
+func (c *ClientWithResponses) HeadPackagesWithResponse(ctx context.Context, account string, params *HeadPackagesParams, reqEditors ...RequestEditorFn) (*HeadPackagesResponse, error) {
+	rsp, err := c.HeadPackages(ctx, account, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -23942,8 +24444,8 @@ func (c *ClientWithResponses) ReplaceUserKeyRoleTagsWithResponse(ctx context.Con
 }
 
 // ListVolumesWithResponse request returning *ListVolumesResponse
-func (c *ClientWithResponses) ListVolumesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*ListVolumesResponse, error) {
-	rsp, err := c.ListVolumes(ctx, account, reqEditors...)
+func (c *ClientWithResponses) ListVolumesWithResponse(ctx context.Context, account string, params *ListVolumesParams, reqEditors ...RequestEditorFn) (*ListVolumesResponse, error) {
+	rsp, err := c.ListVolumes(ctx, account, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

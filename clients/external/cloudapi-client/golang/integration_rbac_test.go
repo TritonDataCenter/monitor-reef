@@ -312,7 +312,7 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 		}
 
 		// Package role-tags (pick first package).
-		pkgResp, err := testClient.ListPackagesWithResponse(ctx, testAccount)
+		pkgResp, err := testClient.ListPackagesWithResponse(ctx, testAccount, nil)
 		if err != nil {
 			t.Fatalf("ListPackages: %v", err)
 		}
