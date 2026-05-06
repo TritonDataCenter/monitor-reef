@@ -6,12 +6,12 @@
 
 //! Thin wrapper around the SmartOS `vmadm` binary.
 //!
-//! Phase 0 only supports `Provision` of a `joyent-minimal` zone.
-//! That covers OS zones with a single NIC on the `admin` nic_tag,
-//! which is enough to prove the per-CN agent path against a real
-//! SmartOS host. Brand selection (`joyent`, `lx`, `bhyve`),
-//! multi-NIC, and the bhyve disk shape are deferred until the
-//! tritond `Instance` record carries the corresponding fields.
+//! Phase 0 started with `joyent-minimal` zones. The v1 path adds a
+//! pure bhyve payload builder so the agent can provision SmartOS
+//! hardware VMs once the scheduler routes those jobs here. Until the
+//! tritond `Instance` record grows an explicit brand field, the agent
+//! treats `Image.compatibility.brand == "bhyve"` as the dispatch
+//! signal.
 //!
 //! The agent does NOT call `imgadm` — the operator is expected
 //! to have already imported the image so its imgadm UUID equals
@@ -49,10 +49,14 @@ use uuid::Uuid;
 /// as an agent-config flag once we have a per-CN config plane.
 const DEFAULT_RESOLVER: &str = "10.199.199.14";
 
-/// nic_tag every Phase 0 instance lands on. The lab is flat
+/// nic_tag every Phase 0 zone lands on. The lab is flat
 /// admin-tag-only; OPTE-managed overlay tags arrive with the
 /// dataplane slice.
 const PHASE0_NIC_TAG: &str = "admin";
+
+/// nic_tag used by the first bhyve MVP payload. Proteus-backed links
+/// replace this in the next dataplane slice.
+const BHYVE_M1_NIC_TAG: &str = "external";
 
 /// Default MTU on the admin network.
 const DEFAULT_MTU: u32 = 1500;
@@ -185,6 +189,15 @@ async fn run_simple(args: &[&str]) -> Result<()> {
 /// quota sized from the boot disk's tracked bytes, customer
 /// metadata carrying any authorised SSH keys.
 pub(crate) fn build_create_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
+    if image_brand(blueprint) == Some("bhyve") {
+        create_bhyve_payload(blueprint)
+    } else {
+        create_zone_payload(blueprint)
+    }
+}
+
+/// Build the legacy `joyent-minimal` zone payload.
+pub(crate) fn create_zone_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
     let instance = blueprint
         .instance
         .as_ref()
@@ -266,6 +279,90 @@ pub(crate) fn build_create_payload(blueprint: &ProvisioningBlueprint) -> Result<
     Ok(payload)
 }
 
+/// Build a side-effect-free bhyve `vmadm create` payload.
+///
+/// This is intentionally independent of `create_zone`: it lets tests
+/// pin the bhyve JSON shape before the agent starts invoking it in the
+/// provisioning loop.
+pub(crate) fn create_bhyve_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
+    let instance = blueprint
+        .instance
+        .as_ref()
+        .ok_or_else(|| anyhow!("blueprint has no instance — cannot build vmadm payload"))?;
+    let image = blueprint
+        .image
+        .as_ref()
+        .ok_or_else(|| anyhow!("blueprint has no image — Provision job requires one"))?;
+
+    if blueprint.nics.is_empty() {
+        bail!("blueprint has no NICs — bhyve vmadm payload requires at least one NIC");
+    }
+
+    let nics_json = blueprint
+        .nics
+        .iter()
+        .enumerate()
+        .map(build_bhyve_nic_json)
+        .collect::<Vec<_>>();
+
+    let alias = if instance.name.is_empty() {
+        format!("tritond-{}", instance.id)
+    } else {
+        instance.name.clone()
+    };
+    let memory_mib = bytes_to_mib(instance.memory_bytes);
+    let flexible_disk_size = pick_bhyve_disk_size_mib(&blueprint.disks, image);
+    let mut customer_metadata = ssh_customer_metadata(blueprint);
+    customer_metadata.insert(
+        "cloud-init:user-data".to_string(),
+        serde_json::Value::String(render_nocloud_user_data(&blueprint.ssh_public_keys)),
+    );
+    customer_metadata.insert(
+        "cloud-init:meta-data".to_string(),
+        serde_json::Value::String(render_nocloud_meta_data(instance.id, &alias)),
+    );
+    customer_metadata.insert(
+        "org.smartos:cloudinit_datasource".to_string(),
+        serde_json::Value::String("nocloud".to_string()),
+    );
+
+    Ok(serde_json::json!({
+        "uuid": instance.id,
+        "brand": "bhyve",
+        "alias": alias,
+        "hostname": alias,
+        "ram": memory_mib,
+        "vcpus": instance.cpu,
+        "flexible_disk_size": flexible_disk_size,
+        "disks": [
+            {
+                "boot": true,
+                "model": "virtio",
+                "image_uuid": image.id,
+            }
+        ],
+        "nics": nics_json,
+        "customer_metadata": serde_json::Value::Object(customer_metadata),
+        "internal_metadata": {
+            "tritond.image_sha256": image.sha256,
+            "cloudinit_datasource": "nocloud",
+        },
+        "tags": {
+            "tritond.instance_id": instance.id.to_string(),
+            "tritond.tenant_id": instance.tenant_id.to_string(),
+            "tritond.project_id": instance.project_id.to_string(),
+        },
+    }))
+}
+
+fn image_brand(blueprint: &ProvisioningBlueprint) -> Option<&str> {
+    blueprint
+        .image
+        .as_ref()
+        .and_then(|image| image.compatibility.as_ref())
+        .map(|compat| compat.brand.as_str())
+}
+
 fn build_nic_json(index: usize, nic: &Nic) -> Result<serde_json::Value> {
     let ip = match &nic.primary_ipv4 {
         Some(ip) => ip,
@@ -289,6 +386,32 @@ fn build_nic_json(index: usize, nic: &Nic) -> Result<serde_json::Value> {
     }))
 }
 
+fn build_bhyve_nic_json((index, nic): (usize, &Nic)) -> serde_json::Value {
+    serde_json::json!({
+        "interface": format!("net{index}"),
+        "nic_tag": BHYVE_M1_NIC_TAG,
+        "model": "virtio",
+        "mac": nic.mac,
+        "ip": "dhcp",
+        "dhcp_server": true,
+        "mtu": DEFAULT_MTU,
+        "primary": index == 0,
+    })
+}
+
+fn ssh_customer_metadata(
+    blueprint: &ProvisioningBlueprint,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut metadata = serde_json::Map::new();
+    if !blueprint.ssh_public_keys.is_empty() {
+        metadata.insert(
+            "root_authorized_keys".to_string(),
+            serde_json::Value::String(blueprint.ssh_public_keys.join("\n")),
+        );
+    }
+    metadata
+}
+
 fn pick_quota_gb(disks: &[Disk], image: &Image) -> u64 {
     // Prefer the boot disk's stored size if there is one; fall
     // back to the image content size; clamp to a 1 GB minimum so
@@ -301,9 +424,35 @@ fn pick_quota_gb(disks: &[Disk], image: &Image) -> u64 {
     (bytes / 1024 / 1024 / 1024).max(1)
 }
 
+fn pick_bhyve_disk_size_mib(disks: &[Disk], image: &Image) -> u64 {
+    let bytes = disks
+        .iter()
+        .map(|d| d.size_bytes)
+        .max()
+        .unwrap_or(image.size_bytes);
+    bytes_to_mib(bytes)
+}
+
 fn bytes_to_mib(bytes: u64) -> u64 {
     let mib = bytes / 1024 / 1024;
     mib.max(64)
+}
+
+fn render_nocloud_user_data(ssh_keys: &[String]) -> String {
+    let mut out = String::from("#cloud-config\ndisable_root: false\n");
+    if !ssh_keys.is_empty() {
+        out.push_str("ssh_authorized_keys:\n");
+        for key in ssh_keys {
+            out.push_str("  - ");
+            out.push_str(key);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn render_nocloud_meta_data(instance_id: Uuid, hostname: &str) -> String {
+    format!("instance-id: {instance_id}\nlocal-hostname: {hostname}\n")
 }
 
 #[cfg(test)]
@@ -311,7 +460,7 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use std::net::Ipv4Addr;
-    use tritond_client::types::{Instance, JobKind};
+    use tritond_client::types::{DiskKind, ImageCompatibility, Instance, JobKind};
 
     fn fixture_uuid(byte: u8) -> Uuid {
         Uuid::from_bytes([byte; 16])
@@ -380,6 +529,30 @@ mod tests {
         }
     }
 
+    fn sample_bhyve_blueprint() -> ProvisioningBlueprint {
+        let mut bp = sample_blueprint();
+        let now = Utc::now();
+        let image_id = bp.image.as_ref().unwrap().id;
+        bp.image.as_mut().unwrap().compatibility = Some(ImageCompatibility {
+            brand: "bhyve".to_string(),
+            arch: "x86_64".to_string(),
+            min_smartos_platform: None,
+        });
+        bp.disks = vec![Disk {
+            id: fixture_uuid(0x22),
+            tenant_id: bp.instance.as_ref().unwrap().tenant_id,
+            project_id: bp.instance.as_ref().unwrap().project_id,
+            instance_id: bp.instance.as_ref().unwrap().id,
+            name: "boot".to_string(),
+            description: String::new(),
+            kind: DiskKind::Boot,
+            size_bytes: 20 * 1024 * 1024 * 1024,
+            source_image_id: Some(image_id),
+            created_at: now,
+        }];
+        bp
+    }
+
     #[test]
     fn build_create_payload_carries_identity_and_nic() {
         let bp = sample_blueprint();
@@ -408,6 +581,86 @@ mod tests {
             payload["customer_metadata"]["root_authorized_keys"],
             "ssh-ed25519 AAAA test@host",
         );
+    }
+
+    #[test]
+    fn build_create_payload_dispatches_bhyve_from_image_compatibility() {
+        let bp = sample_bhyve_blueprint();
+        let payload = build_create_payload(&bp).unwrap();
+        assert_eq!(payload["brand"], "bhyve");
+        assert_eq!(payload["flexible_disk_size"], 20 * 1024);
+    }
+
+    #[test]
+    fn create_bhyve_payload_has_golden_shape() {
+        let bp = sample_bhyve_blueprint();
+        let instance = bp.instance.as_ref().unwrap();
+        let image = bp.image.as_ref().unwrap();
+        let expected = serde_json::json!({
+            "uuid": instance.id.to_string(),
+            "brand": "bhyve",
+            "alias": "smoke-zone",
+            "hostname": "smoke-zone",
+            "ram": 512,
+            "vcpus": 2,
+            "flexible_disk_size": 20 * 1024,
+            "disks": [
+                {
+                    "boot": true,
+                    "model": "virtio",
+                    "image_uuid": image.id.to_string(),
+                }
+            ],
+            "nics": [
+                {
+                    "interface": "net0",
+                    "nic_tag": "external",
+                    "model": "virtio",
+                    "mac": "02:00:00:de:ad:01",
+                    "ip": "dhcp",
+                    "dhcp_server": true,
+                    "mtu": 1500,
+                    "primary": true,
+                }
+            ],
+            "customer_metadata": {
+                "root_authorized_keys": "ssh-ed25519 AAAA test@host",
+                "cloud-init:user-data": "#cloud-config\ndisable_root: false\nssh_authorized_keys:\n  - ssh-ed25519 AAAA test@host\n",
+                "cloud-init:meta-data": format!(
+                    "instance-id: {}\nlocal-hostname: smoke-zone\n",
+                    instance.id,
+                ),
+                "org.smartos:cloudinit_datasource": "nocloud",
+            },
+            "internal_metadata": {
+                "tritond.image_sha256": image.sha256,
+                "cloudinit_datasource": "nocloud",
+            },
+            "tags": {
+                "tritond.instance_id": instance.id.to_string(),
+                "tritond.tenant_id": instance.tenant_id.to_string(),
+                "tritond.project_id": instance.project_id.to_string(),
+            },
+        });
+
+        let payload = create_bhyve_payload(&bp).unwrap();
+        assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn create_bhyve_payload_requires_instance_image_and_nic() {
+        let mut bp = sample_bhyve_blueprint();
+        bp.instance = None;
+        assert!(create_bhyve_payload(&bp).is_err());
+
+        let mut bp = sample_bhyve_blueprint();
+        bp.image = None;
+        assert!(create_bhyve_payload(&bp).is_err());
+
+        let mut bp = sample_bhyve_blueprint();
+        bp.nics.clear();
+        let err = create_bhyve_payload(&bp).unwrap_err();
+        assert!(err.to_string().contains("requires at least one NIC"));
     }
 
     #[test]

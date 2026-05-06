@@ -254,15 +254,22 @@ Agent B's compiler.
 
 ### 5.4 SSH and configuration injection
 
-The minimum v1 path preserves current behavior:
+The minimum v1 path preserves current behavior for zone payloads:
 
 * concatenate visible SSH public keys into
   `customer_metadata.root_authorized_keys`;
 * carry tritond identity and image digest in `internal_metadata`;
 * use metadata/config drive only when the image declares it needs one.
 
-Linux bhyve images will likely need a no-cloud or config-drive path. The
-builder should expose a single `GuestConfig` input enum later:
+For bhyve MVP payloads, `tritonagent` dispatches from
+`Image.compatibility.brand == "bhyve"` until `Instance` grows an explicit
+brand field. Those payloads include NoCloud seed data in
+`customer_metadata["cloud-init:user-data"]` and
+`customer_metadata["cloud-init:meta-data"]`, plus the SmartOS
+`org.smartos:cloudinit_datasource = "nocloud"` marker. That matches the
+SmartOS NoCloud support now expected for v1 bhyve guests.
+
+The builder should expose a single `GuestConfig` input enum later:
 
 ```rust
 pub enum GuestConfig {
@@ -271,8 +278,8 @@ pub enum GuestConfig {
 }
 ```
 
-Until that type lands, the v1 design should not claim generic cloud-init
-support. It supports SSH key injection through SmartOS metadata only.
+Until that type lands, the v1 design claims only the NoCloud shape above;
+generic cloud-init provider support remains out of scope.
 
 ### 5.5 Proteus-backed attachment
 
@@ -505,7 +512,7 @@ commit. Build and audit run per `monitor-reef/AGENTS.md`.
 | # | Slice | Touches | Tests |
 |---|---|---|---|
 | C-1 | Add this design doc | `docs/design/cn-dataplane-v1.md` | docs-only; build/audit run after commit |
-| C-2 | Pure bhyve `vmadm` payload builder | `services/tritonagent/src/vmadm.rs` plus docs note | unit tests for CPU/RAM, boot disk, NIC order, SSH metadata, missing fields |
+| C-2 | Pure bhyve `vmadm` payload builder | `services/tritonagent/src/vmadm.rs` plus docs note | unit tests for CPU/RAM, boot disk, NIC order, NoCloud/SSH metadata, missing fields |
 | C-3 | Structured provisioning phase errors | `services/tritonagent/src/lib.rs`, `vmadm.rs`, docs | unit tests for phase labels and `JobOutcome::Failed` message formatting |
 | C-4 | Use `tritond-cn-platform::VmadmTool` in agent vmadm path | `services/tritonagent/src/vmadm.rs` | mock-script tests for create/stop/reboot/delete idempotence |
 | C-5 | Add Proteus adapter trait with fake backend only | new small module under `services/tritonagent/src/` | fake lifecycle tests for create/apply/start/pause/delete/status |
