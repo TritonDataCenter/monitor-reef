@@ -6,6 +6,10 @@
 
 //! Image management commands for tritonadm (IMGAPI operations).
 
+mod nocloud;
+
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::Subcommand;
 use uuid::Uuid;
@@ -78,6 +82,100 @@ fn print_export_response(resp: &ExportImageResponse) {
     println!("Manifest path: {}", resp.manifest_path);
 }
 
+/// Import a manifest+file pair into IMGAPI. Used by both
+/// `tritonadm image import` and `tritonadm image fetch-nocloud --target imgapi`.
+///
+/// `compression` is the explicit override from the CLI; if `None`,
+/// the manifest's `files[0].compression` field is used as a fallback.
+pub(super) async fn import_manifest_and_file(
+    client: &imgapi_client::Client,
+    typed_client: &imgapi_client::TypedClient,
+    manifest: &str,
+    file: &str,
+    compression: Option<types::FileCompression>,
+    updates_url: Option<&str>,
+) -> Result<()> {
+    let manifest_str = tokio::fs::read_to_string(manifest)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to read manifest '{}': {}", manifest, e))?;
+    let manifest_value: serde_json::Value = serde_json::from_str(&manifest_str)
+        .map_err(|e| anyhow::anyhow!("invalid manifest JSON: {}", e))?;
+
+    let uuid_str = manifest_value
+        .get("uuid")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("manifest missing 'uuid' field"))?;
+    let uuid: Uuid = uuid_str
+        .parse()
+        .map_err(|e| anyhow::anyhow!("invalid UUID in manifest: {}", e))?;
+
+    let name = manifest_value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let version = manifest_value
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let manifest_compression = manifest_value
+        .get("files")
+        .and_then(|f| f.as_array())
+        .and_then(|a| a.first())
+        .and_then(|f| f.get("compression"))
+        .and_then(|c| c.as_str())
+        .map(String::from);
+
+    let origin_uuid = manifest_value
+        .get("origin")
+        .and_then(|v| v.as_str())
+        .map(|s| {
+            s.parse::<Uuid>()
+                .map_err(|e| anyhow::anyhow!("invalid origin UUID: {}", e))
+        })
+        .transpose()?;
+    let source = updates_url.unwrap_or(crate::DEFAULT_UPDATES_URL);
+    super::imgapi_util::ensure_origin_imported(client, typed_client, origin_uuid, source, None)
+        .await?;
+
+    eprintln!("Importing image manifest {uuid}...");
+    client
+        .image_action()
+        .uuid(uuid)
+        .action(imgapi_client::types::ImageAction::Import)
+        .body(manifest_value)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to import manifest: {}", e))?;
+    eprintln!("Imported: {name} v{version}");
+
+    eprintln!("Uploading image file...");
+    let file_bytes = tokio::fs::read(file)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", file, e))?;
+
+    let mut req = client.add_image_file().uuid(uuid).body(file_bytes);
+    if let Some(c) = compression {
+        req = req.compression(c);
+    } else if let Some(ref c) = manifest_compression {
+        req = req.compression(c.as_str());
+    }
+    req.send()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to upload image file: {}", e))?;
+    eprintln!("Image file uploaded.");
+
+    eprintln!("Activating image...");
+    typed_client
+        .activate_image(&uuid)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to activate image: {}", e))?;
+    eprintln!("Image {uuid} imported and activated.");
+    Ok(())
+}
+
 #[derive(Subcommand)]
 pub enum ImageCommand {
     // ========================================================================
@@ -94,6 +192,56 @@ pub enum ImageCommand {
         /// File compression type (default: auto-detect from manifest)
         #[arg(short = 'c', long, value_enum)]
         compression: Option<types::FileCompression>,
+    },
+
+    /// Fetch a CloudInit nocloud image from an upstream vendor and convert
+    /// it into a SmartOS/Triton zvol image + IMGAPI manifest.
+    #[command(name = "fetch-nocloud")]
+    FetchNocloud {
+        /// Upstream vendor profile. Mutually exclusive with --vendor-toml.
+        #[arg(long, value_enum, required_unless_present = "vendor_toml")]
+        vendor: Option<nocloud::Vendor>,
+        /// Vendor-specific release token (e.g. "noble", "jammy", "latest").
+        /// Required with --vendor; ignored with --vendor-toml.
+        #[arg(long, required_unless_present = "vendor_toml")]
+        release: Option<String>,
+        /// Path to a TOML profile that pins a fully-resolved
+        /// (url, sha256, metadata) tuple. See
+        /// docs/design/examples/nocloud-vendors/ for the schema and
+        /// worked examples. Mutually exclusive with --vendor.
+        #[arg(long, value_name = "PATH", conflicts_with_all = ["vendor", "release"])]
+        vendor_toml: Option<PathBuf>,
+        /// Where to deliver the produced manifest + image:
+        ///   `file`     leave artifacts in --output-dir (default);
+        ///   `smartos`  shell `imgadm install` against the local SmartOS
+        ///              image store (GZ-only);
+        ///   `imgapi`   push to IMGAPI via the existing import path.
+        #[arg(long, value_enum, default_value_t)]
+        target: nocloud::Target,
+        /// Output dir for *.zfs.gz and *.json
+        /// (default: /var/tmp/tritonadm/nocloud/image/<vendor>-<series>)
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+        /// Working dir for downloads / intermediates
+        /// (default: /var/tmp/tritonadm/nocloud/cache/<vendor>-<series>)
+        #[arg(long)]
+        workdir: Option<PathBuf>,
+        /// Override delegated dataset
+        /// (default: zones/<zonename>/data, or `zones` in the GZ)
+        #[arg(long)]
+        dataset: Option<String>,
+        /// Skip checksum/signature verification (DANGEROUS, dev only)
+        #[arg(long)]
+        insecure_no_verify: bool,
+        /// Override the vendor's verifier with a pinned sha256 (hex).
+        /// Useful for vendors that don't publish a per-image hash
+        /// (e.g. Talos), or for pinning to a known-good build.
+        #[arg(long, value_name = "HEX")]
+        expected_sha256: Option<String>,
+        /// Resolve metadata and print the build plan, but don't download,
+        /// hash, write any files, or touch any datasets.
+        #[arg(long)]
+        dry_run: bool,
     },
 
     // ========================================================================
@@ -600,115 +748,68 @@ pub enum ImageCommand {
 }
 
 impl ImageCommand {
-    pub async fn run(self, imgapi_url: &str, updates_url: Option<&str>) -> Result<()> {
+    pub async fn run(self, imgapi_url: Result<String>, updates_url: Option<&str>) -> Result<()> {
+        // Dispatch fetch-nocloud before resolving IMGAPI: it has no use
+        // for IMGAPI and must work in builder zones with no headnode.
+        if let ImageCommand::FetchNocloud {
+            vendor,
+            release,
+            vendor_toml,
+            target,
+            output_dir,
+            workdir,
+            dataset,
+            insecure_no_verify,
+            expected_sha256,
+            dry_run,
+        } = self
+        {
+            return nocloud::run(nocloud::FetchOpts {
+                vendor,
+                release,
+                vendor_toml,
+                output_dir,
+                workdir,
+                insecure_no_verify,
+                expected_sha256,
+                dataset,
+                dry_run,
+                target,
+                imgapi_url,
+                updates_url: updates_url.map(str::to_string),
+            })
+            .await;
+        }
+
+        let imgapi_url = imgapi_url?;
         let http = triton_tls::build_http_client(false)
             .await
             .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
-        let client = imgapi_client::Client::new_with_client(imgapi_url, http.clone());
-        let typed_client = imgapi_client::TypedClient::new_with_client(imgapi_url, http);
+        let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());
+        let typed_client = imgapi_client::TypedClient::new_with_client(&imgapi_url, http);
 
         match self {
             // ================================================================
             // Convenience
             // ================================================================
+            ImageCommand::FetchNocloud { .. } => {
+                unreachable!("fetch-nocloud dispatched before IMGAPI client setup")
+            }
+
             ImageCommand::Import {
                 manifest,
                 file,
                 compression,
             } => {
-                // Read and parse the manifest file
-                let manifest_str = tokio::fs::read_to_string(&manifest).await.map_err(|e| {
-                    anyhow::anyhow!("failed to read manifest '{}': {}", manifest, e)
-                })?;
-                let manifest_value: serde_json::Value = serde_json::from_str(&manifest_str)
-                    .map_err(|e| anyhow::anyhow!("invalid manifest JSON: {}", e))?;
-
-                // Extract UUID from manifest
-                let uuid_str = manifest_value
-                    .get("uuid")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| anyhow::anyhow!("manifest missing 'uuid' field"))?;
-                let uuid: Uuid = uuid_str
-                    .parse()
-                    .map_err(|e| anyhow::anyhow!("invalid UUID in manifest: {}", e))?;
-
-                let name = manifest_value
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let version = manifest_value
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-
-                // Extract compression from manifest files[0] as fallback
-                let manifest_compression = manifest_value
-                    .get("files")
-                    .and_then(|f| f.as_array())
-                    .and_then(|a| a.first())
-                    .and_then(|f| f.get("compression"))
-                    .and_then(|c| c.as_str())
-                    .map(String::from);
-
-                // Step 0: Ensure the origin chain is imported locally before
-                // activating this image. IMGAPI refuses manifests whose
-                // ancestors it has never seen.
-                let origin_uuid = manifest_value
-                    .get("origin")
-                    .and_then(|v| v.as_str())
-                    .map(|s| {
-                        s.parse::<Uuid>()
-                            .map_err(|e| anyhow::anyhow!("invalid origin UUID: {}", e))
-                    })
-                    .transpose()?;
-                let source = updates_url.unwrap_or(crate::DEFAULT_UPDATES_URL);
-                super::imgapi_util::ensure_origin_imported(
+                import_manifest_and_file(
                     &client,
                     &typed_client,
-                    origin_uuid,
-                    source,
-                    None,
+                    &manifest,
+                    &file,
+                    compression,
+                    updates_url,
                 )
                 .await?;
-
-                // Step 1: Import the manifest (send raw JSON to preserve all fields)
-                eprintln!("Importing image manifest {uuid}...");
-                client
-                    .image_action()
-                    .uuid(uuid)
-                    .action(imgapi_client::types::ImageAction::Import)
-                    .body(manifest_value)
-                    .send()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("failed to import manifest: {}", e))?;
-                eprintln!("Imported: {name} v{version}");
-
-                // Step 2: Upload the file
-                eprintln!("Uploading image file...");
-                let file_bytes = tokio::fs::read(&file)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", file, e))?;
-
-                let mut req = client.add_image_file().uuid(uuid).body(file_bytes);
-                if let Some(c) = compression {
-                    req = req.compression(c);
-                } else if let Some(ref c) = manifest_compression {
-                    req = req.compression(c.as_str());
-                }
-                req.send()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("failed to upload image file: {}", e))?;
-                eprintln!("Image file uploaded.");
-
-                // Step 3: Activate the image
-                eprintln!("Activating image...");
-                typed_client
-                    .activate_image(&uuid)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("failed to activate image: {}", e))?;
-                eprintln!("Image {uuid} imported and activated.");
             }
 
             // ================================================================

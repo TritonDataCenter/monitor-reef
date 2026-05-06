@@ -2147,13 +2147,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go)."]
+    #[doc = "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Datacenter map: name -> URL\\n\\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\\\"us-central-1\\\": \\\"https://us-central-1.api.mnx.io\\\"} ```\\n\\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).\","]
+    #[doc = "  \"description\": \"Datacenter map: name -> URL\\n\\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\\\"us-central-1\\\": \\\"https://us-central-1.api.mnx.io\\\"} ```\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"additionalProperties\": {"]
     #[doc = "    \"type\": \"string\""]
@@ -7106,13 +7106,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go)."]
+    #[doc = "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Services map: name -> URL\\n\\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\\\"cmon\\\": \\\"https://cmon.example.com:9163\\\", \\\"docker\\\": \\\"tcp://docker.example.com:2376\\\"} ```\\n\\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).\","]
+    #[doc = "  \"description\": \"Services map: name -> URL\\n\\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\\\"cmon\\\": \\\"https://cmon.example.com:9163\\\", \\\"docker\\\": \\\"tcp://docker.example.com:2376\\\"} ```\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"additionalProperties\": {"]
     #[doc = "    \"type\": \"string\""]

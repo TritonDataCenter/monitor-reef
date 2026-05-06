@@ -33,6 +33,8 @@ members = [
     "clients/internal/sapi-client",
     "clients/internal/triton-gateway-client",
     "clients/internal/vmapi-client",
+    "libs/qcow",
+    "libs/vmdk",
     "libs/triton-auth",
     "libs/triton-auth-session",
     "libs/triton-pagination",
@@ -115,6 +117,7 @@ indicatif = "0.18"
 jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
 libc = "0.2"
+lzma-rs = "0.3"
 md-5 = "0.10"
 openapiv3 = "2.0"
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk", "pem", "std"] }
@@ -126,6 +129,9 @@ pretty_assertions = "1.4"
 progenitor = "0.13"
 progenitor-client = "0.13"
 progenitor-impl = "0.13"
+# Vendored fork at libs/qcow that drops flate2's zlib-ng-compat feature;
+# upstream forces a CMake build of zlib-ng which breaks hermetic builds.
+qcow = { path = "libs/qcow" }
 rand = { version = "0.9", features = ["os_rng"] }
 # rand_core pinned to 0.6 because the workspace's crypto stack (p256,
 # p384, rsa, ed25519-dalek, ssh-key) uses rand_core 0.6 internally.
@@ -194,6 +200,7 @@ thiserror = "2.0"
 time = "0.3"
 tokio = { version = "1.48", features = ["full"] }
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+toml = "0.8"
 # TOTP / RFC 6238 verification for the password-login 2FA path. We
 # disable default features (none anyway) and avoid `gen_secret` /
 # `qr` / `otpauth` since tritonapi only verifies, never generates or
@@ -203,7 +210,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { version = "2", features = ["serde"] }
 urlencoding = "2"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 webpki-roots = "1"
 
 #
@@ -236,5 +243,16 @@ triton-auth-session = { path = "libs/triton-auth-session" }
 triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
 triton-pagination = { path = "libs/triton-pagination" }
 triton-tls = { path = "libs/triton-tls" }
+# `flate2` and `tar` are needed by the SmartOS fetch path, where the
+# upstream artifact is a gzipped tarball of a VMware VM directory
+# (descriptor .vmdk + raw .img extent) rather than a standalone disk
+# image. Pure-Rust to keep the build hermetic; the `flate2` default
+# `miniz_oxide` backend is already in the dep tree via libs/qcow.
+flate2 = "1"
+tar = "0.4"
+# Vendored fork at libs/vmdk that drops the upstream s3 / foyer-cache /
+# CLI layers, keeping just the file-backed disk reader. See
+# libs/vmdk/Cargo.toml for the full rationale.
+vmdk-rs = { path = "libs/vmdk" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -742,6 +743,15 @@ func TestNewSSHAgentSigner_ClosesConnOnFailure(t *testing.T) {
 	// Start a minimal SSH agent on a temporary Unix socket with no keys
 	// loaded. NewSSHAgentSigner should fail on MatchKey (no matching key)
 	// and close the connection rather than leaking it.
+
+	// Darwin caps Unix socket paths at 104 bytes (sun_path). `t.TempDir()`
+	// on macOS lives under `/var/folders/<hash>/T/<TestName><N>/001/`,
+	// which routinely exceeds that — `bind` returns EINVAL. Skip rather
+	// than try to work around with a shorter path; the same code is
+	// covered by Linux CI.
+	if runtime.GOOS == "darwin" {
+		t.Skip("skipping: Darwin sun_path limit collides with t.TempDir() length")
+	}
 
 	socketPath := filepath.Join(t.TempDir(), "agent.sock")
 	listener, err := net.Listen("unix", socketPath)

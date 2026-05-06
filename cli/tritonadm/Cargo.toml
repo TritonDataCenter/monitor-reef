@@ -19,6 +19,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -26,19 +27,29 @@ clap_complete = { workspace = true }
 futures-util = { workspace = true }
 imgapi-api = { workspace = true }
 imgapi-client = { workspace = true }
+indicatif = { workspace = true }
 libc = { workspace = true }
+lzma-rs = { workspace = true }
 mahi-api = { workspace = true }
 mahi-client = { workspace = true }
 mahi-sitter-client = { workspace = true }
 sapi-client = { workspace = true }
 napi-client = { workspace = true }
 papi-client = { workspace = true }
+flate2 = { workspace = true }
 progenitor-client = { workspace = true }
+qcow = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+toml = { workspace = true }
 triton-tls = { workspace = true }
+url = { workspace = true }
+vmdk-rs = { workspace = true }
 uuid = { workspace = true }
 vmapi-client = { workspace = true }
 
