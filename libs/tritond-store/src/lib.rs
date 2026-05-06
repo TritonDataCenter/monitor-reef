@@ -33,17 +33,18 @@ pub use mem::MemStore;
 pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
     CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, Disk,
-    DiskKind, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp,
-    FloatingIpAttachment, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
-    Instance, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
-    NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Realization, RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable,
-    RouteTarget, Silo, SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
-    TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
-    generate_poll_token, normalize_claim_code,
+    DiskKind, EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
+    EdgeClusterResource, EdgeNicCoord, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation,
+    FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView, Image, ImageCompatibility,
+    ImageScope, Instance, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus,
+    JobStatusKind, LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId,
+    NewEdgeCluster, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway,
+    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
+    RealizedNetworkState, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
+    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, derive_ssh_key_id,
+    format_claim_code, generate_claim_code, generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -449,6 +450,40 @@ pub trait Store: Send + Sync + 'static {
     /// referencing-route guard lands with the Route slice because
     /// routes do not exist yet in H-2.
     async fn delete_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Edge clusters
+    // ------------------------------------------------------------------
+
+    /// Create a durable edge cluster. v1 placement creates one
+    /// `EdgeClusterKind::NatGateway` cluster per NAT gateway; the
+    /// schema supports additional instances and resource kinds without
+    /// changing the parent shape.
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * `name` is globally unique across edge clusters.
+    /// * every bound resource exists.
+    /// * the cluster kind must accept every bound resource.
+    /// * duplicate bound resources in one create request conflict.
+    /// * `desired_generation` starts at 1.
+    async fn create_edge_cluster(&self, req: NewEdgeCluster) -> Result<EdgeCluster, StoreError>;
+
+    /// Look up an edge cluster by id.
+    async fn get_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<EdgeCluster, StoreError>;
+
+    /// List every edge cluster.
+    async fn list_edge_clusters(&self) -> Result<Vec<EdgeCluster>, StoreError>;
+
+    /// List edge clusters bound to `resource`.
+    async fn list_edge_clusters_for_resource(
+        &self,
+        resource: EdgeClusterResource,
+    ) -> Result<Vec<EdgeCluster>, StoreError>;
+
+    /// Delete an edge cluster and remove its name and resource
+    /// indexes.
+    async fn delete_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // SSH keys (multi-scope catalog: Public / Silo / Tenant / Project / User)

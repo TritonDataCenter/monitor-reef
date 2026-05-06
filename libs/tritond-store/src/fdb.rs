@@ -62,6 +62,11 @@
 //! nat_gateway/by_id/<uuid>          -> JSON-encoded NatGatewayRecord
 //! nat_gateway/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
 //! nat_gateway/in_vpc/<vpc>/<nat>    -> empty (membership index)
+//! edge_cluster/by_id/<uuid>         -> JSON-encoded EdgeClusterRecord
+//! edge_cluster/by_name/<name>        -> uuid hyphenated bytes
+//! edge_cluster/all/<uuid>           -> empty (membership index)
+//! edge_cluster/by_resource/<kind>/<resource>/<edge>
+//!                                   -> empty (reverse resource index)
 //! ssh_key/by_id/<uuid>              -> JSON-encoded SshKey
 //! ssh_key/by_public/<name>          -> uuid hyphenated bytes
 //! ssh_key/by_silo/<silo>/<name>     -> uuid hyphenated bytes
@@ -130,6 +135,7 @@
 //! Each multi-key write happens in a single transaction so name
 //! uniqueness and index consistency are enforced atomically.
 
+use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
@@ -139,17 +145,18 @@ use ipnetwork::IpNetwork;
 use rand::Rng;
 use uuid::Uuid;
 
-use crate::types::NatGatewayRecord;
+use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, Disk, DiskKind,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
-    ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
-    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    generate_claim_code, generate_poll_token,
+    EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
+    FloatingIp, FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceCreateResult,
+    JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NatGateway,
+    NetworkResourceId, NewEdgeCluster, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway,
+    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
+    Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet,
+    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code,
+    generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -396,6 +403,40 @@ impl FdbStore {
 
     fn nat_gateway_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
         format!("nat_gateway/in_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn edge_cluster_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("edge_cluster/by_id/{id}").into_bytes()
+    }
+
+    fn edge_cluster_by_name_key(name: &str) -> Vec<u8> {
+        format!("edge_cluster/by_name/{name}").into_bytes()
+    }
+
+    fn edge_cluster_all_key(id: Uuid) -> Vec<u8> {
+        format!("edge_cluster/all/{id}").into_bytes()
+    }
+
+    fn edge_cluster_all_prefix() -> &'static [u8] {
+        b"edge_cluster/all/"
+    }
+
+    fn edge_cluster_by_resource_key(resource: EdgeClusterResource, id: Uuid) -> Vec<u8> {
+        format!(
+            "edge_cluster/by_resource/{}/{}/{id}",
+            resource.kind_tag(),
+            resource.id()
+        )
+        .into_bytes()
+    }
+
+    fn edge_cluster_by_resource_prefix(resource: EdgeClusterResource) -> Vec<u8> {
+        format!(
+            "edge_cluster/by_resource/{}/{}/",
+            resource.kind_tag(),
+            resource.id()
+        )
+        .into_bytes()
     }
 
     fn ssh_key_by_id_key(id: Uuid) -> Vec<u8> {
@@ -758,6 +799,41 @@ fn targeting_matches(job_target: Option<Uuid>, claimer_cn: Option<Uuid>) -> bool
         (None, _) => true,
         (Some(_), None) => false,
         (Some(t), Some(c)) => t == c,
+    }
+}
+
+fn validate_edge_cluster_bound_resource_shape(
+    kind: EdgeClusterKind,
+    resources: &[EdgeClusterResource],
+) -> Result<(), StoreError> {
+    let mut seen = HashSet::new();
+    for resource in resources {
+        if !seen.insert(*resource) {
+            return Err(StoreError::Conflict(format!(
+                "edge cluster resource {}:{} is listed more than once",
+                resource.kind_tag(),
+                resource.id()
+            )));
+        }
+        if !kind.accepts_resource(*resource) {
+            return Err(StoreError::Conflict(format!(
+                "edge cluster kind {kind:?} cannot bind resource {}:{}",
+                resource.kind_tag(),
+                resource.id()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn edge_cluster_resource_record_key(resource: EdgeClusterResource) -> Vec<u8> {
+    match resource {
+        EdgeClusterResource::NatGateway { nat_gateway_id } => {
+            FdbStore::nat_gateway_by_id_key(nat_gateway_id)
+        }
+        EdgeClusterResource::FloatingIp { floating_ip_id } => {
+            FdbStore::floating_ip_by_id_key(floating_ip_id)
+        }
     }
 }
 
@@ -2893,6 +2969,222 @@ impl Store for FdbStore {
             Ok(Out::Corrupt(e)) => {
                 Err(StoreError::Backend(format!("deserialize nat gateway: {e}")))
             }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_edge_cluster(&self, req: NewEdgeCluster) -> Result<EdgeCluster, StoreError> {
+        validate_edge_cluster_bound_resource_shape(req.kind, &req.bound_resources)?;
+
+        let edge_cluster_id = Uuid::new_v4();
+        let by_id_key = Self::edge_cluster_by_id_key(edge_cluster_id);
+        let by_name_key = Self::edge_cluster_by_name_key(&req.name);
+        let all_key = Self::edge_cluster_all_key(edge_cluster_id);
+        let id_str = edge_cluster_id.to_string();
+
+        enum Outcome {
+            Created(Box<EdgeClusterRecord>),
+            NameTaken,
+            ResourceMissing,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let all_key = all_key.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+
+                    for resource in &req.bound_resources {
+                        let resource_key = edge_cluster_resource_record_key(*resource);
+                        if tr.get(&resource_key, false).await?.is_none() {
+                            return Ok(Outcome::ResourceMissing);
+                        }
+                    }
+
+                    let now = Utc::now();
+                    let record = EdgeClusterRecord {
+                        id: edge_cluster_id,
+                        name: req.name.clone(),
+                        kind: req.kind,
+                        bound_resources: req.bound_resources.clone(),
+                        instances: Vec::new(),
+                        desired_generation: 1,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    let value = match serde_json::to_vec(&record) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&all_key, b"");
+                    for resource in &record.bound_resources {
+                        let key = Self::edge_cluster_by_resource_key(*resource, record.id);
+                        tr.set(&key, b"");
+                    }
+                    Ok(Outcome::Created(Box::new(record)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(record)) => Ok((*record).into_view(Vec::new())),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "edge cluster with name {:?} already exists",
+                req.name
+            ))),
+            Ok(Outcome::ResourceMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::SerializeFailed(e)) => {
+                Err(StoreError::Backend(format!("serialize edge cluster: {e}")))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<EdgeCluster, StoreError> {
+        let record = self.read_edge_cluster_record(edge_cluster_id).await?;
+        let rows = self.list_network_realizations(record.resource_id()).await?;
+        Ok(record.into_view(rows))
+    }
+
+    async fn list_edge_clusters(&self) -> Result<Vec<EdgeCluster>, StoreError> {
+        let prefix = Self::edge_cluster_all_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("edge cluster index uuid: {e}")))?;
+            match self.get_edge_cluster(id).await {
+                Ok(cluster) => out.push(cluster),
+                Err(StoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    async fn list_edge_clusters_for_resource(
+        &self,
+        resource: EdgeClusterResource,
+    ) -> Result<Vec<EdgeCluster>, StoreError> {
+        let prefix = Self::edge_cluster_by_resource_prefix(resource);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("edge cluster index uuid: {e}")))?;
+            match self.get_edge_cluster(id).await {
+                Ok(cluster) => out.push(cluster),
+                Err(StoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::edge_cluster_by_id_key(edge_cluster_id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Corrupt(String),
+        }
+
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let record: EdgeClusterRecord = match serde_json::from_slice(&bytes) {
+                        Ok(c) => c,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    tr.clear(&by_id_key);
+                    tr.clear(&Self::edge_cluster_by_name_key(&record.name));
+                    tr.clear(&Self::edge_cluster_all_key(record.id));
+                    for resource in &record.bound_resources {
+                        tr.clear(&Self::edge_cluster_by_resource_key(*resource, record.id));
+                    }
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
+                "deserialize edge cluster: {e}"
+            ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
@@ -5918,6 +6210,16 @@ impl FdbStore {
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("deserialize nat gateway: {e}")))
+    }
+
+    async fn read_edge_cluster_record(
+        &self,
+        edge_cluster_id: Uuid,
+    ) -> Result<EdgeClusterRecord, StoreError> {
+        let key = Self::edge_cluster_by_id_key(edge_cluster_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize edge cluster: {e}")))
     }
 
     /// Shared body for the per-scope `create_image_*` methods.

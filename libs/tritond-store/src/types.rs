@@ -469,6 +469,176 @@ impl NatGatewayRecord {
     }
 }
 
+/// Kind of dataplane responsibility an [`EdgeCluster`] owns. v1 uses
+/// one `NatGateway` cluster per NAT gateway; the enum keeps the
+/// durable shape open for floating-IP decap and shared edge fleets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum EdgeClusterKind {
+    NatGateway,
+    FloatingIpDecap,
+    Shared,
+}
+
+impl EdgeClusterKind {
+    /// Whether a cluster of this kind may bind to `resource`.
+    #[must_use]
+    pub fn accepts_resource(self, resource: EdgeClusterResource) -> bool {
+        match self {
+            EdgeClusterKind::NatGateway => {
+                matches!(resource, EdgeClusterResource::NatGateway { .. })
+            }
+            EdgeClusterKind::FloatingIpDecap => {
+                matches!(resource, EdgeClusterResource::FloatingIp { .. })
+            }
+            EdgeClusterKind::Shared => true,
+        }
+    }
+}
+
+/// Resource whose edge dataplane is owned by an [`EdgeCluster`].
+/// Kept narrower than [`NetworkResourceId`] so only edge-placeable
+/// intent records can be bound to an edge cluster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum EdgeClusterResource {
+    NatGateway { nat_gateway_id: Uuid },
+    FloatingIp { floating_ip_id: Uuid },
+}
+
+impl EdgeClusterResource {
+    #[must_use]
+    pub fn kind_tag(self) -> &'static str {
+        match self {
+            EdgeClusterResource::NatGateway { .. } => "nat_gateway",
+            EdgeClusterResource::FloatingIp { .. } => "floating_ip",
+        }
+    }
+
+    #[must_use]
+    pub fn id(self) -> Uuid {
+        match self {
+            EdgeClusterResource::NatGateway { nat_gateway_id } => nat_gateway_id,
+            EdgeClusterResource::FloatingIp { floating_ip_id } => floating_ip_id,
+        }
+    }
+}
+
+/// Host-side NIC coordinate assigned to an edge instance by the
+/// placer/materializer. v1 store records carry this as durable
+/// placement data; the fhrun/firehyve manifest renderer translates it
+/// into runtime-specific NIC fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeNicCoord {
+    pub nic_tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip: Option<IpAddr>,
+}
+
+/// Realization state of one edge instance from tritond's
+/// perspective. Agent reports still flow through [`Realization`];
+/// this field is the placement/materializer lifecycle for the
+/// instance record itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum EdgeClusterInstanceState {
+    Pending,
+    Starting,
+    Running,
+    Stopping,
+    Stopped,
+    Failed,
+}
+
+/// One concrete firehyve/fhrun edge instance selected for an
+/// [`EdgeCluster`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeClusterInstance {
+    pub id: Uuid,
+    pub cn_id: Uuid,
+    pub fhrun_manifest_uri: String,
+    pub north_nic: EdgeNicCoord,
+    pub south_nic: EdgeNicCoord,
+    pub control_socket: String,
+    pub state: EdgeClusterInstanceState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Durable edge dataplane group. v1 creates one cluster per NAT
+/// gateway and stores zero or more instances under the cluster so the
+/// later placer can add HA without changing the parent record shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeCluster {
+    pub id: Uuid,
+    pub name: String,
+    pub kind: EdgeClusterKind,
+    #[serde(default)]
+    pub bound_resources: Vec<EdgeClusterResource>,
+    #[serde(default)]
+    pub instances: Vec<EdgeClusterInstance>,
+    pub desired_generation: u64,
+    pub realized: RealizedNetworkState,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Request body for creating an [`EdgeCluster`]. v1 callers create a
+/// system-owned cluster and bind it to a `NatGateway`; placement and
+/// instance membership land in a follow-up slice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewEdgeCluster {
+    pub name: String,
+    pub kind: EdgeClusterKind,
+    #[serde(default)]
+    pub bound_resources: Vec<EdgeClusterResource>,
+}
+
+/// Stored form of [`EdgeCluster`]. As with [`NatGatewayRecord`], the
+/// realized view is computed from realization rows rather than
+/// persisted on the record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct EdgeClusterRecord {
+    pub id: Uuid,
+    pub name: String,
+    pub kind: EdgeClusterKind,
+    pub bound_resources: Vec<EdgeClusterResource>,
+    pub instances: Vec<EdgeClusterInstance>,
+    pub desired_generation: u64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl EdgeClusterRecord {
+    #[must_use]
+    pub(crate) fn resource_id(&self) -> NetworkResourceId {
+        NetworkResourceId::EdgeCluster { id: self.id }
+    }
+
+    #[must_use]
+    pub(crate) fn into_view(self, rows: Vec<Realization>) -> EdgeCluster {
+        let realized = RealizedNetworkState::from_rows(self.desired_generation, rows);
+        EdgeCluster {
+            id: self.id,
+            name: self.name,
+            kind: self.kind,
+            bound_resources: self.bound_resources,
+            instances: self.instances,
+            desired_generation: self.desired_generation,
+            realized,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
 /// Validate a candidate subnet's CIDRs against its parent VPC and the
 /// peer subnets already in the same VPC. Shared by both store
 /// backends (`MemStore` and `FdbStore`) so the invariants stay in
@@ -2278,6 +2448,8 @@ pub enum NetworkResourceId {
     /// `FloatingIp` struct with `desired_generation` + termination
     /// fields.
     FloatingIp { id: Uuid },
+    /// An `EdgeCluster` hosting system-owned edge dataplane work.
+    EdgeCluster { id: Uuid },
 }
 
 impl NetworkResourceId {
@@ -2299,6 +2471,7 @@ impl NetworkResourceId {
             NetworkResourceId::NicSecurityGroupAttachment { .. } => "nic_security_group_attachment",
             NetworkResourceId::NatGateway { .. } => "nat_gateway",
             NetworkResourceId::FloatingIp { .. } => "floating_ip",
+            NetworkResourceId::EdgeCluster { .. } => "edge_cluster",
         }
     }
 
@@ -2314,7 +2487,8 @@ impl NetworkResourceId {
             | NetworkResourceId::SecurityGroupRule { id }
             | NetworkResourceId::NicSecurityGroupAttachment { id }
             | NetworkResourceId::NatGateway { id }
-            | NetworkResourceId::FloatingIp { id } => id,
+            | NetworkResourceId::FloatingIp { id }
+            | NetworkResourceId::EdgeCluster { id } => id,
         }
     }
 }
@@ -2515,6 +2689,7 @@ mod realized_state_tests {
             ),
             (NetworkResourceId::NatGateway { id }, "nat_gateway"),
             (NetworkResourceId::FloatingIp { id }, "floating_ip"),
+            (NetworkResourceId::EdgeCluster { id }, "edge_cluster"),
         ];
         for (resource, want) in cases {
             assert_eq!(resource.kind_tag(), *want);
@@ -2522,6 +2697,24 @@ mod realized_state_tests {
             let json = serde_json::to_value(resource).unwrap();
             assert_eq!(json["kind"].as_str().unwrap(), *want);
         }
+    }
+
+    #[test]
+    fn edge_cluster_resource_tags_and_acceptance_are_stable() {
+        let id = Uuid::nil();
+        let nat = EdgeClusterResource::NatGateway { nat_gateway_id: id };
+        let fip = EdgeClusterResource::FloatingIp { floating_ip_id: id };
+
+        assert_eq!(nat.kind_tag(), "nat_gateway");
+        assert_eq!(fip.kind_tag(), "floating_ip");
+        assert_eq!(nat.id(), id);
+        assert_eq!(fip.id(), id);
+        assert!(EdgeClusterKind::NatGateway.accepts_resource(nat));
+        assert!(!EdgeClusterKind::NatGateway.accepts_resource(fip));
+        assert!(EdgeClusterKind::FloatingIpDecap.accepts_resource(fip));
+        assert!(!EdgeClusterKind::FloatingIpDecap.accepts_resource(nat));
+        assert!(EdgeClusterKind::Shared.accepts_resource(nat));
+        assert!(EdgeClusterKind::Shared.accepts_resource(fip));
     }
 
     #[test]

@@ -398,37 +398,58 @@ sets termination based on a per-VPC default (CN-terminated until
 edge clusters land, edge-terminated thereafter). The user CLI
 contract does *not* expose termination — it's a system attribute.
 
-### 4.8 Edge cluster reference (read shape only — Agent D owns CRUD)
+### 4.8 Edge cluster records (store shape first)
 
 The Proteus blueprint has `AttachmentId edge_cluster` references
-and the v1 NAT/FIP intent records carry `edge_cluster_id`. Agent A
-needs *something to reference*; Agent D owns the runtime contract.
+and the v1 NAT/FIP intent records carry `edge_cluster_id`. The v1
+runtime contract is firehyve/fhrun with an nftables backend; AF_XDP
+remains a later empirical optimization if nftables misses the v1
+throughput, latency, connection-count, or update targets.
 
-**Manager ruling (2026-05-05): Agent D owns the firehyve/fhrun
-runtime contract. Agent A may define the type/reference shape
-needed by NAT/FIP intent. Agent A does not own EdgeCluster CRUD.**
-
-The reference shape Agent A pins so its NAT/FIP records remain
-addressable:
+S10 starts with durable store records and no tenant-facing CRUD. The
+placer/materializer will create one `NatGateway` edge cluster per NAT
+gateway in v1, while the schema already supports more than one
+instance per cluster and future floating-IP decap clusters.
 
 ```rust
-/// Opaque reference to an edge cluster. The fields are the minimum
-/// any consumer of `NatGateway.edge_cluster_id` /
-/// `FloatingIp.edge_cluster_id` needs to dereference. The full
-/// runtime / placement / membership contract lives in Agent D's
-/// design doc and is not duplicated here.
-pub struct EdgeClusterRef {
+pub enum EdgeClusterKind {
+    NatGateway,
+    FloatingIpDecap,
+    Shared,
+}
+
+pub enum EdgeClusterResource {
+    NatGateway { nat_gateway_id: Uuid },
+    FloatingIp { floating_ip_id: Uuid },
+}
+
+pub struct EdgeCluster {
     pub id: Uuid,
     pub name: String,
+    pub kind: EdgeClusterKind,
+    pub bound_resources: Vec<EdgeClusterResource>,
+    pub instances: Vec<EdgeClusterInstance>,
+    pub desired_generation: u64,
+    pub realized: RealizedNetworkState,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 ```
 
-Slice H-12 is now reduced to "commit the reference type and a
-read-only `GET /v2/edge-clusters` list endpoint that returns an
-empty list until Agent D's records exist." H-12 is *blocked* on
-Agent D / E / G converging on runtime, placement, and operator
-ownership; until then Agent A ships nothing in the EdgeCluster
-namespace beyond the reference type.
+Store invariants:
+
+* `name` is globally unique across edge clusters.
+* every `bound_resources` entry exists before the cluster is stored.
+* `EdgeClusterKind::NatGateway` binds only NAT gateways;
+  `FloatingIpDecap` binds only floating IPs; `Shared` may bind either.
+* duplicate bound resources in one create request return 409.
+* `desired_generation` starts at 1 and `realized` is computed from
+  network-realization rows at read time.
+
+Tenant-facing create/update/delete remains absent for v1. Later S10
+slices add the NAT materializer that creates these records and fills
+`NatGateway.edge_cluster_id`, then the operator read surface can list
+clusters for debugging.
 
 ## 5. Schema changes to existing resources
 
@@ -713,6 +734,11 @@ nat_gateway/in_vpc/<vpc>/<nat>
 nat_gateway/by_address/<addr>             (uniqueness: address singleton —
                                            shared with floating_ip pool index)
 
+edge_cluster/by_id/<uuid>
+edge_cluster/by_name/<name>
+edge_cluster/all/<uuid>
+edge_cluster/by_resource/<kind>/<resource>/<edge>
+
 security_group/by_id/<uuid>
 security_group/by_vpc/<vpc>/<name>
 security_group/in_vpc/<vpc>/<sg>
@@ -875,12 +901,11 @@ this section restates them so the design doc is self-contained.
   Allow. Most-specific-match is evaluated *after* Deny precedence.
   `RuleAction::Deny` is meaningful and cannot be shadowed by a
   more-specific Allow. (See §4.5 for the full rule.)
-* **EdgeCluster ownership — amended.** Agent D owns the
-  firehyve/fhrun runtime contract. Agent A defines only the
-  reference shape needed by NAT/FIP intent (§4.8). Agent A does
-  not own EdgeCluster CRUD. H-12 is delayed/rewritten as
-  read/reference shape only and remains blocked on Agent D / E / G
-  convergence on runtime, placement, and operator ownership.
+* **EdgeCluster ownership — amended again for S10.** Agent D still
+  owns the firehyve/fhrun runtime contract, but the control-plane
+  store now carries first-class `EdgeCluster` records (§4.8) so the
+  NAT materializer has durable placement state to write. Tenant-facing
+  EdgeCluster CRUD remains out of v1.
 * **`RealizedNetworkState` sequencing — amended.** H-1 ships only
   the types, helpers, and store reporting machinery with focused
   tests; it does *not* retrofit the field onto any existing public
@@ -994,8 +1019,7 @@ graph at the source.
 
 **Reads (from Agent A):**
 
-* `EdgeCluster` records (Agent D owns CRUD on these; Agent A only
-  exposes read).
+* `EdgeCluster` records created by the NAT materializer.
 * `NatGateway` records that name an `edge_cluster_id` matching
   this edge cluster.
 * `FloatingIp` records with `termination = EdgeTerminated` and
@@ -1008,9 +1032,9 @@ graph at the source.
 
 **Contract:**
 
-* Agent A does not generate edge manifests in v1. Agent E builds
-  them from the read shape above; the manifest content stays
-  inside Agent E's repo until it stabilizes.
+* Agent A renders the stable edge manifest contract and stores
+  cluster placement state. Agent D/E materializes that contract via
+  firehyve/fhrun and reports realization against the edge cluster.
 * Agent A guarantees that NAT GW / FIP records carry an
   `edge_cluster_id` whenever termination is edge-side, so Agent E
   has a concrete cluster to render against.
@@ -1049,7 +1073,7 @@ change). Tests + docs ride with the code in the same commit.
 | H-9 | `NicSecurityGroupAttachment` store + API + CLI + tests. Default-deny-inbound applies when zero SGs attached. | API + service + CLI + tests | integration: attach/detach atomic; instance delete cascades detach (matches FloatingIp pattern); delete-attached SG → 409 |
 | H-10 | `Subnet` route-table reassociation (`PUT .../subnets/{id}/route-table`); bumps subnet `desired_generation`. | API + service + CLI + tests | integration: reassoc bumps generation; idempotent set-to-current is a no-op |
 | H-11 | `FloatingIp` adds `termination` + `edge_cluster_id` + `realized: RealizedNetworkState`. **Widens an existing public API struct — slice intentionally runs `make openapi-generate` + `make clients-generate` and updates `tests/floating_ips.rs`** (manager ruling: no silent widening). | types + handlers + API + client (regen) + tests | integration: existing FIP attach/detach tests still pass; defaults are `CnTerminated` + `edge_cluster_id = None` + `realized` = empty |
-| H-12 | `EdgeClusterRef` reference type + `GET /v2/edge-clusters` returning empty list (placeholder). **Blocked on Agent D / E / G converging on EdgeCluster runtime, placement, and operator ownership** (manager ruling). Agent A does not own EdgeCluster CRUD. | types + a single read endpoint | unit: reference-shape round-trip; integration: list returns empty until Agent D populates |
+| H-12 / S10 | `EdgeCluster` store records: durable cluster, bound-resource index, computed realized view, and store-only CRUD for the NAT materializer. No tenant-facing CRUD yet. | `libs/tritond-store/src/{types,lib,mem,fdb}.rs` | unit: create/get/list/list-by-resource/delete; duplicate name; missing resource; kind/resource mismatch; duplicate bound resource |
 | H-13 | **Done.** `POST /v2/agent/network-realization` handler + Agent-scope auth gating. Requires a CN-bound Agent key, validates the reported resource exists, enforces `RealizerId::Cn` matches the bound CN, and stores the row through `record_network_realization`. | `apis/tritond-api/src/{lib,types}.rs`, `services/tritond/src/{lib,auth}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/agent.rs` | integration: per-CN bound key required; unbound Agent key denied; backward-generation report → 409; multiple CN realizers produce distinct rows on the NatGateway realized view |
 | H-14 | `tcadm net realized` UX (read-only across realized resource kinds) | CLI + tests | smoke: `tcadm net realized --resource nat_gateway:<id>` shows desired vs applied; `--watch` polls until applied == desired |
 

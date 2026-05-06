@@ -19,17 +19,18 @@ use rand::Rng;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::types::NatGatewayRecord;
+use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, Disk, DiskKind,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
-    ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
-    LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
-    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    generate_claim_code, generate_poll_token,
+    EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
+    FloatingIp, FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceCreateResult,
+    JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NatGateway,
+    NetworkResourceId, NewEdgeCluster, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway,
+    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
+    Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet,
+    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code,
+    generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
@@ -137,6 +138,12 @@ struct Inner {
     /// `(vpc_id, name)` → nat_gateway_id index for within-VPC name
     /// uniqueness.
     nat_gateway_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    edge_clusters_by_id: HashMap<Uuid, EdgeClusterRecord>,
+    /// `name` → edge_cluster_id index for global edge-cluster name
+    /// uniqueness.
+    edge_cluster_id_by_name: HashMap<String, Uuid>,
+    /// edge-placeable resource → edge_cluster_ids reverse index.
+    edge_cluster_ids_by_resource: HashMap<EdgeClusterResource, HashSet<Uuid>>,
     ssh_keys_by_id: HashMap<Uuid, SshKey>,
     /// Per-scope name + fingerprint uniqueness indexes. Each
     /// scope-kind has its own pair of maps so two scopes whose
@@ -249,6 +256,43 @@ fn realization_rows(
             .then_with(|| a.realizer.id().cmp(&b.realizer.id()))
     });
     rows
+}
+
+fn validate_edge_cluster_bound_resources(
+    guard: &Inner,
+    kind: EdgeClusterKind,
+    resources: &[EdgeClusterResource],
+) -> Result<(), StoreError> {
+    let mut seen = HashSet::new();
+    for resource in resources {
+        if !seen.insert(*resource) {
+            return Err(StoreError::Conflict(format!(
+                "edge cluster resource {}:{} is listed more than once",
+                resource.kind_tag(),
+                resource.id()
+            )));
+        }
+        if !kind.accepts_resource(*resource) {
+            return Err(StoreError::Conflict(format!(
+                "edge cluster kind {kind:?} cannot bind resource {}:{}",
+                resource.kind_tag(),
+                resource.id()
+            )));
+        }
+        match *resource {
+            EdgeClusterResource::NatGateway { nat_gateway_id } => {
+                if !guard.nat_gateways_by_id.contains_key(&nat_gateway_id) {
+                    return Err(StoreError::NotFound);
+                }
+            }
+            EdgeClusterResource::FloatingIp { floating_ip_id } => {
+                if !guard.floating_ips_by_id.contains_key(&floating_ip_id) {
+                    return Err(StoreError::NotFound);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[async_trait]
@@ -1198,6 +1242,104 @@ impl Store for MemStore {
             }
             IpAddr::V6(v6) => {
                 guard.public_ipv6_allocations.remove(&v6);
+            }
+        }
+        Ok(())
+    }
+
+    async fn create_edge_cluster(&self, req: NewEdgeCluster) -> Result<EdgeCluster, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        if guard.edge_cluster_id_by_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "edge cluster with name {:?} already exists",
+                req.name
+            )));
+        }
+        validate_edge_cluster_bound_resources(&guard, req.kind, &req.bound_resources)?;
+
+        let now = Utc::now();
+        let record = EdgeClusterRecord {
+            id: Uuid::new_v4(),
+            name: req.name.clone(),
+            kind: req.kind,
+            bound_resources: req.bound_resources.clone(),
+            instances: Vec::new(),
+            desired_generation: 1,
+            created_at: now,
+            updated_at: now,
+        };
+
+        guard
+            .edge_cluster_id_by_name
+            .insert(record.name.clone(), record.id);
+        for resource in &record.bound_resources {
+            guard
+                .edge_cluster_ids_by_resource
+                .entry(*resource)
+                .or_default()
+                .insert(record.id);
+        }
+        guard.edge_clusters_by_id.insert(record.id, record.clone());
+
+        Ok(record.into_view(Vec::new()))
+    }
+
+    async fn get_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<EdgeCluster, StoreError> {
+        let guard = self.inner.read().await;
+        let record = guard
+            .edge_clusters_by_id
+            .get(&edge_cluster_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        let rows = realization_rows(&guard.network_realizations, record.resource_id());
+        Ok(record.into_view(rows))
+    }
+
+    async fn list_edge_clusters(&self) -> Result<Vec<EdgeCluster>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .edge_clusters_by_id
+            .values()
+            .cloned()
+            .map(|record| {
+                let rows = realization_rows(&guard.network_realizations, record.resource_id());
+                record.into_view(rows)
+            })
+            .collect())
+    }
+
+    async fn list_edge_clusters_for_resource(
+        &self,
+        resource: EdgeClusterResource,
+    ) -> Result<Vec<EdgeCluster>, StoreError> {
+        let guard = self.inner.read().await;
+        let Some(ids) = guard.edge_cluster_ids_by_resource.get(&resource) else {
+            return Ok(Vec::new());
+        };
+        Ok(ids
+            .iter()
+            .filter_map(|id| guard.edge_clusters_by_id.get(id).cloned())
+            .map(|record| {
+                let rows = realization_rows(&guard.network_realizations, record.resource_id());
+                record.into_view(rows)
+            })
+            .collect())
+    }
+
+    async fn delete_edge_cluster(&self, edge_cluster_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let record = guard
+            .edge_clusters_by_id
+            .remove(&edge_cluster_id)
+            .ok_or(StoreError::NotFound)?;
+        guard.edge_cluster_id_by_name.remove(&record.name);
+        for resource in &record.bound_resources {
+            if let Some(ids) = guard.edge_cluster_ids_by_resource.get_mut(resource) {
+                ids.remove(&record.id);
+                if ids.is_empty() {
+                    guard.edge_cluster_ids_by_resource.remove(resource);
+                }
             }
         }
         Ok(())
@@ -5709,6 +5851,184 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fip.address, nat.public_address);
+    }
+
+    #[tokio::test]
+    async fn edge_cluster_round_trip_with_bound_nat_gateway_and_realized_view() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        let bound = EdgeClusterResource::NatGateway {
+            nat_gateway_id: nat.id,
+        };
+
+        let cluster = store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-egress".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![bound],
+            })
+            .await
+            .unwrap();
+        assert_eq!(cluster.name, "edge-egress");
+        assert_eq!(cluster.kind, EdgeClusterKind::NatGateway);
+        assert_eq!(cluster.bound_resources, vec![bound]);
+        assert!(cluster.instances.is_empty());
+        assert_eq!(cluster.desired_generation, 1);
+        assert_eq!(cluster.realized.desired_generation, 1);
+        assert!(cluster.realized.applied_generation.is_none());
+
+        let fetched = store.get_edge_cluster(cluster.id).await.unwrap();
+        assert_eq!(fetched, cluster);
+
+        let all = store.list_edge_clusters().await.unwrap();
+        assert_eq!(all, vec![cluster.clone()]);
+        let by_resource = store.list_edge_clusters_for_resource(bound).await.unwrap();
+        assert_eq!(by_resource, vec![cluster.clone()]);
+
+        store
+            .record_network_realization(
+                NetworkResourceId::EdgeCluster { id: cluster.id },
+                RealizerId::Cn { id: Uuid::new_v4() },
+                1,
+                RealizationStatus::Applied,
+                Some("edge vm running".to_string()),
+            )
+            .await
+            .unwrap();
+        let realized = store.get_edge_cluster(cluster.id).await.unwrap();
+        assert_eq!(realized.realized.applied_generation, Some(1));
+        assert_eq!(realized.realized.realizations.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn edge_cluster_create_validates_name_resource_and_kind() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        let bound = EdgeClusterResource::NatGateway {
+            nat_gateway_id: nat.id,
+        };
+
+        store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-egress".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![bound],
+            })
+            .await
+            .unwrap();
+
+        let duplicate_name = store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-egress".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![bound],
+            })
+            .await
+            .expect_err("duplicate edge cluster name");
+        assert!(matches!(duplicate_name, StoreError::Conflict(_)));
+
+        let unknown_resource = store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-missing".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![EdgeClusterResource::NatGateway {
+                    nat_gateway_id: Uuid::new_v4(),
+                }],
+            })
+            .await
+            .expect_err("unknown bound resource");
+        assert!(matches!(unknown_resource, StoreError::NotFound));
+
+        let wrong_kind = store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-wrong-kind".to_string(),
+                kind: EdgeClusterKind::FloatingIpDecap,
+                bound_resources: vec![bound],
+            })
+            .await
+            .expect_err("wrong edge cluster kind");
+        assert!(matches!(wrong_kind, StoreError::Conflict(_)));
+
+        let duplicate_resource = store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-duplicate-resource".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![bound, bound],
+            })
+            .await
+            .expect_err("duplicate bound resource");
+        assert!(matches!(duplicate_resource, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_edge_cluster_clears_name_and_resource_indexes() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = make_vpc(&store, tenant_id, project_id, "prod", "10.0.0.0/24").await;
+        let nat = store
+            .create_nat_gateway(
+                tenant_id,
+                project_id,
+                vpc.id,
+                nat_req("egress", AddressFamily::V4),
+            )
+            .await
+            .unwrap();
+        let bound = EdgeClusterResource::NatGateway {
+            nat_gateway_id: nat.id,
+        };
+        let cluster = store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-egress".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![bound],
+            })
+            .await
+            .unwrap();
+
+        store.delete_edge_cluster(cluster.id).await.unwrap();
+        let err = store
+            .get_edge_cluster(cluster.id)
+            .await
+            .expect_err("deleted cluster should not be found");
+        assert!(matches!(err, StoreError::NotFound));
+        assert!(store.list_edge_clusters().await.unwrap().is_empty());
+        assert!(
+            store
+                .list_edge_clusters_for_resource(bound)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        store
+            .create_edge_cluster(NewEdgeCluster {
+                name: "edge-egress".to_string(),
+                kind: EdgeClusterKind::NatGateway,
+                bound_resources: vec![bound],
+            })
+            .await
+            .expect("name index should be clear after delete");
     }
 
     #[tokio::test]

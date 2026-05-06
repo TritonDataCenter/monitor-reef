@@ -6611,6 +6611,26 @@
               "id",
               "kind"
             ]
+          },
+          {
+            "description": "An `EdgeCluster` hosting system-owned edge dataplane work.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "edge_cluster"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
           }
         ]
       },

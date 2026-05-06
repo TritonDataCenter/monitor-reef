@@ -5168,6 +5168,7 @@ async fn ensure_realization_resource_exists(
         NetworkResourceId::Route { id } => store.get_route(id).await.map(|_| ()),
         NetworkResourceId::NatGateway { id } => store.get_nat_gateway(id).await.map(|_| ()),
         NetworkResourceId::FloatingIp { id } => store.get_floating_ip(id).await.map(|_| ()),
+        NetworkResourceId::EdgeCluster { id } => store.get_edge_cluster(id).await.map(|_| ()),
         NetworkResourceId::SecurityGroup { .. }
         | NetworkResourceId::SecurityGroupRule { .. }
         | NetworkResourceId::NicSecurityGroupAttachment { .. } => return Err(not_found()),
