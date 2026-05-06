@@ -50,6 +50,10 @@
 //! subnet/by_id/<uuid>               -> JSON-encoded Subnet
 //! subnet/by_vpc/<vpc>/<name>        -> uuid hyphenated bytes
 //! subnet/in_vpc/<vpc>/<subnet>      -> empty (membership index)
+//! route_table/by_id/<uuid>          -> JSON-encoded RouteTable
+//! route_table/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
+//! route_table/in_vpc/<vpc>/<rt>     -> empty (membership index)
+//! route_table/main/<vpc>            -> uuid hyphenated bytes
 //! nat_gateway/by_id/<uuid>          -> JSON-encoded NatGatewayRecord
 //! nat_gateway/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
 //! nat_gateway/in_vpc/<vpc>/<nat>    -> empty (membership index)
@@ -135,16 +139,18 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
-    RealizerId, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizerId, RouteTable, Silo, SshKey, SshKeyScope, Store, StoreError,
+    Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
 /// in-memory store's cap; with ~16.7M candidates this is operationally
 /// unreachable.
 const VNI_RETRY_ATTEMPTS: usize = 8;
+const MAIN_ROUTE_TABLE_NAME: &str = "main";
 
 static FDB_NETWORK: OnceLock<()> = OnceLock::new();
 
@@ -324,6 +330,26 @@ impl FdbStore {
 
     fn subnet_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
         format!("subnet/in_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn route_table_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("route_table/by_id/{id}").into_bytes()
+    }
+
+    fn route_table_by_vpc_name_key(vpc_id: Uuid, name: &str) -> Vec<u8> {
+        format!("route_table/by_vpc/{vpc_id}/{name}").into_bytes()
+    }
+
+    fn route_table_in_vpc_key(vpc_id: Uuid, route_table_id: Uuid) -> Vec<u8> {
+        format!("route_table/in_vpc/{vpc_id}/{route_table_id}").into_bytes()
+    }
+
+    fn route_table_in_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
+        format!("route_table/in_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn route_table_main_key(vpc_id: Uuid) -> Vec<u8> {
+        format!("route_table/main/{vpc_id}").into_bytes()
     }
 
     fn nat_gateway_by_id_key(id: Uuid) -> Vec<u8> {
@@ -1589,23 +1615,44 @@ impl Store for FdbStore {
 
         for _ in 0..VNI_RETRY_ATTEMPTS {
             let vni = rand::rng().random_range(VPC_VNI_RESERVED_CEILING..VPC_VNI_MAX);
-            let candidate = Vpc {
-                id: Uuid::new_v4(),
+            let vpc_id = Uuid::new_v4();
+            let route_table_id = Uuid::new_v4();
+            let now = Utc::now();
+            let main_route_table = RouteTable {
+                id: route_table_id,
                 tenant_id,
                 project_id,
+                vpc_id,
+                name: MAIN_ROUTE_TABLE_NAME.to_string(),
+                description: format!("Main route table for VPC {}", req.name),
+                is_main: true,
+                created_at: now,
+            };
+            let candidate = Vpc {
+                id: vpc_id,
+                tenant_id,
+                project_id,
+                main_route_table_id: route_table_id,
                 name: req.name.clone(),
                 description: req.description.clone().unwrap_or_default(),
                 vni,
                 ipv4_block: req.ipv4_block,
                 ipv6_block: req.ipv6_block,
-                created_at: Utc::now(),
+                created_at: now,
             };
             let value = serde_json::to_vec(&candidate)
                 .map_err(|e| StoreError::Backend(format!("serialize vpc: {e}")))?;
+            let main_route_table_value = serde_json::to_vec(&main_route_table)
+                .map_err(|e| StoreError::Backend(format!("serialize route table: {e}")))?;
             let by_id_key = Self::vpc_by_id_key(candidate.id);
             let in_project_key = Self::vpc_in_project_key(project_id, candidate.id);
             let by_vni_key = Self::vpc_by_vni_key(vni);
+            let rt_by_id_key = Self::route_table_by_id_key(route_table_id);
+            let rt_by_name_key = Self::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
+            let rt_in_vpc_key = Self::route_table_in_vpc_key(vpc_id, route_table_id);
+            let rt_main_key = Self::route_table_main_key(vpc_id);
             let id_str = candidate.id.to_string();
+            let route_table_id_str = route_table_id.to_string();
 
             let outcome: Result<Outcome, FdbBindingError> = self
                 .db
@@ -1615,8 +1662,14 @@ impl Store for FdbStore {
                     let by_name_key = by_name_key.clone();
                     let in_project_key = in_project_key.clone();
                     let by_vni_key = by_vni_key.clone();
+                    let rt_by_id_key = rt_by_id_key.clone();
+                    let rt_by_name_key = rt_by_name_key.clone();
+                    let rt_in_vpc_key = rt_in_vpc_key.clone();
+                    let rt_main_key = rt_main_key.clone();
                     let value = value.clone();
+                    let main_route_table_value = main_route_table_value.clone();
                     let id_bytes = id_str.as_bytes().to_vec();
+                    let route_table_id_bytes = route_table_id_str.as_bytes().to_vec();
                     let candidate = candidate.clone();
                     async move {
                         // Project must exist and live in the tenant the
@@ -1644,6 +1697,10 @@ impl Store for FdbStore {
                         tr.set(&by_name_key, &id_bytes);
                         tr.set(&in_project_key, b"");
                         tr.set(&by_vni_key, &id_bytes);
+                        tr.set(&rt_by_id_key, &main_route_table_value);
+                        tr.set(&rt_by_name_key, &route_table_id_bytes);
+                        tr.set(&rt_in_vpc_key, b"");
+                        tr.set(&rt_main_key, &route_table_id_bytes);
                         Ok(Outcome::Created(candidate))
                     }
                 })
@@ -1734,11 +1791,20 @@ impl Store for FdbStore {
         let by_vni_key = Self::vpc_by_vni_key(vpc.vni);
         let subnet_prefix = Self::subnet_in_vpc_prefix(vpc_id);
         let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
+        let route_table_prefix = Self::route_table_in_vpc_prefix(vpc_id);
+        let (route_table_begin, route_table_end) = prefix_range(&route_table_prefix);
+        let route_table_prefix_len = route_table_prefix.len();
+        let main_route_table_id = vpc.main_route_table_id;
+        let main_rt_by_id_key = Self::route_table_by_id_key(main_route_table_id);
+        let main_rt_by_name_key = Self::route_table_by_vpc_name_key(vpc_id, MAIN_ROUTE_TABLE_NAME);
+        let main_rt_in_vpc_key = Self::route_table_in_vpc_key(vpc_id, main_route_table_id);
+        let main_rt_singleton_key = Self::route_table_main_key(vpc_id);
 
         enum DelOut {
             Deleted,
             Vanished,
             HasSubnets,
+            HasRouteTables,
         }
         let outcome: Result<DelOut, FdbBindingError> = self
             .db
@@ -1749,6 +1815,12 @@ impl Store for FdbStore {
                 let by_vni_key = by_vni_key.clone();
                 let subnet_begin = subnet_begin.clone();
                 let subnet_end = subnet_end.clone();
+                let route_table_begin = route_table_begin.clone();
+                let route_table_end = route_table_end.clone();
+                let main_rt_by_id_key = main_rt_by_id_key.clone();
+                let main_rt_by_name_key = main_rt_by_name_key.clone();
+                let main_rt_in_vpc_key = main_rt_in_vpc_key.clone();
+                let main_rt_singleton_key = main_rt_singleton_key.clone();
                 async move {
                     if tr.get(&by_id_key, false).await?.is_none() {
                         return Ok(DelOut::Vanished);
@@ -1766,10 +1838,30 @@ impl Store for FdbStore {
                     if kvs.iter().next().is_some() {
                         return Ok(DelOut::HasSubnets);
                     }
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(route_table_begin),
+                        end: KeySelector::first_greater_or_equal(route_table_end),
+                        limit: Some(2),
+                        ..RangeOption::default()
+                    };
+                    let route_table_kvs = tr.get_range(&opt, 1, false).await?;
+                    for kv in route_table_kvs.iter() {
+                        let suffix = &kv.key()[route_table_prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(id) = Uuid::parse_str(s)
+                            && id != main_route_table_id
+                        {
+                            return Ok(DelOut::HasRouteTables);
+                        }
+                    }
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
                     tr.clear(&by_vni_key);
+                    tr.clear(&main_rt_by_id_key);
+                    tr.clear(&main_rt_by_name_key);
+                    tr.clear(&main_rt_in_vpc_key);
+                    tr.clear(&main_rt_singleton_key);
                     Ok(DelOut::Deleted)
                 }
             })
@@ -1780,6 +1872,9 @@ impl Store for FdbStore {
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
             Ok(DelOut::HasSubnets) => Err(StoreError::Conflict(format!(
                 "vpc {vpc_id} still has subnets attached; delete subnets first"
+            ))),
+            Ok(DelOut::HasRouteTables) => Err(StoreError::Conflict(format!(
+                "vpc {vpc_id} still has route tables attached; delete route tables first"
             ))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
@@ -1890,6 +1985,7 @@ impl Store for FdbStore {
                         tenant_id,
                         project_id,
                         vpc_id,
+                        route_table_id: vpc.main_route_table_id,
                         name: req.name.clone(),
                         description: req.description.unwrap_or_default(),
                         ipv4_block: req.ipv4_block,
@@ -2019,6 +2115,227 @@ impl Store for FdbStore {
         match outcome {
             Ok(DelOut::Deleted) => Ok(()),
             Ok(DelOut::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_route_table(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewRouteTable,
+    ) -> Result<RouteTable, StoreError> {
+        let vpc_check_key = Self::vpc_by_id_key(vpc_id);
+        let by_name_key = Self::route_table_by_vpc_name_key(vpc_id, &req.name);
+        let route_table_id = Uuid::new_v4();
+        let by_id_key = Self::route_table_by_id_key(route_table_id);
+        let in_vpc_key = Self::route_table_in_vpc_key(vpc_id, route_table_id);
+        let id_str = route_table_id.to_string();
+
+        enum Outcome {
+            Created(RouteTable),
+            VpcMissingOrWrongParent,
+            NameTaken,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let vpc_check_key = vpc_check_key.clone();
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let in_vpc_key = in_vpc_key.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    let vpc_bytes = match tr.get(&vpc_check_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::VpcMissingOrWrongParent),
+                    };
+                    let vpc: Vpc = match serde_json::from_slice(&vpc_bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::VpcMissingOrWrongParent),
+                    };
+                    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+                        return Ok(Outcome::VpcMissingOrWrongParent);
+                    }
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+
+                    let route_table = RouteTable {
+                        id: route_table_id,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        name: req.name.clone(),
+                        description: req.description.unwrap_or_default(),
+                        is_main: false,
+                        created_at: Utc::now(),
+                    };
+                    let value = match serde_json::to_vec(&route_table) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&in_vpc_key, b"");
+                    Ok(Outcome::Created(route_table))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(route_table)) => Ok(route_table),
+            Ok(Outcome::VpcMissingOrWrongParent) => Err(StoreError::NotFound),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "route table with name {:?} already exists in vpc {vpc_id}",
+                req.name
+            ))),
+            Ok(Outcome::SerializeFailed(e)) => {
+                Err(StoreError::Backend(format!("serialize route table: {e}")))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_route_table(&self, route_table_id: Uuid) -> Result<RouteTable, StoreError> {
+        let key = Self::route_table_by_id_key(route_table_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize route table: {e}")))
+    }
+
+    async fn list_route_tables_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<RouteTable>, StoreError> {
+        let prefix = Self::route_table_in_vpc_prefix(vpc_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("route table index uuid: {e}")))?;
+            match self.get_route_table(id).await {
+                Ok(route_table) => out.push(route_table),
+                Err(StoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_route_table(&self, route_table_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::route_table_by_id_key(route_table_id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Main,
+            HasSubnetAssociations,
+            Corrupt(String),
+        }
+
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let route_table: RouteTable = match serde_json::from_slice(&bytes) {
+                        Ok(rt) => rt,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    if route_table.is_main {
+                        return Ok(Out::Main);
+                    }
+
+                    let subnet_prefix = Self::subnet_in_vpc_prefix(route_table.vpc_id);
+                    let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
+                    let prefix_len = subnet_prefix.len();
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(subnet_begin),
+                        end: KeySelector::first_greater_or_equal(subnet_end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut subnet_ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix)
+                            && let Ok(id) = Uuid::parse_str(s)
+                        {
+                            subnet_ids.push(id);
+                        }
+                    }
+                    drop(kvs);
+                    for subnet_id in subnet_ids {
+                        let subnet_key = Self::subnet_by_id_key(subnet_id);
+                        let Some(subnet_bytes) = tr.get(&subnet_key, false).await? else {
+                            continue;
+                        };
+                        let Ok(subnet) = serde_json::from_slice::<Subnet>(&subnet_bytes) else {
+                            continue;
+                        };
+                        if subnet.route_table_id == route_table_id {
+                            return Ok(Out::HasSubnetAssociations);
+                        }
+                    }
+
+                    let by_name_key =
+                        Self::route_table_by_vpc_name_key(route_table.vpc_id, &route_table.name);
+                    let in_vpc_key =
+                        Self::route_table_in_vpc_key(route_table.vpc_id, route_table.id);
+                    tr.clear(&by_id_key);
+                    tr.clear(&by_name_key);
+                    tr.clear(&in_vpc_key);
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Main) => Err(StoreError::Conflict(format!(
+                "route table {route_table_id} is a main route table; delete the vpc instead"
+            ))),
+            Ok(Out::HasSubnetAssociations) => Err(StoreError::Conflict(format!(
+                "route table {route_table_id} is still associated with subnets"
+            ))),
+            Ok(Out::Corrupt(e)) => {
+                Err(StoreError::Backend(format!("deserialize route table: {e}")))
+            }
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }

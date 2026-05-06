@@ -312,6 +312,9 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
         .into_inner();
     assert_ne!(v_a.id, v_b.id);
     assert_ne!(v_a.vni, v_b.vni);
+    assert_ne!(v_a.main_route_table_id, Uuid::nil());
+    assert_ne!(v_b.main_route_table_id, Uuid::nil());
+    assert_ne!(v_a.main_route_table_id, v_b.main_route_table_id);
     assert_eq!(v_a.ipv4_block.as_deref(), Some("10.0.0.0/24"));
     assert_eq!(v_a.ipv6_block.as_deref(), Some("fd00::/48"));
 
@@ -336,6 +339,7 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
         .unwrap()
         .into_inner();
     assert_eq!(fetched.vni, v_a.vni);
+    assert_eq!(fetched.main_route_table_id, v_a.main_route_table_id);
 
     test.close().await;
 }

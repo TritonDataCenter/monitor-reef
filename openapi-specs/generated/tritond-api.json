@@ -6909,6 +6909,11 @@
             "type": "string",
             "format": "uuid"
           },
+          "route_table_id": {
+            "description": "Active route table for this subnet. Defaults to the parent VPC's `main_route_table_id` at create time.",
+            "type": "string",
+            "format": "uuid"
+          },
           "tenant_id": {
             "type": "string",
             "format": "uuid"
@@ -6924,6 +6929,7 @@
           "id",
           "name",
           "project_id",
+          "route_table_id",
           "tenant_id",
           "vpc_id"
         ]
@@ -7065,6 +7071,11 @@
             "description": "Primary IPv6 CIDR for the VPC overlay. `None` for IPv4-only. Wire format is the canonical CIDR string, e.g. `\"fd00::/48\"`.",
             "type": "string"
           },
+          "main_route_table_id": {
+            "description": "Route table inherited by new subnets unless explicitly reassociated later. Created atomically with the VPC.",
+            "type": "string",
+            "format": "uuid"
+          },
           "name": {
             "type": "string"
           },
@@ -7087,6 +7098,7 @@
           "created_at",
           "description",
           "id",
+          "main_route_table_id",
           "name",
           "project_id",
           "tenant_id",

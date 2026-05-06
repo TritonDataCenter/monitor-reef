@@ -300,6 +300,15 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
     let test = TestServer::start().await;
     let root = test.root_client();
     let (tenant_id, project_id, vpc_id) = make_silo_project_vpc(&root).await;
+    let vpc = root
+        .get_project_vpc()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
 
     let subnet = root
         .create_vpc_subnet()
@@ -314,6 +323,7 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
     assert_eq!(subnet.tenant_id, tenant_id);
     assert_eq!(subnet.project_id, project_id);
     assert_eq!(subnet.vpc_id, vpc_id);
+    assert_eq!(subnet.route_table_id, vpc.main_route_table_id);
     assert_eq!(subnet.ipv4_block.as_deref(), Some("10.0.1.0/24"));
     assert_eq!(subnet.ipv6_block.as_deref(), Some("fd00:0:0:1::/64"));
 
@@ -328,6 +338,7 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
         .into_inner();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, subnet.id);
+    assert_eq!(listed[0].route_table_id, vpc.main_route_table_id);
 
     let fetched = root
         .get_vpc_subnet()
@@ -340,6 +351,7 @@ async fn root_can_create_and_read_subnets_in_any_vpc() {
         .unwrap()
         .into_inner();
     assert_eq!(fetched.id, subnet.id);
+    assert_eq!(fetched.route_table_id, vpc.main_route_table_id);
 
     test.close().await;
 }

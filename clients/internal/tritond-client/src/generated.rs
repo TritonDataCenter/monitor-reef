@@ -4859,6 +4859,7 @@ pub mod types {
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
+    #[doc = "    \"route_table_id\","]
     #[doc = "    \"tenant_id\","]
     #[doc = "    \"vpc_id\""]
     #[doc = "  ],"]
@@ -4895,6 +4896,11 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
+    #[doc = "    \"route_table_id\": {"]
+    #[doc = "      \"description\": \"Active route table for this subnet. Defaults to the parent VPC's `main_route_table_id` at create time.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"tenant_id\": {"]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
@@ -4922,6 +4928,8 @@ pub mod types {
         pub ipv6_block: ::std::option::Option<::std::string::String>,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
+        #[doc = "Active route table for this subnet. Defaults to the parent VPC's `main_route_table_id` at create time."]
+        pub route_table_id: ::uuid::Uuid,
         pub tenant_id: ::uuid::Uuid,
         pub vpc_id: ::uuid::Uuid,
     }
@@ -5123,6 +5131,7 @@ pub mod types {
     #[doc = "    \"created_at\","]
     #[doc = "    \"description\","]
     #[doc = "    \"id\","]
+    #[doc = "    \"main_route_table_id\","]
     #[doc = "    \"name\","]
     #[doc = "    \"project_id\","]
     #[doc = "    \"tenant_id\","]
@@ -5153,6 +5162,11 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"main_route_table_id\": {"]
+    #[doc = "      \"description\": \"Route table inherited by new subnets unless explicitly reassociated later. Created atomically with the VPC.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
@@ -5188,6 +5202,8 @@ pub mod types {
         #[doc = "Primary IPv6 CIDR for the VPC overlay. `None` for IPv4-only. Wire format is the canonical CIDR string, e.g. `\"fd00::/48\"`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub ipv6_block: ::std::option::Option<::std::string::String>,
+        #[doc = "Route table inherited by new subnets unless explicitly reassociated later. Created atomically with the VPC."]
+        pub main_route_table_id: ::uuid::Uuid,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
         pub tenant_id: ::uuid::Uuid,
@@ -10613,6 +10629,7 @@ pub mod types {
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            route_table_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
@@ -10627,6 +10644,7 @@ pub mod types {
                     ipv6_block: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
+                    route_table_id: Err("no value supplied for route_table_id".to_string()),
                     tenant_id: Err("no value supplied for tenant_id".to_string()),
                     vpc_id: Err("no value supplied for vpc_id".to_string()),
                 }
@@ -10704,6 +10722,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for project_id: {e}"));
                 self
             }
+            pub fn route_table_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.route_table_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for route_table_id: {e}")
+                });
+                self
+            }
             pub fn tenant_id<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::uuid::Uuid>,
@@ -10739,6 +10767,7 @@ pub mod types {
                     ipv6_block: value.ipv6_block?,
                     name: value.name?,
                     project_id: value.project_id?,
+                    route_table_id: value.route_table_id?,
                     tenant_id: value.tenant_id?,
                     vpc_id: value.vpc_id?,
                 })
@@ -10755,6 +10784,7 @@ pub mod types {
                     ipv6_block: Ok(value.ipv6_block),
                     name: Ok(value.name),
                     project_id: Ok(value.project_id),
+                    route_table_id: Ok(value.route_table_id),
                     tenant_id: Ok(value.tenant_id),
                     vpc_id: Ok(value.vpc_id),
                 }
@@ -10974,6 +11004,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            main_route_table_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -10988,6 +11019,9 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     ipv4_block: Ok(Default::default()),
                     ipv6_block: Ok(Default::default()),
+                    main_route_table_id: Err(
+                        "no value supplied for main_route_table_id".to_string()
+                    ),
                     name: Err("no value supplied for name".to_string()),
                     project_id: Err("no value supplied for project_id".to_string()),
                     tenant_id: Err("no value supplied for tenant_id".to_string()),
@@ -11047,6 +11081,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for ipv6_block: {e}"));
                 self
             }
+            pub fn main_route_table_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.main_route_table_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for main_route_table_id: {e}")
+                });
+                self
+            }
             pub fn name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -11098,6 +11142,7 @@ pub mod types {
                     id: value.id?,
                     ipv4_block: value.ipv4_block?,
                     ipv6_block: value.ipv6_block?,
+                    main_route_table_id: value.main_route_table_id?,
                     name: value.name?,
                     project_id: value.project_id?,
                     tenant_id: value.tenant_id?,
@@ -11114,6 +11159,7 @@ pub mod types {
                     id: Ok(value.id),
                     ipv4_block: Ok(value.ipv4_block),
                     ipv6_block: Ok(value.ipv6_block),
+                    main_route_table_id: Ok(value.main_route_table_id),
                     name: Ok(value.name),
                     project_id: Ok(value.project_id),
                     tenant_id: Ok(value.tenant_id),

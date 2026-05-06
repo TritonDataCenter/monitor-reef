@@ -24,10 +24,11 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
-    RealizerId, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code, generate_poll_token,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizerId, RouteTable, Silo, SshKey, SshKeyScope, Store, StoreError,
+    Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, NewInstanceNic};
@@ -36,6 +37,7 @@ use crate::{ApiKeyScope, NewInstanceNic};
 /// candidates and any realistic VPC count, collisions are vanishingly
 /// rare; the cap is purely defensive.
 const VNI_RETRY_ATTEMPTS: usize = 8;
+const MAIN_ROUTE_TABLE_NAME: &str = "main";
 
 /// Build an [`SshKey`] record from a [`NewSshKey`] request and
 /// its resolved scope + fingerprint. Centralised so the
@@ -121,6 +123,11 @@ struct Inner {
     /// `(vpc_id, name)` → subnet_id index for within-vpc name
     /// uniqueness.
     subnet_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    route_tables_by_id: HashMap<Uuid, RouteTable>,
+    /// `(vpc_id, name)` → route_table_id index for within-VPC name
+    /// uniqueness. The auto-created main route table reserves
+    /// `(vpc_id, "main")`.
+    route_table_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
     nat_gateways_by_id: HashMap<Uuid, NatGatewayRecord>,
     /// `(vpc_id, name)` → nat_gateway_id index for within-VPC name
     /// uniqueness.
@@ -685,19 +692,37 @@ impl Store for MemStore {
             StoreError::Backend(format!("VNI exhausted after {VNI_RETRY_ATTEMPTS} retries"))
         })?;
 
-        let vpc = Vpc {
-            id: Uuid::new_v4(),
+        let vpc_id = Uuid::new_v4();
+        let route_table_id = Uuid::new_v4();
+        let now = Utc::now();
+        let route_table = RouteTable {
+            id: route_table_id,
             tenant_id,
             project_id,
+            vpc_id,
+            name: MAIN_ROUTE_TABLE_NAME.to_string(),
+            description: format!("Main route table for VPC {}", req.name),
+            is_main: true,
+            created_at: now,
+        };
+        let vpc = Vpc {
+            id: vpc_id,
+            tenant_id,
+            project_id,
+            main_route_table_id: route_table_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
             vni,
             ipv4_block: req.ipv4_block,
             ipv6_block: req.ipv6_block,
-            created_at: Utc::now(),
+            created_at: now,
         };
         guard.vnis_in_use.insert(vni);
         guard.vpc_id_by_project_name.insert(name_key, vpc.id);
+        guard
+            .route_table_id_by_vpc_name
+            .insert((vpc.id, MAIN_ROUTE_TABLE_NAME.to_string()), route_table_id);
+        guard.route_tables_by_id.insert(route_table_id, route_table);
         guard.vpcs_by_id.insert(vpc.id, vpc.clone());
         Ok(vpc)
     }
@@ -734,6 +759,15 @@ impl Store for MemStore {
                 "vpc {vpc_id} still has subnets attached; delete subnets first"
             )));
         }
+        let has_non_main_route_tables = guard
+            .route_tables_by_id
+            .values()
+            .any(|rt| rt.vpc_id == vpc_id && !rt.is_main);
+        if has_non_main_route_tables {
+            return Err(StoreError::Conflict(format!(
+                "vpc {vpc_id} still has route tables attached; delete route tables first"
+            )));
+        }
         let vpc = guard
             .vpcs_by_id
             .remove(&vpc_id)
@@ -741,6 +775,11 @@ impl Store for MemStore {
         guard
             .vpc_id_by_project_name
             .remove(&(vpc.project_id, vpc.name));
+        if let Some(route_table) = guard.route_tables_by_id.remove(&vpc.main_route_table_id) {
+            guard
+                .route_table_id_by_vpc_name
+                .remove(&(route_table.vpc_id, route_table.name));
+        }
         guard.vnis_in_use.remove(&vpc.vni);
         Ok(())
     }
@@ -788,6 +827,7 @@ impl Store for MemStore {
             tenant_id,
             project_id,
             vpc_id,
+            route_table_id: vpc.main_route_table_id,
             name: req.name.clone(),
             description: req.description.unwrap_or_default(),
             ipv4_block: req.ipv4_block,
@@ -827,6 +867,98 @@ impl Store for MemStore {
         guard
             .subnet_id_by_vpc_name
             .remove(&(subnet.vpc_id, subnet.name));
+        Ok(())
+    }
+
+    async fn create_route_table(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewRouteTable,
+    ) -> Result<RouteTable, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+            return Err(StoreError::NotFound);
+        }
+
+        let name_key = (vpc_id, req.name.clone());
+        if guard.route_table_id_by_vpc_name.contains_key(&name_key) {
+            return Err(StoreError::Conflict(format!(
+                "route table with name {:?} already exists in vpc {vpc_id}",
+                req.name
+            )));
+        }
+
+        let route_table = RouteTable {
+            id: Uuid::new_v4(),
+            tenant_id,
+            project_id,
+            vpc_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            is_main: false,
+            created_at: Utc::now(),
+        };
+        guard
+            .route_table_id_by_vpc_name
+            .insert(name_key, route_table.id);
+        guard
+            .route_tables_by_id
+            .insert(route_table.id, route_table.clone());
+        Ok(route_table)
+    }
+
+    async fn get_route_table(&self, route_table_id: Uuid) -> Result<RouteTable, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .route_tables_by_id
+            .get(&route_table_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_route_tables_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<RouteTable>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .route_tables_by_id
+            .values()
+            .filter(|rt| rt.vpc_id == vpc_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_route_table(&self, route_table_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let route_table = guard
+            .route_tables_by_id
+            .get(&route_table_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        if route_table.is_main {
+            return Err(StoreError::Conflict(format!(
+                "route table {route_table_id} is the main route table for vpc {}; delete the vpc instead",
+                route_table.vpc_id
+            )));
+        }
+        let has_subnet_associations = guard
+            .subnets_by_id
+            .values()
+            .any(|s| s.route_table_id == route_table_id);
+        if has_subnet_associations {
+            return Err(StoreError::Conflict(format!(
+                "route table {route_table_id} is still associated with subnets"
+            )));
+        }
+        let route_table = guard
+            .route_tables_by_id
+            .remove(&route_table_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .route_table_id_by_vpc_name
+            .remove(&(route_table.vpc_id, route_table.name));
         Ok(())
     }
 
@@ -3402,12 +3534,27 @@ mod tests {
             .unwrap();
         assert_eq!(vpc.tenant_id, tenant_id);
         assert_eq!(vpc.project_id, project_id);
+        assert_ne!(vpc.main_route_table_id, Uuid::nil());
         assert!(vpc.vni >= VPC_VNI_RESERVED_CEILING && vpc.vni < VPC_VNI_MAX);
         assert_eq!(vpc.ipv4_block, Some(ipv4_cidr("10.0.0.0/24")));
         assert_eq!(vpc.ipv6_block, Some(ipv6_cidr("fd00::/48")));
 
         let fetched = store.get_vpc(vpc.id).await.unwrap();
         assert_eq!(fetched, vpc);
+
+        let main_rt = store
+            .get_route_table(vpc.main_route_table_id)
+            .await
+            .unwrap();
+        assert_eq!(main_rt.tenant_id, tenant_id);
+        assert_eq!(main_rt.project_id, project_id);
+        assert_eq!(main_rt.vpc_id, vpc.id);
+        assert_eq!(main_rt.name, MAIN_ROUTE_TABLE_NAME);
+        assert!(main_rt.is_main);
+
+        let route_tables = store.list_route_tables_in_vpc(vpc.id).await.unwrap();
+        assert_eq!(route_tables.len(), 1);
+        assert_eq!(route_tables[0].id, vpc.main_route_table_id);
 
         let listed = store.list_vpcs_in_project(project_id).await.unwrap();
         assert_eq!(listed.len(), 1);
@@ -3418,6 +3565,11 @@ mod tests {
             .get_vpc(vpc.id)
             .await
             .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+        let err = store
+            .get_route_table(vpc.main_route_table_id)
+            .await
+            .expect_err("vpc delete removes its main route table");
         assert!(matches!(err, StoreError::NotFound));
     }
 
@@ -3643,6 +3795,147 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn route_table_round_trip_within_vpc() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        let route_table = store
+            .create_route_table(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewRouteTable {
+                    name: "private".to_string(),
+                    description: Some("private routes".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(route_table.tenant_id, tenant_id);
+        assert_eq!(route_table.project_id, project_id);
+        assert_eq!(route_table.vpc_id, vpc.id);
+        assert_eq!(route_table.name, "private");
+        assert!(!route_table.is_main);
+
+        let fetched = store.get_route_table(route_table.id).await.unwrap();
+        assert_eq!(fetched, route_table);
+
+        let listed = store.list_route_tables_in_vpc(vpc.id).await.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().any(|rt| rt.id == vpc.main_route_table_id));
+        assert!(listed.iter().any(|rt| rt.id == route_table.id));
+
+        store.delete_route_table(route_table.id).await.unwrap();
+        let err = store
+            .get_route_table(route_table.id)
+            .await
+            .expect_err("post-delete get is not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn route_table_name_unique_within_vpc() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        let err = store
+            .create_route_table(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewRouteTable {
+                    name: MAIN_ROUTE_TABLE_NAME.to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("main route table reserves the name");
+        assert!(matches!(err, StoreError::Conflict(_)));
+
+        store
+            .create_route_table(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewRouteTable {
+                    name: "custom".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let err = store
+            .create_route_table(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewRouteTable {
+                    name: "custom".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("duplicate route table name should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn route_table_parent_mismatch_is_not_found() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let other_project = store
+            .create_project(
+                tenant_id,
+                NewProject {
+                    name: "other".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let err = store
+            .create_route_table(
+                tenant_id,
+                other_project.id,
+                vpc.id,
+                NewRouteTable {
+                    name: "wrong-parent".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("vpc-in-wrong-project should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+
+        let err = store
+            .create_route_table(
+                tenant_id,
+                project_id,
+                Uuid::new_v4(),
+                NewRouteTable {
+                    name: "ghost".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .expect_err("unknown vpc should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn delete_main_route_table_conflicts() {
+        let store = MemStore::new();
+        let (_silo_id, _tenant_id, _project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        let err = store
+            .delete_route_table(vpc.main_route_table_id)
+            .await
+            .expect_err("main route table cannot be deleted directly");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
     async fn subnet_round_trip_within_vpc() {
         let store = MemStore::new();
         let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
@@ -3664,6 +3957,7 @@ mod tests {
         assert_eq!(subnet.tenant_id, tenant_id);
         assert_eq!(subnet.project_id, project_id);
         assert_eq!(subnet.vpc_id, vpc.id);
+        assert_eq!(subnet.route_table_id, vpc.main_route_table_id);
 
         let fetched = store.get_subnet(subnet.id).await.unwrap();
         assert_eq!(fetched, subnet);
@@ -3895,6 +4189,51 @@ mod tests {
         // Clear the subnet, then delete succeeds.
         store.delete_subnet(subnet.id).await.unwrap();
         store.delete_vpc(vpc.id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_route_table_with_subnet_association_conflicts() {
+        let store = MemStore::new();
+        let (_silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+
+        let route_table = store
+            .create_route_table(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewRouteTable {
+                    name: "private".to_string(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let mut subnet = store
+            .create_subnet(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "occupant".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        {
+            let mut guard = store.inner.write().await;
+            subnet.route_table_id = route_table.id;
+            guard.subnets_by_id.insert(subnet.id, subnet.clone());
+        }
+
+        let err = store
+            .delete_route_table(route_table.id)
+            .await
+            .expect_err("route table with subnet associations should conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
     }
 
     #[tokio::test]

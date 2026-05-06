@@ -37,12 +37,12 @@ pub use types::{
     IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, Instance,
     InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
-    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus,
-    RealizedNetworkState, RealizerId, Silo, SshKey, SshKeyScope, Subnet, SystemKey,
-    TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, derive_ssh_key_id, format_claim_code,
-    generate_claim_code, generate_poll_token, normalize_claim_code,
+    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizedNetworkState, RealizerId, RouteTable, Silo, SshKey, SshKeyScope,
+    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, derive_ssh_key_id,
+    format_claim_code, generate_claim_code, generate_poll_token, normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -343,6 +343,38 @@ pub trait Store: Send + Sync + 'static {
     /// Delete a subnet by id. Returns [`StoreError::NotFound`] if the
     /// id does not exist.
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Route tables (vpc-scoped)
+    // ------------------------------------------------------------------
+
+    /// Create an additional route table inside a VPC.
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * The VPC must exist and match `tenant_id` + `project_id`.
+    ///   Mismatch returns [`StoreError::NotFound`] to preserve the
+    ///   cross-tenant probe invariant.
+    /// * `name` must be unique within the VPC. The auto-created
+    ///   main route table reserves the name `main`.
+    async fn create_route_table(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewRouteTable,
+    ) -> Result<RouteTable, StoreError>;
+
+    /// Look up a route table by id. Handlers add tenant + project +
+    /// VPC rechecks on top.
+    async fn get_route_table(&self, route_table_id: Uuid) -> Result<RouteTable, StoreError>;
+
+    /// List every route table in a VPC.
+    async fn list_route_tables_in_vpc(&self, vpc_id: Uuid) -> Result<Vec<RouteTable>, StoreError>;
+
+    /// Delete a route table. Main route tables and tables still
+    /// referenced by subnets return [`StoreError::Conflict`].
+    async fn delete_route_table(&self, route_table_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // NAT gateways (vpc-scoped, allocated from the shared public pool)

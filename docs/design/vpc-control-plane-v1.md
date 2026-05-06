@@ -1052,9 +1052,11 @@ change). Tests + docs ride with the code in the same commit.
 
 H-1 to H-3 are the **first integration milestone** Agent A reports
 back to the coordinator: NAT GW exists end-to-end and Agent B can
-start consuming it. H-4 to H-6 close the routing loop. H-7 to H-10
-close the firewall loop. H-11 to H-14 close the edge / realized
-loop.
+start consuming it. H-4 starts the routing loop by making every VPC
+carry an atomically-created main route table and every new subnet
+inherit it. H-5 to H-6 expose and populate those route tables. H-7
+to H-10 close the firewall loop. H-11 to H-14 close the edge /
+realized loop.
 
 ## 14. Recommended first slice
 

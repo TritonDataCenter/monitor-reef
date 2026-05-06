@@ -207,6 +207,9 @@ pub struct Vpc {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub project_id: Uuid,
+    /// Route table inherited by new subnets unless explicitly
+    /// reassociated later. Created atomically with the VPC.
+    pub main_route_table_id: Uuid,
     pub name: String,
     pub description: String,
     /// Geneve Virtual Network Identifier. Server-assigned at create
@@ -261,6 +264,9 @@ pub struct Subnet {
     pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub vpc_id: Uuid,
+    /// Active route table for this subnet. Defaults to the parent
+    /// VPC's `main_route_table_id` at create time.
+    pub route_table_id: Uuid,
     pub name: String,
     pub description: String,
     /// IPv4 CIDR for this subnet. Must be a subnet of the parent
@@ -291,6 +297,33 @@ pub struct NewSubnet {
     #[serde(default)]
     #[schemars(with = "Option<String>")]
     pub ipv6_block: Option<Ipv6Network>,
+}
+
+/// Named set of routes inside a VPC. Every VPC has one auto-created
+/// main table; additional tables can be created and later associated
+/// to subnets when the route-table API lands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RouteTable {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// True for the table created atomically with the VPC. Main route
+    /// tables cannot be deleted directly; they are removed with the
+    /// parent VPC.
+    pub is_main: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating an additional route table in a VPC.
+/// Parentage is inferred from the URL path once the public API lands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewRouteTable {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 /// Project-owned VPC egress point. A NAT gateway reserves one public
