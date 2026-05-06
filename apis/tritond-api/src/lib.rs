@@ -30,9 +30,10 @@ use uuid::Uuid;
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
     CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
-    NatGateway, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota,
-    NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project,
-    ProvisioningJob, Quota, Route, RouteTable, Silo, SshKey, Subnet, Tenant, Vpc,
+    NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject,
+    NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
+    Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo,
+    SshKey, Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -198,6 +199,21 @@ pub struct CompleteJobRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct AgentStatusRequest {
     pub payload: serde_json::Value,
+}
+
+/// Request body for `POST /v2/agent/network-realization`.
+///
+/// Agents report one `(resource, realizer)` row at a time. Tritond
+/// validates the resource exists and then lets the store enforce
+/// monotonic generation reporting for that tuple.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct NetworkRealizationRequest {
+    pub resource: NetworkResourceId,
+    pub realizer: RealizerId,
+    pub generation: u64,
+    pub status: RealizationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Materialised view of everything the agent needs to act on a
@@ -762,6 +778,21 @@ pub trait TritondApi {
     async fn agent_status(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<AgentStatusRequest>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
+
+    /// Report realized network state for a single resource. Auth:
+    /// requires a CN-bound API key with
+    /// [`tritond_store::ApiKeyScope::Agent`]. Backward generation
+    /// reports for the same `(resource, realizer)` are rejected with
+    /// `409 Conflict`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/network-realization",
+        tags = ["agent"],
+    }]
+    async fn agent_report_network_realization(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NetworkRealizationRequest>,
     ) -> Result<HttpResponseOk<()>, HttpError>;
 
     /// Self-register a compute node. Anonymous endpoint (no API

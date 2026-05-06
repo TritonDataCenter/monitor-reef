@@ -10,8 +10,8 @@ Copyright 2026 Edgecast Cloud LLC.
 
 > Owner: Agent A (VPC control plane).
 > Status: design baseline approved by manager 2026-05-05;
-> implementation in progress (H-1 committed; H-2 store slice implemented).
-> Last updated: 2026-05-06 (H-2 store-record clarification).
+> implementation in progress (H-1 through H-6 and H-13 committed).
+> Last updated: 2026-05-06 (H-13 realization report endpoint).
 > Scope: `tritond` source-of-truth for tenant network intent.
 > Out of scope: Proteus blueprint compilation, edge dataplane, packet
 > path, UI work — those are owned by Agents B/C/D/E.
@@ -977,8 +977,10 @@ graph at the source.
 **Contract guarantees:**
 
 * the endpoint is gated by Agent scope + per-CN binding
-  (locked decision #36); a CN cannot report realization for a
-  resource it never received in a blueprint
+  (locked decision #36); for `RealizerId::Cn`, the reported CN must
+  match the bound API key. The future blueprint ownership check
+  ("this CN received this resource in a blueprint") lands with the
+  blueprint/apply slices that introduce that mapping.
 * `applied_generation` only moves forward; backward reports are
   rejected (409) — this is the canonicalization Agent A enforces
   in the store transaction
@@ -1048,7 +1050,7 @@ change). Tests + docs ride with the code in the same commit.
 | H-10 | `Subnet` route-table reassociation (`PUT .../subnets/{id}/route-table`); bumps subnet `desired_generation`. | API + service + CLI + tests | integration: reassoc bumps generation; idempotent set-to-current is a no-op |
 | H-11 | `FloatingIp` adds `termination` + `edge_cluster_id` + `realized: RealizedNetworkState`. **Widens an existing public API struct — slice intentionally runs `make openapi-generate` + `make clients-generate` and updates `tests/floating_ips.rs`** (manager ruling: no silent widening). | types + handlers + API + client (regen) + tests | integration: existing FIP attach/detach tests still pass; defaults are `CnTerminated` + `edge_cluster_id = None` + `realized` = empty |
 | H-12 | `EdgeClusterRef` reference type + `GET /v2/edge-clusters` returning empty list (placeholder). **Blocked on Agent D / E / G converging on EdgeCluster runtime, placement, and operator ownership** (manager ruling). Agent A does not own EdgeCluster CRUD. | types + a single read endpoint | unit: reference-shape round-trip; integration: list returns empty until Agent D populates |
-| H-13 | `POST /v2/agent/network-realization` handler + Agent-scope auth gating. Precondition: at least one realized resource exists (satisfied after H-3). | services + tests | integration: per-CN bound key required; backward-generation report → 409; cross-CN report dispatched to correct realizer row |
+| H-13 | **Done.** `POST /v2/agent/network-realization` handler + Agent-scope auth gating. Requires a CN-bound Agent key, validates the reported resource exists, enforces `RealizerId::Cn` matches the bound CN, and stores the row through `record_network_realization`. | `apis/tritond-api/src/{lib,types}.rs`, `services/tritond/src/{lib,auth}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/agent.rs` | integration: per-CN bound key required; unbound Agent key denied; backward-generation report → 409; multiple CN realizers produce distinct rows on the NatGateway realized view |
 | H-14 | `tcadm net realized` UX (read-only across realized resource kinds) | CLI + tests | smoke: `tcadm net realized --resource nat_gateway:<id>` shows desired vs applied; `--watch` polls until applied == desired |
 
 H-1 to H-3 are the **first integration milestone** Agent A reports

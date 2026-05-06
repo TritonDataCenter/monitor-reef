@@ -2693,6 +2693,289 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `POST /v2/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/agent/network-realization`.\\n\\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"generation\","]
+    #[doc = "    \"realizer\","]
+    #[doc = "    \"resource\","]
+    #[doc = "    \"status\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"generation\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"message\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"realizer\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/RealizerId\""]
+    #[doc = "    },"]
+    #[doc = "    \"resource\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/NetworkResourceId\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/RealizationStatus\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NetworkRealizationRequest {
+        pub generation: u64,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub message: ::std::option::Option<::std::string::String>,
+        pub realizer: RealizerId,
+        pub resource: NetworkResourceId,
+        pub status: RealizationStatus,
+    }
+
+    impl NetworkRealizationRequest {
+        pub fn builder() -> builder::NetworkRealizationRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (§6); the `#[non_exhaustive]` posture allows post-v1 additions.\n\nWire shape: `{ \"kind\": \"nat_gateway\", \"id\": \"<uuid>\" }`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (§6); the `#[non_exhaustive]` posture allows post-v1 additions.\\n\\nWire shape: `{ \\\"kind\\\": \\\"nat_gateway\\\", \\\"id\\\": \\\"<uuid>\\\" }`.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `Vpc`. Populated after H-4 widens `Vpc` with `desired_generation`.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"vpc\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `Subnet`. Populated after H-4 widens `Subnet` with `desired_generation`.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"subnet\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `RouteTable`. Populated when H-5 lands.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"route_table\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `Route`. Populated when H-6 lands.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"route\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `SecurityGroup`. Populated when H-7 lands.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"security_group\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `SecurityGroupRule`. Populated when H-8 lands.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"security_group_rule\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A NIC↔SG attachment. Populated when H-9 lands.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"nic_security_group_attachment\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `NatGateway`. Populated when H-2 lands. This is the first realized resource the codebase will exercise end-to-end (intent + realization) in the H-1..H-3 cluster.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"nat_gateway\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A `FloatingIp`. Populated when H-11 widens the existing `FloatingIp` struct with `desired_generation` + termination fields.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"floating_ip\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind", content = "id")]
+    pub enum NetworkResourceId {
+        #[doc = "A `Vpc`. Populated after H-4 widens `Vpc` with `desired_generation`."]
+        #[serde(rename = "vpc")]
+        Vpc(::uuid::Uuid),
+        #[doc = "A `Subnet`. Populated after H-4 widens `Subnet` with `desired_generation`."]
+        #[serde(rename = "subnet")]
+        Subnet(::uuid::Uuid),
+        #[doc = "A `RouteTable`. Populated when H-5 lands."]
+        #[serde(rename = "route_table")]
+        RouteTable(::uuid::Uuid),
+        #[doc = "A `Route`. Populated when H-6 lands."]
+        #[serde(rename = "route")]
+        Route(::uuid::Uuid),
+        #[doc = "A `SecurityGroup`. Populated when H-7 lands."]
+        #[serde(rename = "security_group")]
+        SecurityGroup(::uuid::Uuid),
+        #[doc = "A `SecurityGroupRule`. Populated when H-8 lands."]
+        #[serde(rename = "security_group_rule")]
+        SecurityGroupRule(::uuid::Uuid),
+        #[doc = "A NIC↔SG attachment. Populated when H-9 lands."]
+        #[serde(rename = "nic_security_group_attachment")]
+        NicSecurityGroupAttachment(::uuid::Uuid),
+        #[doc = "A `NatGateway`. Populated when H-2 lands. This is the first realized resource the codebase will exercise end-to-end (intent + realization) in the H-1..H-3 cluster."]
+        #[serde(rename = "nat_gateway")]
+        NatGateway(::uuid::Uuid),
+        #[doc = "A `FloatingIp`. Populated when H-11 widens the existing `FloatingIp` struct with `desired_generation` + termination fields."]
+        #[serde(rename = "floating_ip")]
+        FloatingIp(::uuid::Uuid),
+    }
+
     #[doc = "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -8198,6 +8481,110 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NetworkRealizationRequest {
+            generation: ::std::result::Result<u64, ::std::string::String>,
+            message: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            realizer: ::std::result::Result<super::RealizerId, ::std::string::String>,
+            resource: ::std::result::Result<super::NetworkResourceId, ::std::string::String>,
+            status: ::std::result::Result<super::RealizationStatus, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NetworkRealizationRequest {
+            fn default() -> Self {
+                Self {
+                    generation: Err("no value supplied for generation".to_string()),
+                    message: Ok(Default::default()),
+                    realizer: Err("no value supplied for realizer".to_string()),
+                    resource: Err("no value supplied for resource".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                }
+            }
+        }
+
+        impl NetworkRealizationRequest {
+            pub fn generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.generation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for generation: {e}"));
+                self
+            }
+            pub fn message<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.message = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for message: {e}"));
+                self
+            }
+            pub fn realizer<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RealizerId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.realizer = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for realizer: {e}"));
+                self
+            }
+            pub fn resource<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::NetworkResourceId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.resource = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for resource: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RealizationStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NetworkRealizationRequest> for super::NetworkRealizationRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NetworkRealizationRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    generation: value.generation?,
+                    message: value.message?,
+                    realizer: value.realizer?,
+                    resource: value.resource?,
+                    status: value.status?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NetworkRealizationRequest> for NetworkRealizationRequest {
+            fn from(value: super::NetworkRealizationRequest) -> Self {
+                Self {
+                    generation: Ok(value.generation),
+                    message: Ok(value.message),
+                    realizer: Ok(value.realizer),
+                    resource: Ok(value.resource),
+                    status: Ok(value.status),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewApiKey {
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             scope: ::std::result::Result<super::ApiKeyScope, ::std::string::String>,
@@ -12096,6 +12483,11 @@ impl Client {
         builder::AgentCompleteJob::new(self)
     }
 
+    #[doc = "Report realized network state for a single resource. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. Backward generation reports for the same `(resource, realizer)` are rejected with `409 Conflict`.\n\nSends a `POST` request to `/v2/agent/network-realization`\n\n```ignore\nlet response = client.agent_report_network_realization()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_report_network_realization(&self) -> builder::AgentReportNetworkRealization<'_> {
+        builder::AgentReportNetworkRealization::new(self)
+    }
+
     #[doc = "Self-register a compute node. Anonymous endpoint (no API\n\nkey needed) — the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.\n\nSends a `POST` request to `/v2/agent/register`\n\n```ignore\nlet response = client.agent_register()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_register(&self) -> builder::AgentRegister<'_> {
         builder::AgentRegister::new(self)
@@ -12877,6 +13269,91 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_complete_job",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_report_network_realization`]\n\n[`Client::agent_report_network_realization`]: super::Client::agent_report_network_realization"]
+    #[derive(Debug, Clone)]
+    pub struct AgentReportNetworkRealization<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NetworkRealizationRequest, String>,
+    }
+
+    impl<'a> AgentReportNetworkRealization<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NetworkRealizationRequest>,
+            <V as std::convert::TryInto<types::NetworkRealizationRequest>>::Error:
+                std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `NetworkRealizationRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NetworkRealizationRequest,
+                ) -> types::builder::NetworkRealizationRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/network-realization`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::NetworkRealizationRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/network-realization", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_report_network_realization",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

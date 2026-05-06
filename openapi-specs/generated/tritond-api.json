@@ -164,6 +164,48 @@
         }
       }
     },
+    "/v2/agent/network-realization": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Report realized network state for a single resource. Auth:",
+        "description": "requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. Backward generation reports for the same `(resource, realizer)` are rejected with `409 Conflict`.",
+        "operationId": "agent_report_network_realization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkRealizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/register": {
       "post": {
         "tags": [
@@ -6215,6 +6257,221 @@
           "tenant_id",
           "updated_at",
           "vpc_id"
+        ]
+      },
+      "NetworkRealizationRequest": {
+        "description": "Request body for `POST /v2/agent/network-realization`.\n\nAgents report one `(resource, realizer)` row at a time. Tritond validates the resource exists and then lets the store enforce monotonic generation reporting for that tuple.",
+        "type": "object",
+        "properties": {
+          "generation": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "realizer": {
+            "$ref": "#/components/schemas/RealizerId"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/NetworkResourceId"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RealizationStatus"
+          }
+        },
+        "required": [
+          "generation",
+          "realizer",
+          "resource",
+          "status"
+        ]
+      },
+      "NetworkResourceId": {
+        "description": "Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (§6); the `#[non_exhaustive]` posture allows post-v1 additions.\n\nWire shape: `{ \"kind\": \"nat_gateway\", \"id\": \"<uuid>\" }`.",
+        "oneOf": [
+          {
+            "description": "A `Vpc`. Populated after H-4 widens `Vpc` with `desired_generation`.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "vpc"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `Subnet`. Populated after H-4 widens `Subnet` with `desired_generation`.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "subnet"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `RouteTable`. Populated when H-5 lands.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "route_table"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `Route`. Populated when H-6 lands.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "route"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `SecurityGroup`. Populated when H-7 lands.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "security_group"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `SecurityGroupRule`. Populated when H-8 lands.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "security_group_rule"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A NIC↔SG attachment. Populated when H-9 lands.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "nic_security_group_attachment"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `NatGateway`. Populated when H-2 lands. This is the first realized resource the codebase will exercise end-to-end (intent + realization) in the H-1..H-3 cluster.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "nat_gateway"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "A `FloatingIp`. Populated when H-11 widens the existing `FloatingIp` struct with `desired_generation` + termination fields.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "floating_ip"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          }
         ]
       },
       "NewApiKey": {

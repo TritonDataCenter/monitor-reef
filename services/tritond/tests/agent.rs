@@ -26,8 +26,10 @@ use tritond::{ApiContext, start_server_with_context};
 use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::types::{
-    ApiKeyScope, ClaimJobRequest, CompleteJobRequest, JobOutcome, JobStatus, LoginRequest,
-    NewApiKey,
+    AddressFamily, ApiKeyScope, ApproveCnRequest, ClaimJobRequest, CnState, CompleteJobRequest,
+    JobOutcome, JobStatus, LoginRequest, NatGateway, NetworkRealizationRequest, NetworkResourceId,
+    NewApiKey, NewNatGateway, NewProject, NewSilo, NewVpc, RealizationStatus, RealizerId,
+    RegisterCnRequest,
 };
 use tritond_store::{
     Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, Store, User,
@@ -97,18 +99,7 @@ impl TestServer {
 /// Authenticate as root and mint an API key at the requested scope.
 /// Returns the wire-form `tcadm_…` plaintext.
 async fn mint_key(test: &TestServer, scope: ApiKeyScope) -> String {
-    let anon = test.anonymous_client();
-    let token = anon
-        .login()
-        .body(LoginRequest {
-            username: "root".to_string(),
-            password: ROOT_PASSWORD.to_string(),
-        })
-        .send()
-        .await
-        .unwrap()
-        .into_inner();
-    let session = test.bearer_client(&token.access_token);
+    let session = root_client(test).await;
     let created = session
         .create_api_key()
         .body(NewApiKey {
@@ -120,6 +111,138 @@ async fn mint_key(test: &TestServer, scope: ApiKeyScope) -> String {
         .unwrap()
         .into_inner();
     created.secret
+}
+
+async fn root_client(test: &TestServer) -> tritond_client::Client {
+    let anon = test.anonymous_client();
+    let token = anon
+        .login()
+        .body(LoginRequest {
+            username: "root".to_string(),
+            password: ROOT_PASSWORD.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    test.bearer_client(&token.access_token)
+}
+
+async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) -> String {
+    let anon = test.anonymous_client();
+    let registered = anon
+        .agent_register()
+        .body(RegisterCnRequest {
+            server_uuid: cn_uuid,
+            hostname: hostname.to_string(),
+            admin_ip: None,
+            sysinfo: serde_json::json!({ "hostname": hostname }),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(matches!(registered.state, CnState::Pending));
+
+    let root = root_client(test).await;
+    root.approve_cn()
+        .body(ApproveCnRequest {
+            code: registered.claim_code.unwrap(),
+        })
+        .send()
+        .await
+        .unwrap();
+
+    let status = anon
+        .agent_register_status()
+        .poll_token(&registered.poll_token)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(matches!(status.state, CnState::Approved));
+    status.api_key.unwrap()
+}
+
+async fn create_nat_gateway(test: &TestServer, silo_name: &str) -> NatGateway {
+    let root = root_client(test).await;
+    let silo = root
+        .create_silo()
+        .body(NewSilo {
+            name: silo_name.to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let project = root
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
+        .body(NewProject {
+            name: "sandbox".to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let vpc = root
+        .create_project_vpc()
+        .tenant_id(silo.default_tenant_id)
+        .project_id(project.id)
+        .body(NewVpc {
+            name: "prod".to_string(),
+            description: None,
+            ipv4_block: Some("10.0.0.0/16".to_string()),
+            ipv6_block: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    root.create_vpc_nat_gateway()
+        .tenant_id(silo.default_tenant_id)
+        .project_id(project.id)
+        .vpc_id(vpc.id)
+        .body(NewNatGateway {
+            name: "egress".to_string(),
+            description: None,
+            family: AddressFamily::V4,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+}
+
+fn realization_report(
+    nat_gateway_id: Uuid,
+    realizer: RealizerId,
+    generation: u64,
+    status: RealizationStatus,
+) -> NetworkRealizationRequest {
+    NetworkRealizationRequest {
+        resource: NetworkResourceId::NatGateway(nat_gateway_id),
+        realizer,
+        generation,
+        status,
+        message: Some("test report".to_string()),
+    }
+}
+
+fn realizer_cn_id(realizer: &RealizerId) -> Option<Uuid> {
+    match realizer {
+        RealizerId::Cn(id) => Some(*id),
+        _ => None,
+    }
+}
+
+fn assert_status(err: progenitor_client::Error<tritond_client::types::Error>, want: u16) {
+    let progenitor_client::Error::ErrorResponse(response) = err else {
+        panic!("expected ErrorResponse, got {err:?}");
+    };
+    assert_eq!(response.status().as_u16(), want);
 }
 
 #[tokio::test]
@@ -911,6 +1034,177 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
 }
 
 #[tokio::test]
+async fn bound_agent_can_report_nat_gateway_realization() {
+    let test = TestServer::start().await;
+    let nat = create_nat_gateway(&test, "realized-alpha").await;
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-realized").await;
+    let agent = test.bearer_client(&api_key);
+
+    agent
+        .agent_report_network_realization()
+        .body(realization_report(
+            nat.id,
+            RealizerId::Cn(cn_uuid),
+            1,
+            RealizationStatus::Applied,
+        ))
+        .send()
+        .await
+        .expect("bound agent can report realization");
+
+    let root = root_client(&test).await;
+    let refreshed = root
+        .get_vpc_nat_gateway()
+        .tenant_id(nat.tenant_id)
+        .project_id(nat.project_id)
+        .vpc_id(nat.vpc_id)
+        .nat_gateway_id(nat.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(refreshed.realized.desired_generation, 1);
+    assert_eq!(refreshed.realized.applied_generation, Some(1));
+    assert_eq!(refreshed.realized.realizations.len(), 1);
+    let row = &refreshed.realized.realizations[0];
+    assert_eq!(realizer_cn_id(&row.realizer), Some(cn_uuid));
+    assert_eq!(row.generation, 1);
+    assert!(matches!(row.status, RealizationStatus::Applied));
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn network_realization_rejects_backward_generation() {
+    let test = TestServer::start().await;
+    let nat = create_nat_gateway(&test, "realized-beta").await;
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-stale").await;
+    let agent = test.bearer_client(&api_key);
+
+    agent
+        .agent_report_network_realization()
+        .body(realization_report(
+            nat.id,
+            RealizerId::Cn(cn_uuid),
+            2,
+            RealizationStatus::Applied,
+        ))
+        .send()
+        .await
+        .unwrap();
+    let err = agent
+        .agent_report_network_realization()
+        .body(realization_report(
+            nat.id,
+            RealizerId::Cn(cn_uuid),
+            1,
+            RealizationStatus::Accepted,
+        ))
+        .send()
+        .await
+        .expect_err("backward generation report must conflict");
+    assert_status(err, 409);
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn network_realization_requires_bound_agent_and_matching_cn_realizer() {
+    let test = TestServer::start().await;
+    let unbound_secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let unbound = test.bearer_client(&unbound_secret);
+    let err = unbound
+        .agent_report_network_realization()
+        .body(realization_report(
+            Uuid::new_v4(),
+            RealizerId::Cn(Uuid::new_v4()),
+            1,
+            RealizationStatus::Accepted,
+        ))
+        .send()
+        .await
+        .expect_err("unbound Agent key must not report realization");
+    assert_status(err, 403);
+
+    let bound_cn = Uuid::new_v4();
+    let api_key = register_and_approve(&test, bound_cn, "cn-bound-only").await;
+    let bound = test.bearer_client(&api_key);
+    let err = bound
+        .agent_report_network_realization()
+        .body(realization_report(
+            Uuid::new_v4(),
+            RealizerId::Cn(Uuid::new_v4()),
+            1,
+            RealizationStatus::Accepted,
+        ))
+        .send()
+        .await
+        .expect_err("bound Agent key must match Cn realizer id");
+    assert_status(err, 403);
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn network_realization_tracks_multiple_cn_realizers() {
+    let test = TestServer::start().await;
+    let nat = create_nat_gateway(&test, "realized-gamma").await;
+    let cn_a = Uuid::new_v4();
+    let cn_b = Uuid::new_v4();
+    let key_a = register_and_approve(&test, cn_a, "cn-a").await;
+    let key_b = register_and_approve(&test, cn_b, "cn-b").await;
+
+    test.bearer_client(&key_a)
+        .agent_report_network_realization()
+        .body(realization_report(
+            nat.id,
+            RealizerId::Cn(cn_a),
+            1,
+            RealizationStatus::Applied,
+        ))
+        .send()
+        .await
+        .unwrap();
+    test.bearer_client(&key_b)
+        .agent_report_network_realization()
+        .body(realization_report(
+            nat.id,
+            RealizerId::Cn(cn_b),
+            1,
+            RealizationStatus::Accepted,
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    let root = root_client(&test).await;
+    let refreshed = root
+        .get_vpc_nat_gateway()
+        .tenant_id(nat.tenant_id)
+        .project_id(nat.project_id)
+        .vpc_id(nat.vpc_id)
+        .nat_gateway_id(nat.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let realizers: Vec<Uuid> = refreshed
+        .realized
+        .realizations
+        .iter()
+        .filter_map(|row| realizer_cn_id(&row.realizer))
+        .collect();
+    assert_eq!(refreshed.realized.realizations.len(), 2);
+    assert!(realizers.contains(&cn_a));
+    assert!(realizers.contains(&cn_b));
+    assert_eq!(refreshed.realized.applied_generation, Some(1));
+
+    test.close().await;
+}
+
+#[tokio::test]
 async fn anonymous_cannot_reach_agent_surface() {
     let test = TestServer::start().await;
     let anon = test.anonymous_client();
@@ -928,6 +1222,19 @@ async fn anonymous_cannot_reach_agent_surface() {
     // Cedar denies anonymous on agent_* via default-deny — fleet
     // scope returns 403 (matching `forbidden_for`).
     assert_eq!(resp.status().as_u16(), 403);
+
+    let err = anon
+        .agent_report_network_realization()
+        .body(realization_report(
+            Uuid::new_v4(),
+            RealizerId::Cn(Uuid::new_v4()),
+            1,
+            RealizationStatus::Accepted,
+        ))
+        .send()
+        .await
+        .expect_err("anonymous principal must not authorise realization report");
+    assert_status(err, 403);
 
     test.close().await;
 }

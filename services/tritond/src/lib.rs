@@ -38,21 +38,21 @@ use tritond_api::{
     AgentJobPath, AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest,
     AttachFloatingIpRequest, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
     AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath,
-    CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery, LoginRequest, NewApiKey,
-    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
-    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath,
-    TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
-    TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
-    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery, LoginRequest,
+    NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest,
+    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
+    RegisterStatusQuery, RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath,
+    TenantIdpPath, TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
+    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
-        LifecycleStateKind, NatGateway, NewFloatingIp, NewImage, NewInstance, NewJob,
-        NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-        NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Route, RouteTable,
-        RouteTarget, Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
+        LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
+        NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+        NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizerId, Route,
+        RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -4502,6 +4502,40 @@ impl TritondApi for TritondServiceImpl {
         Ok(HttpResponseOk(()))
     }
 
+    async fn agent_report_network_realization(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NetworkRealizationRequest>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NetworkRealizationReport,
+        )
+        .await?;
+        let bound_cn = require_bound_cn(&principal)?;
+        let req = body.into_inner();
+        enforce_realizer_belongs_to_bound_cn(req.realizer, bound_cn)?;
+        ensure_realization_resource_exists(ctx.store.as_ref(), req.resource).await?;
+        ctx.store
+            .record_network_realization(
+                req.resource,
+                req.realizer,
+                req.generation,
+                req.status,
+                req.message,
+            )
+            .await
+            .map_err(store_error_to_http)?;
+        // Realization reports are state-sample traffic, not an
+        // operator mutation stream. The per-resource realization
+        // rows are the durable signal; auditing every periodic
+        // report would make the audit chain noisy.
+        Ok(HttpResponseOk(()))
+    }
+
     // ----- CN registration / approval (slice C) -----
 
     async fn agent_register(
@@ -5031,6 +5065,40 @@ fn enforce_job_belongs_to_bound_cn(job: &ProvisioningJob, bound_cn: Uuid) -> Res
         )
     })?;
     crate::auth::enforce_cn_binding(Some(bound_cn), claimed_uuid)
+}
+
+/// 403 if a CN-bound key tries to write a realization row for a
+/// different CN realizer. Edge-cluster realization rows are reported
+/// by a tritonagent running on an edge CN, so the caller must still
+/// be CN-bound but the row key is the edge-cluster id.
+fn enforce_realizer_belongs_to_bound_cn(
+    realizer: RealizerId,
+    bound_cn: Uuid,
+) -> Result<(), HttpError> {
+    match realizer {
+        RealizerId::Cn { id } => crate::auth::enforce_cn_binding(Some(bound_cn), id),
+        RealizerId::EdgeCluster { .. } => Ok(()),
+        _ => Err(bad_request("unsupported realizer kind")),
+    }
+}
+
+async fn ensure_realization_resource_exists(
+    store: &dyn Store,
+    resource: NetworkResourceId,
+) -> Result<(), HttpError> {
+    match resource {
+        NetworkResourceId::Vpc { id } => store.get_vpc(id).await.map(|_| ()),
+        NetworkResourceId::Subnet { id } => store.get_subnet(id).await.map(|_| ()),
+        NetworkResourceId::RouteTable { id } => store.get_route_table(id).await.map(|_| ()),
+        NetworkResourceId::Route { id } => store.get_route(id).await.map(|_| ()),
+        NetworkResourceId::NatGateway { id } => store.get_nat_gateway(id).await.map(|_| ()),
+        NetworkResourceId::FloatingIp { id } => store.get_floating_ip(id).await.map(|_| ()),
+        NetworkResourceId::SecurityGroup { .. }
+        | NetworkResourceId::SecurityGroupRule { .. }
+        | NetworkResourceId::NicSecurityGroupAttachment { .. } => return Err(not_found()),
+        _ => return Err(not_found()),
+    }
+    .map_err(store_error_to_http)
 }
 
 /// Stable label for a principal in audit/window-tracking JSON.

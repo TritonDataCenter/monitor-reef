@@ -445,6 +445,10 @@ pub enum Action {
     /// Full agent status sample (vms / zpools / meminfo / etc.).
     /// Replaces `Cn.last_status` + bumps `last_seen`.
     AgentStatus,
+    /// Per-resource network realization row reported by a bound
+    /// agent after it accepts, applies, or fails a dataplane
+    /// generation.
+    NetworkRealizationReport,
     /// Anonymous self-registration of a compute node. Gated by
     /// the per-source-IP rate limiter, not by Cedar credentials —
     /// the agent has no key at this point in its lifecycle.
@@ -555,6 +559,7 @@ impl Action {
             Action::AgentBlueprint => "agent_blueprint",
             Action::AgentHeartbeat => "agent_heartbeat",
             Action::AgentStatus => "agent_status",
+            Action::NetworkRealizationReport => "network_realization_report",
             Action::AgentRegister => "agent_register",
             Action::AgentRegisterStatus => "agent_register_status",
             Action::CnList => "cn_list",
@@ -1023,6 +1028,7 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
                 | Action::AgentBlueprint
                 | Action::AgentHeartbeat
                 | Action::AgentStatus
+                | Action::NetworkRealizationReport
         ),
         _ => false,
     }
@@ -1117,6 +1123,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::AgentBlueprint
         | Action::AgentHeartbeat
         | Action::AgentStatus
+        | Action::NetworkRealizationReport
         // Agent registration is anonymous (no key), but if a key
         // is somehow attached the scope check should reject it
         // outright — these aren't read actions, they create a CN
