@@ -23,6 +23,7 @@ members = [
     "libs/tritond-audit",
     "libs/tritond-auth",
     "libs/tritond-cn-platform",
+    "libs/edge-manifest",
     "libs/tritond-image-manifest",
     "libs/tritond-store",
     "client-generator",
@@ -200,6 +201,7 @@ cloudapi-client = { path = "clients/internal/cloudapi-client" }
 jira-api = { path = "apis/jira-api" }
 jira-client = { path = "clients/internal/jira-client" }
 jira-stub-server = { path = "services/jira-stub-server" }
+edge-manifest = { path = "libs/edge-manifest" }
 triton-auth = { path = "libs/triton-auth" }
 tritond = { path = "services/tritond" }
 tritond-api = { path = "apis/tritond-api" }

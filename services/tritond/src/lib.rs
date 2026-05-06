@@ -21,6 +21,7 @@
 pub mod audit;
 pub mod auth;
 pub mod bootstrap;
+pub mod edge;
 pub mod provisioner;
 pub mod rate_limit;
 pub mod sweeper;

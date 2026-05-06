@@ -32,6 +32,7 @@ base64 = { workspace = true }
 cedar-policy = { workspace = true }
 chrono = { workspace = true }
 dropshot = { workspace = true }
+edge-manifest = { workspace = true }
 futures-util = { workspace = true }
 governor = { workspace = true }
 http = { workspace = true }

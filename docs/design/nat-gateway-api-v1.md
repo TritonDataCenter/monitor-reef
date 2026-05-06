@@ -50,3 +50,18 @@ The v1 dataplane backend remains `backend: "nftables"` in the edge manifest
 contract. The `NatGateway` API intentionally does not expose nftables-specific
 fields, so a later empirical move to `backend: "afxdp"` can be added without
 changing this resource shape.
+
+Tritond renders edge manifests through a pure function:
+
+```text
+render_edge_manifest(NatGateway, EdgeManifestBindings, EdgeManifestPlacement)
+    -> edge_manifest::Manifest
+```
+
+`EdgeManifestBindings` carries the route-derived SNAT source CIDRs plus
+resolved Floating IP bindings. Cn-terminated Floating IPs are accepted by the
+renderer but do not emit `dataplane.fips` rules; edge-terminated bindings emit
+the fhrun `external -> internal` mapping. `EdgeManifestPlacement` supplies the
+edge instance id, firehyve/fhrun paths, explicit north/south NIC coordinates,
+and the host Unix control socket path that fhrun bridges into the guest as
+`/dev/hvc0` using `triton.edge.control.v1`.
