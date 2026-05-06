@@ -26,6 +26,7 @@ pub mod openbsd;
 pub mod opensuse;
 pub mod oracle;
 pub mod rocky;
+pub mod smartos;
 pub mod talos;
 pub mod ubuntu;
 
@@ -50,6 +51,7 @@ pub enum Vendor {
     Opensuse,
     Oracle,
     Rocky,
+    Smartos,
     Talos,
     Ubuntu,
 }
@@ -73,6 +75,10 @@ pub enum SourceFormat {
     /// The release-resolution path is wired up; the conversion step
     /// is deferred pending a vendored vmdk reader.
     Vmdk,
+    /// gzipped tarball of a VMware VM directory containing a VMDK
+    /// descriptor + extent files. Used by SmartOS (`smartos-<rel>.vmwarevm.tar.gz`).
+    /// The pipeline extracts the tarball before opening the VMDK.
+    VmdkInTarGz,
 }
 
 pub struct ResolvedImage {
@@ -121,6 +127,7 @@ pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
         Vendor::Opensuse => Box::new(opensuse::OpenSuse),
         Vendor::Oracle => Box::new(oracle::Oracle),
         Vendor::Rocky => Box::new(rocky::Rocky),
+        Vendor::Smartos => Box::new(smartos::Smartos),
         Vendor::Talos => Box::new(talos::Talos),
         Vendor::Ubuntu => Box::new(ubuntu::Ubuntu),
     }

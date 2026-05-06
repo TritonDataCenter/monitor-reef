@@ -36,8 +36,10 @@ mahi-sitter-client = { workspace = true }
 sapi-client = { workspace = true }
 napi-client = { workspace = true }
 papi-client = { workspace = true }
+flate2 = { workspace = true }
 progenitor-client = { workspace = true }
 qcow = { workspace = true }
+tar = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

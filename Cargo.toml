@@ -242,6 +242,13 @@ triton-auth-session = { path = "libs/triton-auth-session" }
 triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
 triton-pagination = { path = "libs/triton-pagination" }
 triton-tls = { path = "libs/triton-tls" }
+# `flate2` and `tar` are needed by the SmartOS fetch path, where the
+# upstream artifact is a gzipped tarball of a VMware VM directory
+# (descriptor .vmdk + raw .img extent) rather than a standalone disk
+# image. Pure-Rust to keep the build hermetic; the `flate2` default
+# `miniz_oxide` backend is already in the dep tree via libs/qcow.
+flate2 = "1"
+tar = "0.4"
 # Vendored fork at libs/vmdk that drops the upstream s3 / foyer-cache /
 # CLI layers, keeping just the file-backed disk reader. See
 # libs/vmdk/Cargo.toml for the full rationale.
