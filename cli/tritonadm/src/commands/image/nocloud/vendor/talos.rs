@@ -30,8 +30,9 @@
 
 mod releases;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
+use reqwest::StatusCode;
 use url::Url;
 
 use super::{ResolvedImage, SourceFormat, VendorProfile};
@@ -73,7 +74,7 @@ impl VendorProfile for Talos {
             .parse()
             .context("talos factory sha256 sidecar url")?;
 
-        let verifier = pick_verifier(http, sums_url, filename.to_string()).await;
+        let verifier = pick_verifier(http, sums_url, filename.to_string()).await?;
 
         Ok(ResolvedImage {
             url,
@@ -98,20 +99,35 @@ impl VendorProfile for Talos {
 /// Probe the factory's `.sha256` endpoint. Self-hosted / enterprise
 /// factories return `200 <hex>  <filename>`; the public free-tier
 /// `factory.talos.dev` returns `402 enterprise not enabled`. On
-/// success we use `Sha256SumsTls`; on 402 we fall back to
-/// `TlsTrustOnly` with a note. The probe is a HEAD-equivalent GET
-/// of a small resource — single roundtrip, body discarded.
+/// success we use `Sha256SumsTls`; on the documented 402 we fall
+/// back to `TlsTrustOnly` with a note. Any other outcome
+/// (transport error, 404, 5xx, unexpected status) fails closed
+/// rather than silently weakening the trust model — an attacker
+/// who can prevent the probe from succeeding must not be able to
+/// downgrade verification.
 async fn pick_verifier(
     http: &reqwest::Client,
     sums_url: Url,
     filename: String,
-) -> Box<dyn Verifier> {
-    match http.get(sums_url.clone()).send().await {
-        Ok(resp) if resp.status().is_success() => Box::new(Sha256SumsTls::new(sums_url, filename)),
-        _ => Box::new(TlsTrustOnly {
+) -> Result<Box<dyn Verifier>> {
+    let resp = http
+        .get(sums_url.clone())
+        .send()
+        .await
+        .with_context(|| format!("probing talos sha256 sidecar at {sums_url}"))?;
+    let status = resp.status();
+    if status.is_success() {
+        Ok(Box::new(Sha256SumsTls::new(sums_url, filename)))
+    } else if status == StatusCode::PAYMENT_REQUIRED {
+        Ok(Box::new(TlsTrustOnly {
             note: "Talos public factory does not publish per-image hashes \
                    (enterprise feature). Pass --expected-sha256 to pin a hash."
                 .to_string(),
-        }),
+        }))
+    } else {
+        Err(anyhow!(
+            "talos sha256 sidecar at {sums_url} returned unexpected status {status}; \
+             refusing to downgrade verification"
+        ))
     }
 }
