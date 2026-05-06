@@ -5024,6 +5024,7 @@ dependencies = [
  "predicates",
  "reqwest 0.13.2",
  "rpassword",
+ "rustls 0.23.38",
  "serde",
  "serde_json",
  "tempfile",
@@ -5036,6 +5037,7 @@ dependencies = [
  "tritond-client",
  "tritond-store",
  "uuid",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]

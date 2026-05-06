@@ -30,8 +30,9 @@ use uuid::Uuid;
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
     CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
-    NewFloatingIp, NewImage, NewInstance, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet,
-    NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey, Subnet, Tenant, Vpc,
+    NatGateway, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota, NewSilo,
+    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Silo, SshKey,
+    Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -401,6 +402,16 @@ pub struct TenantProjectVpcSubnetPath {
     pub project_id: Uuid,
     pub vpc_id: Uuid,
     pub subnet_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single NAT gateway
+/// inside a VPC inside a project inside a tenant.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantProjectVpcNatGatewayPath {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub nat_gateway_id: Uuid,
 }
 
 /// Path parameter for endpoints that operate on a single SSH
@@ -1123,6 +1134,53 @@ pub trait TritondApi {
     async fn delete_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcSubnetPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List NAT gateways inside a VPC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways",
+        tags = ["nat-gateways"],
+    }]
+    async fn list_vpc_nat_gateways(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<NatGateway>>, HttpError>;
+
+    /// Create a NAT gateway in a VPC. Returns 409 if the name is
+    /// already in use within the VPC. The returned record includes
+    /// the reserved public source address.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways",
+        tags = ["nat-gateways"],
+    }]
+    async fn create_vpc_nat_gateway(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewNatGateway>,
+    ) -> Result<HttpResponseCreated<NatGateway>, HttpError>;
+
+    /// Read a single NAT gateway.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}",
+        tags = ["nat-gateways"],
+    }]
+    async fn get_vpc_nat_gateway(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcNatGatewayPath>,
+    ) -> Result<HttpResponseOk<NatGateway>, HttpError>;
+
+    /// Delete a NAT gateway and release its public address.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}",
+        tags = ["nat-gateways"],
+    }]
+    async fn delete_vpc_nat_gateway(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcNatGatewayPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List Public SSH keys. Anonymous-accessible — Public means

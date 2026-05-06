@@ -142,6 +142,10 @@ permit(
         Action::"subnet_create",
         Action::"subnet_get",
         Action::"subnet_delete",
+        Action::"nat_gateway_list",
+        Action::"nat_gateway_create",
+        Action::"nat_gateway_get",
+        Action::"nat_gateway_delete",
         Action::"quota_set",
         Action::"quota_get",
         Action::"quota_delete",
@@ -359,6 +363,10 @@ pub enum Action {
     SubnetCreate,
     SubnetGet,
     SubnetDelete,
+    NatGatewayList,
+    NatGatewayCreate,
+    NatGatewayGet,
+    NatGatewayDelete,
     /// Scope-aware ssh-key list (silo/tenant/project/user URLs).
     /// Gated by per-scope Cedar rules.
     SshKeyList,
@@ -484,6 +492,10 @@ impl Action {
             Action::SubnetCreate => "subnet_create",
             Action::SubnetGet => "subnet_get",
             Action::SubnetDelete => "subnet_delete",
+            Action::NatGatewayList => "nat_gateway_list",
+            Action::NatGatewayCreate => "nat_gateway_create",
+            Action::NatGatewayGet => "nat_gateway_get",
+            Action::NatGatewayDelete => "nat_gateway_delete",
             Action::SshKeyList => "ssh_key_list",
             Action::SshKeyListPublic => "ssh_key_list_public",
             Action::SshKeyCreate => "ssh_key_create",
@@ -1015,6 +1027,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::VpcGet
         | Action::SubnetList
         | Action::SubnetGet
+        | Action::NatGatewayList
+        | Action::NatGatewayGet
         | Action::SshKeyList
         | Action::SshKeyListPublic
         | Action::SshKeyGet
@@ -1044,6 +1058,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::VpcDelete
         | Action::SubnetCreate
         | Action::SubnetDelete
+        | Action::NatGatewayCreate
+        | Action::NatGatewayDelete
         | Action::SshKeyCreate
         | Action::SshKeyDelete
         | Action::ImageCreate

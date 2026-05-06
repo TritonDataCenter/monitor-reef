@@ -3693,6 +3693,252 @@
         }
       }
     },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways": {
+      "get": {
+        "tags": [
+          "nat-gateways"
+        ],
+        "summary": "List NAT gateways inside a VPC.",
+        "operationId": "list_vpc_nat_gateways",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_NatGateway",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NatGateway"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "nat-gateways"
+        ],
+        "summary": "Create a NAT gateway in a VPC. Returns 409 if the name is",
+        "description": "already in use within the VPC. The returned record includes the reserved public source address.",
+        "operationId": "create_vpc_nat_gateway",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewNatGateway"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NatGateway"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}": {
+      "get": {
+        "tags": [
+          "nat-gateways"
+        ],
+        "summary": "Read a single NAT gateway.",
+        "operationId": "get_vpc_nat_gateway",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nat_gateway_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NatGateway"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "nat-gateways"
+        ],
+        "summary": "Delete a NAT gateway and release its public address.",
+        "operationId": "delete_vpc_nat_gateway",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nat_gateway_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets": {
       "get": {
         "tags": [
@@ -5358,6 +5604,90 @@
           "username"
         ]
       },
+      "NatGateway": {
+        "description": "Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\n\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "desired_generation": {
+            "description": "Monotonic desired-state generation. Create starts at 1; future wire-affecting mutations increment it atomically.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "edge_cluster_id": {
+            "nullable": true,
+            "description": "Edge cluster selected to host this NAT gateway. `None` until edge placement lands in the Agent D/E slices.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "family": {
+            "description": "Public address family requested at create time.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AddressFamily"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "public_address": {
+            "description": "Public source address reserved for egress.",
+            "type": "string",
+            "format": "ip"
+          },
+          "realized": {
+            "description": "Read-time projection of the per-realizer rows for this NAT gateway. This is not stored as a denormalized field.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RealizedNetworkState"
+              }
+            ]
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "description",
+          "desired_generation",
+          "family",
+          "id",
+          "name",
+          "project_id",
+          "public_address",
+          "realized",
+          "tenant_id",
+          "updated_at",
+          "vpc_id"
+        ]
+      },
       "NewApiKey": {
         "description": "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time.",
         "type": "object",
@@ -5566,6 +5896,27 @@
         "required": [
           "name",
           "subnet_id"
+        ]
+      },
+      "NewNatGateway": {
+        "description": "Request body for creating a [`NatGateway`]. Parentage is inferred from the tenant/project/VPC URL path. The server assigns the id, public address, generation, and timestamps.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/components/schemas/AddressFamily"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "name"
         ]
       },
       "NewProject": {
@@ -6117,6 +6468,152 @@
           "updated_at"
         ]
       },
+      "Realization": {
+        "description": "Per-realizer realization row. One per `(resource, realizer)` tuple; written by [`crate::Store::record_network_realization`] and read back by [`crate::Store::list_network_realizations`].",
+        "type": "object",
+        "properties": {
+          "generation": {
+            "description": "Generation the realizer reports for the resource. Monotonic per `(resource, realizer)`: a write with `generation < existing.generation` is rejected with [`crate::StoreError::Conflict`] (the \"backward report\" case the Agent C contract calls out).",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "last_reported_at": {
+            "description": "Wall-clock time the row was last upserted by the realizer.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "nullable": true,
+            "description": "Free-form short diagnostic from the realizer. Surfaced verbatim in `tcadm net realized`. Kept short — detailed stderr belongs in agent logs and future support bundles, not in unbounded control-plane rows.",
+            "type": "string"
+          },
+          "realizer": {
+            "description": "Which CN or edge cluster reported this row.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RealizerId"
+              }
+            ]
+          },
+          "status": {
+            "description": "Realizer-side outcome at this generation.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RealizationStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "generation",
+          "last_reported_at",
+          "realizer",
+          "status"
+        ]
+      },
+      "RealizationStatus": {
+        "description": "Outcome a realizer reports at a given generation. The variant set is deliberately small in v1: `Accepted` for \"agent received the blueprint and handed it to its dataplane\" (Agent B's `accepted_generation`); `Applied` for \"dataplane confirmed the generation active\" (the canonical terminal report); `Failed` for terminal apply failure with a short message. The enum is `#[non_exhaustive]` so post-v1 additions (e.g. `Compiling`, `Pending`) can land without breaking downstream matches.",
+        "oneOf": [
+          {
+            "description": "The realizer accepted the work and handed the blueprint to its backing dataplane. Aligns with Agent B's `accepted_generation` concept (see `proteus/docs/tritond-integration-v1.md`).",
+            "type": "string",
+            "enum": [
+              "accepted"
+            ]
+          },
+          {
+            "description": "The dataplane confirmed the generation active (e.g. Proteus `GetGenerationStatus` returned `applied_generation >= generation` on the realizer's port).",
+            "type": "string",
+            "enum": [
+              "applied"
+            ]
+          },
+          {
+            "description": "The realizer failed to converge to this generation. The associated message should describe the phase (image fetch, blueprint apply, port start, ...).",
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          }
+        ]
+      },
+      "RealizedNetworkState": {
+        "description": "Rolled-up realization view of a single network resource. Computed at read time from the resource's `desired_generation` field plus the per-realizer rows in the `network_realization/...` keyspace.\n\n**Not a denormalization.** The resource record stores `desired_generation: u64` directly; this view is synthesized by [`RealizedNetworkState::from_rows`] when the resource is serialized for a wire response. Storing the rolled-up view would drift from the per-realizer rows on every realizer report.",
+        "type": "object",
+        "properties": {
+          "applied_generation": {
+            "nullable": true,
+            "description": "Highest generation any realizer has reported with [`RealizationStatus::Applied`]. `None` if no realizer has applied anything yet. Useful as a coarse \"did anything take?\" signal; \"did the dataplane converge everywhere?\" requires inspecting [`Self::realizations`] against the expected realizer set.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "desired_generation": {
+            "description": "Desired generation of the resource. Monotonically increased by `tritond` on every wire-affecting mutation.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "realizations": {
+            "description": "Per-realizer rows, sorted by `(realizer.kind_tag(), realizer.id())` for deterministic output.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Realization"
+            }
+          }
+        },
+        "required": [
+          "desired_generation",
+          "realizations"
+        ]
+      },
+      "RealizerId": {
+        "description": "Identity of a realizer reporting a [`Realization`]. v1 ships `Cn` (per-server `tritonagent`, identified by SmartOS `server_uuid`) and `EdgeCluster` (firehyve/fhrun-managed edge microVMs, populated when Agent E begins reporting).\n\nWire shape: `{ \"kind\": \"cn\", \"id\": \"<uuid>\" }` / `{ \"kind\": \"edge_cluster\", \"id\": \"<uuid>\" }`.",
+        "oneOf": [
+          {
+            "description": "SmartOS compute node identified by its `server_uuid`.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cn"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          },
+          {
+            "description": "Firehyve / fhrun-managed edge cluster identified by its `EdgeCluster.id`. Reserved for Agent E reporting; the reference type lands in H-12.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "edge_cluster"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ]
+          }
+        ]
+      },
       "RefreshRequest": {
         "description": "Request body for `POST /v2/auth/refresh`.",
         "type": "object",
@@ -6634,6 +7131,9 @@
     },
     {
       "name": "instances"
+    },
+    {
+      "name": "nat-gateways"
     },
     {
       "name": "nics"

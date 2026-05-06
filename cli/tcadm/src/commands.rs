@@ -7,7 +7,6 @@
 //! Subcommand implementations for `tcadm`.
 
 use anyhow::{Context, Result};
-use tritond_client::Client;
 use tritond_client::types::{ApiKeyScope, LoginRequest, NewApiKey, TokenResponse};
 
 /// Wire-format label for an API-key scope. Matches the JSON
@@ -24,12 +23,12 @@ fn scope_label(scope: &ApiKeyScope) -> &'static str {
 use uuid::Uuid;
 
 use crate::config::{Config, Tokens};
-use crate::session::Session;
+use crate::session::{Session, anonymous_client, build_http_client};
 
 /// Hit `/v2/health` to confirm the control plane is reachable.
 /// Anonymous-allowed; this is the same Phase 0 contract as before.
 pub async fn bootstrap(endpoint: &str, json_output: bool) -> Result<()> {
-    let client = Client::new(endpoint);
+    let client = anonymous_client(endpoint)?;
     let response = client
         .health()
         .send()
@@ -783,6 +782,14 @@ fn print_floating_ip(f: &tritond_client::types::FloatingIp) {
     println!("  updated:     {}", f.updated_at);
 }
 
+fn parse_address_family(family: &str) -> Result<tritond_client::types::AddressFamily> {
+    match family.to_ascii_lowercase().as_str() {
+        "v4" | "ipv4" | "4" => Ok(tritond_client::types::AddressFamily::V4),
+        "v6" | "ipv6" | "6" => Ok(tritond_client::types::AddressFamily::V6),
+        other => anyhow::bail!("--family must be `v4` or `v6`, got {other:?}"),
+    }
+}
+
 /// List FloatingIps in a project.
 pub async fn tenant_project_floating_ip_list(
     endpoint_override: Option<String>,
@@ -833,11 +840,7 @@ pub async fn tenant_project_floating_ip_create(
     family: String,
     json_output: bool,
 ) -> Result<()> {
-    let family = match family.to_ascii_lowercase().as_str() {
-        "v4" | "ipv4" | "4" => tritond_client::types::AddressFamily::V4,
-        "v6" | "ipv6" | "6" => tritond_client::types::AddressFamily::V6,
-        other => anyhow::bail!("--family must be `v4` or `v6`, got {other:?}"),
-    };
+    let family = parse_address_family(&family)?;
     let session = Session::resolve(endpoint_override, api_key_override).await?;
     let client = session.client()?;
     let fip = client
@@ -970,6 +973,173 @@ pub async fn tenant_project_floating_ip_detach(
     } else {
         print_floating_ip(&fip);
     }
+    Ok(())
+}
+
+fn print_nat_gateway(n: &tritond_client::types::NatGateway) {
+    println!("NatGateway {} in vpc {}", n.id, n.vpc_id);
+    println!("  name:               {}", n.name);
+    println!("  description:        {}", n.description);
+    println!("  public_address:     {}", n.public_address);
+    println!("  family:             {:?}", n.family);
+    println!("  desired_generation: {}", n.desired_generation);
+    match n.realized.applied_generation {
+        Some(generation) => println!("  applied_generation: {}", generation),
+        None => println!("  applied_generation: (none)"),
+    }
+    match n.edge_cluster_id {
+        Some(edge_cluster_id) => println!("  edge_cluster_id:    {}", edge_cluster_id),
+        None => println!("  edge_cluster_id:    (unplaced)"),
+    }
+    println!("  created:            {}", n.created_at);
+    println!("  updated:            {}", n.updated_at);
+}
+
+/// List NAT gateways in a VPC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_nat_gw_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let nat_gateways = client
+        .list_vpc_nat_gateways()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("list nat gateways")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&nat_gateways)?);
+        return Ok(());
+    }
+    if nat_gateways.is_empty() {
+        println!("(no nat gateways)");
+        return Ok(());
+    }
+    for n in nat_gateways {
+        println!(
+            "{}  {}  desired={}  applied={}  {}",
+            n.id,
+            n.public_address,
+            n.desired_generation,
+            n.realized
+                .applied_generation
+                .map(|generation| generation.to_string())
+                .unwrap_or_else(|| "(none)".to_string()),
+            n.name
+        );
+    }
+    Ok(())
+}
+
+/// Create a NAT gateway in a VPC.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_nat_gw_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    name: String,
+    description: String,
+    family: String,
+    json_output: bool,
+) -> Result<()> {
+    let family = parse_address_family(&family)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let nat_gateway = client
+        .create_vpc_nat_gateway()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .body(tritond_client::types::NewNatGateway {
+            name,
+            description: Some(description),
+            family,
+        })
+        .send()
+        .await
+        .context("create nat gateway")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&nat_gateway)?);
+    } else {
+        println!("Created nat gateway {} in vpc {vpc_id}", nat_gateway.id);
+        print_nat_gateway(&nat_gateway);
+    }
+    Ok(())
+}
+
+/// Read a single NAT gateway.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_nat_gw_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    nat_gateway_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let nat_gateway = client
+        .get_vpc_nat_gateway()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .nat_gateway_id(nat_gateway_id)
+        .send()
+        .await
+        .context("get nat gateway")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&nat_gateway)?);
+    } else {
+        print_nat_gateway(&nat_gateway);
+    }
+    Ok(())
+}
+
+/// Delete a NAT gateway.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_nat_gw_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    nat_gateway_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_nat_gateway()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .nat_gateway_id(nat_gateway_id)
+        .send()
+        .await
+        .context("delete nat gateway")?;
+    println!("Deleted nat gateway {nat_gateway_id} from vpc {vpc_id}");
     Ok(())
 }
 
@@ -1634,8 +1804,9 @@ fn resolve_public_key(
 ) -> Result<String> {
     match (public_key, public_key_file) {
         (Some(s), None) => Ok(s),
-        (None, Some(path)) => std::fs::read_to_string(&path)
-            .with_context(|| format!("read public key from {path}")),
+        (None, Some(path)) => {
+            std::fs::read_to_string(&path).with_context(|| format!("read public key from {path}"))
+        }
         (None, None) => {
             anyhow::bail!("--public-key or --public-key-file is required")
         }
@@ -2690,20 +2861,9 @@ pub async fn cn_auto_approve_status(
 ) -> Result<()> {
     let session = Session::resolve(endpoint_override, api_key_override).await?;
 
-    // Build a reqwest client carrying the same bearer the generated
-    // client would carry. Mirrors `Session::client()` so the two paths
-    // are interchangeable from the server's perspective.
-    let mut headers = reqwest::header::HeaderMap::new();
-    if let Some(bearer) = &session.bearer {
-        let value = format!("Bearer {bearer}")
-            .parse()
-            .context("invalid bearer token characters")?;
-        headers.insert(reqwest::header::AUTHORIZATION, value);
-    }
-    let http = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .context("build reqwest client")?;
+    // Same TLS posture as Session::client() so the raw and typed
+    // paths are interchangeable from the server's perspective.
+    let http = build_http_client(session.bearer.as_deref())?;
 
     let url = format!("{}/v2/cn-auto-approve", session.endpoint);
     // Match the api-version header that the generated client sends
@@ -2789,7 +2949,7 @@ pub async fn cn_auto_approve_close(
 }
 
 async fn exchange_password(endpoint: &str, username: &str, password: &str) -> Result<Tokens> {
-    let client = Client::new(endpoint);
+    let client = anonymous_client(endpoint)?;
     let response: TokenResponse = client
         .login()
         .body(LoginRequest {

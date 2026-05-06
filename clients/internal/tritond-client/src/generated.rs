@@ -2570,6 +2570,129 @@ pub mod types {
         }
     }
 
+    #[doc = "Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\n\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\\n\\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"desired_generation\","]
+    #[doc = "    \"family\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"public_address\","]
+    #[doc = "    \"realized\","]
+    #[doc = "    \"tenant_id\","]
+    #[doc = "    \"updated_at\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"desired_generation\": {"]
+    #[doc = "      \"description\": \"Monotonic desired-state generation. Create starts at 1; future wire-affecting mutations increment it atomically.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"edge_cluster_id\": {"]
+    #[doc = "      \"description\": \"Edge cluster selected to host this NAT gateway. `None` until edge placement lands in the Agent D/E slices.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"family\": {"]
+    #[doc = "      \"description\": \"Public address family requested at create time.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/AddressFamily\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"public_address\": {"]
+    #[doc = "      \"description\": \"Public source address reserved for egress.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"ip\""]
+    #[doc = "    },"]
+    #[doc = "    \"realized\": {"]
+    #[doc = "      \"description\": \"Read-time projection of the per-realizer rows for this NAT gateway. This is not stored as a denormalized field.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RealizedNetworkState\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NatGateway {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        #[doc = "Monotonic desired-state generation. Create starts at 1; future wire-affecting mutations increment it atomically."]
+        pub desired_generation: u64,
+        #[doc = "Edge cluster selected to host this NAT gateway. `None` until edge placement lands in the Agent D/E slices."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub edge_cluster_id: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Public address family requested at create time."]
+        pub family: AddressFamily,
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        #[doc = "Public source address reserved for egress."]
+        pub public_address: ::std::net::IpAddr,
+        #[doc = "Read-time projection of the per-realizer rows for this NAT gateway. This is not stored as a denormalized field."]
+        pub realized: RealizedNetworkState,
+        pub tenant_id: ::uuid::Uuid,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl NatGateway {
+        pub fn builder() -> builder::NatGateway {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST /v2/auth/api-keys`.\n\n`scope` defaults to [`ApiKeyScope::Full`] when omitted on the wire — preserves the pre-scope behaviour where every minted key has the full permissions of the owning user. Operators who want a least-privilege key (e.g. for a CI pipeline that only reads audit logs) pass `scope: \"read_only\"` or `scope: \"audit_only\"` at create time."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2965,6 +3088,51 @@ pub mod types {
 
     impl NewInstanceNic {
         pub fn builder() -> builder::NewInstanceNic {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for creating a [`NatGateway`]. Parentage is inferred from the tenant/project/VPC URL path. The server assigns the id, public address, generation, and timestamps."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating a [`NatGateway`]. Parentage is inferred from the tenant/project/VPC URL path. The server assigns the id, public address, generation, and timestamps.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"family\","]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"family\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/AddressFamily\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewNatGateway {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        pub family: AddressFamily,
+        pub name: ::std::string::String,
+    }
+
+    impl NewNatGateway {
+        pub fn builder() -> builder::NewNatGateway {
             Default::default()
         }
     }
@@ -3930,6 +4098,310 @@ pub mod types {
         pub fn builder() -> builder::Quota {
             Default::default()
         }
+    }
+
+    #[doc = "Per-realizer realization row. One per `(resource, realizer)` tuple; written by [`crate::Store::record_network_realization`] and read back by [`crate::Store::list_network_realizations`]."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-realizer realization row. One per `(resource, realizer)` tuple; written by [`crate::Store::record_network_realization`] and read back by [`crate::Store::list_network_realizations`].\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"generation\","]
+    #[doc = "    \"last_reported_at\","]
+    #[doc = "    \"realizer\","]
+    #[doc = "    \"status\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"generation\": {"]
+    #[doc = "      \"description\": \"Generation the realizer reports for the resource. Monotonic per `(resource, realizer)`: a write with `generation < existing.generation` is rejected with [`crate::StoreError::Conflict`] (the \\\"backward report\\\" case the Agent C contract calls out).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"last_reported_at\": {"]
+    #[doc = "      \"description\": \"Wall-clock time the row was last upserted by the realizer.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"message\": {"]
+    #[doc = "      \"description\": \"Free-form short diagnostic from the realizer. Surfaced verbatim in `tcadm net realized`. Kept short — detailed stderr belongs in agent logs and future support bundles, not in unbounded control-plane rows.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"realizer\": {"]
+    #[doc = "      \"description\": \"Which CN or edge cluster reported this row.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RealizerId\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"description\": \"Realizer-side outcome at this generation.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RealizationStatus\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Realization {
+        #[doc = "Generation the realizer reports for the resource. Monotonic per `(resource, realizer)`: a write with `generation < existing.generation` is rejected with [`crate::StoreError::Conflict`] (the \"backward report\" case the Agent C contract calls out)."]
+        pub generation: u64,
+        #[doc = "Wall-clock time the row was last upserted by the realizer."]
+        pub last_reported_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Free-form short diagnostic from the realizer. Surfaced verbatim in `tcadm net realized`. Kept short — detailed stderr belongs in agent logs and future support bundles, not in unbounded control-plane rows."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub message: ::std::option::Option<::std::string::String>,
+        #[doc = "Which CN or edge cluster reported this row."]
+        pub realizer: RealizerId,
+        #[doc = "Realizer-side outcome at this generation."]
+        pub status: RealizationStatus,
+    }
+
+    impl Realization {
+        pub fn builder() -> builder::Realization {
+            Default::default()
+        }
+    }
+
+    #[doc = "Outcome a realizer reports at a given generation. The variant set is deliberately small in v1: `Accepted` for \"agent received the blueprint and handed it to its dataplane\" (Agent B's `accepted_generation`); `Applied` for \"dataplane confirmed the generation active\" (the canonical terminal report); `Failed` for terminal apply failure with a short message. The enum is `#[non_exhaustive]` so post-v1 additions (e.g. `Compiling`, `Pending`) can land without breaking downstream matches."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Outcome a realizer reports at a given generation. The variant set is deliberately small in v1: `Accepted` for \\\"agent received the blueprint and handed it to its dataplane\\\" (Agent B's `accepted_generation`); `Applied` for \\\"dataplane confirmed the generation active\\\" (the canonical terminal report); `Failed` for terminal apply failure with a short message. The enum is `#[non_exhaustive]` so post-v1 additions (e.g. `Compiling`, `Pending`) can land without breaking downstream matches.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"The realizer accepted the work and handed the blueprint to its backing dataplane. Aligns with Agent B's `accepted_generation` concept (see `proteus/docs/tritond-integration-v1.md`).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"accepted\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"The dataplane confirmed the generation active (e.g. Proteus `GetGenerationStatus` returned `applied_generation >= generation` on the realizer's port).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"applied\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"The realizer failed to converge to this generation. The associated message should describe the phase (image fetch, blueprint apply, port start, ...).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"failed\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum RealizationStatus {
+        #[doc = "The realizer accepted the work and handed the blueprint to its backing dataplane. Aligns with Agent B's `accepted_generation` concept (see `proteus/docs/tritond-integration-v1.md`)."]
+        #[serde(rename = "accepted")]
+        Accepted,
+        #[doc = "The dataplane confirmed the generation active (e.g. Proteus `GetGenerationStatus` returned `applied_generation >= generation` on the realizer's port)."]
+        #[serde(rename = "applied")]
+        Applied,
+        #[doc = "The realizer failed to converge to this generation. The associated message should describe the phase (image fetch, blueprint apply, port start, ...)."]
+        #[serde(rename = "failed")]
+        Failed,
+    }
+
+    impl ::std::fmt::Display for RealizationStatus {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Accepted => f.write_str("accepted"),
+                Self::Applied => f.write_str("applied"),
+                Self::Failed => f.write_str("failed"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for RealizationStatus {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "accepted" => Ok(Self::Accepted),
+                "applied" => Ok(Self::Applied),
+                "failed" => Ok(Self::Failed),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for RealizationStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for RealizationStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for RealizationStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Rolled-up realization view of a single network resource. Computed at read time from the resource's `desired_generation` field plus the per-realizer rows in the `network_realization/...` keyspace.\n\n**Not a denormalization.** The resource record stores `desired_generation: u64` directly; this view is synthesized by [`RealizedNetworkState::from_rows`] when the resource is serialized for a wire response. Storing the rolled-up view would drift from the per-realizer rows on every realizer report."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Rolled-up realization view of a single network resource. Computed at read time from the resource's `desired_generation` field plus the per-realizer rows in the `network_realization/...` keyspace.\\n\\n**Not a denormalization.** The resource record stores `desired_generation: u64` directly; this view is synthesized by [`RealizedNetworkState::from_rows`] when the resource is serialized for a wire response. Storing the rolled-up view would drift from the per-realizer rows on every realizer report.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"desired_generation\","]
+    #[doc = "    \"realizations\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"applied_generation\": {"]
+    #[doc = "      \"description\": \"Highest generation any realizer has reported with [`RealizationStatus::Applied`]. `None` if no realizer has applied anything yet. Useful as a coarse \\\"did anything take?\\\" signal; \\\"did the dataplane converge everywhere?\\\" requires inspecting [`Self::realizations`] against the expected realizer set.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"desired_generation\": {"]
+    #[doc = "      \"description\": \"Desired generation of the resource. Monotonically increased by `tritond` on every wire-affecting mutation.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"realizations\": {"]
+    #[doc = "      \"description\": \"Per-realizer rows, sorted by `(realizer.kind_tag(), realizer.id())` for deterministic output.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/Realization\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RealizedNetworkState {
+        #[doc = "Highest generation any realizer has reported with [`RealizationStatus::Applied`]. `None` if no realizer has applied anything yet. Useful as a coarse \"did anything take?\" signal; \"did the dataplane converge everywhere?\" requires inspecting [`Self::realizations`] against the expected realizer set."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub applied_generation: ::std::option::Option<u64>,
+        #[doc = "Desired generation of the resource. Monotonically increased by `tritond` on every wire-affecting mutation."]
+        pub desired_generation: u64,
+        #[doc = "Per-realizer rows, sorted by `(realizer.kind_tag(), realizer.id())` for deterministic output."]
+        pub realizations: ::std::vec::Vec<Realization>,
+    }
+
+    impl RealizedNetworkState {
+        pub fn builder() -> builder::RealizedNetworkState {
+            Default::default()
+        }
+    }
+
+    #[doc = "Identity of a realizer reporting a [`Realization`]. v1 ships `Cn` (per-server `tritonagent`, identified by SmartOS `server_uuid`) and `EdgeCluster` (firehyve/fhrun-managed edge microVMs, populated when Agent E begins reporting).\n\nWire shape: `{ \"kind\": \"cn\", \"id\": \"<uuid>\" }` / `{ \"kind\": \"edge_cluster\", \"id\": \"<uuid>\" }`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Identity of a realizer reporting a [`Realization`]. v1 ships `Cn` (per-server `tritonagent`, identified by SmartOS `server_uuid`) and `EdgeCluster` (firehyve/fhrun-managed edge microVMs, populated when Agent E begins reporting).\\n\\nWire shape: `{ \\\"kind\\\": \\\"cn\\\", \\\"id\\\": \\\"<uuid>\\\" }` / `{ \\\"kind\\\": \\\"edge_cluster\\\", \\\"id\\\": \\\"<uuid>\\\" }`.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"SmartOS compute node identified by its `server_uuid`.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"cn\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Firehyve / fhrun-managed edge cluster identified by its `EdgeCluster.id`. Reserved for Agent E reporting; the reference type lands in H-12.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"id\","]
+    #[doc = "        \"kind\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
+    #[doc = "        \"kind\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"enum\": ["]
+    #[doc = "            \"edge_cluster\""]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(tag = "kind", content = "id")]
+    pub enum RealizerId {
+        #[doc = "SmartOS compute node identified by its `server_uuid`."]
+        #[serde(rename = "cn")]
+        Cn(::uuid::Uuid),
+        #[doc = "Firehyve / fhrun-managed edge cluster identified by its `EdgeCluster.id`. Reserved for Agent E reporting; the reference type lands in H-12."]
+        #[serde(rename = "edge_cluster")]
+        EdgeCluster(::uuid::Uuid),
     }
 
     #[doc = "Request body for `POST /v2/auth/refresh`."]
@@ -7123,6 +7595,226 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NatGateway {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            desired_generation: ::std::result::Result<u64, ::std::string::String>,
+            edge_cluster_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            family: ::std::result::Result<super::AddressFamily, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            public_address: ::std::result::Result<::std::net::IpAddr, ::std::string::String>,
+            realized: ::std::result::Result<super::RealizedNetworkState, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NatGateway {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    desired_generation: Err("no value supplied for desired_generation".to_string()),
+                    edge_cluster_id: Ok(Default::default()),
+                    family: Err("no value supplied for family".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    public_address: Err("no value supplied for public_address".to_string()),
+                    realized: Err("no value supplied for realized".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl NatGateway {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn desired_generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.desired_generation = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for desired_generation: {e}")
+                });
+                self
+            }
+            pub fn edge_cluster_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.edge_cluster_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for edge_cluster_id: {e}")
+                });
+                self
+            }
+            pub fn family<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::AddressFamily>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.family = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for family: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn public_address<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::net::IpAddr>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.public_address = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for public_address: {e}")
+                });
+                self
+            }
+            pub fn realized<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RealizedNetworkState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.realized = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for realized: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NatGateway> for super::NatGateway {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NatGateway,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    desired_generation: value.desired_generation?,
+                    edge_cluster_id: value.edge_cluster_id?,
+                    family: value.family?,
+                    id: value.id?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    public_address: value.public_address?,
+                    realized: value.realized?,
+                    tenant_id: value.tenant_id?,
+                    updated_at: value.updated_at?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NatGateway> for NatGateway {
+            fn from(value: super::NatGateway) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    desired_generation: Ok(value.desired_generation),
+                    edge_cluster_id: Ok(value.edge_cluster_id),
+                    family: Ok(value.family),
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    public_address: Ok(value.public_address),
+                    realized: Ok(value.realized),
+                    tenant_id: Ok(value.tenant_id),
+                    updated_at: Ok(value.updated_at),
+                    vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewApiKey {
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             scope: ::std::result::Result<super::ApiKeyScope, ::std::string::String>,
@@ -7763,6 +8455,82 @@ pub mod types {
                 Self {
                     name: Ok(value.name),
                     subnet_id: Ok(value.subnet_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewNatGateway {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            family: ::std::result::Result<super::AddressFamily, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewNatGateway {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    family: Err("no value supplied for family".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NewNatGateway {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn family<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::AddressFamily>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.family = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for family: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewNatGateway> for super::NewNatGateway {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewNatGateway,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    family: value.family?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewNatGateway> for NewNatGateway {
+            fn from(value: super::NewNatGateway) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    family: Ok(value.family),
+                    name: Ok(value.name),
                 }
             }
         }
@@ -9101,6 +9869,188 @@ pub mod types {
                     project_id: Ok(value.project_id),
                     tenant_id: Ok(value.tenant_id),
                     updated_at: Ok(value.updated_at),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct Realization {
+            generation: ::std::result::Result<u64, ::std::string::String>,
+            last_reported_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            message: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            realizer: ::std::result::Result<super::RealizerId, ::std::string::String>,
+            status: ::std::result::Result<super::RealizationStatus, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Realization {
+            fn default() -> Self {
+                Self {
+                    generation: Err("no value supplied for generation".to_string()),
+                    last_reported_at: Err("no value supplied for last_reported_at".to_string()),
+                    message: Ok(Default::default()),
+                    realizer: Err("no value supplied for realizer".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                }
+            }
+        }
+
+        impl Realization {
+            pub fn generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.generation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for generation: {e}"));
+                self
+            }
+            pub fn last_reported_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_reported_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for last_reported_at: {e}")
+                });
+                self
+            }
+            pub fn message<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.message = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for message: {e}"));
+                self
+            }
+            pub fn realizer<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RealizerId>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.realizer = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for realizer: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::RealizationStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Realization> for super::Realization {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Realization,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    generation: value.generation?,
+                    last_reported_at: value.last_reported_at?,
+                    message: value.message?,
+                    realizer: value.realizer?,
+                    status: value.status?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Realization> for Realization {
+            fn from(value: super::Realization) -> Self {
+                Self {
+                    generation: Ok(value.generation),
+                    last_reported_at: Ok(value.last_reported_at),
+                    message: Ok(value.message),
+                    realizer: Ok(value.realizer),
+                    status: Ok(value.status),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RealizedNetworkState {
+            applied_generation:
+                ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            desired_generation: ::std::result::Result<u64, ::std::string::String>,
+            realizations:
+                ::std::result::Result<::std::vec::Vec<super::Realization>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RealizedNetworkState {
+            fn default() -> Self {
+                Self {
+                    applied_generation: Ok(Default::default()),
+                    desired_generation: Err("no value supplied for desired_generation".to_string()),
+                    realizations: Err("no value supplied for realizations".to_string()),
+                }
+            }
+        }
+
+        impl RealizedNetworkState {
+            pub fn applied_generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.applied_generation = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for applied_generation: {e}")
+                });
+                self
+            }
+            pub fn desired_generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.desired_generation = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for desired_generation: {e}")
+                });
+                self
+            }
+            pub fn realizations<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::Realization>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.realizations = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for realizations: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RealizedNetworkState> for super::RealizedNetworkState {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RealizedNetworkState,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    applied_generation: value.applied_generation?,
+                    desired_generation: value.desired_generation?,
+                    realizations: value.realizations?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RealizedNetworkState> for RealizedNetworkState {
+            fn from(value: super::RealizedNetworkState) -> Self {
+                Self {
+                    applied_generation: Ok(value.applied_generation),
+                    desired_generation: Ok(value.desired_generation),
+                    realizations: Ok(value.realizations),
                 }
             }
         }
@@ -10654,6 +11604,26 @@ impl Client {
     #[doc = "Delete a VPC. Returns 404 when the VPC does not exist or\n\nbelongs to a different tenant or project. Returns 409 if the VPC still has subnets attached — operators must clear subnets before deleting the parent VPC (Phase 0 has no cascade).\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_project_vpc()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn delete_project_vpc(&self) -> builder::DeleteProjectVpc<'_> {
         builder::DeleteProjectVpc::new(self)
+    }
+
+    #[doc = "List NAT gateways inside a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`\n\n```ignore\nlet response = client.list_vpc_nat_gateways()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn list_vpc_nat_gateways(&self) -> builder::ListVpcNatGateways<'_> {
+        builder::ListVpcNatGateways::new(self)
+    }
+
+    #[doc = "Create a NAT gateway in a VPC. Returns 409 if the name is\n\nalready in use within the VPC. The returned record includes the reserved public source address.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`\n\n```ignore\nlet response = client.create_vpc_nat_gateway()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_vpc_nat_gateway(&self) -> builder::CreateVpcNatGateway<'_> {
+        builder::CreateVpcNatGateway::new(self)
+    }
+
+    #[doc = "Read a single NAT gateway\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`\n\n```ignore\nlet response = client.get_vpc_nat_gateway()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .nat_gateway_id(nat_gateway_id)\n    .send()\n    .await;\n```"]
+    pub fn get_vpc_nat_gateway(&self) -> builder::GetVpcNatGateway<'_> {
+        builder::GetVpcNatGateway::new(self)
+    }
+
+    #[doc = "Delete a NAT gateway and release its public address\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`\n\n```ignore\nlet response = client.delete_vpc_nat_gateway()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .nat_gateway_id(nat_gateway_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_nat_gateway(&self) -> builder::DeleteVpcNatGateway<'_> {
+        builder::DeleteVpcNatGateway::new(self)
     }
 
     #[doc = "List the subnets inside a VPC. Returns 404 when the tenant\n\nproject, or VPC does not exist (or is in the wrong parent).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets`\n\n```ignore\nlet response = client.list_vpc_subnets()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
@@ -17749,6 +18719,474 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_vpc_nat_gateways`]\n\n[`Client::list_vpc_nat_gateways`]: super::Client::list_vpc_nat_gateways"]
+    #[derive(Debug, Clone)]
+    pub struct ListVpcNatGateways<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListVpcNatGateways<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::NatGateway>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/nat-gateways",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_vpc_nat_gateways",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_vpc_nat_gateway`]\n\n[`Client::create_vpc_nat_gateway`]: super::Client::create_vpc_nat_gateway"]
+    #[derive(Debug, Clone)]
+    pub struct CreateVpcNatGateway<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewNatGateway, String>,
+    }
+
+    impl<'a> CreateVpcNatGateway<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewNatGateway>,
+            <V as std::convert::TryInto<types::NewNatGateway>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewNatGateway` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewNatGateway) -> types::builder::NewNatGateway,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`"]
+        pub async fn send(self) -> Result<ResponseValue<types::NatGateway>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewNatGateway::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/nat-gateways",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_vpc_nat_gateway",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_vpc_nat_gateway`]\n\n[`Client::get_vpc_nat_gateway`]: super::Client::get_vpc_nat_gateway"]
+    #[derive(Debug, Clone)]
+    pub struct GetVpcNatGateway<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        nat_gateway_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetVpcNatGateway<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                nat_gateway_id: Err("nat_gateway_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn nat_gateway_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.nat_gateway_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for nat_gateway_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::NatGateway>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                nat_gateway_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let nat_gateway_id = nat_gateway_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/nat-gateways/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&nat_gateway_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_vpc_nat_gateway",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_nat_gateway`]\n\n[`Client::delete_vpc_nat_gateway`]: super::Client::delete_vpc_nat_gateway"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcNatGateway<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        nat_gateway_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteVpcNatGateway<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                nat_gateway_id: Err("nat_gateway_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn nat_gateway_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.nat_gateway_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for nat_gateway_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                nat_gateway_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let nat_gateway_id = nat_gateway_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/nat-gateways/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&nat_gateway_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_nat_gateway",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

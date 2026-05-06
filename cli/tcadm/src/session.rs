@@ -96,19 +96,46 @@ impl Session {
 
     /// Build a `tritond_client::Client` configured with the bearer header.
     pub fn client(&self) -> Result<Client> {
-        let mut headers = reqwest::header::HeaderMap::new();
-        if let Some(bearer) = &self.bearer {
-            let value = format!("Bearer {bearer}")
-                .parse()
-                .context("invalid bearer token characters")?;
-            headers.insert(reqwest::header::AUTHORIZATION, value);
-        }
-        let reqwest = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .context("build reqwest client")?;
-        Ok(Client::new_with_client(&self.endpoint, reqwest))
+        let http = build_http_client(self.bearer.as_deref())?;
+        Ok(Client::new_with_client(&self.endpoint, http))
     }
+}
+
+/// Build a `reqwest::Client` that has rustls preconfigured with the
+/// bundled `webpki_roots` trust store. SmartOS GZ has no system CA
+/// bundle, so the platform verifier panics on startup; we ship our own
+/// roots in the binary. Same posture as the tritonagent client.
+///
+/// `bearer` is optional; when set, an `Authorization: Bearer …` header
+/// is attached as a default for every request the returned client makes.
+pub fn build_http_client(bearer: Option<&str>) -> Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(bearer) = bearer {
+        let value = format!("Bearer {bearer}")
+            .parse()
+            .context("invalid bearer token characters")?;
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let tls = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .use_preconfigured_tls(tls)
+        .build()
+        .context("build reqwest client")
+}
+
+/// Build an anonymous (no bearer) `tritond_client::Client` against
+/// `endpoint`. Goes through the same TLS config path as
+/// [`Session::client`] — required on SmartOS GZ for the same reason.
+pub fn anonymous_client(endpoint: &str) -> Result<Client> {
+    let http = build_http_client(None)?;
+    Ok(Client::new_with_client(endpoint, http))
 }
 
 /// Refresh the stored access token if it's close to expiring,
@@ -124,7 +151,7 @@ async fn ensure_fresh(endpoint: &str, config: &mut Config, tokens: Tokens) -> Re
         anyhow::bail!("refresh token has expired; run `tcadm login` to re-authenticate");
     }
 
-    let anonymous = Client::new(endpoint);
+    let anonymous = anonymous_client(endpoint)?;
     let response: TokenResponse = anonymous
         .refresh()
         .body(RefreshRequest {

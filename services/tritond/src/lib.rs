@@ -43,14 +43,14 @@ use tritond_api::{
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
     RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath,
     TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
-    TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcPath, TenantProjectVpcSubnetPath,
-    TokenResponse, TritondApi,
+    TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
-        LifecycleStateKind, NewFloatingIp, NewImage, NewInstance, NewJob, NewProject, NewQuota,
-        NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-        Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
+        LifecycleStateKind, NatGateway, NewFloatingIp, NewImage, NewInstance, NewJob,
+        NewNatGateway, NewProject, NewQuota, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
+        Project, ProvisioningJob, Quota, Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1623,6 +1623,211 @@ impl TritondApi for TritondServiceImpl {
             )
             .await;
         Ok(HttpResponseDeleted())
+    }
+
+    async fn list_vpc_nat_gateways(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<NatGateway>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NatGatewayList,
+            tenant_id,
+        )
+        .await?;
+
+        let vpc = ctx
+            .store
+            .get_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+            return Err(not_found());
+        }
+        let nat_gateways = ctx
+            .store
+            .list_nat_gateways_in_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(nat_gateways))
+    }
+
+    async fn create_vpc_nat_gateway(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewNatGateway>,
+    ) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NatGatewayCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        match ctx
+            .store
+            .create_nat_gateway(tenant_id, project_id, vpc_id, req)
+            .await
+        {
+            Ok(nat_gateway) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::NatGatewayCreate,
+                        request_id,
+                        Some(format!("NatGateway::\"{}\"", nat_gateway.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("NatGateway::\"{}\"", nat_gateway.id)),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "name": nat_gateway.name,
+                            "public_address": nat_gateway.public_address.to_string(),
+                            "desired_generation": nat_gateway.desired_generation,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(nat_gateway))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::NatGatewayCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_vpc_nat_gateway(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcNatGatewayPath>,
+    ) -> Result<HttpResponseOk<NatGateway>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcNatGatewayPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            nat_gateway_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NatGatewayGet,
+            tenant_id,
+        )
+        .await?;
+        let nat_gateway = ctx
+            .store
+            .get_nat_gateway(nat_gateway_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if nat_gateway.tenant_id != tenant_id
+            || nat_gateway.project_id != project_id
+            || nat_gateway.vpc_id != vpc_id
+        {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(nat_gateway))
+    }
+
+    async fn delete_vpc_nat_gateway(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcNatGatewayPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcNatGatewayPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            nat_gateway_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NatGatewayDelete,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let nat_gateway = ctx
+            .store
+            .get_nat_gateway(nat_gateway_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if nat_gateway.tenant_id != tenant_id
+            || nat_gateway.project_id != project_id
+            || nat_gateway.vpc_id != vpc_id
+        {
+            return Err(not_found());
+        }
+        match ctx.store.delete_nat_gateway(nat_gateway_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::NatGatewayDelete,
+                        request_id,
+                        Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::NatGatewayDelete,
+                        request_id,
+                        Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 
     async fn list_public_ssh_keys(
@@ -5318,6 +5523,11 @@ pub async fn start_server_with_context(
 
     let config_dropshot = ConfigDropshot {
         bind_address: parsed,
+        // The default 1 KB body cap is too small for `/v2/agent/register`,
+        // which carries the full SmartOS `sysinfo` JSON (tens of KB on a
+        // production CN). 1 MB is plenty for any expected payload and
+        // still bounds an abusive client.
+        default_request_body_max_bytes: 1_048_576,
         ..Default::default()
     };
 

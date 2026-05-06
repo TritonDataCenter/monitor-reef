@@ -115,6 +115,11 @@ enum Commands {
         #[command(subcommand)]
         command: TenantCommand,
     },
+    /// Manage network resources with operational shorthand commands.
+    Net {
+        #[command(subcommand)]
+        command: NetCommand,
+    },
     /// Manage Public images (operator-facing root commands).
     /// Tenant- / project- / user-scoped images live under the
     /// `tenant`, `tenant project`, and `auth` subtrees.
@@ -650,6 +655,58 @@ enum TenantProjectFloatingIpCommand {
 }
 
 #[derive(Subcommand)]
+enum NetCommand {
+    /// Manage VPC NAT gateways.
+    NatGw {
+        #[command(subcommand)]
+        command: NetNatGwCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetNatGwCommand {
+    /// List NAT gateways in a VPC.
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a NAT gateway in a VPC.
+    Create {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Address family. Valid values: `v4` or `v6`.
+        #[arg(long, default_value = "v4")]
+        family: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single NAT gateway.
+    Get {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        nat_gateway_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a NAT gateway and release its public address.
+    Delete {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        nat_gateway_id: Uuid,
+    },
+}
+
+#[derive(Subcommand)]
 enum TenantProjectInstanceCommand {
     /// List instances in the project.
     List {
@@ -1097,6 +1154,13 @@ async fn main() -> Result<()> {
         )
         .with_writer(std::io::stderr)
         .init();
+
+    // rustls 0.23 wants a process-default CryptoProvider before the
+    // first ClientConfig::builder() call. SmartOS GZ has no system
+    // CA bundle, so the platform verifier path is unusable; we ship
+    // webpki-roots in `session::build_http_client`. Installing
+    // aws-lc-rs as the default is harmless if already installed.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let cli = Cli::parse();
 
@@ -1994,6 +2058,82 @@ async fn main() -> Result<()> {
                         public_key,
                         public_key_file,
                         json,
+                    )
+                    .await
+                }
+            },
+        },
+        Commands::Net { command } => match command {
+            NetCommand::NatGw { command } => match command {
+                NetNatGwCommand::List {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    json,
+                } => {
+                    commands::net_nat_gw_list(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    )
+                    .await
+                }
+                NetNatGwCommand::Create {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    name,
+                    description,
+                    family,
+                    json,
+                } => {
+                    commands::net_nat_gw_create(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        name,
+                        description,
+                        family,
+                        json,
+                    )
+                    .await
+                }
+                NetNatGwCommand::Get {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    nat_gateway_id,
+                    json,
+                } => {
+                    commands::net_nat_gw_get(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        nat_gateway_id,
+                        json,
+                    )
+                    .await
+                }
+                NetNatGwCommand::Delete {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    nat_gateway_id,
+                } => {
+                    commands::net_nat_gw_delete(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        nat_gateway_id,
                     )
                     .await
                 }
