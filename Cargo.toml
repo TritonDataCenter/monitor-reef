@@ -34,6 +34,7 @@ members = [
     "clients/internal/triton-gateway-client",
     "clients/internal/vmapi-client",
     "libs/qcow",
+    "libs/vmdk",
     "libs/triton-auth",
     "libs/triton-auth-session",
     "libs/triton-pagination",
@@ -241,5 +242,9 @@ triton-auth-session = { path = "libs/triton-auth-session" }
 triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
 triton-pagination = { path = "libs/triton-pagination" }
 triton-tls = { path = "libs/triton-tls" }
+# Vendored fork at libs/vmdk that drops the upstream s3 / foyer-cache /
+# CLI layers, keeping just the file-backed disk reader. See
+# libs/vmdk/Cargo.toml for the full rationale.
+vmdk-rs = { path = "libs/vmdk" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

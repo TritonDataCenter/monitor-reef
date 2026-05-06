@@ -1,0 +1,57 @@
+[package]
+name = "vmdk-rs"
+version = "0.1.1"
+authors = ["LevelBlue"]
+edition = "2024"
+description = "A library for reading data from VMware Virtual Disk (VMDK) files"
+homepage = "https://github.com/strozfriedberg/vmdk-rs"
+repository = "https://github.com/strozfriedberg/vmdk-rs"
+license = "Apache-2.0"
+readme = "README.md"
+
+[lib]
+name = "vmdkrs"
+
+# Vendored fork of strozfriedberg/vmdk-rs. The upstream library bundles
+# an S3 backend, a foyer-based on-disk cache, a CLI binary, and the
+# tracing-subscriber it depends on — none of which we need for a
+# single-pass file read driving a zvol. The trim drops:
+#
+#   - `s3source.rs` + the `s3://` arm in `vmdk_reader::source_for_url`
+#     (eliminates `rust-s3` and its aws-sigv4 / hyper / signing tree)
+#   - `foyercache.rs` (eliminates `foyer`, `foyer-common`, `tempfile`)
+#     in favor of the existing `dummycache.rs` impl
+#   - the `vmdkverify` binary (eliminates `clap`, `bytesize`,
+#     `tracing-subscriber`, `hex`, plus `sha-1` from `[dependencies]`)
+#
+# Net effect: 318 transitive crates → 112. The async `BytesSource`
+# trait architecture is untouched so future upstream merges only need
+# to replay the file/cache list deletions, not rewire internals.
+
+[dependencies]
+async-trait = "0.1.89"
+byteorder = "1.5"
+flate2 = "1"
+futures = "0.3.31"
+regex = "1"
+thiserror = "2.0.12"
+tokio = { version = "1.47.1", features = ["fs", "io-util", "rt-multi-thread"] }
+tracing = "0.1.41"
+url = "2.5.7"
+
+[dev-dependencies]
+rand = "0.10"
+sha-1 = "^0.10"
+
+# Vendored upstream code: silence the parent workspace's strict lint
+# regime so we can keep the diff vs. upstream minimal. We are not the
+# maintainers of this code, and policing its style is out of scope.
+[lints.rust]
+unused_parens = "allow"
+dead_code = "allow"
+unused_imports = "allow"
+unused_variables = "allow"
+unexpected_cfgs = "allow"
+
+[lints.clippy]
+all = { level = "allow", priority = -1 }
