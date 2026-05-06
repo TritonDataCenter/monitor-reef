@@ -45,11 +45,10 @@ impl std::fmt::Display for Vendor {
 #[derive(Debug, Clone, Copy)]
 pub enum SourceFormat {
     Qcow2,
-    // Xz/Raw are part of the pipeline match arms but not yet emitted by
-    // any vendor in the POC. They cover Debian (.raw), FreeBSD (.raw.xz),
-    // and Talos (.raw.xz) without future churn to the convert step.
-    #[allow(dead_code)]
     Xz,
+    // Raw is wired through the pipeline but not currently emitted by
+    // any vendor — kept so that future raw-image vendors don't need to
+    // touch the convert step.
     #[allow(dead_code)]
     Raw,
 }

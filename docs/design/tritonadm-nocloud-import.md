@@ -241,51 +241,66 @@ the default for either.
 ### `zfs` shellout module
 
 A small `zfs` module wraps the `zfs(8)` CLI: `create_zvol`, `snap`,
-`send_to_file`, `destroy_recursive`. All assume the process has
-sufficient privileges (root in the GZ, `pfexec tritonadm …` in NGZ).
-This replaces the earlier `Privileged` trait — once qcow2 decoding
-moved in-process, the only privileged ops left were `zfs(8)` calls and
-opening the zvol's char device, both of which are uniform enough that
-a trait-based seam wasn't pulling its weight.
-
-Two implementations: `PfexecPrivileged` (real) and `FakePrivileged` (test —
-operates against a tmpfile-backed sparse file pretending to be a zvol).
+`send_to_file`, `destroy_recursive`, plus the listing/age helpers
+the startup sweep needs. All assume the process has sufficient
+privileges (root in the GZ, `pfexec tritonadm …` in NGZ). This
+replaces the earlier `Privileged` trait — once qcow2 decoding moved
+in-process, the only privileged ops left were `zfs(8)` calls and
+opening the zvol's char device, both of which are uniform enough
+that a trait-based seam wasn't pulling its weight.
 
 ## Trust chain
 
-For Ubuntu (POC):
+Every vendor roots trust in TLS to its canonical host (Mozilla CA
+bundle, via `triton-tls::build_http_client`); the verifier strategy
+then narrows the trust to a specific image:
 
-- Root: TLS to `cloud-images.ubuntu.com` (Mozilla CA bundle, via
-  `triton-tls::build_http_client`).
-- Mid: fetch `https://cloud-images.ubuntu.com/<series>/current/SHA256SUMS`
-  over TLS, parse, find the line matching the downloaded filename.
-- Leaf: SHA-256 of the downloaded file matches.
+| Vendor | Verifier | Source of truth |
+|---|---|---|
+| `alpine` | `Sha512SidecarTls` | per-image `<file>.sha512` next to the image |
+| `debian` | `Sha512SumsTls` | `SHA512SUMS` in the codename's image directory |
+| `freebsd` | `Sha256BsdSumsTls` | `CHECKSUM.SHA256` in the release directory (BSD `SHA256 (file) = hex` lines) |
+| `talos` | `TlsTrustOnly` | Talos Image Factory does not publish per-image hashes; operators wanting a hash check should pass `--expected-sha256 <hex>` |
+| `ubuntu` | `Sha256Pinned` from Simple Streams (primary) / `Sha256SumsTls` (fallback) | `com.ubuntu.cloud:released:download.json`, with a hardcoded series table as the air-gapped escape hatch |
 
-This is weaker than a GPG-verified `SHA256SUMS.gpg`, but no weaker than what
-the existing `target/triton-nocloud-images/*.conf` files give us today
-(static SHA-256 in our repo, equally TLS-rooted).
+This is weaker than a GPG-verified `SHA256SUMS.gpg` would be, but no
+weaker than what the original `target/triton-nocloud-images/*.conf`
+files gave us (static hashes in our repo, equally TLS-rooted).
 
-GPG verification is a follow-up and is plumbed for via the `Verifier` trait.
+GPG verification is a follow-up and is plumbed for via the
+`Verifier` trait — adding a `Sha256SumsGpg` strategy with an
+embedded vendor pubkey is a localized change.
 
 ## Code layout
 
 ```
 cli/tritonadm/src/commands/
-    image.rs                     # extend with `FetchNocloud { ... }` arm
+    image.rs                     # FetchNocloud + Import dispatch; shared
+                                 #   import_manifest_and_file helper
     image/
+        nocloud.rs               # subcommand wiring + Target dispatch
         nocloud/
-            mod.rs               # subcommand wiring
-            vendor.rs            # VendorProfile trait + ResolvedImage
+            vendor.rs            # VendorProfile trait, ResolvedImage,
+                                 #   Vendor enum (clap ValueEnum), SourceFormat
             vendor/
-                ubuntu.rs        # Ubuntu impl (POC)
-            verify.rs            # Verifier trait + Sha256SumsTls + Sha256Pinned
-            pipeline.rs          # the steps above, takes &dyn Privileged
-            privileged.rs        # PfexecPrivileged + FakePrivileged
+                alpine.rs   alpine/releases.rs
+                debian.rs   debian/release_file.rs
+                freebsd.rs  freebsd/releases.rs
+                talos.rs    talos/releases.rs
+                ubuntu.rs   ubuntu/streams.rs
+            verify.rs            # Verifier trait + Sha256Pinned, Sha256SumsTls,
+                                 #   Sha512SumsTls, Sha256BsdSumsTls,
+                                 #   Sha512SidecarTls, TlsTrustOnly
+            pipeline.rs          # download → verify → zvol → snap → send → gzip
+            zfs.rs               # zfs(8) shellout (create_zvol, snap,
+                                 #   send_to_file, destroy_recursive, sweep helpers)
             manifest.rs          # build serde_json::Value manifest from ResolvedImage
 ```
 
 `image.rs` is already large; the new code lives in a sibling
-`image/nocloud/` tree to keep the diff readable.
+`image/nocloud/` tree to keep the diff readable. Each vendor lives
+in its own `<vendor>.rs` file with its release-resolution logic
+under `<vendor>/`, so adding a vendor is a self-contained change.
 
 ## Testability
 
