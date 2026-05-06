@@ -6,6 +6,45 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v2/agent/blueprints/{port_id}": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Materialise the Proteus per-port blueprint for a NIC. Auth:",
+        "description": "requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.",
+        "operationId": "agent_port_blueprint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "port_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPortBlueprint"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/claim": {
       "post": {
         "tags": [
@@ -4941,6 +4980,29 @@
         "enum": [
           "v4",
           "v6"
+        ]
+      },
+      "AgentPortBlueprint": {
+        "description": "Opaque Proteus port blueprint returned to a bound CN agent.\n\n`blueprint_postcard_base64` is a base64-encoded `proteus_api::blueprint::PortBlueprint`. Tritond keeps it opaque at the public API boundary so the agent can decode it against the same Proteus userspace client version it will apply locally.",
+        "type": "object",
+        "properties": {
+          "blueprint_postcard_base64": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "port_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "blueprint_postcard_base64",
+          "generation",
+          "port_id"
         ]
       },
       "AgentStatusRequest": {

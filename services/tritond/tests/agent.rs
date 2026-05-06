@@ -32,7 +32,7 @@ use tritond_client::types::{
     RegisterCnRequest,
 };
 use tritond_store::{
-    Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, Store, User,
+    Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, Nic, Store, User,
 };
 use uuid::Uuid;
 
@@ -243,6 +243,115 @@ fn assert_status(err: progenitor_client::Error<tritond_client::types::Error>, wa
         panic!("expected ErrorResponse, got {err:?}");
     };
     assert_eq!(response.status().as_u16(), want);
+}
+
+fn parse_test_mac_bytes(value: &str) -> [u8; 6] {
+    let mut mac = [0u8; 6];
+    let mut parts = value.split(':');
+    for byte in &mut mac {
+        let part = parts.next().expect("stored test MAC has six octets");
+        *byte = u8::from_str_radix(part, 16).expect("stored test MAC uses hex octets");
+    }
+    assert!(parts.next().is_none(), "stored test MAC has six octets");
+    mac
+}
+
+async fn create_instance_with_primary_nic(test: &TestServer, silo_name: &str) -> (Instance, Nic) {
+    let silo = test
+        .store
+        .create_silo(tritond_store::NewSilo {
+            name: silo_name.to_string(),
+            description: None,
+        })
+        .await
+        .unwrap();
+    let project = test
+        .store
+        .create_project(
+            silo.default_tenant_id,
+            tritond_store::NewProject {
+                name: "p1".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+    let image = test
+        .store
+        .create_image_silo(
+            silo.id,
+            tritond_store::NewImage {
+                name: "test-image".to_string(),
+                description: None,
+                os: "smartos".to_string(),
+                version: "test".to_string(),
+                size_bytes: 1_000_000,
+                sha256: "0".repeat(64),
+                source_url: None,
+                id: None,
+                compatibility: None,
+            },
+        )
+        .await
+        .unwrap();
+    let vpc = test
+        .store
+        .create_vpc(
+            silo.default_tenant_id,
+            project.id,
+            tritond_store::NewVpc {
+                name: "v1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/24".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let subnet = test
+        .store
+        .create_subnet(
+            silo.default_tenant_id,
+            project.id,
+            vpc.id,
+            tritond_store::NewSubnet {
+                name: "s1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/29".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let created = test
+        .store
+        .create_instance(
+            silo.default_tenant_id,
+            project.id,
+            tritond_store::NewInstance {
+                name: "port-blueprint-test".to_string(),
+                description: None,
+                image_id: image.id,
+                primary_subnet_id: subnet.id,
+                ssh_key_ids: Vec::new(),
+                cpu: 1,
+                memory_bytes: 256 * 1024 * 1024,
+                extra_nics: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+    let instance = created.instance;
+    let primary_nic = test
+        .store
+        .list_nics_for_instance(instance.id)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .expect("instance create should create a primary NIC");
+
+    (instance, primary_nic)
 }
 
 #[tokio::test]
@@ -461,6 +570,107 @@ async fn blueprint_denied_to_read_only_scope() {
         panic!("expected ErrorResponse, got {err:?}");
     };
     assert_eq!(resp.status().as_u16(), 403);
+    test.close().await;
+}
+
+#[tokio::test]
+async fn bound_agent_can_fetch_port_blueprint_for_claimed_instance() {
+    let test = TestServer::start().await;
+    let (instance, nic) = create_instance_with_primary_nic(&test, "agent-port-blueprint").await;
+    let queued = test
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: instance.id,
+            },
+            target_cn_uuid: None,
+        })
+        .await
+        .unwrap();
+
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-port-blueprint").await;
+    let agent = test.bearer_client(&api_key);
+    let claimed = agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: cn_uuid.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("queue should contain the Provision job");
+    assert_eq!(claimed.id, queued.id);
+
+    let response = agent
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect("owning CN can fetch port blueprint")
+        .into_inner();
+    assert_eq!(response.port_id, nic.id);
+    assert_eq!(response.generation, 1);
+
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &response.blueprint_postcard_base64,
+    )
+    .expect("response should be base64");
+    let port: proteus_api::blueprint::PortBlueprint =
+        postcard::from_bytes(&bytes).expect("response should be a Proteus PortBlueprint");
+    assert_eq!(port.port_id, proteus_api::ids::PortId(nic.id));
+    assert_eq!(port.network_id, proteus_api::ids::NetworkId::TRITON_VPC);
+    assert_eq!(
+        port.schema_version,
+        proteus_api::blueprint::PORT_BLUEPRINT_SCHEMA_V0
+    );
+    assert_eq!(port.generation, proteus_api::ids::Generation::new(1));
+    assert_eq!(port.link.mtu, 1500);
+    assert_eq!(port.link.mac_address, Some(parse_test_mac_bytes(&nic.mac)));
+    assert_eq!(port.link.vlan_id, None);
+    assert_eq!(
+        port.plugin_config.network,
+        proteus_api::ids::NetworkId::TRITON_VPC
+    );
+    assert_eq!(
+        port.plugin_config.plugin_schema,
+        triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1
+    );
+    assert!(!port.plugin_config.bytes.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn port_blueprint_requires_bound_agent_with_inprogress_claim() {
+    let test = TestServer::start().await;
+    let (_instance, nic) =
+        create_instance_with_primary_nic(&test, "agent-port-blueprint-auth").await;
+
+    let unbound_secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let err = test
+        .bearer_client(&unbound_secret)
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect_err("unbound Agent keys cannot fetch port blueprints");
+    assert_status(err, 403);
+
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-port-blueprint-denied").await;
+    let err = test
+        .bearer_client(&api_key)
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect_err("bound Agent needs an in-progress claim for the instance");
+    assert_status(err, 403);
+
     test.close().await;
 }
 

@@ -148,6 +148,12 @@ pub struct AgentJobPath {
     pub job_id: Uuid,
 }
 
+/// Path parameters for a single Proteus per-port blueprint.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentPortBlueprintPath {
+    pub port_id: Uuid,
+}
+
 /// Optional `?force=true` query parameter on
 /// `DELETE /v2/silos/.../instances/{id}`. Default is `false`,
 /// which preserves the "must be Stopped or Failed first" gate.
@@ -214,6 +220,19 @@ pub struct NetworkRealizationRequest {
     pub status: RealizationStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+/// Opaque Proteus port blueprint returned to a bound CN agent.
+///
+/// `blueprint_postcard_base64` is a base64-encoded
+/// `proteus_api::blueprint::PortBlueprint`. Tritond keeps it opaque at
+/// the public API boundary so the agent can decode it against the same
+/// Proteus userspace client version it will apply locally.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct AgentPortBlueprint {
+    pub port_id: Uuid,
+    pub generation: u64,
+    pub blueprint_postcard_base64: String,
 }
 
 /// Materialised view of everything the agent needs to act on a
@@ -751,6 +770,20 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentJobPath>,
     ) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError>;
+
+    /// Materialise the Proteus per-port blueprint for a NIC. Auth:
+    /// requires a CN-bound API key with
+    /// [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have
+    /// an in-progress claim for the port's instance.
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/blueprints/{port_id}",
+        tags = ["agent"],
+    }]
+    async fn agent_port_blueprint(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AgentPortBlueprintPath>,
+    ) -> Result<HttpResponseOk<AgentPortBlueprint>, HttpError>;
 
     /// Heartbeat from a bound agent. Lightweight ping — empty
     /// body, just bumps `Cn.last_seen`. Auth: requires an API

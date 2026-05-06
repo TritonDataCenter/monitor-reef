@@ -29,26 +29,39 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use base64::Engine;
 use dropshot::{
     ApiDescription, ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel,
     HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, HttpServer,
     HttpServerStarter, Path, Query, RequestContext, TypedBody,
 };
+use proteus_api::blueprint::{
+    ClientLinkConfig, PORT_BLUEPRINT_SCHEMA_V0, PluginConfigBytes, PortBlueprint, PortLimits,
+};
+use proteus_api::ids::{
+    Generation as ProteusGeneration, NetworkId as ProteusNetworkId, PortId as ProteusPortId,
+};
+use triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1;
+use triton_vpc::tritond_intent_v1::{
+    FloatingIpAttachmentIntentV1, FloatingIpIntentV1, NatGatewayIntentV1, NicIntentV1,
+    RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1, VpcIntentV1,
+};
 use tritond_api::{
-    AgentJobPath, AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest,
-    AttachFloatingIpRequest, AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery,
-    AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath,
-    CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery, LoginRequest,
-    NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest,
-    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
-    RegisterStatusQuery, RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath,
-    TenantIdpPath, TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
-    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
-    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
-    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
+    ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
+    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
+    CnListQuery, CnPath, CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery,
+    LoginRequest, NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
+    OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest, RegisterCnRequest,
+    RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse, SiloPath, SiloTenantPath,
+    SshKeyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcNatGatewayPath, TenantProjectVpcPath,
+    TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
-        ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
+        ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, JobStatus, LifecycleState,
         LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
         NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
         NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizerId, Route,
@@ -680,6 +693,25 @@ impl TritondApi for TritondServiceImpl {
             enforce_job_belongs_to_bound_cn(&job, bound)?;
         }
         let blueprint = build_blueprint(ctx.store.as_ref(), &job).await?;
+        Ok(HttpResponseOk(blueprint))
+    }
+
+    async fn agent_port_blueprint(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AgentPortBlueprintPath>,
+    ) -> Result<HttpResponseOk<AgentPortBlueprint>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentBlueprint,
+        )
+        .await?;
+        let bound_cn = require_bound_cn(&principal)?;
+        let port_id = path.into_inner().port_id;
+        let blueprint = build_port_blueprint(ctx.store.as_ref(), port_id, bound_cn).await?;
         Ok(HttpResponseOk(blueprint))
     }
 
@@ -6044,6 +6076,262 @@ async fn build_blueprint(
         disks,
         ssh_public_keys,
     })
+}
+
+const INITIAL_PROTEUS_PORT_GENERATION: u64 = 1;
+
+/// Materialise the opaque Proteus `PortBlueprint` the bound CN agent
+/// should apply for a NIC.
+async fn build_port_blueprint(
+    store: &dyn Store,
+    port_id: Uuid,
+    bound_cn: Uuid,
+) -> Result<AgentPortBlueprint, HttpError> {
+    let nic = store.get_nic(port_id).await.map_err(store_error_to_http)?;
+    let instance = store
+        .get_instance(nic.instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    enforce_port_instance_claimed_by_bound_cn(store, instance.id, bound_cn).await?;
+
+    let project = store
+        .get_project(nic.project_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant = store
+        .get_tenant(nic.tenant_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let vpc = store
+        .get_vpc(nic.vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let subnet = store
+        .get_subnet(nic.subnet_id)
+        .await
+        .map_err(store_error_to_http)?;
+
+    if project.tenant_id != nic.tenant_id
+        || tenant.id != nic.tenant_id
+        || vpc.tenant_id != nic.tenant_id
+        || vpc.project_id != nic.project_id
+        || subnet.tenant_id != nic.tenant_id
+        || subnet.project_id != nic.project_id
+        || subnet.vpc_id != nic.vpc_id
+        || instance.tenant_id != nic.tenant_id
+        || instance.project_id != nic.project_id
+    {
+        return Err(not_found());
+    }
+
+    let routes = store
+        .list_routes_in_table(subnet.route_table_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let nat_gateways = store
+        .list_nat_gateways_in_vpc(vpc.id)
+        .await
+        .map_err(store_error_to_http)?;
+    let floating_ips = store
+        .list_floating_ips_in_project(project.id)
+        .await
+        .map_err(store_error_to_http)?;
+
+    let generation = INITIAL_PROTEUS_PORT_GENERATION;
+    let intent = TritondPortIntentV1 {
+        silo_id: tenant.silo_id,
+        tenant_id: nic.tenant_id,
+        project_id: nic.project_id,
+        vpc: VpcIntentV1 {
+            id: vpc.id,
+            tenant_id: vpc.tenant_id,
+            project_id: vpc.project_id,
+            main_route_table_id: vpc.main_route_table_id,
+            name: vpc.name,
+            description: vpc.description,
+            vni: vpc.vni,
+            ipv4_block: vpc.ipv4_block.map(|cidr| cidr.to_string()),
+            ipv6_block: vpc.ipv6_block.map(|cidr| cidr.to_string()),
+        },
+        subnet: SubnetIntentV1 {
+            id: subnet.id,
+            tenant_id: subnet.tenant_id,
+            project_id: subnet.project_id,
+            vpc_id: subnet.vpc_id,
+            route_table_id: subnet.route_table_id,
+            name: subnet.name,
+            description: subnet.description,
+            ipv4_block: subnet.ipv4_block.map(|cidr| cidr.to_string()),
+            ipv6_block: subnet.ipv6_block.map(|cidr| cidr.to_string()),
+        },
+        nic: NicIntentV1 {
+            id: nic.id,
+            tenant_id: nic.tenant_id,
+            project_id: nic.project_id,
+            instance_id: nic.instance_id,
+            vpc_id: nic.vpc_id,
+            subnet_id: nic.subnet_id,
+            name: nic.name,
+            mac: nic.mac.clone(),
+            primary_ipv4: nic.primary_ipv4.map(|addr| addr.to_string()),
+            primary_ipv6: nic.primary_ipv6.map(|addr| addr.to_string()),
+        },
+        instance_id: instance.id,
+        port_id,
+        routes: routes
+            .iter()
+            .map(route_intent)
+            .collect::<Result<Vec<_>, _>>()?,
+        nat_gateways: nat_gateways.iter().map(nat_gateway_intent).collect(),
+        floating_ips: floating_ips.iter().map(floating_ip_intent).collect(),
+        edge_clusters: Vec::new(),
+    };
+
+    let plugin_blueprint = intent.compile_blueprint().map_err(|err| {
+        store_error_to_http(StoreError::Conflict(format!(
+            "port blueprint is not currently compilable: {err}"
+        )))
+    })?;
+    let plugin_bytes = postcard::to_allocvec(&plugin_blueprint).map_err(|err| {
+        HttpError::for_internal_error(format!("encode Triton VPC blueprint: {err}"))
+    })?;
+    let port_blueprint = PortBlueprint {
+        port_id: ProteusPortId(port_id),
+        network_id: ProteusNetworkId::TRITON_VPC,
+        schema_version: PORT_BLUEPRINT_SCHEMA_V0,
+        generation: ProteusGeneration::new(generation),
+        limits: PortLimits::DEFAULT,
+        link: ClientLinkConfig {
+            mtu: 1500,
+            mac_address: Some(parse_mac_bytes(&nic.mac)?),
+            vlan_id: None,
+        },
+        plugin_config: PluginConfigBytes::new(
+            ProteusNetworkId::TRITON_VPC,
+            TRITON_VPC_BLUEPRINT_SCHEMA_V1,
+            plugin_bytes,
+        ),
+    };
+    let port_bytes = postcard::to_allocvec(&port_blueprint).map_err(|err| {
+        HttpError::for_internal_error(format!("encode Proteus port blueprint: {err}"))
+    })?;
+    let blueprint_postcard_base64 = base64::engine::general_purpose::STANDARD.encode(port_bytes);
+
+    Ok(AgentPortBlueprint {
+        port_id,
+        generation,
+        blueprint_postcard_base64,
+    })
+}
+
+async fn enforce_port_instance_claimed_by_bound_cn(
+    store: &dyn Store,
+    instance_id: Uuid,
+    bound_cn: Uuid,
+) -> Result<(), HttpError> {
+    let jobs = store
+        .list_recent_jobs(1024)
+        .await
+        .map_err(store_error_to_http)?;
+    for job in jobs
+        .iter()
+        .filter(|job| job.kind.instance_id() == instance_id)
+        .filter(|job| matches!(job.status, JobStatus::InProgress))
+    {
+        if enforce_job_belongs_to_bound_cn(job, bound_cn).is_ok() {
+            return Ok(());
+        }
+    }
+
+    Err(HttpError::for_client_error(
+        Some("Forbidden".to_string()),
+        ClientErrorStatusCode::FORBIDDEN,
+        "bound key has no in-progress claim for this port's instance".to_string(),
+    ))
+}
+
+fn route_intent(route: &Route) -> Result<RouteIntentV1, HttpError> {
+    Ok(RouteIntentV1 {
+        id: route.id,
+        tenant_id: route.tenant_id,
+        project_id: route.project_id,
+        vpc_id: route.vpc_id,
+        route_table_id: route.route_table_id,
+        name: route.name.clone(),
+        description: route.description.clone(),
+        destination: route.destination.to_string(),
+        target: route_target_intent(&route.target)?,
+    })
+}
+
+fn route_target_intent(target: &RouteTarget) -> Result<RouteTargetIntentV1, HttpError> {
+    match target {
+        RouteTarget::Blackhole => Ok(RouteTargetIntentV1::Blackhole),
+        RouteTarget::Reject => Ok(RouteTargetIntentV1::Reject),
+        RouteTarget::VirtualGateway => Ok(RouteTargetIntentV1::VirtualGateway),
+        RouteTarget::NatGateway { nat_gateway_id } => Ok(RouteTargetIntentV1::NatGateway {
+            nat_gateway_id: *nat_gateway_id,
+        }),
+        RouteTarget::FloatingIp { floating_ip_id } => Ok(RouteTargetIntentV1::FloatingIp {
+            floating_ip_id: *floating_ip_id,
+        }),
+        _ => Err(HttpError::for_internal_error(
+            "unsupported route target variant in port blueprint compiler".to_string(),
+        )),
+    }
+}
+
+fn nat_gateway_intent(nat: &NatGateway) -> NatGatewayIntentV1 {
+    NatGatewayIntentV1 {
+        id: nat.id,
+        tenant_id: nat.tenant_id,
+        project_id: nat.project_id,
+        vpc_id: nat.vpc_id,
+        name: nat.name.clone(),
+        description: nat.description.clone(),
+        public_address: nat.public_address.to_string(),
+        edge_cluster_id: nat.edge_cluster_id,
+        desired_generation: nat.desired_generation,
+    }
+}
+
+fn floating_ip_intent(fip: &FloatingIp) -> FloatingIpIntentV1 {
+    FloatingIpIntentV1 {
+        id: fip.id,
+        tenant_id: fip.tenant_id,
+        project_id: fip.project_id,
+        name: fip.name.clone(),
+        description: fip.description.clone(),
+        address: fip.address.to_string(),
+        attached_to: fip
+            .attached_to
+            .as_ref()
+            .map(|attachment| FloatingIpAttachmentIntentV1 {
+                instance_id: attachment.instance_id,
+                nic_id: attachment.nic_id,
+            }),
+        edge_cluster_id: None,
+    }
+}
+
+fn parse_mac_bytes(value: &str) -> Result<[u8; 6], HttpError> {
+    let mut mac = [0u8; 6];
+    let mut count = 0usize;
+    for (idx, part) in value.split(':').enumerate() {
+        if idx >= mac.len() || part.len() != 2 {
+            return Err(invalid_stored_mac(value));
+        }
+        mac[idx] = u8::from_str_radix(part, 16).map_err(|_| invalid_stored_mac(value))?;
+        count += 1;
+    }
+    if count != mac.len() {
+        return Err(invalid_stored_mac(value));
+    }
+    Ok(mac)
+}
+
+fn invalid_stored_mac(value: &str) -> HttpError {
+    HttpError::for_internal_error(format!("stored NIC has invalid MAC address {value:?}"))
 }
 
 /// Map a [`StoreError`] to the appropriate HTTP response.

@@ -231,6 +231,51 @@ pub mod types {
         }
     }
 
+    #[doc = "Opaque Proteus port blueprint returned to a bound CN agent.\n\n`blueprint_postcard_base64` is a base64-encoded `proteus_api::blueprint::PortBlueprint`. Tritond keeps it opaque at the public API boundary so the agent can decode it against the same Proteus userspace client version it will apply locally."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Opaque Proteus port blueprint returned to a bound CN agent.\\n\\n`blueprint_postcard_base64` is a base64-encoded `proteus_api::blueprint::PortBlueprint`. Tritond keeps it opaque at the public API boundary so the agent can decode it against the same Proteus userspace client version it will apply locally.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"blueprint_postcard_base64\","]
+    #[doc = "    \"generation\","]
+    #[doc = "    \"port_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"blueprint_postcard_base64\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"generation\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"port_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AgentPortBlueprint {
+        pub blueprint_postcard_base64: ::std::string::String,
+        pub generation: u64,
+        pub port_id: ::uuid::Uuid,
+    }
+
+    impl AgentPortBlueprint {
+        pub fn builder() -> builder::AgentPortBlueprint {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `POST /v2/agent/status`.\n\n`payload` is opaque to tritond — agents pick the shape — but the Triton-classic shape is `{ vms, zpools, meminfo, diskinfo, boot_time, timestamp }`. Stored verbatim on the `Cn` record's `last_status` field; surfaced via `tcadm cn show`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -5869,6 +5914,82 @@ pub mod types {
 
     #[doc = r" Types for composing complex structures."]
     pub mod builder {
+        #[derive(Clone, Debug)]
+        pub struct AgentPortBlueprint {
+            blueprint_postcard_base64:
+                ::std::result::Result<::std::string::String, ::std::string::String>,
+            generation: ::std::result::Result<u64, ::std::string::String>,
+            port_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AgentPortBlueprint {
+            fn default() -> Self {
+                Self {
+                    blueprint_postcard_base64: Err(
+                        "no value supplied for blueprint_postcard_base64".to_string(),
+                    ),
+                    generation: Err("no value supplied for generation".to_string()),
+                    port_id: Err("no value supplied for port_id".to_string()),
+                }
+            }
+        }
+
+        impl AgentPortBlueprint {
+            pub fn blueprint_postcard_base64<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blueprint_postcard_base64 = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for blueprint_postcard_base64: {e}")
+                });
+                self
+            }
+            pub fn generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.generation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for generation: {e}"));
+                self
+            }
+            pub fn port_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.port_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for port_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AgentPortBlueprint> for super::AgentPortBlueprint {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AgentPortBlueprint,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    blueprint_postcard_base64: value.blueprint_postcard_base64?,
+                    generation: value.generation?,
+                    port_id: value.port_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AgentPortBlueprint> for AgentPortBlueprint {
+            fn from(value: super::AgentPortBlueprint) -> Self {
+                Self {
+                    blueprint_postcard_base64: Ok(value.blueprint_postcard_base64),
+                    generation: Ok(value.generation),
+                    port_id: Ok(value.port_id),
+                }
+            }
+        }
+
         #[derive(Clone, Debug)]
         pub struct AgentStatusRequest {
             payload: ::std::result::Result<::serde_json::Value, ::std::string::String>,
@@ -12463,6 +12584,11 @@ impl ClientInfo<()> for Client {
 
 impl ClientHooks<()> for &Client {}
 impl Client {
+    #[doc = "Materialise the Proteus per-port blueprint for a NIC. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.\n\nSends a `GET` request to `/v2/agent/blueprints/{port_id}`\n\n```ignore\nlet response = client.agent_port_blueprint()\n    .port_id(port_id)\n    .send()\n    .await;\n```"]
+    pub fn agent_port_blueprint(&self) -> builder::AgentPortBlueprint<'_> {
+        builder::AgentPortBlueprint::new(self)
+    }
+
     #[doc = "Atomically claim the next Pending provisioning job\n\nReturns `200 OK` with `{\"job\": null}` when the queue is empty (the agent should sleep before its next poll), and `200 OK` with `{\"job\": {...}}` when a job was claimed and transitioned to `InProgress`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`].\n\nThe path is `/v2/agent/claim` rather than `/v2/agent/jobs/claim` because Dropshot's router cannot disambiguate a literal `claim` segment from a `{job_id}` path parameter at the same level.\n\nSends a `POST` request to `/v2/agent/claim`\n\n```ignore\nlet response = client.agent_claim_job()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_claim_job(&self) -> builder::AgentClaimJob<'_> {
         builder::AgentClaimJob::new(self)
@@ -12983,6 +13109,77 @@ pub mod builder {
         ByteStream, ClientHooks, ClientInfo, Error, OperationInfo, RequestBuilderExt,
         ResponseValue, encode_path,
     };
+    #[doc = "Builder for [`Client::agent_port_blueprint`]\n\n[`Client::agent_port_blueprint`]: super::Client::agent_port_blueprint"]
+    #[derive(Debug, Clone)]
+    pub struct AgentPortBlueprint<'a> {
+        client: &'a super::Client,
+        port_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> AgentPortBlueprint<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                port_id: Err("port_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn port_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.port_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for port_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/agent/blueprints/{port_id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AgentPortBlueprint>, Error<types::Error>> {
+            let Self { client, port_id } = self;
+            let port_id = port_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/agent/blueprints/{}",
+                client.baseurl,
+                encode_path(&port_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_port_blueprint",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::agent_claim_job`]\n\n[`Client::agent_claim_job`]: super::Client::agent_claim_job"]
     #[derive(Debug, Clone)]
     pub struct AgentClaimJob<'a> {

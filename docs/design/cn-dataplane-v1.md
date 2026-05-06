@@ -299,6 +299,15 @@ carries all tenant network semantics:
 Agent C must not compile these fields. It consumes Agent B's
 `PortBlueprint` and reports whether the local dataplane accepted it.
 
+The v1 control-plane endpoint is `GET /v2/agent/blueprints/{port_id}`.
+It is available only to a CN-bound Agent key that currently owns an
+in-progress claim for the port's instance. The response carries
+`port_id`, `generation`, and `blueprint_postcard_base64`, where the
+base64 payload is a postcard-encoded
+`proteus_api::blueprint::PortBlueprint`. M1 uses generation `1` for the
+initial provision apply; later network-update slices must store and
+increment a per-port desired generation.
+
 ## 6. Proteus port lifecycle
 
 The current Proteus API exposes the needed primitive lifecycle:
