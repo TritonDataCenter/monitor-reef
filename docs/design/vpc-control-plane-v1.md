@@ -705,6 +705,7 @@ route_table/main/<vpc>                    -> rt_id (singleton-per-vpc)
 route/by_id/<uuid>
 route/by_table/<rt>/<destination_canon>   (uniqueness: dest CIDR per table)
 route/in_table/<rt>/<route>
+route/by_nat_gateway/<nat>/<route>        (reverse target index for delete guards)
 
 nat_gateway/by_id/<uuid>
 nat_gateway/by_vpc/<vpc>/<name>
@@ -776,20 +777,20 @@ subcommand under `tcadm` to unblock operator workflows; the
 end-user `triton` CLI will be a thin alias.
 
 ```
-tcadm net route-table list      --tenant T --project P --vpc V
-tcadm net route-table create    --tenant T --project P --vpc V --name NAME
-tcadm net route-table get       --tenant T --project P --vpc V <ID>
-tcadm net route-table delete    --tenant T --project P --vpc V <ID>
+tcadm net route-table list      T P V
+tcadm net route-table create    T P V --name NAME
+tcadm net route-table get       T P V RT
+tcadm net route-table delete    T P V RT
 
-tcadm net route list            --tenant T --project P --vpc V --route-table RT
-tcadm net route create          --tenant T --project P --vpc V --route-table RT \
+tcadm net route list            T P V RT
+tcadm net route create          T P V RT \
                                 --name NAME --destination CIDR \
                                 --target nat-gateway:<ID>|virtual-gateway|blackhole|reject
-tcadm net route get             --tenant T --project P --vpc V --route-table RT <ID>
-tcadm net route delete          --tenant T --project P --vpc V --route-table RT <ID>
+tcadm net route get             T P V RT R
+tcadm net route delete          T P V RT R
 
-tcadm net nat-gw list           --tenant T --project P --vpc V
-tcadm net nat-gw create         --tenant T --project P --vpc V --name NAME --family v4|v6
+tcadm net nat-gw list           T P V
+tcadm net nat-gw create         T P V --name NAME --family v4|v6
 tcadm net nat-gw get            --tenant T --project P --vpc V <ID>
 tcadm net nat-gw delete         --tenant T --project P --vpc V <ID>
 
@@ -1040,7 +1041,7 @@ change). Tests + docs ride with the code in the same commit.
 | H-3 | `NatGateway` API surface + handlers + `tcadm net nat-gw` + integration tests. Copies the `tests/vpcs.rs` template. **Includes `make openapi-generate` + `make clients-generate`** (new endpoints). | `apis/tritond-api/src/lib.rs`, `services/tritond/src/{lib,auth}.rs`, `cli/tcadm/src/{main,commands}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/nat_gateways.rs` | integration: cross-tenant 404, within-VPC name unique, address from pool, anonymous → 404. **Does not** include the delete-when-route-references → 409 test (deferred to H-6 when `Route` exists; manager ruling). |
 | H-4 | `RouteTable` record + `Vpc.main_route_table_id` (atomic with VPC create) + `Subnet.route_table_id` (defaults to parent VPC's main RT). **Widens `Vpc` and `Subnet` — slice intentionally runs `make openapi-generate` + `make clients-generate` and updates affected tests** (manager ruling: no silent widening). | `libs/tritond-store/src/{types,lib,mem,fdb}.rs`, `apis/tritond-api/src/lib.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/{vpcs,subnets}.rs` | unit: VPC create produces main RT, subnet create defaults to main RT; integration: existing VPC + subnet tests round-trip new fields |
 | H-5 | `RouteTable` API surface + handlers + `tcadm net route-table` | API + service + CLI + tests | integration: list/create/get/delete; main RT delete → 409 (not 404); cross-VPC 404; anonymous denied; tenant member allowed only in own tenant. RT-with-routes delete → 409 lands with H-6 when `Route` exists. Non-main RT-with-subnet-associations delete → 409 lands with H-10 when public reassociation exists; store protection is already present from H-4. |
-| H-6 | `Route` store + API + CLI + tests; `RouteTarget::NatGateway` references resolve in same VPC. **Adds the NAT-GW-with-referencing-routes → 409 test deferred from H-3.** | API + service + CLI + tests | integration: route create with NAT target across VPC → 400; per-table destination uniqueness; NAT delete with referencing route → 409; FloatingIp variant rejected at API edge → 400 |
+| H-6 | `Route` store + API + CLI + tests; `RouteTarget::NatGateway` references resolve in same VPC. **Adds the NAT-GW-with-referencing-routes → 409 test deferred from H-3.** | `libs/tritond-store/src/{types,lib,mem,fdb}.rs`, `apis/tritond-api/src/{lib,types}.rs`, `services/tritond/src/{lib,auth}.rs`, `cli/tcadm/src/{main,commands}.rs`, `clients/internal/tritond-client` (regen), `services/tritond/tests/routes.rs` | integration: route create/list/get/delete; route create with NAT target across VPC → 400; per-table destination uniqueness; NAT delete with referencing route → 409; route-table delete with routes → 409; FloatingIp variant rejected at API edge → 400; anonymous denied. |
 | H-7 | `SecurityGroup` store + API + CLI + tests | API + service + CLI + tests | integration: within-VPC name uniqueness, delete-when-rules-exist → 409, delete-when-NICs-attached → 409 |
 | H-8 | `SecurityGroupRule` store + API + CLI + tests. Conflict semantics: Deny > Allow, then most-specific (manager ruling); enforced at Agent B compile, but the rule grammar is exercised here. | API + service + CLI + tests | integration: rule grammar serialization round-trip; CIDR canonicalization; cross-SG matcher resolution within VPC only |
 | H-9 | `NicSecurityGroupAttachment` store + API + CLI + tests. Default-deny-inbound applies when zero SGs attached. | API + service + CLI + tests | integration: attach/detach atomic; instance delete cascades detach (matches FloatingIp pattern); delete-attached SG → 409 |

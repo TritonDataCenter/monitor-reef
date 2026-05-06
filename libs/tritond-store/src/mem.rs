@@ -14,6 +14,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use ipnetwork::IpNetwork;
 use rand::Rng;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -24,10 +25,10 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, RouteTable, Silo, SshKey, SshKeyScope, Store, StoreError,
-    Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
+    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
+    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
@@ -128,6 +129,10 @@ struct Inner {
     /// uniqueness. The auto-created main route table reserves
     /// `(vpc_id, "main")`.
     route_table_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    routes_by_id: HashMap<Uuid, Route>,
+    /// `(route_table_id, canonical destination)` → route_id index for
+    /// per-table destination uniqueness.
+    route_id_by_table_destination: HashMap<(Uuid, IpNetwork), Uuid>,
     nat_gateways_by_id: HashMap<Uuid, NatGatewayRecord>,
     /// `(vpc_id, name)` → nat_gateway_id index for within-VPC name
     /// uniqueness.
@@ -943,6 +948,15 @@ impl Store for MemStore {
                 route_table.vpc_id
             )));
         }
+        let has_routes = guard
+            .routes_by_id
+            .values()
+            .any(|r| r.route_table_id == route_table_id);
+        if has_routes {
+            return Err(StoreError::Conflict(format!(
+                "route table {route_table_id} still has routes"
+            )));
+        }
         let has_subnet_associations = guard
             .subnets_by_id
             .values()
@@ -959,6 +973,106 @@ impl Store for MemStore {
         guard
             .route_table_id_by_vpc_name
             .remove(&(route_table.vpc_id, route_table.name));
+        Ok(())
+    }
+
+    async fn create_route(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        req: NewRoute,
+    ) -> Result<Route, StoreError> {
+        let mut guard = self.inner.write().await;
+
+        let route_table = guard
+            .route_tables_by_id
+            .get(&route_table_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        if route_table.tenant_id != tenant_id
+            || route_table.project_id != project_id
+            || route_table.vpc_id != vpc_id
+        {
+            return Err(StoreError::NotFound);
+        }
+        let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
+        let destination = crate::types::canonical_ip_network(req.destination);
+        if !crate::types::route_destination_family_present(vpc, destination) {
+            return Err(StoreError::Conflict(format!(
+                "route destination {destination} uses an address family not present on vpc {vpc_id}"
+            )));
+        }
+        let destination_key = (route_table_id, destination);
+        if guard
+            .route_id_by_table_destination
+            .contains_key(&destination_key)
+        {
+            return Err(StoreError::Conflict(format!(
+                "route destination {destination} already exists in route table {route_table_id}"
+            )));
+        }
+
+        if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
+            let nat = guard
+                .nat_gateways_by_id
+                .get(nat_gateway_id)
+                .ok_or(StoreError::NotFound)?;
+            if nat.vpc_id != vpc_id || nat.tenant_id != tenant_id || nat.project_id != project_id {
+                return Err(StoreError::Conflict(format!(
+                    "nat gateway {nat_gateway_id} is not in vpc {vpc_id}"
+                )));
+            }
+        }
+
+        let route = Route {
+            id: Uuid::new_v4(),
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+            name: req.name,
+            description: req.description.unwrap_or_default(),
+            destination,
+            target: req.target,
+            created_at: Utc::now(),
+        };
+        guard
+            .route_id_by_table_destination
+            .insert(destination_key, route.id);
+        guard.routes_by_id.insert(route.id, route.clone());
+        Ok(route)
+    }
+
+    async fn get_route(&self, route_id: Uuid) -> Result<Route, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .routes_by_id
+            .get(&route_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_routes_in_table(&self, route_table_id: Uuid) -> Result<Vec<Route>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .routes_by_id
+            .values()
+            .filter(|route| route.route_table_id == route_table_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn delete_route(&self, route_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let route = guard
+            .routes_by_id
+            .remove(&route_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .route_id_by_table_destination
+            .remove(&(route.route_table_id, route.destination));
         Ok(())
     }
 
@@ -1057,6 +1171,20 @@ impl Store for MemStore {
 
     async fn delete_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
+        if !guard.nat_gateways_by_id.contains_key(&nat_gateway_id) {
+            return Err(StoreError::NotFound);
+        }
+        let has_referencing_routes = guard.routes_by_id.values().any(|route| {
+            matches!(
+                route.target,
+                RouteTarget::NatGateway { nat_gateway_id: target } if target == nat_gateway_id
+            )
+        });
+        if has_referencing_routes {
+            return Err(StoreError::Conflict(format!(
+                "nat gateway {nat_gateway_id} is still referenced by routes"
+            )));
+        }
         let record = guard
             .nat_gateways_by_id
             .remove(&nat_gateway_id)

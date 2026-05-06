@@ -661,6 +661,11 @@ enum NetCommand {
         #[command(subcommand)]
         command: NetRouteTableCommand,
     },
+    /// Manage VPC routes.
+    Route {
+        #[command(subcommand)]
+        command: NetRouteCommand,
+    },
     /// Manage VPC NAT gateways.
     NatGw {
         #[command(subcommand)]
@@ -705,6 +710,56 @@ enum NetRouteTableCommand {
         project_id: Uuid,
         vpc_id: Uuid,
         route_table_id: Uuid,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetRouteCommand {
+    /// List routes in a route table.
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a route in a route table.
+    Create {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Destination CIDR, e.g. 0.0.0.0/0.
+        #[arg(long)]
+        destination: String,
+        /// Target: blackhole, reject, virtual-gateway, nat-gateway:<uuid>, or floating-ip:<uuid>.
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single route.
+    Get {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        route_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a route.
+    Delete {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        route_id: Uuid,
     },
 }
 
@@ -2177,6 +2232,90 @@ async fn main() -> Result<()> {
                         project_id,
                         vpc_id,
                         route_table_id,
+                    )
+                    .await
+                }
+            },
+            NetCommand::Route { command } => match command {
+                NetRouteCommand::List {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    route_table_id,
+                    json,
+                } => {
+                    commands::net_route_list(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                        json,
+                    )
+                    .await
+                }
+                NetRouteCommand::Create {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    route_table_id,
+                    name,
+                    description,
+                    destination,
+                    target,
+                    json,
+                } => {
+                    commands::net_route_create(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                        name,
+                        description,
+                        destination,
+                        target,
+                        json,
+                    )
+                    .await
+                }
+                NetRouteCommand::Get {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    route_table_id,
+                    route_id,
+                    json,
+                } => {
+                    commands::net_route_get(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                        route_id,
+                        json,
+                    )
+                    .await
+                }
+                NetRouteCommand::Delete {
+                    tenant_id,
+                    project_id,
+                    vpc_id,
+                    route_table_id,
+                    route_id,
+                } => {
+                    commands::net_route_delete(
+                        cli.endpoint,
+                        cli.api_key,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                        route_id,
                     )
                     .await
                 }

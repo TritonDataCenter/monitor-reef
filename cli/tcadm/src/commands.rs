@@ -790,6 +790,35 @@ fn parse_address_family(family: &str) -> Result<tritond_client::types::AddressFa
     }
 }
 
+fn parse_route_target(target: &str) -> Result<tritond_client::types::RouteTarget> {
+    let target = target.trim();
+    match target.to_ascii_lowercase().as_str() {
+        "blackhole" => Ok(tritond_client::types::RouteTarget::Blackhole),
+        "reject" => Ok(tritond_client::types::RouteTarget::Reject),
+        "virtual-gateway" | "virtual_gateway" | "vgw" => {
+            Ok(tritond_client::types::RouteTarget::VirtualGateway)
+        }
+        _ => {
+            if let Some(id) = target
+                .strip_prefix("nat-gateway:")
+                .or_else(|| target.strip_prefix("nat-gw:"))
+            {
+                return Ok(tritond_client::types::RouteTarget::NatGateway {
+                    nat_gateway_id: id.parse().context("parse nat gateway target uuid")?,
+                });
+            }
+            if let Some(id) = target.strip_prefix("floating-ip:") {
+                return Ok(tritond_client::types::RouteTarget::FloatingIp {
+                    floating_ip_id: id.parse().context("parse floating ip target uuid")?,
+                });
+            }
+            anyhow::bail!(
+                "--target must be blackhole, reject, virtual-gateway, nat-gateway:<uuid>, or floating-ip:<uuid>"
+            )
+        }
+    }
+}
+
 /// List FloatingIps in a project.
 pub async fn tenant_project_floating_ip_list(
     endpoint_override: Option<String>,
@@ -1003,6 +1032,29 @@ fn print_route_table(rt: &tritond_client::types::RouteTable) {
     println!("  created:     {}", rt.created_at);
 }
 
+fn route_target_label(target: &tritond_client::types::RouteTarget) -> String {
+    match target {
+        tritond_client::types::RouteTarget::Blackhole => "blackhole".to_string(),
+        tritond_client::types::RouteTarget::Reject => "reject".to_string(),
+        tritond_client::types::RouteTarget::VirtualGateway => "virtual-gateway".to_string(),
+        tritond_client::types::RouteTarget::NatGateway { nat_gateway_id } => {
+            format!("nat-gateway:{nat_gateway_id}")
+        }
+        tritond_client::types::RouteTarget::FloatingIp { floating_ip_id } => {
+            format!("floating-ip:{floating_ip_id}")
+        }
+    }
+}
+
+fn print_route(route: &tritond_client::types::Route) {
+    println!("Route {} in table {}", route.id, route.route_table_id);
+    println!("  name:        {}", route.name);
+    println!("  description: {}", route.description);
+    println!("  destination: {}", route.destination);
+    println!("  target:      {}", route_target_label(&route.target));
+    println!("  created:     {}", route.created_at);
+}
+
 /// List route tables in a VPC.
 #[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
 // into a struct here just adds
@@ -1140,6 +1192,160 @@ pub async fn net_route_table_delete(
         .await
         .context("delete route table")?;
     println!("Deleted route table {route_table_id} from vpc {vpc_id}");
+    Ok(())
+}
+
+/// List routes in a route table.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    route_table_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let routes = client
+        .list_vpc_route_table_routes()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .route_table_id(route_table_id)
+        .send()
+        .await
+        .context("list routes")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&routes)?);
+        return Ok(());
+    }
+    if routes.is_empty() {
+        println!("(no routes)");
+        return Ok(());
+    }
+    for route in routes {
+        println!(
+            "{}  {}  {}  {}",
+            route.id,
+            route.destination,
+            route_target_label(&route.target),
+            route.name
+        );
+    }
+    Ok(())
+}
+
+/// Create a route in a route table.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_create(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    route_table_id: Uuid,
+    name: String,
+    description: String,
+    destination: String,
+    target: String,
+    json_output: bool,
+) -> Result<()> {
+    let target = parse_route_target(&target)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let route = client
+        .create_vpc_route_table_route()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .route_table_id(route_table_id)
+        .body(tritond_client::types::NewRoute {
+            name,
+            description: Some(description),
+            destination,
+            target,
+        })
+        .send()
+        .await
+        .context("create route")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&route)?);
+    } else {
+        println!("Created route {} in route table {route_table_id}", route.id);
+        print_route(&route);
+    }
+    Ok(())
+}
+
+/// Read a single route.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    route_table_id: Uuid,
+    route_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let route = client
+        .get_vpc_route_table_route()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .route_table_id(route_table_id)
+        .route_id(route_id)
+        .send()
+        .await
+        .context("get route")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&route)?);
+    } else {
+        print_route(&route);
+    }
+    Ok(())
+}
+
+/// Delete a route.
+#[allow(clippy::too_many_arguments)] // CLI subcommand args; bundling
+// into a struct here just adds
+// ceremony.
+pub async fn net_route_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    route_table_id: Uuid,
+    route_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_route_table_route()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .route_table_id(route_table_id)
+        .route_id(route_id)
+        .send()
+        .await
+        .context("delete route")?;
+    println!("Deleted route {route_id} from route table {route_table_id}");
     Ok(())
 }
 

@@ -54,6 +54,11 @@
 //! route_table/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
 //! route_table/in_vpc/<vpc>/<rt>     -> empty (membership index)
 //! route_table/main/<vpc>            -> uuid hyphenated bytes
+//! route/by_id/<uuid>                -> JSON-encoded Route
+//! route/by_table/<rt>/<destination> -> uuid hyphenated bytes
+//! route/in_table/<rt>/<route>       -> empty (membership index)
+//! route/by_nat_gateway/<nat>/<route>
+//!                                   -> empty (reverse target index)
 //! nat_gateway/by_id/<uuid>          -> JSON-encoded NatGatewayRecord
 //! nat_gateway/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
 //! nat_gateway/in_vpc/<vpc>/<nat>    -> empty (membership index)
@@ -130,6 +135,7 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use chrono::Utc;
 use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
+use ipnetwork::IpNetwork;
 use rand::Rng;
 use uuid::Uuid;
 
@@ -139,10 +145,10 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
     ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind,
     LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, RouteTable, Silo, SshKey, SshKeyScope, Store, StoreError,
-    Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
+    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
+    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     generate_claim_code, generate_poll_token,
 };
 
@@ -350,6 +356,30 @@ impl FdbStore {
 
     fn route_table_main_key(vpc_id: Uuid) -> Vec<u8> {
         format!("route_table/main/{vpc_id}").into_bytes()
+    }
+
+    fn route_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("route/by_id/{id}").into_bytes()
+    }
+
+    fn route_by_table_destination_key(route_table_id: Uuid, destination: IpNetwork) -> Vec<u8> {
+        format!("route/by_table/{route_table_id}/{destination}").into_bytes()
+    }
+
+    fn route_in_table_key(route_table_id: Uuid, route_id: Uuid) -> Vec<u8> {
+        format!("route/in_table/{route_table_id}/{route_id}").into_bytes()
+    }
+
+    fn route_in_table_prefix(route_table_id: Uuid) -> Vec<u8> {
+        format!("route/in_table/{route_table_id}/").into_bytes()
+    }
+
+    fn route_by_nat_gateway_key(nat_gateway_id: Uuid, route_id: Uuid) -> Vec<u8> {
+        format!("route/by_nat_gateway/{nat_gateway_id}/{route_id}").into_bytes()
+    }
+
+    fn route_by_nat_gateway_prefix(nat_gateway_id: Uuid) -> Vec<u8> {
+        format!("route/by_nat_gateway/{nat_gateway_id}/").into_bytes()
     }
 
     fn nat_gateway_by_id_key(id: Uuid) -> Vec<u8> {
@@ -2259,6 +2289,7 @@ impl Store for FdbStore {
             Deleted,
             Vanished,
             Main,
+            HasRoutes,
             HasSubnetAssociations,
             Corrupt(String),
         }
@@ -2279,6 +2310,20 @@ impl Store for FdbStore {
                     if route_table.is_main {
                         return Ok(Out::Main);
                     }
+
+                    let route_prefix = Self::route_in_table_prefix(route_table_id);
+                    let (route_begin, route_end) = prefix_range(&route_prefix);
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(route_begin),
+                        end: KeySelector::first_greater_or_equal(route_end),
+                        limit: Some(1),
+                        ..RangeOption::default()
+                    };
+                    let route_kvs = tr.get_range(&opt, 1, false).await?;
+                    if route_kvs.iter().next().is_some() {
+                        return Ok(Out::HasRoutes);
+                    }
+                    drop(route_kvs);
 
                     let subnet_prefix = Self::subnet_in_vpc_prefix(route_table.vpc_id);
                     let (subnet_begin, subnet_end) = prefix_range(&subnet_prefix);
@@ -2330,12 +2375,246 @@ impl Store for FdbStore {
             Ok(Out::Main) => Err(StoreError::Conflict(format!(
                 "route table {route_table_id} is a main route table; delete the vpc instead"
             ))),
+            Ok(Out::HasRoutes) => Err(StoreError::Conflict(format!(
+                "route table {route_table_id} still has routes"
+            ))),
             Ok(Out::HasSubnetAssociations) => Err(StoreError::Conflict(format!(
                 "route table {route_table_id} is still associated with subnets"
             ))),
             Ok(Out::Corrupt(e)) => {
                 Err(StoreError::Backend(format!("deserialize route table: {e}")))
             }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn create_route(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        req: NewRoute,
+    ) -> Result<Route, StoreError> {
+        let destination = crate::types::canonical_ip_network(req.destination);
+        let route_table_key = Self::route_table_by_id_key(route_table_id);
+        let vpc_key = Self::vpc_by_id_key(vpc_id);
+        let by_destination_key = Self::route_by_table_destination_key(route_table_id, destination);
+        let route_id = Uuid::new_v4();
+        let by_id_key = Self::route_by_id_key(route_id);
+        let in_table_key = Self::route_in_table_key(route_table_id, route_id);
+        let id_str = route_id.to_string();
+
+        enum Outcome {
+            Created(Route),
+            RouteTableMissingOrWrongParent,
+            DestinationFamilyMissing,
+            DestinationTaken,
+            NatGatewayMissing,
+            NatGatewayWrongVpc,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let route_table_key = route_table_key.clone();
+                let vpc_key = vpc_key.clone();
+                let by_destination_key = by_destination_key.clone();
+                let by_id_key = by_id_key.clone();
+                let in_table_key = in_table_key.clone();
+                let id_bytes = id_str.as_bytes().to_vec();
+                let req = req_for_txn.clone();
+                async move {
+                    let route_table_bytes = match tr.get(&route_table_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::RouteTableMissingOrWrongParent),
+                    };
+                    let route_table: RouteTable = match serde_json::from_slice(&route_table_bytes) {
+                        Ok(rt) => rt,
+                        Err(_) => return Ok(Outcome::RouteTableMissingOrWrongParent),
+                    };
+                    if route_table.tenant_id != tenant_id
+                        || route_table.project_id != project_id
+                        || route_table.vpc_id != vpc_id
+                    {
+                        return Ok(Outcome::RouteTableMissingOrWrongParent);
+                    }
+
+                    let vpc_bytes = match tr.get(&vpc_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::RouteTableMissingOrWrongParent),
+                    };
+                    let vpc: Vpc = match serde_json::from_slice(&vpc_bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::RouteTableMissingOrWrongParent),
+                    };
+                    if !crate::types::route_destination_family_present(&vpc, destination) {
+                        return Ok(Outcome::DestinationFamilyMissing);
+                    }
+                    if tr.get(&by_destination_key, false).await?.is_some() {
+                        return Ok(Outcome::DestinationTaken);
+                    }
+
+                    let target_nat_index_key =
+                        if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
+                            let nat_key = Self::nat_gateway_by_id_key(*nat_gateway_id);
+                            let nat_bytes = match tr.get(&nat_key, false).await? {
+                                Some(b) => b,
+                                None => return Ok(Outcome::NatGatewayMissing),
+                            };
+                            let nat: NatGatewayRecord = match serde_json::from_slice(&nat_bytes) {
+                                Ok(n) => n,
+                                Err(_) => return Ok(Outcome::NatGatewayMissing),
+                            };
+                            if nat.tenant_id != tenant_id
+                                || nat.project_id != project_id
+                                || nat.vpc_id != vpc_id
+                            {
+                                return Ok(Outcome::NatGatewayWrongVpc);
+                            }
+                            Some(Self::route_by_nat_gateway_key(*nat_gateway_id, route_id))
+                        } else {
+                            None
+                        };
+
+                    let route = Route {
+                        id: route_id,
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        route_table_id,
+                        name: req.name,
+                        description: req.description.unwrap_or_default(),
+                        destination,
+                        target: req.target,
+                        created_at: Utc::now(),
+                    };
+                    let value = match serde_json::to_vec(&route) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_destination_key, &id_bytes);
+                    tr.set(&in_table_key, b"");
+                    if let Some(key) = target_nat_index_key {
+                        tr.set(&key, b"");
+                    }
+                    Ok(Outcome::Created(route))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(route)) => Ok(route),
+            Ok(Outcome::RouteTableMissingOrWrongParent) => Err(StoreError::NotFound),
+            Ok(Outcome::DestinationFamilyMissing) => Err(StoreError::Conflict(format!(
+                "route destination {destination} uses an address family not present on vpc {vpc_id}"
+            ))),
+            Ok(Outcome::DestinationTaken) => Err(StoreError::Conflict(format!(
+                "route destination {destination} already exists in route table {route_table_id}"
+            ))),
+            Ok(Outcome::NatGatewayMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::NatGatewayWrongVpc) => Err(StoreError::Conflict(format!(
+                "nat gateway target is not in vpc {vpc_id}"
+            ))),
+            Ok(Outcome::SerializeFailed(e)) => {
+                Err(StoreError::Backend(format!("serialize route: {e}")))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_route(&self, route_id: Uuid) -> Result<Route, StoreError> {
+        let key = Self::route_by_id_key(route_id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize route: {e}")))
+    }
+
+    async fn list_routes_in_table(&self, route_table_id: Uuid) -> Result<Vec<Route>, StoreError> {
+        let prefix = Self::route_in_table_prefix(route_table_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("route index uuid: {e}")))?;
+            match self.get_route(id).await {
+                Ok(route) => out.push(route),
+                Err(StoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    }
+
+    async fn delete_route(&self, route_id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::route_by_id_key(route_id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Corrupt(String),
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let route: Route = match serde_json::from_slice(&bytes) {
+                        Ok(r) => r,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    tr.clear(&by_id_key);
+                    tr.clear(&Self::route_by_table_destination_key(
+                        route.route_table_id,
+                        route.destination,
+                    ));
+                    tr.clear(&Self::route_in_table_key(route.route_table_id, route.id));
+                    if let RouteTarget::NatGateway { nat_gateway_id } = route.target {
+                        tr.clear(&Self::route_by_nat_gateway_key(nat_gateway_id, route.id));
+                    }
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!("deserialize route: {e}"))),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
     }
@@ -2558,6 +2837,7 @@ impl Store for FdbStore {
         enum Out {
             Deleted,
             Vanished,
+            HasRoutes,
             Corrupt(String),
         }
         let outcome: Result<Out, FdbBindingError> = self
@@ -2573,6 +2853,18 @@ impl Store for FdbStore {
                         Ok(n) => n,
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
+                    let route_prefix = Self::route_by_nat_gateway_prefix(nat_gateway_id);
+                    let (route_begin, route_end) = prefix_range(&route_prefix);
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(route_begin),
+                        end: KeySelector::first_greater_or_equal(route_end),
+                        limit: Some(1),
+                        ..RangeOption::default()
+                    };
+                    let route_kvs = tr.get_range(&opt, 1, false).await?;
+                    if route_kvs.iter().next().is_some() {
+                        return Ok(Out::HasRoutes);
+                    }
                     let by_name_key =
                         Self::nat_gateway_by_vpc_name_key(record.vpc_id, &record.name);
                     let in_vpc_key = Self::nat_gateway_in_vpc_key(record.vpc_id, record.id);
@@ -2595,6 +2887,9 @@ impl Store for FdbStore {
         match outcome {
             Ok(Out::Deleted) => Ok(()),
             Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::HasRoutes) => Err(StoreError::Conflict(format!(
+                "nat gateway {nat_gateway_id} is still referenced by routes"
+            ))),
             Ok(Out::Corrupt(e)) => {
                 Err(StoreError::Backend(format!("deserialize nat gateway: {e}")))
             }

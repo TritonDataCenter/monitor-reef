@@ -35,14 +35,15 @@ pub use types::{
     CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnState, CnView, Disk, DiskKind,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FloatingIp, FloatingIpAttachment,
     IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, Instance,
-    InstanceCreateResult, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
+    InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus, JobStatusKind, LifecycleState,
     LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
-    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizedNetworkState, RealizerId, RouteTable, Silo, SshKey, SshKeyScope,
-    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id, derive_ssh_key_id,
-    format_claim_code, generate_claim_code, generate_poll_token, normalize_claim_code,
+    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
+    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable, RouteTarget, Silo,
+    SshKey, SshKeyScope, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE,
+    Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, derive_image_id,
+    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
+    normalize_claim_code,
 };
 
 use async_trait::async_trait;
@@ -375,6 +376,42 @@ pub trait Store: Send + Sync + 'static {
     /// Delete a route table. Main route tables and tables still
     /// referenced by subnets return [`StoreError::Conflict`].
     async fn delete_route_table(&self, route_table_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Routes (route-table-scoped)
+    // ------------------------------------------------------------------
+
+    /// Create a route inside a route table.
+    ///
+    /// Invariants enforced by the implementation:
+    ///
+    /// * The route table must exist and match `tenant_id`,
+    ///   `project_id`, and `vpc_id`. Any mismatch returns
+    ///   [`StoreError::NotFound`] to preserve the cross-tenant probe
+    ///   invariant.
+    /// * `destination` is canonicalized before uniqueness checks.
+    /// * Destination family must be present on the parent VPC.
+    /// * Destination CIDR must be unique within the route table.
+    /// * `RouteTarget::NatGateway` must reference a NAT gateway in
+    ///   the same VPC.
+    async fn create_route(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        route_table_id: Uuid,
+        req: NewRoute,
+    ) -> Result<Route, StoreError>;
+
+    /// Look up a route by id. Handlers add tenant + project + VPC +
+    /// route-table rechecks on top.
+    async fn get_route(&self, route_id: Uuid) -> Result<Route, StoreError>;
+
+    /// List every route in a route table.
+    async fn list_routes_in_table(&self, route_table_id: Uuid) -> Result<Vec<Route>, StoreError>;
+
+    /// Delete a route by id.
+    async fn delete_route(&self, route_id: Uuid) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // NAT gateways (vpc-scoped, allocated from the shared public pool)

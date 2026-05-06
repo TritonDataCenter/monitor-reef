@@ -44,15 +44,15 @@ use tritond_api::{
     RegisterStatusResponse, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath,
     TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath,
     TenantProjectInstancePath, TenantProjectPath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcSubnetPath,
-    TokenResponse, TritondApi,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
         ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, LifecycleState,
         LifecycleStateKind, NatGateway, NewFloatingIp, NewImage, NewInstance, NewJob,
-        NewNatGateway, NewProject, NewQuota, NewRouteTable, NewSilo, NewSshKey, NewSubnet,
-        NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RouteTable, Silo, SshKey,
-        SshKeyScope, Subnet, Tenant, Vpc,
+        NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+        NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Route, RouteTable,
+        RouteTarget, Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -1821,6 +1821,301 @@ impl TritondApi for TritondServiceImpl {
                         Action::RouteTableDelete,
                         request_id,
                         Some(format!("RouteTable::\"{route_table_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_vpc_route_table_routes(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTablePath>,
+    ) -> Result<HttpResponseOk<Vec<Route>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcRouteTablePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteList,
+            tenant_id,
+        )
+        .await?;
+
+        let route_table = ctx
+            .store
+            .get_route_table(route_table_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if route_table.tenant_id != tenant_id
+            || route_table.project_id != project_id
+            || route_table.vpc_id != vpc_id
+        {
+            return Err(not_found());
+        }
+        let routes = ctx
+            .store
+            .list_routes_in_table(route_table_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(routes))
+    }
+
+    async fn create_vpc_route_table_route(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTablePath>,
+        body: TypedBody<NewRoute>,
+    ) -> Result<HttpResponseCreated<Route>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcRouteTablePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        if matches!(req.target, RouteTarget::FloatingIp { .. }) {
+            let message = "floating ip route targets are system-installed only in v1".to_string();
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::RouteCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 400,
+                        message: message.clone(),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                        "route_table_id": route_table_id,
+                    }),
+                )
+                .await;
+            return Err(bad_request(message));
+        }
+
+        if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
+            let nat_gateway = match ctx.store.get_nat_gateway(*nat_gateway_id).await {
+                Ok(nat_gateway) => nat_gateway,
+                Err(e) => {
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::RouteCreate,
+                            request_id,
+                            None,
+                            store_error_to_audit_outcome(&e),
+                            serde_json::Value::Null,
+                        )
+                        .await;
+                    return Err(store_error_to_http(e));
+                }
+            };
+            if nat_gateway.tenant_id != tenant_id || nat_gateway.project_id != project_id {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteCreate,
+                        request_id,
+                        None,
+                        AuditOutcome::ClientError {
+                            code: 404,
+                            message: "not found".to_string(),
+                        },
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                return Err(not_found());
+            }
+            if nat_gateway.vpc_id != vpc_id {
+                let message = format!("nat gateway {nat_gateway_id} is not in vpc {vpc_id}");
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteCreate,
+                        request_id,
+                        None,
+                        AuditOutcome::ClientError {
+                            code: 400,
+                            message: message.clone(),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "route_table_id": route_table_id,
+                            "nat_gateway_id": nat_gateway_id,
+                        }),
+                    )
+                    .await;
+                return Err(bad_request(message));
+            }
+        }
+
+        match ctx
+            .store
+            .create_route(tenant_id, project_id, vpc_id, route_table_id, req)
+            .await
+        {
+            Ok(route) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteCreate,
+                        request_id,
+                        Some(format!("Route::\"{}\"", route.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Route::\"{}\"", route.id)),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "route_table_id": route_table_id,
+                            "destination": route.destination.to_string(),
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(route))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_vpc_route_table_route(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTableRoutePath>,
+    ) -> Result<HttpResponseOk<Route>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcRouteTableRoutePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+            route_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteGet,
+            tenant_id,
+        )
+        .await?;
+        let route = ctx
+            .store
+            .get_route(route_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if route.tenant_id != tenant_id
+            || route.project_id != project_id
+            || route.vpc_id != vpc_id
+            || route.route_table_id != route_table_id
+        {
+            return Err(not_found());
+        }
+        Ok(HttpResponseOk(route))
+    }
+
+    async fn delete_vpc_route_table_route(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcRouteTableRoutePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcRouteTableRoutePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            route_table_id,
+            route_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::RouteDelete,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let route = ctx
+            .store
+            .get_route(route_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if route.tenant_id != tenant_id
+            || route.project_id != project_id
+            || route.vpc_id != vpc_id
+            || route.route_table_id != route_table_id
+        {
+            return Err(not_found());
+        }
+        match ctx.store.delete_route(route_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteDelete,
+                        request_id,
+                        Some(format!("Route::\"{route_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("Route::\"{route_id}\"")),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "route_table_id": route_table_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::RouteDelete,
+                        request_id,
+                        Some(format!("Route::\"{route_id}\"")),
                         store_error_to_audit_outcome(&e),
                         serde_json::Value::Null,
                     )
@@ -5300,6 +5595,10 @@ fn not_found() -> HttpError {
         ClientErrorStatusCode::NOT_FOUND,
         "not found".to_string(),
     )
+}
+
+fn bad_request(message: impl Into<String>) -> HttpError {
+    HttpError::for_bad_request(Some("BadRequest".to_string()), message.into())
 }
 
 fn parse_request_id<T>(rqctx: &RequestContext<T>) -> Option<Uuid>

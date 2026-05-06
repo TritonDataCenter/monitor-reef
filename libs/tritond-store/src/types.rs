@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use chrono::{DateTime, Utc};
-use ipnetwork::{Ipv4Network, Ipv6Network};
+use ipnetwork::{IpNetwork, Ipv4Network, Ipv6Network};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -326,6 +326,59 @@ pub struct NewRouteTable {
     pub description: Option<String>,
 }
 
+/// Destination CIDR for a route. Serialized as a canonical CIDR
+/// string, e.g. `"0.0.0.0/0"` or `"fd00::/48"`.
+pub type IpCidr = IpNetwork;
+
+/// One route row inside a route table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Route {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub route_table_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// Destination CIDR. Wire format is the canonical CIDR string.
+    #[schemars(with = "String")]
+    pub destination: IpCidr,
+    pub target: RouteTarget,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating a route inside a route table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewRoute {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Destination CIDR. Wire format is the canonical CIDR string.
+    #[schemars(with = "String")]
+    pub destination: IpCidr,
+    pub target: RouteTarget,
+}
+
+/// Route target. Post-v1 variants such as peering, interconnect, and
+/// site-to-site VPN can be added without changing the existing wire
+/// shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RouteTarget {
+    /// Drop without an ICMP response.
+    Blackhole,
+    /// Drop with ICMP unreachable.
+    Reject,
+    /// Send to the VPC virtual gateway.
+    VirtualGateway,
+    /// Send to a NAT gateway in the same VPC.
+    NatGateway { nat_gateway_id: Uuid },
+    /// Reserved for system-installed routes. Public v1 API rejects
+    /// this target at the edge.
+    FloatingIp { floating_ip_id: Uuid },
+}
+
 /// Project-owned VPC egress point. A NAT gateway reserves one public
 /// address from the same Phase 0 public pool used by [`FloatingIp`],
 /// then downstream edge realization decides where and how that
@@ -476,6 +529,26 @@ pub(crate) fn validate_subnet_cidrs(
         }
     }
     Ok(())
+}
+
+#[must_use]
+pub(crate) fn canonical_ip_network(destination: IpNetwork) -> IpNetwork {
+    match destination {
+        IpNetwork::V4(v4) => Ipv4Network::new(v4.network(), v4.prefix())
+            .map(IpNetwork::V4)
+            .unwrap_or(destination),
+        IpNetwork::V6(v6) => Ipv6Network::new(v6.network(), v6.prefix())
+            .map(IpNetwork::V6)
+            .unwrap_or(destination),
+    }
+}
+
+#[must_use]
+pub(crate) fn route_destination_family_present(vpc: &Vpc, destination: IpNetwork) -> bool {
+    match destination {
+        IpNetwork::V4(_) => vpc.ipv4_block.is_some(),
+        IpNetwork::V6(_) => vpc.ipv6_block.is_some(),
+    }
 }
 
 impl From<IdpConfig> for IdpConfigView {
