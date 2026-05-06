@@ -11,7 +11,7 @@
 
 mod common;
 
-use cloudapi_api::types::{CreateVolumeRequest, Volume, VolumeState, VolumeType};
+use cloudapi_api::types::{CreateVolumeRequest, ListVolumesQuery, Volume, VolumeState, VolumeType};
 use uuid::Uuid;
 
 #[test]
@@ -201,4 +201,28 @@ fn test_create_volume_request_with_size() {
     let json = r#"{"name": "my-vol", "type": "tritonnfs", "size": 10240}"#;
     let req: CreateVolumeRequest = serde_json::from_str(json).unwrap();
     assert_eq!(req.size, Some(10240));
+}
+
+// --- ListVolumesQuery tests ---
+
+/// The `volume_type` field uses `#[serde(rename = "type")]` because `type` is a
+/// Rust keyword. This rename is load-bearing: if someone removes it or changes
+/// the Rust field name without updating the rename, Dropshot will silently stop
+/// parsing the `?type=` query parameter. `make openapi-check` would also catch
+/// this via the generated spec, but this test makes the failure immediate and
+/// obvious at the unit-test level.
+#[test]
+fn test_list_volumes_query_type_rename() {
+    // Must use "type" (the wire name), not "volume_type"
+    let json = r#"{"type": "tritonnfs"}"#;
+    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.volume_type.as_deref(), Some("tritonnfs"));
+
+    // "volume_type" should NOT work — it's not the wire name
+    let json = r#"{"volume_type": "tritonnfs"}"#;
+    let query: ListVolumesQuery = serde_json::from_str(json).unwrap();
+    assert!(
+        query.volume_type.is_none(),
+        "should not accept 'volume_type' — wire format uses 'type'"
+    );
 }

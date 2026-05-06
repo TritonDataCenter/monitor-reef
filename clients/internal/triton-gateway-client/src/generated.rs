@@ -20259,7 +20259,7 @@ impl Client {
         builder::HeadNetworkIp::new(self)
     }
 
-    #[doc = "List packages\n\nSends a `GET` request to `/{account}/packages`\n\nArguments:\n- `account`: Account login name\n```ignore\nlet response = client.list_packages()\n    .account(account)\n    .send()\n    .await;\n```"]
+    #[doc = "List packages\n\nSends a `GET` request to `/{account}/packages`\n\nArguments:\n- `account`: Account login name\n- `brand`: Filter by brand\n- `disk`: Filter by disk (MiB)\n- `flexible_disk`: Filter by flexible disk flag\n- `group`: Filter by group\n- `lwps`: Filter by max lightweight processes\n- `memory`: Filter by memory (MiB)\n- `name`: Filter by package name\n- `swap`: Filter by swap (MiB)\n- `vcpus`: Filter by virtual CPUs\n- `version`: Filter by version\n```ignore\nlet response = client.list_packages()\n    .account(account)\n    .brand(brand)\n    .disk(disk)\n    .flexible_disk(flexible_disk)\n    .group(group)\n    .lwps(lwps)\n    .memory(memory)\n    .name(name)\n    .swap(swap)\n    .vcpus(vcpus)\n    .version(version)\n    .send()\n    .await;\n```"]
     pub fn list_packages(&self) -> builder::ListPackages<'_> {
         builder::ListPackages::new(self)
     }
@@ -20271,7 +20271,7 @@ impl Client {
         builder::ReplacePackagesCollectionRoleTags::new(self)
     }
 
-    #[doc = "Head packages\n\nSends a `HEAD` request to `/{account}/packages`\n\nArguments:\n- `account`: Account login name\n```ignore\nlet response = client.head_packages()\n    .account(account)\n    .send()\n    .await;\n```"]
+    #[doc = "Head packages\n\nSends a `HEAD` request to `/{account}/packages`\n\nArguments:\n- `account`: Account login name\n- `brand`: Filter by brand\n- `disk`: Filter by disk (MiB)\n- `flexible_disk`: Filter by flexible disk flag\n- `group`: Filter by group\n- `lwps`: Filter by max lightweight processes\n- `memory`: Filter by memory (MiB)\n- `name`: Filter by package name\n- `swap`: Filter by swap (MiB)\n- `vcpus`: Filter by virtual CPUs\n- `version`: Filter by version\n```ignore\nlet response = client.head_packages()\n    .account(account)\n    .brand(brand)\n    .disk(disk)\n    .flexible_disk(flexible_disk)\n    .group(group)\n    .lwps(lwps)\n    .memory(memory)\n    .name(name)\n    .swap(swap)\n    .vcpus(vcpus)\n    .version(version)\n    .send()\n    .await;\n```"]
     pub fn head_packages(&self) -> builder::HeadPackages<'_> {
         builder::HeadPackages::new(self)
     }
@@ -20526,7 +20526,7 @@ impl Client {
         builder::HeadUserKey::new(self)
     }
 
-    #[doc = "List volumes\n\nSends a `GET` request to `/{account}/volumes`\n\nArguments:\n- `account`: Account login name\n```ignore\nlet response = client.list_volumes()\n    .account(account)\n    .send()\n    .await;\n```"]
+    #[doc = "List volumes\n\nSends a `GET` request to `/{account}/volumes`\n\nArguments:\n- `account`: Account login name\n- `name`: Filter by volume name\n- `predicate`: JSON-encoded predicate expression\n- `size`: Filter by size (MiB)\n- `state`: Filter by state\n- `type_`: Filter by volume type\n```ignore\nlet response = client.list_volumes()\n    .account(account)\n    .name(name)\n    .predicate(predicate)\n    .size(size)\n    .state(state)\n    .type_(type_)\n    .send()\n    .await;\n```"]
     pub fn list_volumes(&self) -> builder::ListVolumes<'_> {
         builder::ListVolumes::new(self)
     }
@@ -33885,6 +33885,16 @@ pub mod builder {
     pub struct ListPackages<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
+        brand: Result<Option<::std::string::String>, String>,
+        disk: Result<Option<u64>, String>,
+        flexible_disk: Result<Option<bool>, String>,
+        group: Result<Option<::std::string::String>, String>,
+        lwps: Result<Option<u32>, String>,
+        memory: Result<Option<u64>, String>,
+        name: Result<Option<::std::string::String>, String>,
+        swap: Result<Option<u64>, String>,
+        vcpus: Result<Option<u32>, String>,
+        version: Result<Option<::std::string::String>, String>,
     }
 
     impl<'a> ListPackages<'a> {
@@ -33892,6 +33902,16 @@ pub mod builder {
             Self {
                 client: client,
                 account: Err("account was not initialized".to_string()),
+                brand: Ok(None),
+                disk: Ok(None),
+                flexible_disk: Ok(None),
+                group: Ok(None),
+                lwps: Ok(None),
+                memory: Ok(None),
+                name: Ok(None),
+                swap: Ok(None),
+                vcpus: Ok(None),
+                version: Ok(None),
             }
         }
 
@@ -33905,12 +33925,141 @@ pub mod builder {
             self
         }
 
+        pub fn brand<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.brand = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for brand failed".to_string()
+            });
+            self
+        }
+
+        pub fn disk<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.disk = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for disk failed".to_string());
+            self
+        }
+
+        pub fn flexible_disk<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.flexible_disk = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for flexible_disk failed".to_string());
+            self
+        }
+
+        pub fn group<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.group = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for group failed".to_string()
+            });
+            self
+        }
+
+        pub fn lwps<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.lwps = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for lwps failed".to_string());
+            self
+        }
+
+        pub fn memory<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.memory = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for memory failed".to_string());
+            self
+        }
+
+        pub fn name<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.name = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for name failed".to_string()
+            });
+            self
+        }
+
+        pub fn swap<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.swap = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for swap failed".to_string());
+            self
+        }
+
+        pub fn vcpus<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.vcpus = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for vcpus failed".to_string());
+            self
+        }
+
+        pub fn version<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.version = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for version failed".to_string()
+            });
+            self
+        }
+
         #[doc = "Sends a `GET` request to `/{account}/packages`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Package>>, Error<types::Error>> {
-            let Self { client, account } = self;
+            let Self {
+                client,
+                account,
+                brand,
+                disk,
+                flexible_disk,
+                group,
+                lwps,
+                memory,
+                name,
+                swap,
+                vcpus,
+                version,
+            } = self;
             let account = account.map_err(Error::InvalidRequest)?;
+            let brand = brand.map_err(Error::InvalidRequest)?;
+            let disk = disk.map_err(Error::InvalidRequest)?;
+            let flexible_disk = flexible_disk.map_err(Error::InvalidRequest)?;
+            let group = group.map_err(Error::InvalidRequest)?;
+            let lwps = lwps.map_err(Error::InvalidRequest)?;
+            let memory = memory.map_err(Error::InvalidRequest)?;
+            let name = name.map_err(Error::InvalidRequest)?;
+            let swap = swap.map_err(Error::InvalidRequest)?;
+            let vcpus = vcpus.map_err(Error::InvalidRequest)?;
+            let version = version.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/{}/packages",
                 client.baseurl,
@@ -33929,6 +34078,19 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("brand", &brand))
+                .query(&progenitor_client::QueryParam::new("disk", &disk))
+                .query(&progenitor_client::QueryParam::new(
+                    "flexible_disk",
+                    &flexible_disk,
+                ))
+                .query(&progenitor_client::QueryParam::new("group", &group))
+                .query(&progenitor_client::QueryParam::new("lwps", &lwps))
+                .query(&progenitor_client::QueryParam::new("memory", &memory))
+                .query(&progenitor_client::QueryParam::new("name", &name))
+                .query(&progenitor_client::QueryParam::new("swap", &swap))
+                .query(&progenitor_client::QueryParam::new("vcpus", &vcpus))
+                .query(&progenitor_client::QueryParam::new("version", &version))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
@@ -34069,6 +34231,16 @@ pub mod builder {
     pub struct HeadPackages<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
+        brand: Result<Option<::std::string::String>, String>,
+        disk: Result<Option<u64>, String>,
+        flexible_disk: Result<Option<bool>, String>,
+        group: Result<Option<::std::string::String>, String>,
+        lwps: Result<Option<u32>, String>,
+        memory: Result<Option<u64>, String>,
+        name: Result<Option<::std::string::String>, String>,
+        swap: Result<Option<u64>, String>,
+        vcpus: Result<Option<u32>, String>,
+        version: Result<Option<::std::string::String>, String>,
     }
 
     impl<'a> HeadPackages<'a> {
@@ -34076,6 +34248,16 @@ pub mod builder {
             Self {
                 client: client,
                 account: Err("account was not initialized".to_string()),
+                brand: Ok(None),
+                disk: Ok(None),
+                flexible_disk: Ok(None),
+                group: Ok(None),
+                lwps: Ok(None),
+                memory: Ok(None),
+                name: Ok(None),
+                swap: Ok(None),
+                vcpus: Ok(None),
+                version: Ok(None),
             }
         }
 
@@ -34089,10 +34271,139 @@ pub mod builder {
             self
         }
 
+        pub fn brand<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.brand = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for brand failed".to_string()
+            });
+            self
+        }
+
+        pub fn disk<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.disk = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for disk failed".to_string());
+            self
+        }
+
+        pub fn flexible_disk<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.flexible_disk = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for flexible_disk failed".to_string());
+            self
+        }
+
+        pub fn group<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.group = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for group failed".to_string()
+            });
+            self
+        }
+
+        pub fn lwps<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.lwps = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for lwps failed".to_string());
+            self
+        }
+
+        pub fn memory<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.memory = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for memory failed".to_string());
+            self
+        }
+
+        pub fn name<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.name = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for name failed".to_string()
+            });
+            self
+        }
+
+        pub fn swap<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.swap = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for swap failed".to_string());
+            self
+        }
+
+        pub fn vcpus<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.vcpus = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for vcpus failed".to_string());
+            self
+        }
+
+        pub fn version<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.version = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for version failed".to_string()
+            });
+            self
+        }
+
         #[doc = "Sends a `HEAD` request to `/{account}/packages`"]
         pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
-            let Self { client, account } = self;
+            let Self {
+                client,
+                account,
+                brand,
+                disk,
+                flexible_disk,
+                group,
+                lwps,
+                memory,
+                name,
+                swap,
+                vcpus,
+                version,
+            } = self;
             let account = account.map_err(Error::InvalidRequest)?;
+            let brand = brand.map_err(Error::InvalidRequest)?;
+            let disk = disk.map_err(Error::InvalidRequest)?;
+            let flexible_disk = flexible_disk.map_err(Error::InvalidRequest)?;
+            let group = group.map_err(Error::InvalidRequest)?;
+            let lwps = lwps.map_err(Error::InvalidRequest)?;
+            let memory = memory.map_err(Error::InvalidRequest)?;
+            let name = name.map_err(Error::InvalidRequest)?;
+            let swap = swap.map_err(Error::InvalidRequest)?;
+            let vcpus = vcpus.map_err(Error::InvalidRequest)?;
+            let version = version.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/{}/packages",
                 client.baseurl,
@@ -34104,7 +34415,24 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client.client.head(url).headers(header_map).build()?;
+            let mut request = client
+                .client
+                .head(url)
+                .query(&progenitor_client::QueryParam::new("brand", &brand))
+                .query(&progenitor_client::QueryParam::new("disk", &disk))
+                .query(&progenitor_client::QueryParam::new(
+                    "flexible_disk",
+                    &flexible_disk,
+                ))
+                .query(&progenitor_client::QueryParam::new("group", &group))
+                .query(&progenitor_client::QueryParam::new("lwps", &lwps))
+                .query(&progenitor_client::QueryParam::new("memory", &memory))
+                .query(&progenitor_client::QueryParam::new("name", &name))
+                .query(&progenitor_client::QueryParam::new("swap", &swap))
+                .query(&progenitor_client::QueryParam::new("vcpus", &vcpus))
+                .query(&progenitor_client::QueryParam::new("version", &version))
+                .headers(header_map)
+                .build()?;
             let info = OperationInfo {
                 operation_id: "head_packages",
             };
@@ -38869,6 +39197,11 @@ pub mod builder {
     pub struct ListVolumes<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
+        name: Result<Option<::std::string::String>, String>,
+        predicate: Result<Option<::std::string::String>, String>,
+        size: Result<Option<u64>, String>,
+        state: Result<Option<::std::string::String>, String>,
+        type_: Result<Option<::std::string::String>, String>,
     }
 
     impl<'a> ListVolumes<'a> {
@@ -38876,6 +39209,11 @@ pub mod builder {
             Self {
                 client: client,
                 account: Err("account was not initialized".to_string()),
+                name: Ok(None),
+                predicate: Ok(None),
+                size: Ok(None),
+                state: Ok(None),
+                type_: Ok(None),
             }
         }
 
@@ -38889,12 +39227,76 @@ pub mod builder {
             self
         }
 
+        pub fn name<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.name = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for name failed".to_string()
+            });
+            self
+        }
+
+        pub fn predicate<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.predicate = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for predicate failed".to_string()
+            });
+            self
+        }
+
+        pub fn size<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.size = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for size failed".to_string());
+            self
+        }
+
+        pub fn state<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.state = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for state failed".to_string()
+            });
+            self
+        }
+
+        pub fn type_<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.type_ = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for type_ failed".to_string()
+            });
+            self
+        }
+
         #[doc = "Sends a `GET` request to `/{account}/volumes`"]
         pub async fn send(
             self,
         ) -> Result<ResponseValue<::std::vec::Vec<types::Volume>>, Error<types::Error>> {
-            let Self { client, account } = self;
+            let Self {
+                client,
+                account,
+                name,
+                predicate,
+                size,
+                state,
+                type_,
+            } = self;
             let account = account.map_err(Error::InvalidRequest)?;
+            let name = name.map_err(Error::InvalidRequest)?;
+            let predicate = predicate.map_err(Error::InvalidRequest)?;
+            let size = size.map_err(Error::InvalidRequest)?;
+            let state = state.map_err(Error::InvalidRequest)?;
+            let type_ = type_.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/{}/volumes",
                 client.baseurl,
@@ -38913,6 +39315,11 @@ pub mod builder {
                     ::reqwest::header::ACCEPT,
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
+                .query(&progenitor_client::QueryParam::new("name", &name))
+                .query(&progenitor_client::QueryParam::new("predicate", &predicate))
+                .query(&progenitor_client::QueryParam::new("size", &size))
+                .query(&progenitor_client::QueryParam::new("state", &state))
+                .query(&progenitor_client::QueryParam::new("type", &type_))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
