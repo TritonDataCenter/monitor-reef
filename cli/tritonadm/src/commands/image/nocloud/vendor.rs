@@ -16,6 +16,7 @@ use super::verify::Verifier;
 
 pub mod alpine;
 pub mod debian;
+pub mod fedora;
 pub mod freebsd;
 pub mod talos;
 pub mod ubuntu;
@@ -31,6 +32,7 @@ pub mod ubuntu;
 pub enum Vendor {
     Alpine,
     Debian,
+    Fedora,
     Freebsd,
     Talos,
     Ubuntu,
@@ -89,6 +91,7 @@ pub fn lookup(vendor: Vendor) -> Box<dyn VendorProfile> {
     match vendor {
         Vendor::Alpine => Box::new(alpine::Alpine),
         Vendor::Debian => Box::new(debian::Debian),
+        Vendor::Fedora => Box::new(fedora::Fedora),
         Vendor::Freebsd => Box::new(freebsd::FreeBsd),
         Vendor::Talos => Box::new(talos::Talos),
         Vendor::Ubuntu => Box::new(ubuntu::Ubuntu),
