@@ -2409,14 +2409,25 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path and asks fhrun/firehyve to converge.\","]
+    #[doc = "      \"description\": \"Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path, asks fhrun/firehyve to converge, and reports realization for the carried EdgeCluster generation.\","]
     #[doc = "      \"type\": \"object\","]
     #[doc = "      \"required\": ["]
+    #[doc = "        \"desired_generation\","]
+    #[doc = "        \"edge_cluster_id\","]
     #[doc = "        \"edge_instance_id\","]
     #[doc = "        \"kind\","]
     #[doc = "        \"manifest_bytes\""]
     #[doc = "      ],"]
     #[doc = "      \"properties\": {"]
+    #[doc = "        \"desired_generation\": {"]
+    #[doc = "          \"type\": \"integer\","]
+    #[doc = "          \"format\": \"uint64\","]
+    #[doc = "          \"minimum\": 0.0"]
+    #[doc = "        },"]
+    #[doc = "        \"edge_cluster_id\": {"]
+    #[doc = "          \"type\": \"string\","]
+    #[doc = "          \"format\": \"uuid\""]
+    #[doc = "        },"]
     #[doc = "        \"edge_instance_id\": {"]
     #[doc = "          \"type\": \"string\","]
     #[doc = "          \"format\": \"uuid\""]
@@ -2478,9 +2489,11 @@ pub mod types {
         #[doc = "Best-effort `vmadm delete` follow-up, enqueued by the `instance_delete` handler *after* the tritond record is already cleared. The agent's vmadm-delete must be idempotent — on a host where the zone never existed (e.g. agent crashed before its prior Provision), the agent reports `Completed` rather than `Failed`. v0 trade-off: if the agent is unreachable, the zone leaks until an operator runs `vmadm delete` manually. A future slice promotes this to a Deleting → Deleted lifecycle gated on agent ack."]
         #[serde(rename = "delete")]
         Delete { instance_id: ::uuid::Uuid },
-        #[doc = "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path and asks fhrun/firehyve to converge."]
+        #[doc = "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path, asks fhrun/firehyve to converge, and reports realization for the carried EdgeCluster generation."]
         #[serde(rename = "edge_apply")]
         EdgeApply {
+            desired_generation: u64,
+            edge_cluster_id: ::uuid::Uuid,
             edge_instance_id: ::uuid::Uuid,
             manifest_bytes: ::std::vec::Vec<u8>,
         },

@@ -6104,9 +6104,18 @@
             ]
           },
           {
-            "description": "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path and asks fhrun/firehyve to converge.",
+            "description": "Apply or update a firehyve/fhrun edge instance on the target CN. The manifest is JSON bytes rendered by tritond from the EdgeCluster's desired state; the agent persists it to the host runtime path, asks fhrun/firehyve to converge, and reports realization for the carried EdgeCluster generation.",
             "type": "object",
             "properties": {
+              "desired_generation": {
+                "type": "integer",
+                "format": "uint64",
+                "minimum": 0
+              },
+              "edge_cluster_id": {
+                "type": "string",
+                "format": "uuid"
+              },
               "edge_instance_id": {
                 "type": "string",
                 "format": "uuid"
@@ -6127,6 +6136,8 @@
               }
             },
             "required": [
+              "desired_generation",
+              "edge_cluster_id",
               "edge_instance_id",
               "kind",
               "manifest_bytes"

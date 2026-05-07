@@ -61,6 +61,7 @@ use tritond_cn_platform::cn_status::{
     DiskUsageSampler, Heartbeater, StatusCollector, UuidNamedImageFilter, ZoneeventWatcher,
 };
 use tritond_cn_platform::smartos::{KstatTool, VmadmTool, ZfsTool};
+use uuid::Uuid;
 
 use crate::status::TritondStatusSink;
 
@@ -406,16 +407,41 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
             vmadm::delete_zone(*instance_id).await?;
         }
         JobKind::EdgeApply {
+            edge_cluster_id,
             edge_instance_id,
+            desired_generation,
             manifest_bytes,
         } => {
-            edge::apply(
+            let status = match edge::apply(
                 &cfg.edge_root,
                 &cfg.fhrun_bin,
                 *edge_instance_id,
                 manifest_bytes,
+            ) {
+                Ok(status) => status,
+                Err(err) => {
+                    let chain = format!("{err:#}");
+                    report_failed_realization(
+                        client,
+                        RealizerId::EdgeCluster(*edge_cluster_id),
+                        NetworkResourceId::EdgeCluster(*edge_cluster_id),
+                        *desired_generation,
+                        format!("edge instance {edge_instance_id} failed: {chain}"),
+                    )
+                    .await;
+                    return Err(err)
+                        .with_context(|| format!("apply edge instance {edge_instance_id}"));
+                }
+            };
+            report_applied_edge_realization(
+                client,
+                *edge_cluster_id,
+                *edge_instance_id,
+                *desired_generation,
+                &status,
             )
-            .with_context(|| format!("apply edge instance {edge_instance_id}"))?;
+            .await
+            .with_context(|| format!("report edge cluster {edge_cluster_id} realization"))?;
         }
         JobKind::EdgeReap { edge_instance_id } => {
             edge::reap(&cfg.edge_root, *edge_instance_id)
@@ -424,6 +450,29 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
     }
 
     Ok(())
+}
+
+async fn report_applied_edge_realization<R>(
+    sink: &R,
+    edge_cluster_id: Uuid,
+    edge_instance_id: Uuid,
+    desired_generation: u64,
+    status: &edge::EdgeApplyStatus,
+) -> Result<()>
+where
+    R: NetworkRealizationSink + Sync,
+{
+    let request = NetworkRealizationRequest {
+        resource: NetworkResourceId::EdgeCluster(edge_cluster_id),
+        realizer: RealizerId::EdgeCluster(edge_cluster_id),
+        generation: desired_generation,
+        status: RealizationStatus::Applied,
+        message: Some(format!(
+            "edge instance {edge_instance_id} healthy via {} backend; ruleset bytes {}",
+            status.backend, status.last_ruleset_bytes
+        )),
+    };
+    sink.report_network_realization(request).await
 }
 
 /// Source of compiled Proteus port blueprints. Abstracted so the
@@ -604,7 +653,7 @@ async fn report_failed_realization<R>(
         message: Some(message),
     };
     if let Err(err) = sink.report_network_realization(request).await {
-        warn!(error = %err, "failed to report Proteus realization failure");
+        warn!(error = %err, "failed to report network realization failure");
     }
 }
 
@@ -845,5 +894,41 @@ mod tests {
         }
         assert_eq!(reports[0].generation, 4);
         assert_eq!(reports[0].status, RealizationStatus::Applied);
+    }
+
+    #[tokio::test]
+    async fn report_applied_edge_realization_uses_edge_cluster_generation() {
+        let sink = RecordingRealizationSink::default();
+        let edge_cluster_id = Uuid::new_v4();
+        let edge_instance_id = Uuid::new_v4();
+        let status = edge::EdgeApplyStatus {
+            backend: "nftables".to_string(),
+            healthy: true,
+            last_ruleset_bytes: 42,
+            error: None,
+        };
+
+        report_applied_edge_realization(&sink, edge_cluster_id, edge_instance_id, 9, &status)
+            .await
+            .unwrap();
+
+        let reports = sink.reports.lock().unwrap();
+        assert_eq!(reports.len(), 1);
+        match &reports[0].resource {
+            NetworkResourceId::EdgeCluster(id) => assert_eq!(*id, edge_cluster_id),
+            other => panic!("unexpected reported resource: {other:?}"),
+        }
+        match &reports[0].realizer {
+            RealizerId::EdgeCluster(id) => assert_eq!(*id, edge_cluster_id),
+            other => panic!("unexpected reported realizer: {other:?}"),
+        }
+        assert_eq!(reports[0].generation, 9);
+        assert_eq!(reports[0].status, RealizationStatus::Applied);
+        assert!(
+            reports[0]
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains(&edge_instance_id.to_string()))
+        );
     }
 }

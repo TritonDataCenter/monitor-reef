@@ -462,7 +462,12 @@ pub enum JobKind {
     Stop { instance_id: Uuid },
     Restart { instance_id: Uuid },
     Delete { instance_id: Uuid },
-    EdgeApply { edge_instance_id: Uuid, manifest_bytes: Vec<u8> },
+    EdgeApply {
+        edge_cluster_id: Uuid,
+        edge_instance_id: Uuid,
+        desired_generation: u64,
+        manifest_bytes: Vec<u8>,
+    },
     EdgeReap { edge_instance_id: Uuid },
 }
 ```
@@ -470,10 +475,14 @@ pub enum JobKind {
 `manifest_bytes` is the exact JSON fhrun manifest rendered by
 `services/tritond/src/edge.rs`; v1 manifests set
 `dataplane.backend = "nftables"` and leave `"afxdp"` as a future
-backend value behind the same field. Edge jobs are pinned to the CN
-that owns the edge instance by `ProvisioningJob.target_cn_uuid`.
-Unbound claimers continue to see only unrouted work, so the in-process
-stub provisioner cannot accidentally consume routed edge applies.
+backend value behind the same field. `edge_cluster_id` and
+`desired_generation` let the edge CN report
+`NetworkResourceId::EdgeCluster(edge_cluster_id)` realization after it
+probes the edge-control socket and confirms the guest edge-agent has
+loaded the nftables ruleset. Edge jobs are pinned to the CN that owns
+the edge instance by `ProvisioningJob.target_cn_uuid`. Unbound claimers
+continue to see only unrouted work, so the in-process stub provisioner
+cannot accidentally consume routed edge applies.
 
 ## 5. Schema changes to existing resources
 
@@ -1061,10 +1070,15 @@ graph at the source.
   firehyve/fhrun and reports realization against the edge cluster.
 * Edge runtime work arrives as existing agent jobs, not a separate
   control-plane queue:
-  `JobKind::EdgeApply { edge_instance_id, manifest_bytes }` to
-  apply/update one fhrun manifest, and
+  `JobKind::EdgeApply { edge_cluster_id, edge_instance_id,
+  desired_generation, manifest_bytes }` to apply/update one fhrun
+  manifest and report the carried EdgeCluster generation, and
   `JobKind::EdgeReap { edge_instance_id }` to remove one no-longer
   desired edge instance.
+* The edge-control channel speaks newline-delimited JSON. The v1
+  host probe sends `{ "method": "ping" }` and `{ "method": "status" }`
+  requests; success requires `protocol = "triton.edge.control.v1"`,
+  `backend = "nftables"`, and `healthy = true`.
 * Edge jobs are routed with `target_cn_uuid = Some(server_uuid)`.
   A bound `tritonagent` may claim them on its CN; unbound claimers
   see only `target_cn_uuid = None` jobs.

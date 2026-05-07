@@ -119,7 +119,8 @@ than a separate pub-sub channel:
 * tritond renders the fhrun manifest with dataplane
   `backend = "nftables"`, persists the edge-control socket path in the
   instance record, and enqueues `JobKind::EdgeApply` with
-  `target_cn_uuid` set to the selected edge CN;
+  `edge_cluster_id`, `desired_generation`, and `target_cn_uuid` set to
+  the selected edge CN;
 * tenant CN port blueprints include `EdgeClusterIntentV1` underlay
   coordinates so `RouteTarget::NatGateway` can lower to a Proteus edge
   target.
@@ -140,6 +141,15 @@ the queue as source of truth.
   rejects any v1 dataplane backend other than `nftables`, writes the
   manifest atomically, runs `fhrun --check`, and starts fhrun as a
   supervised host process;
+* after fhrun starts, `tritonagent` connects to `edge-control.sock` and
+  uses the v1 newline-delimited JSON control protocol:
+  `{ "method": "ping" }` validates `protocol =
+  "triton.edge.control.v1"`, and `{ "method": "status" }` must return
+  `backend = "nftables"` and `healthy = true`;
+* a healthy edge-control status is reported to tritond as
+  `NetworkResourceId::EdgeCluster(edge_cluster_id)` with
+  `RealizerId::EdgeCluster(edge_cluster_id)` and the job's carried
+  `desired_generation`;
 * re-applying an unchanged manifest is idempotent when the recorded fhrun
   pid is still running. A changed manifest restarts the local fhrun
   process because live `dataplane.replace` is reserved for a later slice;

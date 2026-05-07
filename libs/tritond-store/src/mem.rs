@@ -6645,12 +6645,16 @@ mod tests {
     async fn edge_apply_jobs_round_trip_through_queue() {
         let store = MemStore::new();
         let cn = Uuid::new_v4();
+        let edge_cluster_id = Uuid::new_v4();
         let edge_instance_id = Uuid::new_v4();
+        let desired_generation = 3;
         let manifest_bytes = br#"{"dataplane":{"backend":"nftables"}}"#.to_vec();
         let queued = store
             .enqueue_job(NewJob {
                 kind: JobKind::EdgeApply {
+                    edge_cluster_id,
                     edge_instance_id,
+                    desired_generation,
                     manifest_bytes: manifest_bytes.clone(),
                 },
                 target_cn_uuid: Some(cn),
@@ -6669,10 +6673,14 @@ mod tests {
         assert_eq!(claimed.kind.edge_instance_id(), Some(edge_instance_id));
         match claimed.kind {
             JobKind::EdgeApply {
+                edge_cluster_id: cluster_id,
                 edge_instance_id: id,
+                desired_generation: generation,
                 manifest_bytes: bytes,
             } => {
+                assert_eq!(cluster_id, edge_cluster_id);
                 assert_eq!(id, edge_instance_id);
+                assert_eq!(generation, desired_generation);
                 assert_eq!(bytes, manifest_bytes);
             }
             other => panic!("expected edge apply job, got {other:?}"),

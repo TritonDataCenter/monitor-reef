@@ -726,13 +726,17 @@ async fn blueprint_returns_empty_instance_payload_for_edge_jobs() {
     let secret = mint_key(&test, ApiKeyScope::Agent).await;
     let client = test.bearer_client(&secret);
 
+    let edge_cluster_id = Uuid::new_v4();
     let edge_instance_id = Uuid::new_v4();
+    let desired_generation = 2;
     let manifest_bytes = br#"{"dataplane":{"backend":"nftables"}}"#.to_vec();
     let job = test
         .store
         .enqueue_job(NewJob {
             kind: JobKind::EdgeApply {
+                edge_cluster_id,
                 edge_instance_id,
+                desired_generation,
                 manifest_bytes,
             },
             target_cn_uuid: None,
@@ -980,10 +984,14 @@ async fn port_blueprint_materializes_nat_edge_cluster_and_routes_edge_target() {
     assert_eq!(edge_job.target_cn_uuid, Some(edge_cn_uuid));
     match edge_job.kind {
         tritond_client::types::JobKind::EdgeApply {
+            edge_cluster_id: job_edge_cluster_id,
             edge_instance_id,
+            desired_generation,
             manifest_bytes,
         } => {
+            assert_eq!(job_edge_cluster_id, edge_cluster.id);
             assert_eq!(edge_instance_id, edge_cluster.instances[0].id);
+            assert_eq!(desired_generation, edge_cluster.desired_generation);
             let manifest: serde_json::Value =
                 serde_json::from_slice(&manifest_bytes).expect("manifest should be json");
             assert_eq!(manifest["dataplane"]["backend"], "nftables");

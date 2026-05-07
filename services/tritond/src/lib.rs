@@ -6436,7 +6436,9 @@ async fn ensure_nat_gateway_edge_materialized(
     store
         .enqueue_job(NewJob {
             kind: JobKind::EdgeApply {
+                edge_cluster_id: cluster.id,
                 edge_instance_id,
+                desired_generation: cluster.desired_generation,
                 manifest_bytes,
             },
             target_cn_uuid: Some(edge_cn.server_uuid),

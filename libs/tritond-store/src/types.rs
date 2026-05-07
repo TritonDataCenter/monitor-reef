@@ -1630,9 +1630,12 @@ pub enum JobKind {
     /// Apply or update a firehyve/fhrun edge instance on the
     /// target CN. The manifest is JSON bytes rendered by tritond
     /// from the EdgeCluster's desired state; the agent persists it
-    /// to the host runtime path and asks fhrun/firehyve to converge.
+    /// to the host runtime path, asks fhrun/firehyve to converge, and
+    /// reports realization for the carried EdgeCluster generation.
     EdgeApply {
+        edge_cluster_id: Uuid,
         edge_instance_id: Uuid,
+        desired_generation: u64,
         manifest_bytes: Vec<u8>,
     },
     /// Reap a firehyve/fhrun edge instance that no longer has a
@@ -1696,10 +1699,14 @@ mod job_kind_tests {
 
     #[test]
     fn edge_apply_manifest_bytes_round_trip() {
+        let edge_cluster_id = Uuid::new_v4();
         let edge_instance_id = Uuid::new_v4();
+        let desired_generation = 7;
         let manifest_bytes = br#"{"dataplane":{"backend":"nftables"}}"#.to_vec();
         let kind = JobKind::EdgeApply {
+            edge_cluster_id,
             edge_instance_id,
+            desired_generation,
             manifest_bytes: manifest_bytes.clone(),
         };
 
@@ -1712,6 +1719,14 @@ mod job_kind_tests {
         assert_eq!(
             json["edge_instance_id"],
             serde_json::Value::String(edge_instance_id.to_string())
+        );
+        assert_eq!(
+            json["edge_cluster_id"],
+            serde_json::Value::String(edge_cluster_id.to_string())
+        );
+        assert_eq!(
+            json["desired_generation"],
+            serde_json::Value::Number(desired_generation.into())
         );
         assert_eq!(
             json["manifest_bytes"],
