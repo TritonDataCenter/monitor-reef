@@ -126,17 +126,34 @@ async fn cmd_list(sapi_url: &str, updates_url: Option<&str>, json: bool) -> Resu
         return Ok(());
     }
 
-    // Plain table. Width-pad NAME and DEFAULT for legibility; description
-    // can be long so let it run to EOL.
-    println!("{:<16} {:<14} DESCRIPTION", "NAME", "DEFAULT");
-    for c in &channels {
-        let default_label = match configured {
+    // Plain table. Compute column widths from the data so the gutter
+    // doesn't flap to 16/14 chars when the longest channel name is
+    // 12. Mirrors what sdcadm's tabula(1) helper does. Description
+    // is variable-length and lives in the last column, so no padding.
+    let labels: Vec<String> = channels
+        .iter()
+        .map(|c| match configured {
             Some(name) if name == c.name => "true".to_string(),
-            Some(_) => String::new(),
+            Some(_) => "-".to_string(),
             None if c.default == Some(true) => "true (remote)".to_string(),
-            None => String::new(),
-        };
-        println!("{:<16} {:<14} {}", c.name, default_label, c.description);
+            None => "-".to_string(),
+        })
+        .collect();
+    let name_w = "NAME"
+        .len()
+        .max(channels.iter().map(|c| c.name.len()).max().unwrap_or(0));
+    let default_w = "DEFAULT"
+        .len()
+        .max(labels.iter().map(String::len).max().unwrap_or(0));
+    println!(
+        "{:<name_w$}  {:<default_w$}  DESCRIPTION",
+        "NAME", "DEFAULT"
+    );
+    for (c, label) in channels.iter().zip(&labels) {
+        println!(
+            "{:<name_w$}  {:<default_w$}  {}",
+            c.name, label, c.description
+        );
     }
     Ok(())
 }
