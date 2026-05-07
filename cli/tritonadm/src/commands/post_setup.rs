@@ -4,8 +4,6 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-mod admin_profile;
-
 use std::io::Write;
 
 use anyhow::{Context, Result};
@@ -53,18 +51,6 @@ pub enum PostSetupCommand {
         /// Updates server channel (default: from SAPI config or remote default)
         #[arg(long, short = 'C')]
         channel: Option<String>,
-    },
-    /// Generate a `triton` CLI profile for the headnode admin account
-    AdminProfile {
-        /// Profile name (default: "admin")
-        #[arg(long, default_value = "admin")]
-        name: String,
-        /// Overwrite the profile file if it already exists
-        #[arg(long)]
-        force: bool,
-        /// Print the generated profile JSON to stdout instead of writing it
-        #[arg(long)]
-        print: bool,
     },
     /// Add external NICs to HEAD node SDC services
     CommonExternalNics,
@@ -193,13 +179,6 @@ impl PostSetupCommand {
                         channel,
                         extra_metadata: None,
                     },
-                )
-                .await
-            }
-            Self::AdminProfile { name, force, print } => {
-                admin_profile::run(
-                    urls.sdc_config,
-                    admin_profile::AdminProfileOpts { name, force, print },
                 )
                 .await
             }

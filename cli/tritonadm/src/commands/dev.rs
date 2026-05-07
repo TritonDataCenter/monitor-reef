@@ -8,10 +8,13 @@
 //!
 //! These are not part of sdcadm and exist purely for development convenience.
 
+mod admin_profile;
+
 use anyhow::{Context, Result};
 use clap::Subcommand;
 
 use super::post_setup::get_service_instances;
+use crate::config::TritonConfig;
 
 #[derive(Subcommand)]
 #[allow(clippy::enum_variant_names)]
@@ -29,10 +32,28 @@ pub enum DevCommand {
         /// Service name to remove
         name: String,
     },
+    /// Generate a `triton` CLI profile for the headnode admin account
+    AdminProfile {
+        /// Profile name (default: "admin")
+        #[arg(long, default_value = "admin")]
+        name: String,
+        /// Overwrite the profile file if it already exists
+        #[arg(long)]
+        force: bool,
+        /// Print the generated profile JSON to stdout instead of writing it
+        #[arg(long)]
+        print: bool,
+    },
 }
 
 impl DevCommand {
-    pub async fn run(self, sapi_url: &str, vmapi_url: &str, napi_url: &str) -> Result<()> {
+    pub async fn run(
+        self,
+        sapi_url: &str,
+        vmapi_url: &str,
+        napi_url: &str,
+        sdc_config: Option<TritonConfig>,
+    ) -> Result<()> {
         match self {
             Self::RemoveExternalNics => {
                 cmd_remove_external_nics(sapi_url, vmapi_url, napi_url).await
@@ -43,6 +64,13 @@ impl DevCommand {
             Self::RemoveGrafana => cmd_remove_service(sapi_url, vmapi_url, "grafana").await,
             Self::RemovePortal => cmd_remove_service(sapi_url, vmapi_url, "portal").await,
             Self::RemoveService { name } => cmd_remove_service(sapi_url, vmapi_url, &name).await,
+            Self::AdminProfile { name, force, print } => {
+                admin_profile::run(
+                    sdc_config,
+                    admin_profile::AdminProfileOpts { name, force, print },
+                )
+                .await
+            }
         }
     }
 }
