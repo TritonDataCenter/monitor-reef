@@ -55,13 +55,24 @@ pub async fn run(sdc_config: Option<TritonConfig>, opts: AdminProfileOpts) -> Re
     let key_id = key_fingerprint_md5(Path::new(ADMIN_PUB_KEY_PATH)).await?;
 
     eprintln!("==> Probing {url}");
-    let insecure = needs_insecure(&url).await;
-    if insecure {
-        eprintln!(
-            "warning: TLS verification of {url} failed; setting insecure=true \
-             in the profile. This is expected on COAL (self-signed cert)."
-        );
-    }
+    let insecure = match probe_cloudapi(&url).await {
+        ProbeResult::CertValid => false,
+        ProbeResult::SelfSigned => {
+            eprintln!(
+                "warning: TLS verification of {url} failed; setting insecure=true \
+                 in the profile. This is expected on COAL (self-signed cert)."
+            );
+            true
+        }
+        ProbeResult::Unreachable(reason) => {
+            eprintln!(
+                "warning: could not reach {url} ({reason}); setting insecure=true \
+                 conservatively. Edit the profile to flip insecure=false once \
+                 cloudapi is up and serving a publicly-trusted cert."
+            );
+            true
+        }
+    };
 
     let profile = ProfileFile {
         url: &url,
@@ -167,24 +178,38 @@ async fn key_fingerprint_md5(pub_key_path: &Path) -> Result<String> {
     Ok(fingerprint.to_string())
 }
 
-/// Probe the CloudAPI URL with default TLS verification. Return `true`
-/// iff the request fails specifically due to a TLS / certificate error,
-/// indicating we should set `insecure: true` in the profile. Other
-/// failures (DNS, connection refused, timeout) return `false` — the
-/// profile is still written and the operator can fix connectivity later.
-///
-/// The crypto-provider install is required because the workspace builds
-/// reqwest with `rustls-no-provider`; without it, `Client::build()`
-/// panics with "No provider set" (see `libs/triton-tls/src/lib.rs`).
-async fn needs_insecure(url: &str) -> bool {
-    triton_tls::install_default_crypto_provider();
-    let client = match reqwest::Client::builder().timeout(PROBE_TIMEOUT).build() {
+/// Outcome of the cert-chain probe against the CloudAPI URL.
+enum ProbeResult {
+    /// Default TLS verification succeeded — operator can use the profile
+    /// with strict cert checking.
+    CertValid,
+    /// TLS handshake failed because the cert chain didn't validate.
+    /// Expected on COAL (self-signed CA) and on any datacenter that
+    /// doesn't expose a publicly-trusted cloudapi cert.
+    SelfSigned,
+    /// Couldn't reach cloudapi at all (DNS, connect, timeout). We can't
+    /// tell whether the cert is valid or not; default to insecure=true
+    /// rather than silently produce a profile that fails strict TLS.
+    Unreachable(String),
+}
+
+/// Probe the CloudAPI URL using the same TLS trust chain `triton` itself
+/// uses (via [`triton_tls::build_http_client`]) — that's the only way to
+/// be sure the answer matches what the eventual client will see.
+/// Calling raw `reqwest::Client::builder()` falls through to
+/// rustls-platform-verifier on illumos, which can accept certs the rest
+/// of our codebase rejects.
+async fn probe_cloudapi(url: &str) -> ProbeResult {
+    let client = match triton_tls::build_http_client(false).await {
         Ok(c) => c,
-        Err(_) => return false,
+        Err(e) => return ProbeResult::Unreachable(format!("build http client: {e}")),
     };
-    match client.get(url).send().await {
-        Ok(_) => false,
-        Err(e) => is_tls_error(&e),
+    let send = client.get(url).send();
+    match tokio::time::timeout(PROBE_TIMEOUT, send).await {
+        Ok(Ok(_)) => ProbeResult::CertValid,
+        Ok(Err(e)) if is_tls_error(&e) => ProbeResult::SelfSigned,
+        Ok(Err(e)) => ProbeResult::Unreachable(format!("{e}")),
+        Err(_) => ProbeResult::Unreachable(format!("timed out after {PROBE_TIMEOUT:?}")),
     }
 }
 
