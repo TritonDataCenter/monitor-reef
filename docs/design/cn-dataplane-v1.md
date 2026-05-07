@@ -204,6 +204,15 @@ The host realization path is still Phase 0 shaped:
   tenant bhyve VMs and the edge south link. Today `nictag` maps only to
   existing physical/tagged parents, while Proteus creates dynamic
   `DATALINK_CLASS_MISC` links;
+  a 2026-05-07 nuc0 probe verified the lower dataplane half works:
+  `proteusadm --backend kernel port create` produced a visible
+  `proteus49374:misc` link, and `dladm create-vnic -t -l proteus49374
+  ptst49374` succeeded. The stock vmadm half does not work yet:
+  `vmadm validate create` accepted a payload that referenced the
+  pre-created VNIC, but `vmadm create` rejected it with `invalid or
+  missing .nic_tag option`; `nictagadm add <tag> proteus49376` failed
+  because nictagadm does not accept Proteus `misc` links as backing
+  links;
 * port cleanup exists for provision failure, but Stop/Restart/Delete do
   not yet pause/reapply/delete Proteus ports end to end;
 * no applied generation is reported for VPC, subnet, route, security
@@ -370,6 +379,18 @@ client link. The preferred split is:
 If SmartOS requires a VNIC created by `dladm create-vnic -l <proteus-link>`,
 that local VNIC creation belongs to Agent C's platform adapter, not to
 Agent B's compiler.
+
+Lab validation on nuc0 narrowed this from an unknown to a vmadm/platform
+contract issue. Proteus already supplies a SmartOS-visible `misc`
+datalink that can be used as a VNIC parent. Stock vmadm cannot consume
+that directly because `add_nics` requires `nic_tag`, `VM.js` validates
+tags with `nictagadm exists`, and the joyent brand `jcommon/statechange`
+resolves `global-nic` through sysinfo, physical links, etherstubs, or
+overlay rules, not arbitrary `dladm show-link` parents. The M1
+SmartOS-live slice should therefore add an explicit Proteus parent-link
+contract, or a narrowly-scoped `global-nic` path that accepts Proteus
+`DATALINK_CLASS_MISC` links and still creates the zone VNIC with
+`dladm create-vnic -t -l <proteus-link>`.
 
 ### 5.4 SSH and configuration injection
 
