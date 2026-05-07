@@ -21,6 +21,9 @@ pub struct TritonConfig {
     pub dns_domain: String,
     /// Headnode server UUID (from sysinfo, if available)
     pub server_uuid: Option<String>,
+    /// Full parsed config blob — for callers (admin-profile setup, ad-hoc
+    /// scripts) that need keys we haven't promoted to typed fields yet.
+    raw: serde_json::Value,
 }
 
 impl TritonConfig {
@@ -50,7 +53,36 @@ impl TritonConfig {
             datacenter_name,
             dns_domain,
             server_uuid,
+            raw: parsed,
         })
+    }
+
+    /// Look up an arbitrary string key from the SDC config (e.g.
+    /// `ufds_admin_login`, `cloudapi_domain`, `ufds_admin_key_fingerprint`).
+    /// Returns `None` if the key is missing or non-string.
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        self.raw.get(key)?.as_str()
+    }
+
+    /// Test-only constructor: build a TritonConfig from a raw JSON blob
+    /// without invoking `/lib/sdc/config.sh`. Pulls `datacenter_name` and
+    /// `dns_domain` out of the JSON; `server_uuid` is left None.
+    #[cfg(test)]
+    pub fn from_raw(raw: serde_json::Value) -> Self {
+        Self {
+            datacenter_name: raw
+                .get("datacenter_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            dns_domain: raw
+                .get("dns_domain")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            server_uuid: None,
+            raw,
+        }
     }
 
     /// Try to get the headnode's server UUID from `sysinfo`.
@@ -84,6 +116,7 @@ mod tests {
             datacenter_name: "us-east-1".to_string(),
             dns_domain: "triton.zone".to_string(),
             server_uuid: None,
+            raw: serde_json::json!({}),
         };
         assert_eq!(cfg.service_url("sapi"), "http://sapi.us-east-1.triton.zone");
         assert_eq!(
