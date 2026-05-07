@@ -35,6 +35,17 @@ startup banner, reset it locally on the headnode before running
 tritond reset-root-password --fdb-cluster-file /etc/fdb.cluster
 ```
 
+If SmartOS reports `ld.so.1: tritond: fatal: libfdb_c.so: open failed`,
+run through the lab wrapper so the FoundationDB client library is added
+to the illumos runtime linker path:
+
+```bash
+scripts/tritond-fdb.sh reset-root-password --fdb-cluster-file /etc/fdb.cluster
+```
+
+Set `FDB_CLIENT_LIB_DIR=/path/to/lib` if `libfdb_c.so` is installed
+outside the standard lab/pkgsrc locations.
+
 The reset command prints a new root password once. It updates only the
 stored password hash; it does not wipe tenant, project, CN, image, or
 network records.
