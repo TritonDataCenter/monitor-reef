@@ -132,6 +132,11 @@ This is not the final S15 acceptance script yet.
   separate MVP gap.
 - Cleanup is opt-in with `--cleanup` so failed lab runs preserve state
   for debugging.
+- The FDB-backed route create path validates a NAT gateway target just
+  before the write transaction, then writes the route row and
+  `route/by_nat_gateway` reverse index atomically. This keeps the M1
+  route/NAT path moving on the current lab cluster while preserving the
+  delete-with-references guard.
 
 Once the first lab run passes with this harness, promote the same flow
 into the final workspace-level `triton-vnext/scripts/m1-smoke.sh` using

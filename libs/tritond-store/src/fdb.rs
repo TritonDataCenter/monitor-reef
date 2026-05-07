@@ -389,6 +389,20 @@ impl FdbStore {
         format!("route/by_nat_gateway/{nat_gateway_id}/").into_bytes()
     }
 
+    fn validate_nat_gateway_route_target(
+        nat: &NatGatewayRecord,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+    ) -> Result<(), StoreError> {
+        if nat.tenant_id != tenant_id || nat.project_id != project_id || nat.vpc_id != vpc_id {
+            return Err(StoreError::Conflict(format!(
+                "nat gateway target is not in vpc {vpc_id}"
+            )));
+        }
+        Ok(())
+    }
+
     fn nat_gateway_by_id_key(id: Uuid) -> Vec<u8> {
         format!("nat_gateway/by_id/{id}").into_bytes()
     }
@@ -2544,13 +2558,19 @@ impl Store for FdbStore {
         let in_table_key = Self::route_in_table_key(route_table_id, route_id);
         let id_str = route_id.to_string();
 
+        let target_nat_index_key = if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
+            let nat = self.read_nat_gateway_record(*nat_gateway_id).await?;
+            Self::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
+            Some(Self::route_by_nat_gateway_key(*nat_gateway_id, route_id))
+        } else {
+            None
+        };
+
         enum Outcome {
             Created(Route),
             RouteTableMissingOrWrongParent,
             DestinationFamilyMissing,
             DestinationTaken,
-            NatGatewayMissing,
-            NatGatewayWrongVpc,
             SerializeFailed(String),
         }
 
@@ -2563,6 +2583,7 @@ impl Store for FdbStore {
                 let by_destination_key = by_destination_key.clone();
                 let by_id_key = by_id_key.clone();
                 let in_table_key = in_table_key.clone();
+                let target_nat_index_key = target_nat_index_key.clone();
                 let id_bytes = id_str.as_bytes().to_vec();
                 let req = req_for_txn.clone();
                 async move {
@@ -2595,28 +2616,6 @@ impl Store for FdbStore {
                     if tr.get(&by_destination_key, false).await?.is_some() {
                         return Ok(Outcome::DestinationTaken);
                     }
-
-                    let target_nat_index_key =
-                        if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
-                            let nat_key = Self::nat_gateway_by_id_key(*nat_gateway_id);
-                            let nat_bytes = match tr.get(&nat_key, false).await? {
-                                Some(b) => b,
-                                None => return Ok(Outcome::NatGatewayMissing),
-                            };
-                            let nat: NatGatewayRecord = match serde_json::from_slice(&nat_bytes) {
-                                Ok(n) => n,
-                                Err(_) => return Ok(Outcome::NatGatewayMissing),
-                            };
-                            if nat.tenant_id != tenant_id
-                                || nat.project_id != project_id
-                                || nat.vpc_id != vpc_id
-                            {
-                                return Ok(Outcome::NatGatewayWrongVpc);
-                            }
-                            Some(Self::route_by_nat_gateway_key(*nat_gateway_id, route_id))
-                        } else {
-                            None
-                        };
 
                     let route = Route {
                         id: route_id,
@@ -2653,10 +2652,6 @@ impl Store for FdbStore {
             ))),
             Ok(Outcome::DestinationTaken) => Err(StoreError::Conflict(format!(
                 "route destination {destination} already exists in route table {route_table_id}"
-            ))),
-            Ok(Outcome::NatGatewayMissing) => Err(StoreError::NotFound),
-            Ok(Outcome::NatGatewayWrongVpc) => Err(StoreError::Conflict(format!(
-                "nat gateway target is not in vpc {vpc_id}"
             ))),
             Ok(Outcome::SerializeFailed(e)) => {
                 Err(StoreError::Backend(format!("serialize route: {e}")))
@@ -7142,6 +7137,49 @@ mod cn_tests {
 
         purge_cn(&store, pid).await;
         purge_cn(&store, aid).await;
+    }
+}
+
+#[cfg(test)]
+mod route_target_tests {
+    use super::*;
+
+    fn nat_gateway_record(tenant_id: Uuid, project_id: Uuid, vpc_id: Uuid) -> NatGatewayRecord {
+        let now = Utc::now();
+        NatGatewayRecord {
+            id: Uuid::new_v4(),
+            tenant_id,
+            project_id,
+            vpc_id,
+            name: "egress".to_string(),
+            description: String::new(),
+            family: AddressFamily::V4,
+            public_address: "203.0.113.10".parse().unwrap(),
+            edge_cluster_id: None,
+            desired_generation: 1,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn nat_gateway_route_target_must_belong_to_requested_vpc_scope() {
+        let tenant_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let vpc_id = Uuid::new_v4();
+        let nat = nat_gateway_record(tenant_id, project_id, vpc_id);
+
+        FdbStore::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)
+            .expect("matching NAT gateway scope should be accepted");
+
+        let err = FdbStore::validate_nat_gateway_route_target(
+            &nat,
+            tenant_id,
+            project_id,
+            Uuid::new_v4(),
+        )
+        .expect_err("cross-VPC NAT gateway target should be rejected");
+        assert!(matches!(err, StoreError::Conflict(_)));
     }
 }
 
