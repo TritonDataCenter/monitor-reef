@@ -47,7 +47,8 @@ The current `tritonagent` already has these working pieces:
   `/var/lib/tritonagent/credentials`;
 * authenticated job claim, job blueprint fetch, and job complete calls;
 * per-CN binding: a CN-bound key must claim, fetch, and complete jobs
-  as the bound SmartOS `server_uuid`;
+  as the bound SmartOS `server_uuid`; port-blueprint fetches are also
+  allowed for instances assigned to that CN by `Instance.host_cn_uuid`;
 * background heartbeat and opaque CN status posts with VM, zpool,
   memory, disk-usage, boot-time, and timestamp data;
 * image materialization through direct ZFS receive, sha256 verification,
@@ -386,8 +387,9 @@ Agent C must not compile these fields. It consumes Agent B's
 `PortBlueprint` and reports whether the local dataplane accepted it.
 
 The v1 control-plane endpoint is `GET /v2/agent/blueprints/{port_id}`.
-It is available only to a CN-bound Agent key that currently owns an
-in-progress claim for the port's instance. The response carries
+It is available only to a CN-bound Agent key whose CN either owns an
+in-progress claim for the port's instance or is the instance's assigned
+`host_cn_uuid`. The response carries
 `port_id`, `generation`, and `blueprint_postcard_base64`, where the
 base64 payload is a postcard-encoded
 `proteus_api::blueprint::PortBlueprint`. M1 uses generation `1` for the

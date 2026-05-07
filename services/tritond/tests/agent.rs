@@ -862,6 +862,34 @@ async fn bound_agent_can_fetch_port_blueprint_for_claimed_instance() {
 }
 
 #[tokio::test]
+async fn bound_agent_can_fetch_port_blueprint_for_assigned_instance() {
+    let test = TestServer::start().await;
+    let (instance, nic) =
+        create_instance_with_primary_nic(&test, "agent-port-blueprint-assigned").await;
+
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-port-blueprint-assigned").await;
+    test.store
+        .set_instance_host_cn(instance.id, Some(cn_uuid))
+        .await
+        .unwrap();
+
+    let response = test
+        .bearer_client(&api_key)
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect("assigned CN can fetch port blueprint without recent-job scan")
+        .into_inner();
+
+    assert_eq!(response.port_id, nic.id);
+    assert_eq!(response.generation, 1);
+
+    test.close().await;
+}
+
+#[tokio::test]
 async fn port_blueprint_materializes_nat_edge_cluster_and_routes_edge_target() {
     let test = TestServer::start().await;
     let (instance, nic) =

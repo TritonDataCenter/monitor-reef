@@ -6231,7 +6231,7 @@ async fn build_port_blueprint(
         .get_instance(nic.instance_id)
         .await
         .map_err(store_error_to_http)?;
-    enforce_port_instance_claimed_by_bound_cn(store, instance.id, bound_cn).await?;
+    enforce_port_instance_available_to_bound_cn(store, &instance, bound_cn).await?;
 
     let project = store
         .get_project(nic.project_id)
@@ -6816,6 +6816,18 @@ fn host_cidr(ip: IpAddr) -> String {
         IpAddr::V4(v4) => format!("{v4}/32"),
         IpAddr::V6(v6) => format!("{v6}/128"),
     }
+}
+
+async fn enforce_port_instance_available_to_bound_cn(
+    store: &dyn Store,
+    instance: &Instance,
+    bound_cn: Uuid,
+) -> Result<(), HttpError> {
+    if instance.host_cn_uuid == Some(bound_cn) {
+        return Ok(());
+    }
+
+    enforce_port_instance_claimed_by_bound_cn(store, instance.id, bound_cn).await
 }
 
 async fn enforce_port_instance_claimed_by_bound_cn(
