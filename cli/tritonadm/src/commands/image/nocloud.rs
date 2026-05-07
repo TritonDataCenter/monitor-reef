@@ -59,6 +59,10 @@ pub struct FetchOpts {
     pub dataset: Option<String>,
     pub dry_run: bool,
     pub target: Target,
+    /// Retain the produced `*.zfs.gz` + `*.json` after a successful
+    /// upload (only meaningful for `Target::Smartos` / `Target::Imgapi`).
+    /// The on-disk cache under `workdir` is kept regardless.
+    pub keep_files: bool,
     /// Lazy IMGAPI URL, only consumed for `Target::Imgapi`. Passed
     /// through as a `Result` so File / Smartos targets don't fail
     /// when no headnode is reachable from the builder zone.
@@ -222,7 +226,29 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
             push_to_imgapi(&opts, &outputs).await?;
         }
     }
+
+    if matches!(opts.target, Target::Smartos | Target::Imgapi) && !opts.keep_files {
+        cleanup_artifacts(&outputs.gz_path, &outputs.manifest_path).await;
+    }
     Ok(())
+}
+
+/// Delete the produced `*.zfs.gz` + `*.json` after a successful upload.
+/// Failures are surfaced as warnings, not errors — the upload already
+/// landed, and a leftover file is recoverable. The on-disk download
+/// cache (under `workdir`) is intentionally left alone so re-runs of
+/// the same vendor/release don't re-fetch from upstream.
+async fn cleanup_artifacts(gz: &Path, manifest: &Path) {
+    for p in [gz, manifest] {
+        if let Err(e) = tokio::fs::remove_file(p).await {
+            eprintln!(
+                "warning: failed to remove {} after upload: {e} \
+                 (pass --keep-files to suppress this cleanup)",
+                p.display()
+            );
+        }
+    }
+    println!("Removed local artifacts (pass --keep-files to retain).");
 }
 
 /// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are

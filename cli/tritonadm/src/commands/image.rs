@@ -242,6 +242,11 @@ pub enum ImageCommand {
         /// hash, write any files, or touch any datasets.
         #[arg(long)]
         dry_run: bool,
+        /// With `--target smartos` or `--target imgapi`, retain the
+        /// produced `*.zfs.gz` + `*.json` after a successful upload.
+        /// (The on-disk download cache is kept regardless.)
+        #[arg(long)]
+        keep_files: bool,
     },
 
     // ========================================================================
@@ -762,6 +767,7 @@ impl ImageCommand {
             insecure_no_verify,
             expected_sha256,
             dry_run,
+            keep_files,
         } = self
         {
             return nocloud::run(nocloud::FetchOpts {
@@ -775,6 +781,7 @@ impl ImageCommand {
                 dataset,
                 dry_run,
                 target,
+                keep_files,
                 imgapi_url,
                 updates_url: updates_url.map(str::to_string),
             })
