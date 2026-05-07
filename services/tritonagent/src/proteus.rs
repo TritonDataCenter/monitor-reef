@@ -19,6 +19,17 @@ use proteus_api::ids::PortId;
 use proteus_api::requests::CreatePortRequest;
 use proteus_ioctl::{Client, Error as IoctlError, Transport};
 
+/// Build the SmartOS datalink name for a Proteus port.
+///
+/// `proteusadm` uses the same contract: take the low 32 bits of the
+/// port UUID, render them as decimal with no leading zeroes, and prefix
+/// the value with `proteus`. SmartOS-live accepts that name as the
+/// dynamic `nic_tag` parent for M1 bhyve NICs.
+pub fn link_name_for_port(port_id: PortId) -> String {
+    let suffix = port_id.0.as_u128() as u32;
+    format!("proteus{suffix}")
+}
+
 /// Realized status collected after a lifecycle transition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProteusPortStatus {
@@ -164,7 +175,7 @@ impl<T: Transport> ProteusClient<T> {
             .with_context(|| format!("get Proteus generation status for port {port_id}"))
     }
 
-    fn assert_generation_applied(&self, blueprint: &PortBlueprint) -> Result<()> {
+    pub(crate) fn assert_generation_applied(&self, blueprint: &PortBlueprint) -> Result<()> {
         let status = self.generation_status(blueprint.port_id)?;
         if status.applied_generation >= blueprint.generation
             && status.apply_status == BlueprintApplyStatus::Applied
@@ -210,6 +221,13 @@ mod tests {
     use proteus_api::ids::{Generation, NetworkId};
     use proteus_ioctl::FakeTransport;
     use uuid::Uuid;
+
+    #[test]
+    fn link_name_for_port_matches_proteusadm_contract() {
+        let port_id = PortId(Uuid::parse_str("00000000-0000-4000-8000-00000000c0e1").unwrap());
+
+        assert_eq!(link_name_for_port(port_id), "proteus49377");
+    }
 
     fn sample_blueprint(generation: u64) -> PortBlueprint {
         PortBlueprint {

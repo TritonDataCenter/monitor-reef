@@ -35,6 +35,7 @@
 //! that crate stabilises this module becomes a one-line
 //! re-export.
 
+use std::collections::BTreeMap;
 use std::process::Stdio;
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -43,6 +44,8 @@ use tokio::process::Command;
 use tracing::{debug, info};
 use tritond_client::types::{Disk, Image, Nic, ProvisioningBlueprint};
 use uuid::Uuid;
+
+pub(crate) type NicTagMap = BTreeMap<Uuid, String>;
 
 /// Default DNS resolver. Picked to match the existing fdb2 zone
 /// — the lab's home DNS server. Future slices will surface this
@@ -54,8 +57,8 @@ const DEFAULT_RESOLVER: &str = "10.199.199.14";
 /// dataplane slice.
 const PHASE0_NIC_TAG: &str = "admin";
 
-/// nic_tag used by the first bhyve MVP payload. Proteus-backed links
-/// replace this in the next dataplane slice.
+/// Legacy fallback nic_tag for side-effect-free bhyve payload tests.
+/// The live M1 provision path passes per-NIC Proteus link tags instead.
 const BHYVE_M1_NIC_TAG: &str = "external";
 
 /// Default MTU on the admin network.
@@ -68,6 +71,21 @@ const DEFAULT_MTU: u32 = 1500;
 /// never silently desync the two).
 pub async fn create_zone(blueprint: &ProvisioningBlueprint) -> Result<Uuid> {
     let payload = build_create_payload(blueprint)?;
+    run_create_payload(blueprint, payload).await
+}
+
+pub(crate) async fn create_zone_with_nic_tags(
+    blueprint: &ProvisioningBlueprint,
+    nic_tags: &NicTagMap,
+) -> Result<Uuid> {
+    let payload = build_create_payload_with_nic_tags(blueprint, nic_tags)?;
+    run_create_payload(blueprint, payload).await
+}
+
+async fn run_create_payload(
+    blueprint: &ProvisioningBlueprint,
+    payload: serde_json::Value,
+) -> Result<Uuid> {
     let payload_bytes = serde_json::to_vec(&payload)
         .context("serialise vmadm create payload — internal types should always serialise")?;
 
@@ -189,8 +207,16 @@ async fn run_simple(args: &[&str]) -> Result<()> {
 /// quota sized from the boot disk's tracked bytes, customer
 /// metadata carrying any authorised SSH keys.
 pub(crate) fn build_create_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
+    let nic_tags = NicTagMap::new();
+    build_create_payload_with_nic_tags(blueprint, &nic_tags)
+}
+
+pub(crate) fn build_create_payload_with_nic_tags(
+    blueprint: &ProvisioningBlueprint,
+    nic_tags: &NicTagMap,
+) -> Result<serde_json::Value> {
     if image_brand(blueprint) == Some("bhyve") {
-        create_bhyve_payload(blueprint)
+        create_bhyve_payload_with_nic_tags(blueprint, nic_tags)
     } else {
         create_zone_payload(blueprint)
     }
@@ -284,7 +310,16 @@ pub(crate) fn create_zone_payload(blueprint: &ProvisioningBlueprint) -> Result<s
 /// This is intentionally independent of `create_zone`: it lets tests
 /// pin the bhyve JSON shape before the agent starts invoking it in the
 /// provisioning loop.
+#[cfg(test)]
 pub(crate) fn create_bhyve_payload(blueprint: &ProvisioningBlueprint) -> Result<serde_json::Value> {
+    let nic_tags = NicTagMap::new();
+    create_bhyve_payload_with_nic_tags(blueprint, &nic_tags)
+}
+
+pub(crate) fn create_bhyve_payload_with_nic_tags(
+    blueprint: &ProvisioningBlueprint,
+    nic_tags: &NicTagMap,
+) -> Result<serde_json::Value> {
     let instance = blueprint
         .instance
         .as_ref()
@@ -302,8 +337,8 @@ pub(crate) fn create_bhyve_payload(blueprint: &ProvisioningBlueprint) -> Result<
         .nics
         .iter()
         .enumerate()
-        .map(build_bhyve_nic_json)
-        .collect::<Vec<_>>();
+        .map(|(index, nic)| build_bhyve_nic_json(index, nic, nic_tags))
+        .collect::<Result<Vec<_>>>()?;
 
     let alias = if instance.name.is_empty() {
         format!("tritond-{}", instance.id)
@@ -386,17 +421,35 @@ fn build_nic_json(index: usize, nic: &Nic) -> Result<serde_json::Value> {
     }))
 }
 
-fn build_bhyve_nic_json((index, nic): (usize, &Nic)) -> serde_json::Value {
-    serde_json::json!({
+fn build_bhyve_nic_json(
+    index: usize,
+    nic: &Nic,
+    nic_tags: &NicTagMap,
+) -> Result<serde_json::Value> {
+    let nic_tag = bhyve_nic_tag(nic, nic_tags)?;
+    Ok(serde_json::json!({
         "interface": format!("net{index}"),
-        "nic_tag": BHYVE_M1_NIC_TAG,
+        "nic_tag": nic_tag,
         "model": "virtio",
         "mac": nic.mac,
         "ip": "dhcp",
         "dhcp_server": true,
         "mtu": DEFAULT_MTU,
         "primary": index == 0,
-    })
+    }))
+}
+
+fn bhyve_nic_tag<'a>(nic: &'a Nic, nic_tags: &'a NicTagMap) -> Result<&'a str> {
+    if let Some(tag) = nic_tags.get(&nic.id) {
+        return Ok(tag);
+    }
+    if nic_tags.is_empty() {
+        return Ok(BHYVE_M1_NIC_TAG);
+    }
+    bail!(
+        "no Proteus link nic_tag for bhyve NIC {}; refusing partial vmadm payload",
+        nic.id,
+    )
 }
 
 fn ssh_customer_metadata(
@@ -648,6 +701,28 @@ mod tests {
 
         let payload = create_bhyve_payload(&bp).unwrap();
         assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn create_bhyve_payload_uses_proteus_nic_tags_when_supplied() {
+        let bp = sample_bhyve_blueprint();
+        let mut nic_tags = NicTagMap::new();
+        nic_tags.insert(bp.nics[0].id, "proteus49377".to_string());
+
+        let payload = create_bhyve_payload_with_nic_tags(&bp, &nic_tags).unwrap();
+
+        assert_eq!(payload["nics"][0]["nic_tag"], "proteus49377");
+    }
+
+    #[test]
+    fn create_bhyve_payload_rejects_partial_proteus_nic_tags() {
+        let bp = sample_bhyve_blueprint();
+        let mut nic_tags = NicTagMap::new();
+        nic_tags.insert(fixture_uuid(0x99), "proteus39321".to_string());
+
+        let err = create_bhyve_payload_with_nic_tags(&bp, &nic_tags).unwrap_err();
+
+        assert!(err.to_string().contains("no Proteus link nic_tag"));
     }
 
     #[test]

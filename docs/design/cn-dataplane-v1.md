@@ -9,7 +9,8 @@ Copyright 2026 Edgecast Cloud LLC.
 # CN Dataplane v1 - bhyve VM and Proteus realization
 
 > Owner: Agent C (CN dataplane).
-> Status: design, not yet implemented.
+> Status: implementation in progress; tenant Proteus NIC parent plumbing
+> landed in tritonagent, lab VM smoke still pending.
 > Scope: `tritonagent` on SmartOS compute nodes.
 > Out of scope: VPC intent APIs, Proteus blueprint compiler,
 > firehyve/fhrun edge runtime, NAT/FIP packet behavior, UI, Kelp.
@@ -190,9 +191,12 @@ The host realization path is still Phase 0 shaped:
   explicit cloud-init/no-cloud/metadata ISO contract for Linux guests;
 * NICs are attached to the flat `admin` nic tag with hardcoded netmask,
   resolver, VLAN, and MTU;
-* tenant bhyve payloads still attach NICs to the flat `external` nic tag
-  instead of referencing the Proteus client link that the port lifecycle
-  creates;
+* tenant bhyve payloads now reference the Proteus client link that the
+  port lifecycle creates. `tritonagent` derives `proteusNNN` from the
+  port UUID's low 32 bits, allocates the dladm link id on illumos before
+  issuing the kernel `CreatePort`, and passes the same `proteusNNN` as
+  the bhyve `nic_tag`. The remaining risk is live validation after a
+  SmartOS platform with the vmadm/brand-hook patches is installed;
 * the edge executor still has a global-zone host-process shim; M1 needs a
   `vmadm`-managed edge zone whose north/south NICs are created before zone
   start;
@@ -216,8 +220,10 @@ The host realization path is still Phase 0 shaped:
   the source-side SmartOS patch landed as smartos-live root
   `43c8b414` plus nested illumos `845b2131a3`. It accepts
   `nic_tag=proteusNNN` in vmadm validation and teaches the joyent brand
-  hook to treat Proteus `misc` links as VNIC parents. This still needs a
-  platform image build/install before the lab CNs run it from `/usr`;
+  hook to treat Proteus `misc` links as VNIC parents. `tritonagent` now
+  emits that contract, but this still needs a platform image
+  build/install before the lab CNs run the patched vmadm path from
+  `/usr`;
 * port cleanup exists for provision failure, but Stop/Restart/Delete do
   not yet pause/reapply/delete Proteus ports end to end;
 * no applied generation is reported for VPC, subnet, route, security

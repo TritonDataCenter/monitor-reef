@@ -43,6 +43,7 @@ pub mod status;
 pub mod vmadm;
 pub mod zfs;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -391,7 +392,11 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
                 &blueprint,
             )
             .await?;
-            if let Err(err) = vmadm::create_zone(&blueprint).await {
+            let nic_tags = started_ports
+                .iter()
+                .map(|port| (port.nic_id, port.link_name.clone()))
+                .collect::<BTreeMap<_, _>>();
+            if let Err(err) = vmadm::create_zone_with_nic_tags(&blueprint, &nic_tags).await {
                 cleanup_started_ports(proteus.as_ref(), &started_ports);
                 return Err(err).context("create VM after Proteus port realization");
             }
@@ -524,7 +529,7 @@ trait ProteusLifecycle: Send + Sync {
     fn ensure_started(
         &self,
         blueprint: &PortBlueprint,
-        linkid: Option<u32>,
+        link_name: &str,
     ) -> Result<proteus::ProteusPortStatus>;
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()>;
@@ -537,13 +542,64 @@ where
     fn ensure_started(
         &self,
         blueprint: &PortBlueprint,
-        linkid: Option<u32>,
+        _link_name: &str,
     ) -> Result<proteus::ProteusPortStatus> {
-        proteus::ProteusClient::ensure_started(self, blueprint, linkid)
+        proteus::ProteusClient::ensure_started(self, blueprint, None)
     }
 
     fn cleanup_port(&self, port_id: PortId) -> Result<()> {
         proteus::ProteusClient::cleanup_port(self, port_id)
+    }
+}
+
+#[cfg(target_os = "illumos")]
+struct KernelProteusLifecycle {
+    inner: proteus::ProteusClient<proteus_ioctl::KernelTransport>,
+}
+
+#[cfg(target_os = "illumos")]
+impl KernelProteusLifecycle {
+    fn new(transport: proteus_ioctl::KernelTransport) -> Self {
+        Self {
+            inner: proteus::ProteusClient::new(transport),
+        }
+    }
+}
+
+#[cfg(target_os = "illumos")]
+impl ProteusLifecycle for KernelProteusLifecycle {
+    fn ensure_started(
+        &self,
+        blueprint: &PortBlueprint,
+        link_name: &str,
+    ) -> Result<proteus::ProteusPortStatus> {
+        use proteus_ioctl::dladm::{DATALINK_CLASS_MISC, DL_ETHER, DLADM_OPT_ACTIVE, DladmHandle};
+
+        let dladm = DladmHandle::open().with_context(
+            || "open libdladm for Proteus link allocation; tritonagent must run as root on SmartOS",
+        )?;
+        let linkid = dladm
+            .create_datalink_id(link_name, DATALINK_CLASS_MISC, DL_ETHER, DLADM_OPT_ACTIVE)
+            .with_context(|| {
+                format!(
+                    "allocate dladm link {link_name} for Proteus port {}",
+                    blueprint.port_id,
+                )
+            })?;
+
+        if let Err(err) = self.inner.create_port(blueprint, Some(linkid)) {
+            let _ = dladm.destroy_datalink_id(linkid, DLADM_OPT_ACTIVE);
+            return Err(err);
+        }
+
+        self.inner.apply_blueprint(blueprint)?;
+        self.inner.assert_generation_applied(blueprint)?;
+        self.inner.start_port(blueprint.port_id)?;
+        self.inner.dump_status(blueprint.port_id)
+    }
+
+    fn cleanup_port(&self, port_id: PortId) -> Result<()> {
+        self.inner.cleanup_port(port_id)
     }
 }
 
@@ -552,7 +608,7 @@ fn open_proteus_lifecycle(path: &Path) -> Result<Box<dyn ProteusLifecycle>> {
     {
         let transport = proteus_ioctl::KernelTransport::open_path(path)
             .with_context(|| format!("open Proteus device {}", path.display()))?;
-        Ok(Box::new(proteus::ProteusClient::new(transport)))
+        Ok(Box::new(KernelProteusLifecycle::new(transport)))
     }
     #[cfg(not(target_os = "illumos"))]
     {
@@ -563,13 +619,20 @@ fn open_proteus_lifecycle(path: &Path) -> Result<Box<dyn ProteusLifecycle>> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RealizedProvisionPort {
+    nic_id: Uuid,
+    port_id: PortId,
+    link_name: String,
+}
+
 async fn realize_provision_ports<S, R, P>(
     source: &S,
     sink: &R,
     proteus: &P,
     agent_id: &str,
     blueprint: &ProvisioningBlueprint,
-) -> Result<Vec<PortId>>
+) -> Result<Vec<RealizedProvisionPort>>
 where
     S: PortBlueprintSource + Sync,
     R: NetworkRealizationSink + Sync,
@@ -588,10 +651,16 @@ where
             }
         };
         let port_id = port_blueprint.port_id;
+        let link_name = proteus::link_name_for_port(port_id);
+        let realized = RealizedProvisionPort {
+            nic_id: nic.id,
+            port_id,
+            link_name: link_name.clone(),
+        };
         let desired_generation = port_blueprint.generation.0;
         let resource = port_realization_resource(nic);
 
-        match proteus.ensure_started(&port_blueprint, None) {
+        match proteus.ensure_started(&port_blueprint, &link_name) {
             Ok(status) => {
                 let applied_generation = status.generation.applied_generation.0;
                 let request = NetworkRealizationRequest {
@@ -600,12 +669,12 @@ where
                     generation: applied_generation,
                     status: RealizationStatus::Applied,
                     message: Some(format!(
-                        "Proteus port {port_id} applied generation {applied_generation}"
+                        "Proteus port {port_id} ({link_name}) applied generation {applied_generation}"
                     )),
                 };
                 if let Err(err) = sink.report_network_realization(request).await {
                     let mut cleanup = started_ports.clone();
-                    cleanup.push(port_id);
+                    cleanup.push(realized);
                     cleanup_started_ports(proteus, &cleanup);
                     return Err(err).with_context(|| {
                         format!("report applied Proteus realization for NIC {}", nic.id)
@@ -614,11 +683,12 @@ where
                 info!(
                     nic_id = %nic.id,
                     port_id = %port_id,
+                    link_name,
                     desired_generation,
                     applied_generation,
                     "Proteus port realized",
                 );
-                started_ports.push(port_id);
+                started_ports.push(realized);
             }
             Err(err) => {
                 report_failed_realization(
@@ -629,7 +699,9 @@ where
                     format!("Proteus port {port_id} failed: {err:#}"),
                 )
                 .await;
-                cleanup_started_ports(proteus, &started_ports);
+                let mut cleanup = started_ports.clone();
+                cleanup.push(realized);
+                cleanup_started_ports(proteus, &cleanup);
                 return Err(err)
                     .with_context(|| format!("realize Proteus port {port_id} for NIC {}", nic.id));
             }
@@ -660,13 +732,13 @@ async fn report_failed_realization<R>(
     }
 }
 
-fn cleanup_started_ports<P>(proteus: &P, ports: &[PortId])
+fn cleanup_started_ports<P>(proteus: &P, ports: &[RealizedProvisionPort])
 where
     P: ProteusLifecycle + ?Sized,
 {
-    for port_id in ports.iter().rev() {
-        if let Err(err) = proteus.cleanup_port(*port_id) {
-            warn!(port_id = %port_id, error = %err, "failed to clean up Proteus port");
+    for port in ports.iter().rev() {
+        if let Err(err) = proteus.cleanup_port(port.port_id) {
+            warn!(port_id = %port.port_id, error = %err, "failed to clean up Proteus port");
         }
     }
 }
@@ -879,7 +951,13 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(started, vec![port.port_id]);
+        assert_eq!(started.len(), 1);
+        assert_eq!(started[0].nic_id, nic_id);
+        assert_eq!(started[0].port_id, port.port_id);
+        assert_eq!(
+            started[0].link_name,
+            proteus::link_name_for_port(port.port_id)
+        );
         let status = proteus.dump_status(port.port_id).unwrap();
         assert_eq!(status.summary.state, PortState::Running);
         assert_eq!(status.summary.apply_status, BlueprintApplyStatus::Applied);
@@ -897,6 +975,12 @@ mod tests {
         }
         assert_eq!(reports[0].generation, 4);
         assert_eq!(reports[0].status, RealizationStatus::Applied);
+        assert!(
+            reports[0]
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains(&started[0].link_name))
+        );
     }
 
     #[tokio::test]
