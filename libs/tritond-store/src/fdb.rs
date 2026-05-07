@@ -1025,6 +1025,61 @@ impl Store for FdbStore {
             .map_err(|e| StoreError::Backend(format!("deserialize user: {e}")))
     }
 
+    async fn update_user_password_hash(
+        &self,
+        username: &str,
+        password_hash: String,
+    ) -> Result<User, StoreError> {
+        let by_name_key = Self::user_by_name_key(username);
+        let username = username.to_string();
+        let result: Result<Option<User>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_name_key = by_name_key.clone();
+                let password_hash = password_hash.clone();
+                let username = username.clone();
+                async move {
+                    let Some(id_bytes) = tr.get(&by_name_key, false).await? else {
+                        return Ok(None);
+                    };
+                    let id_str = std::str::from_utf8(id_bytes.as_ref()).map_err(|e| {
+                        FdbBindingError::CustomError(
+                            format!("user index value not utf8: {e}").into(),
+                        )
+                    })?;
+                    let id = Uuid::parse_str(id_str).map_err(|e| {
+                        FdbBindingError::CustomError(
+                            format!("user index value not uuid: {e}").into(),
+                        )
+                    })?;
+                    let by_id_key = Self::user_by_id_key(id);
+                    let Some(user_bytes) = tr.get(&by_id_key, false).await? else {
+                        return Ok(None);
+                    };
+                    let mut user: User =
+                        serde_json::from_slice(user_bytes.as_ref()).map_err(|e| {
+                            FdbBindingError::CustomError(format!("deserialize user: {e}").into())
+                        })?;
+                    if user.username != username {
+                        return Ok(None);
+                    }
+                    user.password_hash = password_hash;
+                    let value = serde_json::to_vec(&user).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize user: {e}").into())
+                    })?;
+                    tr.set(&by_id_key, &value);
+                    Ok(Some(user))
+                }
+            })
+            .await;
+
+        match result {
+            Ok(Some(user)) => Ok(user),
+            Ok(None) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
     async fn has_any_user(&self) -> Result<bool, StoreError> {
         let (begin, end) = prefix_range(Self::user_prefix());
         let result: Result<bool, FdbBindingError> = self

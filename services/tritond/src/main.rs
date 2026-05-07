@@ -31,7 +31,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::time::Duration;
 use tracing::info;
 
@@ -43,8 +43,20 @@ use tritond::{
 use tritond_audit::{Chain, MemChain};
 use tritond_store::{MemStore, Store};
 
+enum Command {
+    Serve,
+    ResetRootPassword { fdb_cluster_file: Option<String> },
+    Help,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let command = parse_command(std::env::args().skip(1))?;
+    if matches!(command, Command::Help) {
+        print_usage();
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -61,10 +73,20 @@ async fn main() -> Result<()> {
     // provider is already installed, which is harmless.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
+    match command {
+        Command::Serve => serve().await,
+        Command::ResetRootPassword { fdb_cluster_file } => {
+            reset_root_password(fdb_cluster_file.as_deref()).await
+        }
+        Command::Help => Ok(()),
+    }
+}
+
+async fn serve() -> Result<()> {
     let bind_address =
         std::env::var("TRITOND_BIND_ADDRESS").unwrap_or_else(|_| DEFAULT_BIND_ADDRESS.to_string());
 
-    let (store, audit_chain) = build_store_and_audit()?;
+    let (store, audit_chain) = build_store_and_audit(None)?;
     let jwt_key = bootstrap::ensure(store.as_ref())
         .await
         .context("first-run bootstrap")?;
@@ -99,6 +121,82 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+async fn reset_root_password(fdb_cluster_file: Option<&str>) -> Result<()> {
+    let store = build_store(fdb_cluster_file)?;
+    let password = bootstrap::reset_root_password(store.as_ref()).await?;
+
+    eprintln!();
+    eprintln!("============================================================");
+    eprintln!("  tritond recovery: reset root operator password");
+    eprintln!();
+    eprintln!("  username: {}", bootstrap::ROOT_USERNAME);
+    eprintln!("  password: {}", password.expose());
+    eprintln!();
+    eprintln!("  Save this password now. It will not be shown again.");
+    eprintln!("  Use `tcadm configure` to authenticate, then create");
+    eprintln!("  long-lived API keys with `tcadm api-key create`.");
+    eprintln!("============================================================");
+    eprintln!();
+
+    Ok(())
+}
+
+fn parse_command<I>(mut args: I) -> Result<Command>
+where
+    I: Iterator<Item = String>,
+{
+    let Some(first) = args.next() else {
+        return Ok(Command::Serve);
+    };
+
+    match first.as_str() {
+        "serve" => {
+            if let Some(extra) = args.next() {
+                bail!("unexpected argument for serve: {extra}");
+            }
+            Ok(Command::Serve)
+        }
+        "reset-root-password" => parse_reset_root_password(args),
+        "-h" | "--help" | "help" => Ok(Command::Help),
+        other => bail!("unknown command: {other}"),
+    }
+}
+
+fn parse_reset_root_password<I>(mut args: I) -> Result<Command>
+where
+    I: Iterator<Item = String>,
+{
+    let mut fdb_cluster_file = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--fdb-cluster-file" => {
+                let Some(value) = args.next() else {
+                    bail!("--fdb-cluster-file requires a path");
+                };
+                fdb_cluster_file = Some(value);
+            }
+            "-h" | "--help" => return Ok(Command::Help),
+            other => bail!("unexpected argument for reset-root-password: {other}"),
+        }
+    }
+    Ok(Command::ResetRootPassword { fdb_cluster_file })
+}
+
+fn print_usage() {
+    println!(
+        "\
+usage:
+  tritond [serve]
+  tritond reset-root-password [--fdb-cluster-file PATH]
+
+environment:
+  TRITOND_BIND_ADDRESS                 listen address for serve
+  TRITOND_FDB_CLUSTER_FILE             FoundationDB cluster file
+  TRITOND_DISABLE_INPROCESS_PROVISIONER=1
+"
+    );
+}
+
 /// True when `name` is set and equals `1` / `true` (case-insensitive).
 fn env_flag(name: &str) -> bool {
     matches!(
@@ -116,8 +214,29 @@ fn env_secs(name: &str) -> Option<Duration> {
 }
 
 #[cfg(feature = "foundationdb")]
-fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
-    if let Ok(cluster_file) = std::env::var("TRITOND_FDB_CLUSTER_FILE") {
+fn build_store(fdb_cluster_file: Option<&str>) -> Result<Arc<dyn Store>> {
+    if let Some(cluster_file) = fdb_cluster_file
+        .map(ToOwned::to_owned)
+        .or_else(|| std::env::var("TRITOND_FDB_CLUSTER_FILE").ok())
+    {
+        info!(%cluster_file, "using FoundationDB backend (store)");
+        let store = tritond_store::FdbStore::open(Some(&cluster_file))
+            .map_err(|e| anyhow::anyhow!("open FDB store: {e}"))?;
+        Ok(Arc::new(store))
+    } else {
+        info!("TRITOND_FDB_CLUSTER_FILE not set; using in-memory store");
+        Ok(Arc::new(MemStore::new()))
+    }
+}
+
+#[cfg(feature = "foundationdb")]
+fn build_store_and_audit(
+    fdb_cluster_file: Option<&str>,
+) -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
+    if let Some(cluster_file) = fdb_cluster_file
+        .map(ToOwned::to_owned)
+        .or_else(|| std::env::var("TRITOND_FDB_CLUSTER_FILE").ok())
+    {
         info!(%cluster_file, "using FoundationDB backend (store + audit)");
         let store = tritond_store::FdbStore::open(Some(&cluster_file))
             .map_err(|e| anyhow::anyhow!("open FDB store: {e}"))?;
@@ -135,8 +254,21 @@ fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
 }
 
 #[cfg(not(feature = "foundationdb"))]
-fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
-    if std::env::var("TRITOND_FDB_CLUSTER_FILE").is_ok() {
+fn build_store(fdb_cluster_file: Option<&str>) -> Result<Arc<dyn Store>> {
+    if fdb_cluster_file.is_some() || std::env::var("TRITOND_FDB_CLUSTER_FILE").is_ok() {
+        anyhow::bail!(
+            "TRITOND_FDB_CLUSTER_FILE is set but tritond was built without the `foundationdb` feature"
+        );
+    }
+    info!("using in-memory store (binary not built with `foundationdb` feature)");
+    Ok(Arc::new(MemStore::new()))
+}
+
+#[cfg(not(feature = "foundationdb"))]
+fn build_store_and_audit(
+    fdb_cluster_file: Option<&str>,
+) -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
+    if fdb_cluster_file.is_some() || std::env::var("TRITOND_FDB_CLUSTER_FILE").is_ok() {
         anyhow::bail!(
             "TRITOND_FDB_CLUSTER_FILE is set but tritond was built without the `foundationdb` feature"
         );
@@ -145,4 +277,36 @@ fn build_store_and_audit() -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
     let store: Arc<dyn Store> = Arc::new(MemStore::new());
     let audit: Arc<dyn Chain> = Arc::new(MemChain::new());
     Ok((store, audit))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_default_command_serves() {
+        assert!(matches!(
+            parse_command(std::iter::empty()).unwrap(),
+            Command::Serve
+        ));
+    }
+
+    #[test]
+    fn parse_reset_root_password_command() {
+        let parsed = parse_command(
+            [
+                "reset-root-password".to_string(),
+                "--fdb-cluster-file".to_string(),
+                "/etc/fdb.cluster".to_string(),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        match parsed {
+            Command::ResetRootPassword { fdb_cluster_file } => {
+                assert_eq!(fdb_cluster_file.as_deref(), Some("/etc/fdb.cluster"));
+            }
+            _ => panic!("expected reset command"),
+        }
+    }
 }

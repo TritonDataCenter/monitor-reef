@@ -402,6 +402,22 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)
     }
 
+    async fn update_user_password_hash(
+        &self,
+        username: &str,
+        password_hash: String,
+    ) -> Result<User, StoreError> {
+        let mut guard = self.inner.write().await;
+        let id = guard
+            .user_id_by_username
+            .get(username)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        let user = guard.users_by_id.get_mut(&id).ok_or(StoreError::NotFound)?;
+        user.password_hash = password_hash;
+        Ok(user.clone())
+    }
+
     async fn has_any_user(&self) -> Result<bool, StoreError> {
         let guard = self.inner.read().await;
         Ok(!guard.users_by_id.is_empty())
@@ -3308,6 +3324,34 @@ mod tests {
         assert!(!store.has_any_user().await.unwrap());
         store.create_user(user_fixture("root")).await.unwrap();
         assert!(store.has_any_user().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn update_user_password_hash_replaces_hash() {
+        let store = MemStore::new();
+        let user = user_fixture("root");
+        let user_id = user.id;
+        store.create_user(user).await.unwrap();
+
+        let updated = store
+            .update_user_password_hash("root", "new-hash".to_string())
+            .await
+            .unwrap();
+        assert_eq!(updated.id, user_id);
+        assert_eq!(updated.password_hash, "new-hash");
+
+        let fetched = store.get_user_by_id(user_id).await.unwrap();
+        assert_eq!(fetched.password_hash, "new-hash");
+    }
+
+    #[tokio::test]
+    async fn update_user_password_hash_missing_user_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .update_user_password_hash("root", "new-hash".to_string())
+            .await
+            .expect_err("missing user should be not-found");
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     #[tokio::test]

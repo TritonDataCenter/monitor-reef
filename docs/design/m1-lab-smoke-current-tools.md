@@ -27,6 +27,18 @@ export TCADM_API_KEY=...
 export M1_TENANT_ID=<default-tenant-uuid>
 ```
 
+If the bootstrap root password was not saved from the first `tritond`
+startup banner, reset it locally on the headnode before running
+`tcadm configure`:
+
+```bash
+tritond reset-root-password --fdb-cluster-file /etc/fdb.cluster
+```
+
+The reset command prints a new root password once. It updates only the
+stored password hash; it does not wipe tenant, project, CN, image, or
+network records.
+
 The lab CN defaults match the current M1 split:
 
 | Role | Default host | Default server UUID |

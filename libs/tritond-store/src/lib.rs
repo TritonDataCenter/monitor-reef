@@ -110,6 +110,17 @@ pub trait Store: Send + Sync + 'static {
     /// Look up an operator by id.
     async fn get_user_by_id(&self, id: Uuid) -> Result<User, StoreError>;
 
+    /// Replace an operator account's password hash.
+    ///
+    /// Returns the updated user. This is intentionally hash-only so
+    /// callers remain responsible for password generation, hashing
+    /// policy, and one-time secret display.
+    async fn update_user_password_hash(
+        &self,
+        username: &str,
+        password_hash: String,
+    ) -> Result<User, StoreError>;
+
     /// True if any user record exists. Used by the bootstrap path to
     /// decide whether to mint the root operator at first run.
     async fn has_any_user(&self) -> Result<bool, StoreError>;

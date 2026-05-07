@@ -23,7 +23,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use tracing::info;
-use tritond_auth::{JwtKey, generate_random_password, hash_password};
+use tritond_auth::{JwtKey, RedactedString, generate_random_password, hash_password};
 use tritond_store::{Store, StoreError, SystemKey, User};
 use uuid::Uuid;
 
@@ -35,6 +35,33 @@ pub async fn ensure(store: &dyn Store) -> Result<JwtKey> {
     let jwt_key = ensure_jwt_key(store).await?;
     ensure_root_user(store).await?;
     Ok(jwt_key)
+}
+
+/// Generate a new root password, update the stored root hash, and
+/// return the plaintext for one-time operator display.
+///
+/// This is a headnode-local recovery path for cases where the
+/// first-run bootstrap banner was lost. It deliberately does not
+/// create root if root is missing; first-run creation remains the
+/// responsibility of [`ensure`].
+pub async fn reset_root_password(store: &dyn Store) -> Result<RedactedString> {
+    let existing = store
+        .get_user_by_username(ROOT_USERNAME)
+        .await
+        .context("read root user")?;
+    if !existing.is_root {
+        anyhow::bail!("user {ROOT_USERNAME:?} exists but is not a root operator");
+    }
+
+    let plaintext = generate_random_password();
+    let password_hash = hash_password(&plaintext)
+        .await
+        .context("hash reset root password")?;
+    store
+        .update_user_password_hash(ROOT_USERNAME, password_hash)
+        .await
+        .context("persist reset root password")?;
+    Ok(plaintext)
 }
 
 async fn ensure_jwt_key(store: &dyn Store) -> Result<JwtKey> {
@@ -109,6 +136,7 @@ async fn ensure_root_user(store: &dyn Store) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tritond_auth::verify_password;
     use tritond_store::MemStore;
 
     #[tokio::test]
@@ -125,6 +153,61 @@ mod tests {
         assert_eq!(
             store.get_user_by_username(ROOT_USERNAME).await.unwrap().id,
             user.id
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_root_password_replaces_existing_hash() {
+        let store = MemStore::new();
+        ensure(&store).await.unwrap();
+        let before = store.get_user_by_username(ROOT_USERNAME).await.unwrap();
+
+        let password = reset_root_password(&store).await.unwrap();
+        let after = store.get_user_by_username(ROOT_USERNAME).await.unwrap();
+
+        assert_eq!(before.id, after.id);
+        assert_ne!(before.password_hash, after.password_hash);
+        assert!(
+            verify_password(&password, &after.password_hash)
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn reset_root_password_requires_existing_root() {
+        let store = MemStore::new();
+        let err = reset_root_password(&store)
+            .await
+            .expect_err("missing root should fail");
+        assert!(err.to_string().contains("read root user"));
+    }
+
+    #[tokio::test]
+    async fn reset_root_password_requires_root_operator() {
+        let store = MemStore::new();
+        let user = User {
+            id: Uuid::new_v4(),
+            username: ROOT_USERNAME.to_string(),
+            password_hash: "$2y$12$dummyhash".to_string(),
+            is_root: false,
+            created_at: Utc::now(),
+            tenant_id: None,
+            federation: None,
+        };
+        store.create_user(user.clone()).await.unwrap();
+
+        let err = reset_root_password(&store)
+            .await
+            .expect_err("non-root operator should fail");
+        assert!(err.to_string().contains("not a root operator"));
+        assert_eq!(
+            store
+                .get_user_by_username(ROOT_USERNAME)
+                .await
+                .unwrap()
+                .password_hash,
+            user.password_hash
         );
     }
 }
