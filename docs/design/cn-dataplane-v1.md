@@ -86,6 +86,24 @@ placement admission signal only; it does not change agent authentication,
 heartbeats, or job-claim binding. The north/south edge placer consumes
 `edge` and `both` records when assigning firehyve/fhrun edge instances.
 
+Tenant VM placement for M1 is intentionally small:
+
+* `tritond` considers only approved CNs with a recent registration or
+  heartbeat timestamp and role `tenant` or `both`;
+* create chooses the eligible CN with the fewest already assigned
+  instances, breaking ties by SmartOS `server_uuid` for deterministic
+  tests and repeatable lab behavior;
+* the selected CN is persisted on `Instance.host_cn_uuid`;
+* every subsequent Provision, Stop, Restart, and Delete job for that
+  instance uses `target_cn_uuid = Instance.host_cn_uuid`, so only the
+  bound `tritonagent` on that SmartOS host can claim it;
+* in-process test deployments that have no registered CNs keep using
+  unrouted jobs so the stub provisioner remains useful during local
+  development. Real-agent deployments should run `tritond` with
+  `TRITOND_DISABLE_INPROCESS_PROVISIONER=1`, which makes missing tenant
+  capacity fail instance create instead of leaving a job without an
+  external consumer.
+
 ## 3. Current gaps
 
 The host realization path is still Phase 0 shaped:

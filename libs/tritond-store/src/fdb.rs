@@ -607,6 +607,14 @@ impl FdbStore {
         format!("instance/in_project/{project_id}/").into_bytes()
     }
 
+    fn instance_in_host_cn_key(host_cn_uuid: Uuid, instance_id: Uuid) -> Vec<u8> {
+        format!("instance/in_host_cn/{host_cn_uuid}/{instance_id}").into_bytes()
+    }
+
+    fn instance_in_host_cn_prefix(host_cn_uuid: Uuid) -> Vec<u8> {
+        format!("instance/in_host_cn/{host_cn_uuid}/").into_bytes()
+    }
+
     fn nic_by_id_key(id: Uuid) -> Vec<u8> {
         format!("nic/by_id/{id}").into_bytes()
     }
@@ -4086,6 +4094,7 @@ impl Store for FdbStore {
                         ssh_key_ids: req.ssh_key_ids,
                         cpu: req.cpu,
                         memory_bytes: req.memory_bytes,
+                        host_cn_uuid: None,
                         lifecycle: LifecycleState::Pending,
                         created_at: now,
                         updated_at: now,
@@ -4346,6 +4355,104 @@ impl Store for FdbStore {
         Ok(out)
     }
 
+    async fn set_instance_host_cn(
+        &self,
+        instance_id: Uuid,
+        host_cn_uuid: Option<Uuid>,
+    ) -> Result<Instance, StoreError> {
+        let by_id_key = Self::instance_by_id_key(instance_id);
+
+        enum Outcome {
+            Updated(Box<Instance>),
+            Vanished,
+            Serialize,
+        }
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::Vanished),
+                    };
+                    let mut instance: Instance = match serde_json::from_slice(&bytes) {
+                        Ok(i) => i,
+                        Err(_) => return Ok(Outcome::Vanished),
+                    };
+                    let previous = instance.host_cn_uuid;
+                    instance.host_cn_uuid = host_cn_uuid;
+                    instance.updated_at = Utc::now();
+                    let value = match serde_json::to_vec(&instance) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::Serialize),
+                    };
+                    if let Some(old_host) = previous {
+                        tr.clear(&Self::instance_in_host_cn_key(old_host, instance_id));
+                    }
+                    if let Some(new_host) = host_cn_uuid {
+                        tr.set(&Self::instance_in_host_cn_key(new_host, instance_id), b"");
+                    }
+                    tr.set(&by_id_key, &value);
+                    Ok(Outcome::Updated(Box::new(instance)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated(instance)) => Ok(*instance),
+            Ok(Outcome::Vanished) => Err(StoreError::NotFound),
+            Ok(Outcome::Serialize) => Err(StoreError::Backend(
+                "serialize instance host placement".to_string(),
+            )),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
+        let prefix = Self::instance_in_host_cn_prefix(host_cn_uuid);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("instance host index uuid: {e}")))?;
+            let by_id_key = Self::instance_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let instance: Instance = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))?;
+                out.push(instance);
+            }
+        }
+        Ok(out)
+    }
+
     async fn delete_instance(&self, instance_id: Uuid, force: bool) -> Result<(), StoreError> {
         let by_id_key = Self::instance_by_id_key(instance_id);
         let nic_prefix = Self::nic_in_instance_prefix(instance_id);
@@ -4522,6 +4629,9 @@ impl Store for FdbStore {
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
+                    if let Some(host_cn_uuid) = instance.host_cn_uuid {
+                        tr.clear(&Self::instance_in_host_cn_key(host_cn_uuid, instance.id));
+                    }
                     Ok(Outcome::Deleted)
                 }
             })

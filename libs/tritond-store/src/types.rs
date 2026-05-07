@@ -1509,7 +1509,9 @@ pub enum LifecycleStateKind {
 /// Several fields that real cloud instances carry are deliberately
 /// omitted in v0: cloud-init userdata, tags/labels, brand
 /// (zone/hvm/lx/bhyve), affinity rules, console URL, migration
-/// history. Each will land as the consuming use case ships.
+/// history. Each will land as the consuming use case ships. The
+/// hosting CN is recorded once placement lands so subsequent
+/// lifecycle jobs return to the same SmartOS host.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Instance {
     pub id: Uuid,
@@ -1536,6 +1538,14 @@ pub struct Instance {
     pub cpu: u32,
     /// Memory budget in bytes.
     pub memory_bytes: u64,
+    /// SmartOS compute node that owns this instance's host-side VM.
+    ///
+    /// `None` is retained for in-process test/stub jobs and legacy
+    /// records created before tenant placement existed. Real M1
+    /// deployments assign this before the first Provision job is
+    /// enqueued.
+    #[serde(default)]
+    pub host_cn_uuid: Option<Uuid>,
     pub lifecycle: LifecycleState,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -1806,9 +1816,9 @@ pub struct ProvisioningJob {
     /// Optional placement: when `Some(server_uuid)`, only an
     /// agent bound to that CN will claim the job. When `None`,
     /// any claimer (the in-process stub or any bound agent) can
-    /// claim. Populated at enqueue time by a future scheduler;
-    /// today's instance handlers leave it `None` for backward
-    /// compatibility.
+    /// claim. Tenant instance handlers populate this from
+    /// [`Instance::host_cn_uuid`] once placement has selected a
+    /// SmartOS host; tests and legacy records may remain unrouted.
     #[serde(default)]
     pub target_cn_uuid: Option<Uuid>,
 }

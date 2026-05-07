@@ -5934,7 +5934,7 @@
         ]
       },
       "Instance": {
-        "description": "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships.",
+        "description": "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host.",
         "type": "object",
         "properties": {
           "cpu": {
@@ -5949,6 +5949,13 @@
           },
           "description": {
             "type": "string"
+          },
+          "host_cn_uuid": {
+            "nullable": true,
+            "description": "SmartOS compute node that owns this instance's host-side VM.\n\n`None` is retained for in-process test/stub jobs and legacy records created before tenant placement existed. Real M1 deployments assign this before the first Provision job is enqueued.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           },
           "id": {
             "type": "string",
@@ -7441,7 +7448,7 @@
           },
           "target_cn_uuid": {
             "nullable": true,
-            "description": "Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Populated at enqueue time by a future scheduler; today's instance handlers leave it `None` for backward compatibility.",
+            "description": "Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Tenant instance handlers populate this from [`Instance::host_cn_uuid`] once placement has selected a SmartOS host; tests and legacy records may remain unrouted.",
             "default": null,
             "type": "string",
             "format": "uuid"

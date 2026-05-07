@@ -2144,6 +2144,7 @@ impl Store for MemStore {
             ssh_key_ids: req.ssh_key_ids,
             cpu: req.cpu,
             memory_bytes: req.memory_bytes,
+            host_cn_uuid: None,
             lifecycle: LifecycleState::Pending,
             created_at: now,
             updated_at: now,
@@ -2264,6 +2265,31 @@ impl Store for MemStore {
             .instances_by_id
             .values()
             .filter(|i| i.project_id == project_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn set_instance_host_cn(
+        &self,
+        instance_id: Uuid,
+        host_cn_uuid: Option<Uuid>,
+    ) -> Result<Instance, StoreError> {
+        let mut guard = self.inner.write().await;
+        let instance = guard
+            .instances_by_id
+            .get_mut(&instance_id)
+            .ok_or(StoreError::NotFound)?;
+        instance.host_cn_uuid = host_cn_uuid;
+        instance.updated_at = Utc::now();
+        Ok(instance.clone())
+    }
+
+    async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .instances_by_id
+            .values()
+            .filter(|i| i.host_cn_uuid == Some(host_cn_uuid))
             .cloned()
             .collect())
     }
@@ -5102,6 +5128,43 @@ mod tests {
 
         let listed = store.list_instances_in_project(project_id).await.unwrap();
         assert_eq!(listed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn instance_host_cn_assignment_is_listable() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult { instance, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        assert_eq!(instance.host_cn_uuid, None);
+
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+        let assigned = store
+            .set_instance_host_cn(instance.id, Some(cn_a))
+            .await
+            .unwrap();
+        assert_eq!(assigned.host_cn_uuid, Some(cn_a));
+        assert_eq!(store.list_instances_for_cn(cn_a).await.unwrap().len(), 1);
+        assert_eq!(store.list_instances_for_cn(cn_b).await.unwrap().len(), 0);
+
+        let moved = store
+            .set_instance_host_cn(instance.id, Some(cn_b))
+            .await
+            .unwrap();
+        assert_eq!(moved.host_cn_uuid, Some(cn_b));
+        assert_eq!(store.list_instances_for_cn(cn_a).await.unwrap().len(), 0);
+        assert_eq!(store.list_instances_for_cn(cn_b).await.unwrap().len(), 1);
+
+        store.set_instance_host_cn(instance.id, None).await.unwrap();
+        assert_eq!(store.list_instances_for_cn(cn_b).await.unwrap().len(), 0);
     }
 
     #[tokio::test]

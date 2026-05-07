@@ -28,8 +28,8 @@ use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::types::{
     AddressFamily, ApiKeyScope, ApproveCnRequest, ClaimJobRequest, CnState, CompleteJobRequest,
     JobOutcome, JobStatus, LoginRequest, NatGateway, NetworkRealizationRequest, NetworkResourceId,
-    NewApiKey, NewNatGateway, NewProject, NewSilo, NewVpc, RealizationStatus, RealizerId,
-    RegisterCnRequest,
+    NewApiKey, NewInstance as ClientNewInstance, NewNatGateway, NewProject, NewSilo, NewVpc,
+    RealizationStatus, RealizerId, RegisterCnRequest,
 };
 use tritond_store::{
     Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, Nic, Store, User,
@@ -354,6 +354,90 @@ async fn create_instance_with_primary_nic(test: &TestServer, silo_name: &str) ->
     (instance, primary_nic)
 }
 
+async fn http_instance_fixture(test: &TestServer, silo_name: &str) -> (Uuid, Uuid, Uuid, Uuid) {
+    let silo = test
+        .store
+        .create_silo(tritond_store::NewSilo {
+            name: silo_name.to_string(),
+            description: None,
+        })
+        .await
+        .unwrap();
+    let project = test
+        .store
+        .create_project(
+            silo.default_tenant_id,
+            tritond_store::NewProject {
+                name: "p1".to_string(),
+                description: None,
+            },
+        )
+        .await
+        .unwrap();
+    let image = test
+        .store
+        .create_image_silo(
+            silo.id,
+            tritond_store::NewImage {
+                name: "test-image".to_string(),
+                description: None,
+                os: "smartos".to_string(),
+                version: "test".to_string(),
+                size_bytes: 1_000_000,
+                sha256: "0".repeat(64),
+                source_url: None,
+                id: None,
+                compatibility: None,
+            },
+        )
+        .await
+        .unwrap();
+    let vpc = test
+        .store
+        .create_vpc(
+            silo.default_tenant_id,
+            project.id,
+            tritond_store::NewVpc {
+                name: "v1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/24".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+    let subnet = test
+        .store
+        .create_subnet(
+            silo.default_tenant_id,
+            project.id,
+            vpc.id,
+            tritond_store::NewSubnet {
+                name: "s1".to_string(),
+                description: None,
+                ipv4_block: Some("10.0.0.0/29".parse().unwrap()),
+                ipv6_block: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    (silo.default_tenant_id, project.id, image.id, subnet.id)
+}
+
+fn client_instance_req(name: &str, image_id: Uuid, subnet_id: Uuid) -> ClientNewInstance {
+    ClientNewInstance {
+        name: name.to_string(),
+        description: None,
+        image_id,
+        primary_subnet_id: subnet_id,
+        ssh_key_ids: Vec::new(),
+        cpu: 1,
+        memory_bytes: 256 * 1024 * 1024,
+        extra_nics: Vec::new(),
+    }
+}
+
 #[tokio::test]
 async fn agent_claim_returns_null_on_empty_queue() {
     let test = TestServer::start().await;
@@ -372,6 +456,82 @@ async fn agent_claim_returns_null_on_empty_queue() {
         resp.into_inner().job.is_none(),
         "empty queue should yield job=None",
     );
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn instance_create_routes_jobs_to_least_assigned_tenant_cn() {
+    let test = TestServer::start().await;
+    let cn_a = Uuid::from_u128(1);
+    let cn_b = Uuid::from_u128(2);
+    let key_a = register_and_approve(&test, cn_a, "cn-a").await;
+    let key_b = register_and_approve(&test, cn_b, "cn-b").await;
+    let (tenant_id, project_id, image_id, subnet_id) =
+        http_instance_fixture(&test, "agent-placement").await;
+    let root = root_client(&test).await;
+
+    let first = root
+        .create_project_instance()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .body(client_instance_req("web-a", image_id, subnet_id))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let second = root
+        .create_project_instance()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .body(client_instance_req("web-b", image_id, subnet_id))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(first.host_cn_uuid, Some(cn_a));
+    assert_eq!(second.host_cn_uuid, Some(cn_b));
+
+    let agent_b = test.bearer_client(&key_b);
+    let claimed_b = agent_b
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: cn_b.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("cn-b should claim the second routed job");
+    assert_eq!(claimed_b.target_cn_uuid, Some(cn_b));
+    match claimed_b.kind {
+        tritond_client::types::JobKind::Provision { instance_id } => {
+            assert_eq!(instance_id, second.id);
+        }
+        other => panic!("expected provision job, got {other:?}"),
+    }
+
+    let agent_a = test.bearer_client(&key_a);
+    let claimed_a = agent_a
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: cn_a.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("cn-a should claim the first routed job");
+    assert_eq!(claimed_a.target_cn_uuid, Some(cn_a));
+    match claimed_a.kind {
+        tritond_client::types::JobKind::Provision { instance_id } => {
+            assert_eq!(instance_id, first.id);
+        }
+        other => panic!("expected provision job, got {other:?}"),
+    }
 
     test.close().await;
 }

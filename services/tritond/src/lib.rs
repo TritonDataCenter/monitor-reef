@@ -75,7 +75,7 @@ use tritond_auth::{
     JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{
-    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnState, IdpConfig, MemStore, Store,
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnRole, CnState, IdpConfig, MemStore, Store,
     StoreError, normalize_claim_code,
 };
 use uuid::Uuid;
@@ -3772,7 +3772,29 @@ impl TritondApi for TritondServiceImpl {
             }
         }
 
-        let instance = match ctx.store.create_instance(tenant_id, project_id, req).await {
+        let target_cn_uuid = match select_tenant_cn_for_instance(
+            ctx.store.as_ref(),
+            ctx.spawn_in_process_provisioner,
+        )
+        .await
+        {
+            Ok(target) => target,
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::InstanceCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                return Err(store_error_to_http(e));
+            }
+        };
+
+        let mut instance = match ctx.store.create_instance(tenant_id, project_id, req).await {
             Ok(result) => result.instance,
             Err(e) => {
                 ctx.audit
@@ -3789,21 +3811,41 @@ impl TritondApi for TritondServiceImpl {
             }
         };
 
+        if let Some(host_cn_uuid) = target_cn_uuid {
+            instance = match ctx
+                .store
+                .set_instance_host_cn(instance.id, Some(host_cn_uuid))
+                .await
+            {
+                Ok(updated) => updated,
+                Err(e) => {
+                    ctx.audit
+                        .record_mutation(
+                            &principal,
+                            Action::InstanceCreate,
+                            request_id,
+                            Some(format!("Instance::\"{}\"", instance.id)),
+                            store_error_to_audit_outcome(&e),
+                            serde_json::Value::Null,
+                        )
+                        .await;
+                    return Err(store_error_to_http(e));
+                }
+            };
+        }
+
         // Enqueue the provisioning job. The stub provisioner (or
-        // a real per-CN agent in the future) will pick it up and
-        // drive Pending → Provisioning → Running. The response
-        // returns the instance in `Pending` — clients poll the
-        // get endpoint to observe the transition.
+        // the selected per-CN agent) will pick it up and drive
+        // Pending → Provisioning → Running. The response returns
+        // the instance in `Pending` — clients poll the get endpoint
+        // to observe the transition.
         if let Err(e) = ctx
             .store
             .enqueue_job(NewJob {
                 kind: JobKind::Provision {
                     instance_id: instance.id,
                 },
-                // Phase 0: leave placement to whichever agent
-                // claims first. A future scheduler will populate
-                // this from a real placement decision.
-                target_cn_uuid: None,
+                target_cn_uuid,
             })
             .await
         {
@@ -3906,6 +3948,7 @@ impl TritondApi for TritondServiceImpl {
         if instance.tenant_id != tenant_id || instance.project_id != project_id {
             return Err(not_found());
         }
+        let target_cn_uuid = instance.host_cn_uuid;
         match ctx.store.delete_instance(instance_id, force).await {
             Ok(()) => {
                 ctx.audit
@@ -3931,7 +3974,7 @@ impl TritondApi for TritondServiceImpl {
                     .store
                     .enqueue_job(NewJob {
                         kind: JobKind::Delete { instance_id },
-                        target_cn_uuid: None,
+                        target_cn_uuid,
                     })
                     .await
                 {
@@ -5249,6 +5292,7 @@ async fn instance_lifecycle_transition(
     if instance.tenant_id != tenant_id || instance.project_id != project_id {
         return Err(not_found());
     }
+    let target_cn_uuid = instance.host_cn_uuid;
 
     let updated = match ctx
         .store
@@ -5276,7 +5320,7 @@ async fn instance_lifecycle_transition(
             .store
             .enqueue_job(NewJob {
                 kind: template.for_instance(instance_id),
-                target_cn_uuid: None,
+                target_cn_uuid,
             })
             .await
     {
@@ -5824,6 +5868,36 @@ fn too_many_requests(retry_after: std::time::Duration) -> HttpError {
     }
     err.headers = Some(Box::new(headers));
     err
+}
+
+async fn select_tenant_cn_for_instance(
+    store: &dyn Store,
+    allow_unrouted_stub: bool,
+) -> Result<Option<Uuid>, StoreError> {
+    let cns = store.list_cns(Some(CnState::Approved)).await?;
+    let mut best: Option<(usize, u128, Uuid)> = None;
+
+    for cn in cns.iter().filter(|cn| cn_accepts_tenant_jobs(cn)) {
+        let assigned = store.list_instances_for_cn(cn.server_uuid).await?.len();
+        let key = (assigned, cn.server_uuid.as_u128(), cn.server_uuid);
+        if best.is_none_or(|current| key < current) {
+            best = Some(key);
+        }
+    }
+
+    match best {
+        Some((_, _, cn)) => Ok(Some(cn)),
+        None if allow_unrouted_stub => Ok(None),
+        None => Err(StoreError::Conflict(
+            "no eligible tenant CN available for instance placement".to_string(),
+        )),
+    }
+}
+
+fn cn_accepts_tenant_jobs(cn: &Cn) -> bool {
+    cn.state == CnState::Approved
+        && cn.last_seen.is_some()
+        && matches!(cn.role, CnRole::Tenant | CnRole::Both)
 }
 
 /// Drive the instance lifecycle forward in response to an agent

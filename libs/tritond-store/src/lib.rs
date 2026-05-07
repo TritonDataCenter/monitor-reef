@@ -775,6 +775,22 @@ pub trait Store: Send + Sync + 'static {
         project_id: Uuid,
     ) -> Result<Vec<Instance>, StoreError>;
 
+    /// Persist the SmartOS CN that owns this instance's host-side VM.
+    ///
+    /// This is separate from [`Store::create_instance`] so API handlers
+    /// can keep placement policy out of the store transaction. A
+    /// replacement clears the old host index before writing the new one.
+    /// `None` clears placement and is used only by tests and repair tools.
+    async fn set_instance_host_cn(
+        &self,
+        instance_id: Uuid,
+        host_cn_uuid: Option<Uuid>,
+    ) -> Result<Instance, StoreError>;
+
+    /// List instances assigned to a SmartOS CN. Used by the M1 tenant
+    /// placer to spread new VMs across eligible hosts.
+    async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError>;
+
     /// Delete an instance. Returns [`StoreError::Conflict`] if the
     /// current lifecycle is not deletable
     /// (see [`LifecycleState::is_deletable`]) — operators must

@@ -2192,13 +2192,13 @@ pub mod types {
         User { user_id: ::uuid::Uuid },
     }
 
-    #[doc = "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships."]
+    #[doc = "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\\n\\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\\n\\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships.\","]
+    #[doc = "  \"description\": \"Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\\n\\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\\n\\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"cpu\","]
@@ -2228,6 +2228,14 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"host_cn_uuid\": {"]
+    #[doc = "      \"description\": \"SmartOS compute node that owns this instance's host-side VM.\\n\\n`None` is retained for in-process test/stub jobs and legacy records created before tenant placement existed. Real M1 deployments assign this before the first Provision job is enqueued.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
     #[doc = "      \"type\": \"string\","]
@@ -2287,6 +2295,9 @@ pub mod types {
         pub cpu: u32,
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
         pub description: ::std::string::String,
+        #[doc = "SmartOS compute node that owns this instance's host-side VM.\n\n`None` is retained for in-process test/stub jobs and legacy records created before tenant placement existed. Real M1 deployments assign this before the first Provision job is enqueued."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub host_cn_uuid: ::std::option::Option<::uuid::Uuid>,
         pub id: ::uuid::Uuid,
         #[doc = "Boot image. As of Slice F images are multi-scope; the instance-create handler enforces that the principal can see this image (via the [`crate`]-level visibility predicate). Cross-scope references that the principal cannot see surface as `NotFound`."]
         pub image_id: ::uuid::Uuid,
@@ -4589,7 +4600,7 @@ pub mod types {
     #[doc = "      \"$ref\": \"#/components/schemas/JobStatus\""]
     #[doc = "    },"]
     #[doc = "    \"target_cn_uuid\": {"]
-    #[doc = "      \"description\": \"Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Populated at enqueue time by a future scheduler; today's instance handlers leave it `None` for backward compatibility.\","]
+    #[doc = "      \"description\": \"Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Tenant instance handlers populate this from [`Instance::host_cn_uuid`] once placement has selected a SmartOS host; tests and legacy records may remain unrouted.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -4619,7 +4630,7 @@ pub mod types {
         #[doc = "Monotonically-increasing sequence number that determines the queue order. Older jobs (lower seq) are claimed first. Server-assigned at enqueue time."]
         pub seq: u64,
         pub status: JobStatus,
-        #[doc = "Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Populated at enqueue time by a future scheduler; today's instance handlers leave it `None` for backward compatibility."]
+        #[doc = "Optional placement: when `Some(server_uuid)`, only an agent bound to that CN will claim the job. When `None`, any claimer (the in-process stub or any bound agent) can claim. Tenant instance handlers populate this from [`Instance::host_cn_uuid`] once placement has selected a SmartOS host; tests and legacy records may remain unrouted."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub target_cn_uuid: ::std::option::Option<::uuid::Uuid>,
     }
@@ -8347,6 +8358,8 @@ pub mod types {
                 ::std::string::String,
             >,
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            host_cn_uuid:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             image_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             lifecycle: ::std::result::Result<super::LifecycleState, ::std::string::String>,
@@ -8369,6 +8382,7 @@ pub mod types {
                     cpu: Err("no value supplied for cpu".to_string()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
+                    host_cn_uuid: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
                     image_id: Err("no value supplied for image_id".to_string()),
                     lifecycle: Err("no value supplied for lifecycle".to_string()),
@@ -8412,6 +8426,16 @@ pub mod types {
                 self.description = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn host_cn_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.host_cn_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for host_cn_uuid: {e}"));
                 self
             }
             pub fn id<T>(mut self, value: T) -> Self
@@ -8525,6 +8549,7 @@ pub mod types {
                     cpu: value.cpu?,
                     created_at: value.created_at?,
                     description: value.description?,
+                    host_cn_uuid: value.host_cn_uuid?,
                     id: value.id?,
                     image_id: value.image_id?,
                     lifecycle: value.lifecycle?,
@@ -8545,6 +8570,7 @@ pub mod types {
                     cpu: Ok(value.cpu),
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
+                    host_cn_uuid: Ok(value.host_cn_uuid),
                     id: Ok(value.id),
                     image_id: Ok(value.image_id),
                     lifecycle: Ok(value.lifecycle),
