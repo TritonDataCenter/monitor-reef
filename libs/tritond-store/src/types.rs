@@ -599,6 +599,8 @@ pub struct NewEdgeCluster {
     pub kind: EdgeClusterKind,
     #[serde(default)]
     pub bound_resources: Vec<EdgeClusterResource>,
+    #[serde(default)]
+    pub instances: Vec<EdgeClusterInstance>,
 }
 
 /// Stored form of [`EdgeCluster`]. As with [`NatGatewayRecord`], the

@@ -1264,7 +1264,7 @@ impl Store for MemStore {
             name: req.name.clone(),
             kind: req.kind,
             bound_resources: req.bound_resources.clone(),
-            instances: Vec::new(),
+            instances: req.instances.clone(),
             desired_generation: 1,
             created_at: now,
             updated_at: now,
@@ -1279,6 +1279,12 @@ impl Store for MemStore {
                 .entry(*resource)
                 .or_default()
                 .insert(record.id);
+            if let EdgeClusterResource::NatGateway { nat_gateway_id } = resource
+                && let Some(nat) = guard.nat_gateways_by_id.get_mut(nat_gateway_id)
+            {
+                nat.edge_cluster_id = Some(record.id);
+                nat.updated_at = now;
+            }
         }
         guard.edge_clusters_by_id.insert(record.id, record.clone());
 
@@ -1340,6 +1346,13 @@ impl Store for MemStore {
                 if ids.is_empty() {
                     guard.edge_cluster_ids_by_resource.remove(resource);
                 }
+            }
+            if let EdgeClusterResource::NatGateway { nat_gateway_id } = resource
+                && let Some(nat) = guard.nat_gateways_by_id.get_mut(nat_gateway_id)
+                && nat.edge_cluster_id == Some(record.id)
+            {
+                nat.edge_cluster_id = None;
+                nat.updated_at = Utc::now();
             }
         }
         Ok(())
@@ -5939,6 +5952,7 @@ mod tests {
                 name: "edge-egress".to_string(),
                 kind: EdgeClusterKind::NatGateway,
                 bound_resources: vec![bound],
+                instances: Vec::new(),
             })
             .await
             .unwrap();
@@ -5957,6 +5971,10 @@ mod tests {
         assert_eq!(all, vec![cluster.clone()]);
         let by_resource = store.list_edge_clusters_for_resource(bound).await.unwrap();
         assert_eq!(by_resource, vec![cluster.clone()]);
+        assert_eq!(
+            store.get_nat_gateway(nat.id).await.unwrap().edge_cluster_id,
+            Some(cluster.id)
+        );
 
         store
             .record_network_realization(
@@ -5996,6 +6014,7 @@ mod tests {
                 name: "edge-egress".to_string(),
                 kind: EdgeClusterKind::NatGateway,
                 bound_resources: vec![bound],
+                instances: Vec::new(),
             })
             .await
             .unwrap();
@@ -6005,6 +6024,7 @@ mod tests {
                 name: "edge-egress".to_string(),
                 kind: EdgeClusterKind::NatGateway,
                 bound_resources: vec![bound],
+                instances: Vec::new(),
             })
             .await
             .expect_err("duplicate edge cluster name");
@@ -6017,6 +6037,7 @@ mod tests {
                 bound_resources: vec![EdgeClusterResource::NatGateway {
                     nat_gateway_id: Uuid::new_v4(),
                 }],
+                instances: Vec::new(),
             })
             .await
             .expect_err("unknown bound resource");
@@ -6027,6 +6048,7 @@ mod tests {
                 name: "edge-wrong-kind".to_string(),
                 kind: EdgeClusterKind::FloatingIpDecap,
                 bound_resources: vec![bound],
+                instances: Vec::new(),
             })
             .await
             .expect_err("wrong edge cluster kind");
@@ -6037,6 +6059,7 @@ mod tests {
                 name: "edge-duplicate-resource".to_string(),
                 kind: EdgeClusterKind::NatGateway,
                 bound_resources: vec![bound, bound],
+                instances: Vec::new(),
             })
             .await
             .expect_err("duplicate bound resource");
@@ -6065,11 +6088,16 @@ mod tests {
                 name: "edge-egress".to_string(),
                 kind: EdgeClusterKind::NatGateway,
                 bound_resources: vec![bound],
+                instances: Vec::new(),
             })
             .await
             .unwrap();
 
         store.delete_edge_cluster(cluster.id).await.unwrap();
+        assert_eq!(
+            store.get_nat_gateway(nat.id).await.unwrap().edge_cluster_id,
+            None
+        );
         let err = store
             .get_edge_cluster(cluster.id)
             .await
@@ -6089,6 +6117,7 @@ mod tests {
                 name: "edge-egress".to_string(),
                 kind: EdgeClusterKind::NatGateway,
                 bound_resources: vec![bound],
+                instances: Vec::new(),
             })
             .await
             .expect("name index should be clear after delete");

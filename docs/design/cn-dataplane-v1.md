@@ -104,6 +104,32 @@ Tenant VM placement for M1 is intentionally small:
   capacity fail instance create instead of leaving a job without an
   external consumer.
 
+North/south edge placement for M1 uses the same durable job queue rather
+than a separate pub-sub channel:
+
+* the first tenant port blueprint whose active route table targets a
+  `NatGateway` materializes one `EdgeClusterKind::NatGateway` cluster
+  if that gateway is not already bound;
+* the M1 placer considers only approved CNs with role `edge` or `both`,
+  an activity timestamp, and an IPv6 edge-underlay hint in sysinfo or
+  status;
+* the cluster gets one `EdgeClusterInstance` in M1. The record shape
+  already supports additional instances for HA after the single-edge MVP
+  is running;
+* tritond renders the fhrun manifest with dataplane
+  `backend = "nftables"`, persists the edge-control socket path in the
+  instance record, and enqueues `JobKind::EdgeApply` with
+  `target_cn_uuid` set to the selected edge CN;
+* tenant CN port blueprints include `EdgeClusterIntentV1` underlay
+  coordinates so `RouteTarget::NatGateway` can lower to a Proteus edge
+  target.
+
+The queue remains a poll/claim loop for M1 because it is restart-safe and
+matches SmartOS service behavior. A later long-poll, SSE, WebSocket, or
+NATS-style pub-sub transport can reduce idle latency, but it should carry
+the same durable job ids and completion semantics rather than replacing
+the queue as source of truth.
+
 ## 3. Current gaps
 
 The host realization path is still Phase 0 shaped:

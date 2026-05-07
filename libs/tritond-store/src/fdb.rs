@@ -2994,6 +2994,7 @@ impl Store for FdbStore {
             Created(Box<EdgeClusterRecord>),
             NameTaken,
             ResourceMissing,
+            ResourceCorrupt(String),
             SerializeFailed(String),
         }
 
@@ -3011,20 +3012,34 @@ impl Store for FdbStore {
                         return Ok(Outcome::NameTaken);
                     }
 
+                    let now = Utc::now();
                     for resource in &req.bound_resources {
                         let resource_key = edge_cluster_resource_record_key(*resource);
-                        if tr.get(&resource_key, false).await?.is_none() {
-                            return Ok(Outcome::ResourceMissing);
+                        let bytes = match tr.get(&resource_key, false).await? {
+                            Some(bytes) => bytes,
+                            None => return Ok(Outcome::ResourceMissing),
+                        };
+                        if let EdgeClusterResource::NatGateway { .. } = resource {
+                            let mut nat: NatGatewayRecord = match serde_json::from_slice(&bytes) {
+                                Ok(nat) => nat,
+                                Err(e) => return Ok(Outcome::ResourceCorrupt(e.to_string())),
+                            };
+                            nat.edge_cluster_id = Some(edge_cluster_id);
+                            nat.updated_at = now;
+                            let value = match serde_json::to_vec(&nat) {
+                                Ok(v) => v,
+                                Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                            };
+                            tr.set(&resource_key, &value);
                         }
                     }
 
-                    let now = Utc::now();
                     let record = EdgeClusterRecord {
                         id: edge_cluster_id,
                         name: req.name.clone(),
                         kind: req.kind,
                         bound_resources: req.bound_resources.clone(),
-                        instances: Vec::new(),
+                        instances: req.instances.clone(),
                         desired_generation: 1,
                         created_at: now,
                         updated_at: now,
@@ -3052,6 +3067,9 @@ impl Store for FdbStore {
                 req.name
             ))),
             Ok(Outcome::ResourceMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::ResourceCorrupt(e)) => Err(StoreError::Backend(format!(
+                "deserialize edge cluster resource: {e}"
+            ))),
             Ok(Outcome::SerializeFailed(e)) => {
                 Err(StoreError::Backend(format!("serialize edge cluster: {e}")))
             }
@@ -3179,8 +3197,28 @@ impl Store for FdbStore {
                     tr.clear(&by_id_key);
                     tr.clear(&Self::edge_cluster_by_name_key(&record.name));
                     tr.clear(&Self::edge_cluster_all_key(record.id));
+                    let now = Utc::now();
                     for resource in &record.bound_resources {
                         tr.clear(&Self::edge_cluster_by_resource_key(*resource, record.id));
+                        if let EdgeClusterResource::NatGateway { .. } = resource {
+                            let resource_key = edge_cluster_resource_record_key(*resource);
+                            if let Some(bytes) = tr.get(&resource_key, false).await? {
+                                let mut nat: NatGatewayRecord = match serde_json::from_slice(&bytes)
+                                {
+                                    Ok(nat) => nat,
+                                    Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                                };
+                                if nat.edge_cluster_id == Some(record.id) {
+                                    nat.edge_cluster_id = None;
+                                    nat.updated_at = now;
+                                    let value = match serde_json::to_vec(&nat) {
+                                        Ok(v) => v,
+                                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                                    };
+                                    tr.set(&resource_key, &value);
+                                }
+                            }
+                        }
                     }
                     Ok(Out::Deleted)
                 }

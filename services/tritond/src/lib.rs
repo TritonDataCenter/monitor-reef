@@ -26,7 +26,8 @@ pub mod provisioner;
 pub mod rate_limit;
 pub mod sweeper;
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -44,8 +45,9 @@ use proteus_api::ids::{
 };
 use triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1;
 use triton_vpc::tritond_intent_v1::{
-    FloatingIpAttachmentIntentV1, FloatingIpIntentV1, NatGatewayIntentV1, NicIntentV1,
-    RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1, VpcIntentV1,
+    EdgeClusterIntentV1, FloatingIpAttachmentIntentV1, FloatingIpIntentV1, NatGatewayIntentV1,
+    NicIntentV1, RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1,
+    VpcIntentV1,
 };
 use tritond_api::{
     AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
@@ -75,8 +77,9 @@ use tritond_auth::{
     JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{
-    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnRole, CnState, IdpConfig, MemStore, Store,
-    StoreError, normalize_claim_code,
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnRole, CnState, EdgeCluster,
+    EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind, EdgeClusterResource,
+    EdgeNicCoord, IdpConfig, MemStore, NewEdgeCluster, Store, StoreError, normalize_claim_code,
 };
 use uuid::Uuid;
 
@@ -6208,6 +6211,13 @@ async fn build_blueprint(
 }
 
 const INITIAL_PROTEUS_PORT_GENERATION: u64 = 1;
+const M1_MAX_EDGE_INSTANCES_PER_CN: usize = 2;
+const EDGE_ROOT: &str = "/var/lib/tritonagent/edge";
+const EDGE_FIREHYVE_BIN: &str = "/opt/firehyve/bin/firehyve";
+const EDGE_KERNEL: &str = "/opt/firehyve/kernels/linux-v1/bzImage";
+const EDGE_INIT: &str = "/opt/firehyve/bin/fhrun-init";
+const EDGE_AGENT_BIN: &str = "/opt/firehyve/bin/edge-agent";
+const EDGE_VM_MEMORY: &str = "128M";
 
 /// Materialise the opaque Proteus `PortBlueprint` the bound CN agent
 /// should apply for a NIC.
@@ -6257,10 +6267,12 @@ async fn build_port_blueprint(
         .list_routes_in_table(subnet.route_table_id)
         .await
         .map_err(store_error_to_http)?;
+    ensure_nat_gateway_edges_for_routes(store, &routes).await?;
     let nat_gateways = store
         .list_nat_gateways_in_vpc(vpc.id)
         .await
         .map_err(store_error_to_http)?;
+    let edge_clusters = edge_clusters_for_nat_gateways(store, &nat_gateways).await?;
     let floating_ips = store
         .list_floating_ips_in_project(project.id)
         .await
@@ -6313,7 +6325,10 @@ async fn build_port_blueprint(
             .collect::<Result<Vec<_>, _>>()?,
         nat_gateways: nat_gateways.iter().map(nat_gateway_intent).collect(),
         floating_ips: floating_ips.iter().map(floating_ip_intent).collect(),
-        edge_clusters: Vec::new(),
+        edge_clusters: edge_clusters
+            .iter()
+            .map(edge_cluster_intent)
+            .collect::<Result<Vec<_>, _>>()?,
     };
 
     let plugin_blueprint = intent.compile_blueprint().map_err(|err| {
@@ -6351,6 +6366,373 @@ async fn build_port_blueprint(
         generation,
         blueprint_postcard_base64,
     })
+}
+
+async fn ensure_nat_gateway_edges_for_routes(
+    store: &dyn Store,
+    routes: &[Route],
+) -> Result<(), HttpError> {
+    let mut nat_gateway_ids = Vec::new();
+    for route in routes {
+        if let RouteTarget::NatGateway { nat_gateway_id } = route.target
+            && !nat_gateway_ids.contains(&nat_gateway_id)
+        {
+            nat_gateway_ids.push(nat_gateway_id);
+        }
+    }
+
+    for nat_gateway_id in nat_gateway_ids {
+        ensure_nat_gateway_edge_materialized(store, nat_gateway_id).await?;
+    }
+    Ok(())
+}
+
+async fn ensure_nat_gateway_edge_materialized(
+    store: &dyn Store,
+    nat_gateway_id: Uuid,
+) -> Result<(), HttpError> {
+    let nat_gateway = store
+        .get_nat_gateway(nat_gateway_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if nat_gateway.edge_cluster_id.is_some() {
+        return Ok(());
+    }
+
+    let bound_resource = EdgeClusterResource::NatGateway { nat_gateway_id };
+    let existing = store
+        .list_edge_clusters_for_resource(bound_resource)
+        .await
+        .map_err(store_error_to_http)?;
+    if !existing.is_empty() {
+        return Ok(());
+    }
+
+    let (edge_cn, underlay) = select_edge_cn_for_nat_gateway(store).await?;
+    let edge_instance = new_m1_edge_instance(&nat_gateway, edge_cn.server_uuid, underlay);
+    let edge_instance_id = edge_instance.id;
+    let cluster = store
+        .create_edge_cluster(NewEdgeCluster {
+            name: edge_cluster_name(nat_gateway_id),
+            kind: EdgeClusterKind::NatGateway,
+            bound_resources: vec![bound_resource],
+            instances: vec![edge_instance.clone()],
+        })
+        .await
+        .map_err(store_error_to_http)?;
+    let nat_gateway = store
+        .get_nat_gateway(nat_gateway_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let bindings = edge_manifest_bindings_for_nat_gateway(store, &nat_gateway).await?;
+    let manifest = edge::render_edge_manifest(
+        &nat_gateway,
+        &bindings,
+        &edge_manifest_placement(&edge_instance).map_err(store_error_to_http)?,
+    );
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|err| HttpError::for_internal_error(format!("serialize edge manifest: {err}")))?;
+
+    store
+        .enqueue_job(NewJob {
+            kind: JobKind::EdgeApply {
+                edge_instance_id,
+                manifest_bytes,
+            },
+            target_cn_uuid: Some(edge_cn.server_uuid),
+        })
+        .await
+        .map_err(store_error_to_http)?;
+
+    tracing::info!(
+        nat_gateway_id = %nat_gateway.id,
+        edge_cluster_id = %cluster.id,
+        edge_instance_id = %edge_instance.id,
+        target_cn_uuid = %edge_cn.server_uuid,
+        "materialized M1 NAT edge cluster"
+    );
+    Ok(())
+}
+
+async fn edge_clusters_for_nat_gateways(
+    store: &dyn Store,
+    nat_gateways: &[NatGateway],
+) -> Result<Vec<EdgeCluster>, HttpError> {
+    let mut cluster_ids = Vec::new();
+    for nat in nat_gateways {
+        if let Some(edge_cluster_id) = nat.edge_cluster_id
+            && !cluster_ids.contains(&edge_cluster_id)
+        {
+            cluster_ids.push(edge_cluster_id);
+        }
+    }
+
+    let mut out = Vec::with_capacity(cluster_ids.len());
+    for id in cluster_ids {
+        out.push(
+            store
+                .get_edge_cluster(id)
+                .await
+                .map_err(store_error_to_http)?,
+        );
+    }
+    Ok(out)
+}
+
+async fn edge_manifest_bindings_for_nat_gateway(
+    store: &dyn Store,
+    nat_gateway: &NatGateway,
+) -> Result<edge::EdgeManifestBindings, HttpError> {
+    let subnets = store
+        .list_subnets_in_vpc(nat_gateway.vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let mut snat_sources = Vec::new();
+
+    for subnet in subnets {
+        let routes = store
+            .list_routes_in_table(subnet.route_table_id)
+            .await
+            .map_err(store_error_to_http)?;
+        for route in routes {
+            if !matches!(
+                route.target,
+                RouteTarget::NatGateway { nat_gateway_id } if nat_gateway_id == nat_gateway.id
+            ) {
+                continue;
+            }
+            match route.destination.ip() {
+                IpAddr::V4(_) => {
+                    if let Some(cidr) = subnet.ipv4_block {
+                        snat_sources.push(cidr.to_string());
+                    }
+                }
+                IpAddr::V6(_) => {
+                    if let Some(cidr) = subnet.ipv6_block {
+                        snat_sources.push(cidr.to_string());
+                    }
+                }
+            }
+        }
+    }
+    snat_sources.sort();
+    snat_sources.dedup();
+
+    Ok(edge::EdgeManifestBindings {
+        snat_sources,
+        floating_ips: Vec::new(),
+    })
+}
+
+async fn select_edge_cn_for_nat_gateway(store: &dyn Store) -> Result<(Cn, Ipv6Addr), HttpError> {
+    let cns = store
+        .list_cns(Some(CnState::Approved))
+        .await
+        .map_err(store_error_to_http)?;
+    let edge_counts = edge_instance_counts_by_cn(store).await?;
+    let mut best: Option<(usize, u128, Cn, Ipv6Addr)> = None;
+
+    for cn in cns
+        .into_iter()
+        .filter(|cn| cn_accepts_edge_jobs(cn))
+        .filter_map(|cn| edge_cn_underlay_ipv6(&cn).map(|underlay| (cn, underlay)))
+    {
+        let assigned = edge_counts.get(&cn.0.server_uuid).copied().unwrap_or(0);
+        if assigned >= M1_MAX_EDGE_INSTANCES_PER_CN {
+            continue;
+        }
+        let key = (assigned, cn.0.server_uuid.as_u128(), cn.0, cn.1);
+        if best
+            .as_ref()
+            .is_none_or(|current| (key.0, key.1) < (current.0, current.1))
+        {
+            best = Some(key);
+        }
+    }
+
+    best.map(|(_, _, cn, underlay)| (cn, underlay))
+        .ok_or_else(|| {
+            store_error_to_http(StoreError::Conflict(
+                "no eligible edge CN with IPv6 underlay available for NAT gateway placement"
+                    .to_string(),
+            ))
+        })
+}
+
+async fn edge_instance_counts_by_cn(
+    store: &dyn Store,
+) -> Result<std::collections::HashMap<Uuid, usize>, HttpError> {
+    let clusters = store
+        .list_edge_clusters()
+        .await
+        .map_err(store_error_to_http)?;
+    let mut counts = std::collections::HashMap::new();
+    for instance in clusters.iter().flat_map(|cluster| cluster.instances.iter()) {
+        *counts.entry(instance.cn_id).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn cn_accepts_edge_jobs(cn: &Cn) -> bool {
+    cn.state == CnState::Approved
+        && cn.last_seen.is_some()
+        && matches!(cn.role, CnRole::Edge | CnRole::Both)
+}
+
+fn edge_cn_underlay_ipv6(cn: &Cn) -> Option<Ipv6Addr> {
+    let key_paths = [
+        "triton_edge_underlay_ipv6",
+        "triton_edge_underlay",
+        "proteus_underlay_ipv6",
+        "underlay_ipv6",
+        "edge_underlay_ipv6",
+    ];
+    for key in key_paths {
+        if let Some(addr) = cn
+            .sysinfo
+            .get(key)
+            .and_then(first_ipv6_from_value)
+            .or_else(|| {
+                cn.last_status
+                    .as_ref()
+                    .and_then(|status| status.get(key))
+                    .and_then(first_ipv6_from_value)
+            })
+        {
+            return Some(addr);
+        }
+    }
+
+    cn.sysinfo
+        .get("Network Interfaces")
+        .and_then(first_interface_ipv6)
+        .or_else(|| {
+            cn.last_status
+                .as_ref()
+                .and_then(|status| status.get("Network Interfaces"))
+                .and_then(first_interface_ipv6)
+        })
+}
+
+fn first_interface_ipv6(value: &serde_json::Value) -> Option<Ipv6Addr> {
+    let interfaces = value.as_object()?;
+    for iface in interfaces.values() {
+        if let Some(addr) = ["ip6addr", "ip6addr0", "IPv6 Address", "ipv6"]
+            .iter()
+            .find_map(|key| iface.get(*key).and_then(first_ipv6_from_value))
+        {
+            return Some(addr);
+        }
+    }
+    None
+}
+
+fn first_ipv6_from_value(value: &serde_json::Value) -> Option<Ipv6Addr> {
+    match value {
+        serde_json::Value::String(s) => parse_ipv6_hint(s),
+        serde_json::Value::Array(values) => values.iter().find_map(first_ipv6_from_value),
+        _ => None,
+    }
+}
+
+fn parse_ipv6_hint(value: &str) -> Option<Ipv6Addr> {
+    let without_prefix = value.split('/').next().unwrap_or(value);
+    let without_zone = without_prefix.split('%').next().unwrap_or(without_prefix);
+    let addr = without_zone.parse::<Ipv6Addr>().ok()?;
+    if addr.is_unspecified() || addr.is_loopback() || addr.is_multicast() {
+        return None;
+    }
+    Some(addr)
+}
+
+fn new_m1_edge_instance(
+    nat_gateway: &NatGateway,
+    cn_id: Uuid,
+    underlay: Ipv6Addr,
+) -> EdgeClusterInstance {
+    let id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+    EdgeClusterInstance {
+        id,
+        cn_id,
+        fhrun_manifest_uri: format!("{EDGE_ROOT}/{id}/manifest.json"),
+        north_nic: EdgeNicCoord {
+            nic_tag: edge_vnic_name(id, edge::EDGE_NIC_ROLE_NORTH),
+            mac: Some(edge_mac(id, 0x10)),
+            ip: Some(nat_gateway.public_address),
+        },
+        south_nic: EdgeNicCoord {
+            nic_tag: edge_vnic_name(id, edge::EDGE_NIC_ROLE_SOUTH),
+            mac: Some(edge_mac(id, 0x11)),
+            ip: Some(IpAddr::V6(underlay)),
+        },
+        control_socket: format!("{EDGE_ROOT}/{id}/edge-control.sock"),
+        state: EdgeClusterInstanceState::Pending,
+        last_error: None,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+fn edge_manifest_placement(
+    instance: &EdgeClusterInstance,
+) -> Result<edge::EdgeManifestPlacement, StoreError> {
+    Ok(edge::EdgeManifestPlacement {
+        edge_instance_id: instance.id,
+        firehyve: PathBuf::from(EDGE_FIREHYVE_BIN),
+        kernel: PathBuf::from(EDGE_KERNEL),
+        init: PathBuf::from(EDGE_INIT),
+        edge_agent_bin: PathBuf::from(EDGE_AGENT_BIN),
+        edge_control_socket: PathBuf::from(&instance.control_socket),
+        north_nic: edge_manifest_nic(&instance.north_nic)?,
+        south_nic: edge_manifest_nic(&instance.south_nic)?,
+        vcpus: 1,
+        memory: EDGE_VM_MEMORY.to_string(),
+    })
+}
+
+fn edge_manifest_nic(nic: &EdgeNicCoord) -> Result<edge::EdgeNicPlacement, StoreError> {
+    let mac = nic
+        .mac
+        .clone()
+        .ok_or_else(|| StoreError::Backend("edge instance NIC is missing a MAC".to_string()))?;
+    let ip = nic
+        .ip
+        .ok_or_else(|| StoreError::Backend("edge instance NIC is missing an IP".to_string()))?;
+    Ok(edge::EdgeNicPlacement {
+        vnic: nic.nic_tag.clone(),
+        mac,
+        ip: host_cidr(ip),
+        gateway: None,
+    })
+}
+
+fn edge_cluster_name(nat_gateway_id: Uuid) -> String {
+    format!("edge-nat-{}", nat_gateway_id.simple())
+}
+
+fn edge_vnic_name(edge_instance_id: Uuid, role: &str) -> String {
+    let simple = edge_instance_id.simple().to_string();
+    format!("edge-{}-{role}", &simple[..8])
+}
+
+fn edge_mac(edge_instance_id: Uuid, salt: u8) -> String {
+    let bytes = edge_instance_id.as_bytes();
+    format!(
+        "02:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        bytes[0] ^ salt,
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4]
+    )
+}
+
+fn host_cidr(ip: IpAddr) -> String {
+    match ip {
+        IpAddr::V4(v4) => format!("{v4}/32"),
+        IpAddr::V6(v6) => format!("{v6}/128"),
+    }
 }
 
 async fn enforce_port_instance_claimed_by_bound_cn(
@@ -6422,6 +6804,26 @@ fn nat_gateway_intent(nat: &NatGateway) -> NatGatewayIntentV1 {
         edge_cluster_id: nat.edge_cluster_id,
         desired_generation: nat.desired_generation,
     }
+}
+
+fn edge_cluster_intent(cluster: &EdgeCluster) -> Result<EdgeClusterIntentV1, HttpError> {
+    Ok(EdgeClusterIntentV1 {
+        id: cluster.id,
+        underlay: cluster
+            .instances
+            .iter()
+            .filter(|instance| {
+                !matches!(
+                    instance.state,
+                    EdgeClusterInstanceState::Stopped | EdgeClusterInstanceState::Failed
+                )
+            })
+            .filter_map(|instance| match instance.south_nic.ip {
+                Some(IpAddr::V6(addr)) => Some(addr.to_string()),
+                _ => None,
+            })
+            .collect(),
+    })
 }
 
 fn floating_ip_intent(fip: &FloatingIp) -> FloatingIpIntentV1 {

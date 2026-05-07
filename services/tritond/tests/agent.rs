@@ -32,7 +32,8 @@ use tritond_client::types::{
     RealizationStatus, RealizerId, RegisterCnRequest,
 };
 use tritond_store::{
-    Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, Nic, Store, User,
+    CnRole, Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, NewRoute, Nic,
+    RouteTarget, Store, User,
 };
 use uuid::Uuid;
 
@@ -129,6 +130,21 @@ async fn root_client(test: &TestServer) -> tritond_client::Client {
 }
 
 async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) -> String {
+    register_and_approve_with_sysinfo(
+        test,
+        cn_uuid,
+        hostname,
+        serde_json::json!({ "hostname": hostname }),
+    )
+    .await
+}
+
+async fn register_and_approve_with_sysinfo(
+    test: &TestServer,
+    cn_uuid: Uuid,
+    hostname: &str,
+    sysinfo: serde_json::Value,
+) -> String {
     let anon = test.anonymous_client();
     let registered = anon
         .agent_register()
@@ -136,7 +152,7 @@ async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) 
             server_uuid: cn_uuid,
             hostname: hostname.to_string(),
             admin_ip: None,
-            sysinfo: serde_json::json!({ "hostname": hostname }),
+            sysinfo,
         })
         .send()
         .await
@@ -837,6 +853,155 @@ async fn bound_agent_can_fetch_port_blueprint_for_claimed_instance() {
         triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1
     );
     assert!(!port.plugin_config.bytes.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn port_blueprint_materializes_nat_edge_cluster_and_routes_edge_target() {
+    let test = TestServer::start().await;
+    let (instance, nic) =
+        create_instance_with_primary_nic(&test, "agent-port-blueprint-edge").await;
+    let subnet = test.store.get_subnet(nic.subnet_id).await.unwrap();
+    let nat = test
+        .store
+        .create_nat_gateway(
+            nic.tenant_id,
+            nic.project_id,
+            nic.vpc_id,
+            tritond_store::NewNatGateway {
+                name: "egress".to_string(),
+                description: None,
+                family: tritond_store::AddressFamily::V4,
+            },
+        )
+        .await
+        .unwrap();
+    test.store
+        .create_route(
+            nic.tenant_id,
+            nic.project_id,
+            nic.vpc_id,
+            subnet.route_table_id,
+            NewRoute {
+                name: "default-to-nat".to_string(),
+                description: None,
+                destination: "0.0.0.0/0".parse().unwrap(),
+                target: RouteTarget::NatGateway {
+                    nat_gateway_id: nat.id,
+                },
+            },
+        )
+        .await
+        .unwrap();
+    test.store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: instance.id,
+            },
+            target_cn_uuid: None,
+        })
+        .await
+        .unwrap();
+
+    let edge_cn_uuid = Uuid::from_u128(0x0e0);
+    let edge_key = register_and_approve_with_sysinfo(
+        &test,
+        edge_cn_uuid,
+        "edge-a",
+        serde_json::json!({
+            "hostname": "edge-a",
+            "triton_edge_underlay_ipv6": "fd00::40"
+        }),
+    )
+    .await;
+    test.store
+        .set_cn_role(edge_cn_uuid, CnRole::Edge)
+        .await
+        .unwrap();
+
+    let tenant_cn_uuid = Uuid::from_u128(0x0a0);
+    let tenant_key = register_and_approve(&test, tenant_cn_uuid, "tenant-a").await;
+    let tenant_agent = test.bearer_client(&tenant_key);
+    tenant_agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: tenant_cn_uuid.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("tenant CN should claim provision job");
+
+    let response = tenant_agent
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect("NAT route blueprint should materialize edge target")
+        .into_inner();
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &response.blueprint_postcard_base64,
+    )
+    .expect("response should be base64");
+    let port: proteus_api::blueprint::PortBlueprint =
+        postcard::from_bytes(&bytes).expect("response should be a Proteus PortBlueprint");
+    let plugin: triton_vpc::TritonVpcBlueprint = postcard::from_bytes(&port.plugin_config.bytes)
+        .expect("plugin config should be a TritonVpcBlueprint");
+    assert_eq!(plugin.edge_gateways.len(), 1);
+    assert_eq!(
+        plugin.edge_gateways[0].underlay[0].0,
+        "fd00::40".parse::<std::net::Ipv6Addr>().unwrap().octets()
+    );
+
+    let realized_nat = test.store.get_nat_gateway(nat.id).await.unwrap();
+    let edge_cluster_id = realized_nat
+        .edge_cluster_id
+        .expect("blueprint fetch should bind the NatGateway to an EdgeCluster");
+    let edge_cluster = test.store.get_edge_cluster(edge_cluster_id).await.unwrap();
+    assert_eq!(edge_cluster.instances.len(), 1);
+    assert_eq!(edge_cluster.instances[0].cn_id, edge_cn_uuid);
+
+    let edge_agent = test.bearer_client(&edge_key);
+    let edge_job = edge_agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: edge_cn_uuid.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("edge CN should claim the routed EdgeApply job");
+    assert_eq!(edge_job.target_cn_uuid, Some(edge_cn_uuid));
+    match edge_job.kind {
+        tritond_client::types::JobKind::EdgeApply {
+            edge_instance_id,
+            manifest_bytes,
+        } => {
+            assert_eq!(edge_instance_id, edge_cluster.instances[0].id);
+            let manifest: serde_json::Value =
+                serde_json::from_slice(&manifest_bytes).expect("manifest should be json");
+            assert_eq!(manifest["dataplane"]["backend"], "nftables");
+            assert_eq!(
+                manifest["dataplane"]["snat"][0]["from"],
+                subnet.ipv4_block.as_ref().unwrap().to_string()
+            );
+            assert_eq!(
+                manifest["dataplane"]["snat"][0]["via"],
+                nat.public_address.to_string()
+            );
+            assert_eq!(
+                manifest["edge_control"]["socket"],
+                edge_cluster.instances[0].control_socket
+            );
+        }
+        other => panic!("expected edge apply job, got {other:?}"),
+    }
 
     test.close().await;
 }
