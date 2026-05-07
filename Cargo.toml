@@ -117,6 +117,7 @@ indicatif = "0.18"
 # structs (see tritond-store::types::Vpc) so we don't depend on
 # ipnetwork's schemars feature.
 ipnetwork = { version = "0.21", default-features = false, features = ["serde"] }
+libc = "0.2"
 md-5 = "0.10"
 notify = "8.2"
 openapiv3 = "2.0"

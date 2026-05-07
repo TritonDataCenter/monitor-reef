@@ -20,6 +20,9 @@
 //!   default 5
 //! * `--proteus-dev` / `TRITONAGENT_PROTEUS_DEV` — Proteus device
 //!   node. Default `/dev/proteus`.
+//! * `--edge-root` / `TRITONAGENT_EDGE_ROOT` — directory where edge
+//!   fhrun manifests, pid files, logs, and control sockets live.
+//! * `--fhrun-bin` / `TRITONAGENT_FHRUN_BIN` — fhrun launcher path.
 //! * `--dry-run` / `TRITONAGENT_DRY_RUN`
 //!
 //! There is no longer an `--api-key` flag: on first boot the agent
@@ -85,6 +88,23 @@ struct Cli {
         default_value_t = String::from(tritonagent::DEFAULT_PROTEUS_DEVICE),
     )]
     proteus_dev: String,
+
+    /// Root directory for per-edge-instance fhrun manifests, pid
+    /// files, logs, and edge-control Unix sockets.
+    #[arg(
+        long,
+        env = "TRITONAGENT_EDGE_ROOT",
+        default_value_t = String::from(tritonagent::DEFAULT_EDGE_ROOT),
+    )]
+    edge_root: String,
+
+    /// Path to the fhrun launcher used for edge microVM jobs.
+    #[arg(
+        long,
+        env = "TRITONAGENT_FHRUN_BIN",
+        default_value_t = String::from(tritonagent::DEFAULT_FHRUN_BIN),
+    )]
+    fhrun_bin: String,
 
     /// When set, skip `vmadm` entirely and mark every claimed
     /// job `Completed`. Useful for transport-only smoke testing
@@ -155,6 +175,8 @@ async fn main() -> Result<()> {
         agent_id: server_uuid.to_string(),
         poll_interval: Duration::from_secs(cli.poll_interval_secs),
         proteus_dev: PathBuf::from(cli.proteus_dev),
+        edge_root: PathBuf::from(cli.edge_root),
+        fhrun_bin: PathBuf::from(cli.fhrun_bin),
         dry_run: cli.dry_run,
         spawn_heartbeater: !cli.no_heartbeater,
     };

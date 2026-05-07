@@ -130,6 +130,23 @@ NATS-style pub-sub transport can reduce idle latency, but it should carry
 the same durable job ids and completion semantics rather than replacing
 the queue as source of truth.
 
+`tritonagent` applies edge jobs on the selected edge CN:
+
+* `TRITONAGENT_EDGE_ROOT` defaults to `/var/lib/tritonagent/edge`.
+  Each edge instance uses `<edge_root>/<edge_instance_id>/manifest.json`,
+  `fhrun.pid`, stdout/stderr logs, and `edge-control.sock`;
+* `TRITONAGENT_FHRUN_BIN` defaults to `/opt/firehyve/bin/fhrun`;
+* `JobKind::EdgeApply` parses and validates the shared fhrun manifest,
+  rejects any v1 dataplane backend other than `nftables`, writes the
+  manifest atomically, runs `fhrun --check`, and starts fhrun as a
+  supervised host process;
+* re-applying an unchanged manifest is idempotent when the recorded fhrun
+  pid is still running. A changed manifest restarts the local fhrun
+  process because live `dataplane.replace` is reserved for a later slice;
+* `JobKind::EdgeReap` best-effort terminates the recorded fhrun pid and
+  removes the runtime directory, so orphan cleanup can be driven through
+  the same durable job queue.
+
 ## 3. Current gaps
 
 The host realization path is still Phase 0 shaped:

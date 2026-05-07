@@ -10,13 +10,13 @@
 //! claimed [`ProvisioningJob`] to a terminal state, and reports
 //! the outcome via `/v2/agent/jobs/{id}/complete`.
 //!
-//! ## Phase 0 stub mode
+//! ## Local host execution
 //!
-//! This v0 *does not* touch SmartOS. It logs each claimed job and
-//! reports `JobOutcome::Completed` immediately. The point of v0 is
-//! to validate the agent transport seam end-to-end (auth, claim,
-//! complete, audit emission) before adding `vmadm`/`imgadm`/OPTE
-//! integration risk in a follow-on slice.
+//! The agent is the only component that mutates CN-local runtime
+//! state. Provision jobs drive image import, Proteus port realization,
+//! and `vmadm`; edge jobs persist fhrun manifests under the configured
+//! edge root and supervise the local firehyve/fhrun process. Dry-run
+//! mode remains available for transport-only smoke testing.
 //!
 //! ## Authentication
 //!
@@ -32,6 +32,7 @@
 //! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
 
 pub mod credentials;
+pub mod edge;
 pub mod images;
 pub mod platform;
 pub mod proteus;
@@ -66,6 +67,12 @@ use crate::status::TritondStatusSink;
 /// Default Proteus kernel device node on SmartOS.
 pub const DEFAULT_PROTEUS_DEVICE: &str = "/dev/proteus";
 
+/// Default root for fhrun/firehyve edge instance runtime state on a CN.
+pub const DEFAULT_EDGE_ROOT: &str = "/var/lib/tritonagent/edge";
+
+/// Default fhrun launcher path on SmartOS CNs.
+pub const DEFAULT_FHRUN_BIN: &str = "/opt/firehyve/bin/fhrun";
+
 /// Configuration for an [`Agent`] run.
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
@@ -82,6 +89,11 @@ pub struct AgentConfig {
     /// Proteus kernel device node. The real backend opens this on
     /// SmartOS; non-illumos builds require `dry_run` for provision work.
     pub proteus_dev: PathBuf,
+    /// Root directory for per-edge-instance fhrun manifests, pid
+    /// files, logs, and edge-control Unix sockets.
+    pub edge_root: PathBuf,
+    /// Path to the fhrun launcher used for `JobKind::EdgeApply`.
+    pub fhrun_bin: PathBuf,
     /// When `true`, the agent fetches the blueprint and logs it
     /// but does NOT call `vmadm`; every job reports `Completed`
     /// regardless. Used for transport-only smoke testing on hosts
@@ -136,6 +148,8 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         endpoint = %cfg.endpoint,
         poll_interval_ms = cfg.poll_interval.as_millis(),
         proteus_dev = %cfg.proteus_dev.display(),
+        edge_root = %cfg.edge_root.display(),
+        fhrun_bin = %cfg.fhrun_bin.display(),
         dry_run = cfg.dry_run,
         spawn_heartbeater = cfg.spawn_heartbeater,
         "tritonagent starting",
@@ -392,14 +406,20 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
             vmadm::delete_zone(*instance_id).await?;
         }
         JobKind::EdgeApply {
-            edge_instance_id, ..
+            edge_instance_id,
+            manifest_bytes,
         } => {
-            anyhow::bail!(
-                "edge apply job {edge_instance_id} is not implemented in tritonagent yet"
-            );
+            edge::apply(
+                &cfg.edge_root,
+                &cfg.fhrun_bin,
+                *edge_instance_id,
+                manifest_bytes,
+            )
+            .with_context(|| format!("apply edge instance {edge_instance_id}"))?;
         }
         JobKind::EdgeReap { edge_instance_id } => {
-            anyhow::bail!("edge reap job {edge_instance_id} is not implemented in tritonagent yet");
+            edge::reap(&cfg.edge_root, *edge_instance_id)
+                .with_context(|| format!("reap edge instance {edge_instance_id}"))?;
         }
     }
 
