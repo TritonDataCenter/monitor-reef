@@ -81,6 +81,14 @@ or let the script create a project-scoped SSH key from
 `M1_SSH_PUBLIC_KEY_FILE` and select the first project-visible image
 with `os` that looks Linux-like and `compatibility.brand == "bhyve"`.
 
+When a selected image is already present in the CN's imgadm catalog,
+`tritonagent` preserves the existing
+`/var/imgadm/images/zones-<image-id>.json` manifest. This matters for
+lab Linux zvol images: preserving imgadm's original `type = "zvol"`
+metadata lets the bhyve `vmadm create` path use the already-installed
+image instead of replacing it with the agent's synthetic
+`zone-dataset` manifest.
+
 ## What It Checks
 
 The script creates or reuses, by name:

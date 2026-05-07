@@ -172,16 +172,45 @@ pub async fn ensure(image: &Image) -> Result<()> {
 }
 
 async fn write_imgadm_manifest(image: &Image) -> Result<()> {
-    fs::create_dir_all("/var/imgadm/images")
+    let path = PathBuf::from(format!("/var/imgadm/images/zones-{}.json", image.id));
+    write_imgadm_manifest_at(image, &path).await
+}
+
+async fn write_imgadm_manifest_at(image: &Image, path: &Path) -> Result<()> {
+    if fs::try_exists(path)
         .await
-        .context("create /var/imgadm/images")?;
-    let path = format!("/var/imgadm/images/zones-{}.json", image.id);
+        .with_context(|| format!("check existing imgadm manifest {path:?}"))?
+    {
+        info!(
+            image_id = %image.id,
+            path = %path.display(),
+            "imgadm manifest already exists; preserving host-local metadata",
+        );
+        return Ok(());
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("imgadm manifest path has no parent: {path:?}"))?;
+    fs::create_dir_all(parent)
+        .await
+        .with_context(|| format!("create {parent:?}"))?;
     // Format published_at as a UTC timestamp — imgadm requires
     // an ISO-8601 instant. Use the image record's created_at if
     // present-day formatting is preferred; for v0 just stamp
     // "now" — it's only used by `imgadm list` ordering.
     let published_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let manifest = serde_json::json!({
+    let manifest = synthetic_imgadm_manifest(image, &published_at);
+    let body =
+        serde_json::to_vec_pretty(&manifest).context("serialise synthetic imgadm manifest")?;
+    fs::write(path, &body)
+        .await
+        .with_context(|| format!("write {path:?}"))?;
+    Ok(())
+}
+
+fn synthetic_imgadm_manifest(image: &Image, published_at: &str) -> serde_json::Value {
+    serde_json::json!({
         "manifest": {
             "v": 2,
             "uuid": image.id,
@@ -207,13 +236,7 @@ async fn write_imgadm_manifest(image: &Image) -> Result<()> {
         },
         "zpool": "zones",
         "source": "tritond"
-    });
-    let body =
-        serde_json::to_vec_pretty(&manifest).context("serialise synthetic imgadm manifest")?;
-    fs::write(&path, &body)
-        .await
-        .with_context(|| format!("write {path}"))?;
-    Ok(())
+    })
 }
 
 /// Download a tritond image bundle from `url`, extract
@@ -362,4 +385,63 @@ async fn download_and_verify(url: &str, expected_sha256: &str, dest: &Path) -> R
         bail!("image content sha256 mismatch: expected {expected}, got {actual}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use tempfile::tempdir;
+    use tokio::fs;
+    use tritond_client::types::{Image, ImageScope};
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn sample_image(id: Uuid) -> Image {
+        Image {
+            id,
+            scope: ImageScope::Public,
+            name: "ubuntu-24.04".to_string(),
+            description: "Ubuntu 24.04".to_string(),
+            os: "linux".to_string(),
+            version: "20240612".to_string(),
+            size_bytes: 596_771_586,
+            sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            source_url: None,
+            compatibility: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn write_imgadm_manifest_preserves_existing_manifest() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zones-existing.json");
+        let original = br#"{"manifest":{"type":"zvol"}}"#;
+        fs::write(&path, original).await.unwrap();
+
+        write_imgadm_manifest_at(&sample_image(Uuid::new_v4()), &path)
+            .await
+            .unwrap();
+
+        let after = fs::read(&path).await.unwrap();
+        assert_eq!(after, original);
+    }
+
+    #[tokio::test]
+    async fn write_imgadm_manifest_creates_synthetic_when_missing() {
+        let dir = tempdir().unwrap();
+        let image_id = Uuid::new_v4();
+        let path = dir.path().join("nested").join("zones-new.json");
+
+        write_imgadm_manifest_at(&sample_image(image_id), &path)
+            .await
+            .unwrap();
+
+        let body = fs::read(&path).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["manifest"]["uuid"], image_id.to_string());
+        assert_eq!(value["manifest"]["type"], "zone-dataset");
+        assert_eq!(value["source"], "tritond");
+    }
 }
