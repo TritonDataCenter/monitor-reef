@@ -398,7 +398,7 @@ async fn main() -> Result<()> {
         }
         Commands::Services { json } => cmd_services(&sapi_url?, json).await,
         Commands::Update => not_yet_implemented("update"),
-        Commands::Channel { command } => command.run(),
+        Commands::Channel { command } => command.run(&sapi_url?, updates_url.as_deref()).await,
         Commands::DcMaint { command } => command.run(&sapi_url?).await,
         Commands::Platform { command } => command.run(),
         Commands::PostSetup { command } => {
