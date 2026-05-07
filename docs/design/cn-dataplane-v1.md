@@ -213,6 +213,11 @@ The host realization path is still Phase 0 shaped:
   missing .nic_tag option`; `nictagadm add <tag> proteus49376` failed
   because nictagadm does not accept Proteus `misc` links as backing
   links;
+  the source-side SmartOS patch landed as smartos-live root
+  `43c8b414` plus nested illumos `845b2131a3`. It accepts
+  `nic_tag=proteusNNN` in vmadm validation and teaches the joyent brand
+  hook to treat Proteus `misc` links as VNIC parents. This still needs a
+  platform image build/install before the lab CNs run it from `/usr`;
 * port cleanup exists for provision failure, but Stop/Restart/Delete do
   not yet pause/reapply/delete Proteus ports end to end;
 * no applied generation is reported for VPC, subnet, route, security
@@ -391,6 +396,12 @@ SmartOS-live slice should therefore add an explicit Proteus parent-link
 contract, or a narrowly-scoped `global-nic` path that accepts Proteus
 `DATALINK_CLASS_MISC` links and still creates the zone VNIC with
 `dladm create-vnic -t -l <proteus-link>`.
+
+The SmartOS source patch takes the narrow `nic_tag=proteusNNN` route for
+M1. `tritonagent` therefore needs to derive the same decimal suffix that
+`proteusadm port create` uses: low 32 bits of the port UUID rendered as
+decimal, prefixed with `proteus`. For example, port id
+`00000000-0000-4000-8000-00000000c0e1` maps to `proteus49377`.
 
 ### 5.4 SSH and configuration injection
 
