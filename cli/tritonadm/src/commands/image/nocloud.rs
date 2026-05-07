@@ -240,6 +240,7 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
 /// the same vendor/release don't re-fetch from upstream.
 async fn cleanup_artifacts(gz: &Path, manifest: &Path) {
     for p in [gz, manifest] {
+        // arch-lint: allow(no-error-swallowing) reason="upload already succeeded; cleanup failure is recoverable (leftover file, not data loss) and shouldn't fail the operator-visible command"
         if let Err(e) = tokio::fs::remove_file(p).await {
             eprintln!(
                 "warning: failed to remove {} after upload: {e} \
@@ -350,6 +351,7 @@ fn print_plan(
         println!("Source file (read in place):");
         match resolved.url.to_file_path() {
             Ok(p) => println!("  {}", p.display()),
+            // arch-lint: allow(no-error-swallowing) reason="Url::to_file_path returns Result<_, ()>; Err carries no information to propagate, and we're rendering a human-readable plan, not validating input"
             Err(()) => println!("  {} (not a usable file:// path)", resolved.url),
         }
         println!();
