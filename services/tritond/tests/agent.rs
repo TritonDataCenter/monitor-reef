@@ -1010,6 +1010,7 @@ async fn port_blueprint_materializes_nat_edge_cluster_and_routes_edge_target() {
         .job
         .expect("edge CN should claim the routed EdgeApply job");
     assert_eq!(edge_job.target_cn_uuid, Some(edge_cn_uuid));
+    let edge_job_id = edge_job.id;
     match edge_job.kind {
         tritond_client::types::JobKind::EdgeApply {
             edge_cluster_id: job_edge_cluster_id,
@@ -1038,6 +1039,40 @@ async fn port_blueprint_materializes_nat_edge_cluster_and_routes_edge_target() {
         }
         other => panic!("expected edge apply job, got {other:?}"),
     }
+
+    edge_agent
+        .agent_complete_job()
+        .job_id(edge_job_id)
+        .body(CompleteJobRequest {
+            outcome: JobOutcome::Failed("edge apply failed".to_string()),
+        })
+        .send()
+        .await
+        .expect("edge CN can report failed edge apply");
+
+    tenant_agent
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect("failed edge apply should be re-queued on the next blueprint fetch");
+    let retry_job = edge_agent
+        .agent_claim_job()
+        .body(ClaimJobRequest {
+            claimed_by: edge_cn_uuid.to_string(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .job
+        .expect("edge CN should claim the re-queued EdgeApply job");
+    assert_ne!(retry_job.id, edge_job_id);
+    assert_eq!(retry_job.target_cn_uuid, Some(edge_cn_uuid));
+    assert!(matches!(
+        retry_job.kind,
+        tritond_client::types::JobKind::EdgeApply { .. }
+    ));
 
     test.close().await;
 }

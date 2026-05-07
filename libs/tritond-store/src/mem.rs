@@ -88,6 +88,19 @@ fn job_target_matches(job_target: Option<Uuid>, claimer_cn: Option<Uuid>) -> boo
     }
 }
 
+fn nat_gateway_realization_rows(guard: &Inner, record: &NatGatewayRecord) -> Vec<Realization> {
+    let mut rows = realization_rows(&guard.network_realizations, record.resource_id());
+    if let Some(edge_cluster_id) = record.edge_cluster_id {
+        rows.extend(realization_rows(
+            &guard.network_realizations,
+            NetworkResourceId::EdgeCluster {
+                id: edge_cluster_id,
+            },
+        ));
+    }
+    rows
+}
+
 #[derive(Default)]
 struct Inner {
     silos_by_id: HashMap<Uuid, Silo>,
@@ -1211,7 +1224,7 @@ impl Store for MemStore {
             .get(&nat_gateway_id)
             .cloned()
             .ok_or(StoreError::NotFound)?;
-        let rows = realization_rows(&guard.network_realizations, record.resource_id());
+        let rows = nat_gateway_realization_rows(&guard, &record);
         Ok(record.into_view(rows))
     }
 
@@ -1223,7 +1236,7 @@ impl Store for MemStore {
             .filter(|n| n.vpc_id == vpc_id)
             .cloned()
             .map(|record| {
-                let rows = realization_rows(&guard.network_realizations, record.resource_id());
+                let rows = nat_gateway_realization_rows(&guard, &record);
                 record.into_view(rows)
             })
             .collect())
@@ -6081,6 +6094,8 @@ mod tests {
         let realized = store.get_edge_cluster(cluster.id).await.unwrap();
         assert_eq!(realized.realized.applied_generation, Some(1));
         assert_eq!(realized.realized.realizations.len(), 1);
+        let realized_nat = store.get_nat_gateway(nat.id).await.unwrap();
+        assert_eq!(realized_nat.realized.applied_generation, Some(1));
     }
 
     #[tokio::test]

@@ -2902,7 +2902,15 @@ impl Store for FdbStore {
 
     async fn get_nat_gateway(&self, nat_gateway_id: Uuid) -> Result<NatGateway, StoreError> {
         let record = self.read_nat_gateway_record(nat_gateway_id).await?;
-        let rows = self.list_network_realizations(record.resource_id()).await?;
+        let mut rows = self.list_network_realizations(record.resource_id()).await?;
+        if let Some(edge_cluster_id) = record.edge_cluster_id {
+            rows.extend(
+                self.list_network_realizations(NetworkResourceId::EdgeCluster {
+                    id: edge_cluster_id,
+                })
+                .await?,
+            );
+        }
         Ok(record.into_view(rows))
     }
 

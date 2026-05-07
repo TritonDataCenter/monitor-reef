@@ -405,6 +405,13 @@ agent reports the applied port generation against the enclosing VPC as a
 coarse CN realization row; later slices replace that with the compiler's
 resource mapping.
 
+For M1 NAT, port-blueprint compilation is also the lazy trigger that
+ensures a bound edge cluster has an `EdgeApply` job. If an earlier
+edge apply failed and the cluster's desired generation is still not
+applied, a later port-blueprint fetch re-queues the edge job. The NAT
+gateway read model rolls up the bound edge-cluster realization so the
+smoke harness can wait on NAT readiness directly.
+
 ## 6. Proteus port lifecycle
 
 The current Proteus API exposes the needed primitive lifecycle:

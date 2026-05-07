@@ -6395,7 +6395,12 @@ async fn ensure_nat_gateway_edge_materialized(
         .get_nat_gateway(nat_gateway_id)
         .await
         .map_err(store_error_to_http)?;
-    if nat_gateway.edge_cluster_id.is_some() {
+    if let Some(edge_cluster_id) = nat_gateway.edge_cluster_id {
+        let cluster = store
+            .get_edge_cluster(edge_cluster_id)
+            .await
+            .map_err(store_error_to_http)?;
+        ensure_edge_apply_job_for_nat_gateway(store, &nat_gateway, &cluster).await?;
         return Ok(());
     }
 
@@ -6404,13 +6409,13 @@ async fn ensure_nat_gateway_edge_materialized(
         .list_edge_clusters_for_resource(bound_resource)
         .await
         .map_err(store_error_to_http)?;
-    if !existing.is_empty() {
+    if let Some(cluster) = existing.first() {
+        ensure_edge_apply_job_for_nat_gateway(store, &nat_gateway, cluster).await?;
         return Ok(());
     }
 
     let (edge_cn, underlay) = select_edge_cn_for_nat_gateway(store).await?;
     let edge_instance = new_m1_edge_instance(&nat_gateway, edge_cn.server_uuid, underlay);
-    let edge_instance_id = edge_instance.id;
     let cluster = store
         .create_edge_cluster(NewEdgeCluster {
             name: edge_cluster_name(nat_gateway_id),
@@ -6424,27 +6429,7 @@ async fn ensure_nat_gateway_edge_materialized(
         .get_nat_gateway(nat_gateway_id)
         .await
         .map_err(store_error_to_http)?;
-    let bindings = edge_manifest_bindings_for_nat_gateway(store, &nat_gateway).await?;
-    let manifest = edge::render_edge_manifest(
-        &nat_gateway,
-        &bindings,
-        &edge_manifest_placement(&edge_instance).map_err(store_error_to_http)?,
-    );
-    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
-        .map_err(|err| HttpError::for_internal_error(format!("serialize edge manifest: {err}")))?;
-
-    store
-        .enqueue_job(NewJob {
-            kind: JobKind::EdgeApply {
-                edge_cluster_id: cluster.id,
-                edge_instance_id,
-                desired_generation: cluster.desired_generation,
-                manifest_bytes,
-            },
-            target_cn_uuid: Some(edge_cn.server_uuid),
-        })
-        .await
-        .map_err(store_error_to_http)?;
+    ensure_edge_apply_job_for_nat_gateway(store, &nat_gateway, &cluster).await?;
 
     tracing::info!(
         nat_gateway_id = %nat_gateway.id,
@@ -6454,6 +6439,83 @@ async fn ensure_nat_gateway_edge_materialized(
         "materialized M1 NAT edge cluster"
     );
     Ok(())
+}
+
+async fn ensure_edge_apply_job_for_nat_gateway(
+    store: &dyn Store,
+    nat_gateway: &NatGateway,
+    cluster: &EdgeCluster,
+) -> Result<(), HttpError> {
+    if cluster
+        .realized
+        .applied_generation
+        .is_some_and(|generation| generation >= cluster.desired_generation)
+    {
+        return Ok(());
+    }
+    if edge_apply_job_in_flight(store, cluster).await? {
+        return Ok(());
+    }
+
+    let edge_instance = cluster.instances.first().ok_or_else(|| {
+        store_error_to_http(StoreError::Conflict(format!(
+            "edge cluster {} has no instances to apply",
+            cluster.id
+        )))
+    })?;
+    let bindings = edge_manifest_bindings_for_nat_gateway(store, nat_gateway).await?;
+    let manifest = edge::render_edge_manifest(
+        nat_gateway,
+        &bindings,
+        &edge_manifest_placement(edge_instance).map_err(store_error_to_http)?,
+    );
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|err| HttpError::for_internal_error(format!("serialize edge manifest: {err}")))?;
+
+    store
+        .enqueue_job(NewJob {
+            kind: JobKind::EdgeApply {
+                edge_cluster_id: cluster.id,
+                edge_instance_id: edge_instance.id,
+                desired_generation: cluster.desired_generation,
+                manifest_bytes,
+            },
+            target_cn_uuid: Some(edge_instance.cn_id),
+        })
+        .await
+        .map_err(store_error_to_http)?;
+
+    tracing::info!(
+        nat_gateway_id = %nat_gateway.id,
+        edge_cluster_id = %cluster.id,
+        edge_instance_id = %edge_instance.id,
+        target_cn_uuid = %edge_instance.cn_id,
+        desired_generation = cluster.desired_generation,
+        "queued M1 NAT edge apply"
+    );
+    Ok(())
+}
+
+async fn edge_apply_job_in_flight(
+    store: &dyn Store,
+    cluster: &EdgeCluster,
+) -> Result<bool, HttpError> {
+    let jobs = store
+        .list_recent_jobs(1024)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(jobs.iter().any(|job| {
+        matches!(job.status, JobStatus::Pending | JobStatus::InProgress)
+            && matches!(
+                &job.kind,
+                JobKind::EdgeApply {
+                    edge_cluster_id,
+                    desired_generation,
+                    ..
+                } if *edge_cluster_id == cluster.id
+                    && *desired_generation >= cluster.desired_generation
+            )
+    }))
 }
 
 async fn edge_clusters_for_nat_gateways(
