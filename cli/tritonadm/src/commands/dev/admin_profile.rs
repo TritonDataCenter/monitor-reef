@@ -172,7 +172,12 @@ async fn key_fingerprint_md5(pub_key_path: &Path) -> Result<String> {
 /// indicating we should set `insecure: true` in the profile. Other
 /// failures (DNS, connection refused, timeout) return `false` — the
 /// profile is still written and the operator can fix connectivity later.
+///
+/// The crypto-provider install is required because the workspace builds
+/// reqwest with `rustls-no-provider`; without it, `Client::build()`
+/// panics with "No provider set" (see `libs/triton-tls/src/lib.rs`).
 async fn needs_insecure(url: &str) -> bool {
+    triton_tls::install_default_crypto_provider();
     let client = match reqwest::Client::builder().timeout(PROBE_TIMEOUT).build() {
         Ok(c) => c,
         Err(_) => return false,
