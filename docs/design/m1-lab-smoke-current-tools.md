@@ -133,10 +133,12 @@ This is not the final S15 acceptance script yet.
 - Cleanup is opt-in with `--cleanup` so failed lab runs preserve state
   for debugging.
 - The FDB-backed route create path validates a NAT gateway target just
-  before the write transaction, then writes the route row and
-  `route/by_nat_gateway` reverse index atomically. This keeps the M1
-  route/NAT path moving on the current lab cluster while preserving the
-  delete-with-references guard.
+  before the write transaction. NAT deletion preserves the
+  delete-with-references guard by scanning route rows, which keeps the
+  M1 route/NAT path moving without a separate reverse target index.
+  NAT and edge realization roll-ups use the same valid FDB range-scan
+  mode as the rest of the store, including when no realizer has
+  reported yet.
 
 Once the first lab run passes with this harness, promote the same flow
 into the final workspace-level `triton-vnext/scripts/m1-smoke.sh` using

@@ -57,8 +57,6 @@
 //! route/by_id/<uuid>                -> JSON-encoded Route
 //! route/by_table/<rt>/<destination> -> uuid hyphenated bytes
 //! route/in_table/<rt>/<route>       -> empty (membership index)
-//! route/by_nat_gateway/<nat>/<route>
-//!                                   -> empty (reverse target index)
 //! nat_gateway/by_id/<uuid>          -> JSON-encoded NatGatewayRecord
 //! nat_gateway/by_vpc/<vpc>/<name>   -> uuid hyphenated bytes
 //! nat_gateway/in_vpc/<vpc>/<nat>    -> empty (membership index)
@@ -369,6 +367,10 @@ impl FdbStore {
         format!("route/by_id/{id}").into_bytes()
     }
 
+    fn route_by_id_prefix() -> Vec<u8> {
+        b"route/by_id/".to_vec()
+    }
+
     fn route_by_table_destination_key(route_table_id: Uuid, destination: IpNetwork) -> Vec<u8> {
         format!("route/by_table/{route_table_id}/{destination}").into_bytes()
     }
@@ -379,14 +381,6 @@ impl FdbStore {
 
     fn route_in_table_prefix(route_table_id: Uuid) -> Vec<u8> {
         format!("route/in_table/{route_table_id}/").into_bytes()
-    }
-
-    fn route_by_nat_gateway_key(nat_gateway_id: Uuid, route_id: Uuid) -> Vec<u8> {
-        format!("route/by_nat_gateway/{nat_gateway_id}/{route_id}").into_bytes()
-    }
-
-    fn route_by_nat_gateway_prefix(nat_gateway_id: Uuid) -> Vec<u8> {
-        format!("route/by_nat_gateway/{nat_gateway_id}/").into_bytes()
     }
 
     fn validate_nat_gateway_route_target(
@@ -2558,13 +2552,10 @@ impl Store for FdbStore {
         let in_table_key = Self::route_in_table_key(route_table_id, route_id);
         let id_str = route_id.to_string();
 
-        let target_nat_index_key = if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
+        if let RouteTarget::NatGateway { nat_gateway_id } = &req.target {
             let nat = self.read_nat_gateway_record(*nat_gateway_id).await?;
             Self::validate_nat_gateway_route_target(&nat, tenant_id, project_id, vpc_id)?;
-            Some(Self::route_by_nat_gateway_key(*nat_gateway_id, route_id))
-        } else {
-            None
-        };
+        }
 
         enum Outcome {
             Created(Route),
@@ -2583,7 +2574,6 @@ impl Store for FdbStore {
                 let by_destination_key = by_destination_key.clone();
                 let by_id_key = by_id_key.clone();
                 let in_table_key = in_table_key.clone();
-                let target_nat_index_key = target_nat_index_key.clone();
                 let id_bytes = id_str.as_bytes().to_vec();
                 let req = req_for_txn.clone();
                 async move {
@@ -2636,9 +2626,6 @@ impl Store for FdbStore {
                     tr.set(&by_id_key, &value);
                     tr.set(&by_destination_key, &id_bytes);
                     tr.set(&in_table_key, b"");
-                    if let Some(key) = target_nat_index_key {
-                        tr.set(&key, b"");
-                    }
                     Ok(Outcome::Created(route))
                 }
             })
@@ -2737,9 +2724,6 @@ impl Store for FdbStore {
                         route.destination,
                     ));
                     tr.clear(&Self::route_in_table_key(route.route_table_id, route.id));
-                    if let RouteTarget::NatGateway { nat_gateway_id } = route.target {
-                        tr.clear(&Self::route_by_nat_gateway_key(nat_gateway_id, route.id));
-                    }
                     Ok(Out::Deleted)
                 }
             })
@@ -2987,17 +2971,27 @@ impl Store for FdbStore {
                         Ok(n) => n,
                         Err(e) => return Ok(Out::Corrupt(e.to_string())),
                     };
-                    let route_prefix = Self::route_by_nat_gateway_prefix(nat_gateway_id);
+                    let route_prefix = Self::route_by_id_prefix();
                     let (route_begin, route_end) = prefix_range(&route_prefix);
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(route_begin),
                         end: KeySelector::first_greater_or_equal(route_end),
-                        limit: Some(1),
                         ..RangeOption::default()
                     };
                     let route_kvs = tr.get_range(&opt, 1, false).await?;
-                    if route_kvs.iter().next().is_some() {
-                        return Ok(Out::HasRoutes);
+                    for kv in route_kvs.iter() {
+                        let route: Route = match serde_json::from_slice(kv.value()) {
+                            Ok(route) => route,
+                            Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                        };
+                        if matches!(
+                            route.target,
+                            RouteTarget::NatGateway {
+                                nat_gateway_id: id
+                            } if id == nat_gateway_id
+                        ) {
+                            return Ok(Out::HasRoutes);
+                        }
                     }
                     let by_name_key =
                         Self::nat_gateway_by_vpc_name_key(record.vpc_id, &record.name);
@@ -6238,7 +6232,7 @@ impl Store for FdbStore {
                         end: KeySelector::first_greater_or_equal(end),
                         ..RangeOption::default()
                     };
-                    let kvs = tr.get_range(&opt, 0, false).await?;
+                    let kvs = tr.get_range(&opt, 1, false).await?;
                     let mut rows: Vec<Realization> = Vec::with_capacity(kvs.len());
                     for kv in kvs.iter() {
                         if let Ok(row) = serde_json::from_slice::<Realization>(kv.value()) {
@@ -7180,6 +7174,29 @@ mod route_target_tests {
         )
         .expect_err("cross-VPC NAT gateway target should be rejected");
         assert!(matches!(err, StoreError::Conflict(_)));
+    }
+}
+
+#[cfg(test)]
+mod network_realization_tests {
+    //! FDB-backed realization scan tests. Marked ignored because they
+    //! require a running FoundationDB cluster. Run with
+    //! `FDB_CLUSTER_FILE=/path/to/fdb.cluster cargo test -p tritond-store --features foundationdb empty_network_realization_scan_returns_empty_vec -- --ignored`.
+
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn empty_network_realization_scan_returns_empty_vec() {
+        let store = FdbStore::open(None).expect("open FDB cluster from default cluster file");
+        let resource = NetworkResourceId::NatGateway { id: Uuid::new_v4() };
+
+        let rows = store
+            .list_network_realizations(resource)
+            .await
+            .expect("empty realization scan should succeed");
+
+        assert!(rows.is_empty());
     }
 }
 
