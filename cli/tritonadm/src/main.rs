@@ -48,35 +48,35 @@ fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
 )]
 struct Cli {
     /// SAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "SAPI_URL", global = true)]
+    #[arg(long, env = "SAPI_URL", global = true, hide = true)]
     sapi_url: Option<String>,
 
     /// IMGAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "IMGAPI_URL", global = true)]
+    #[arg(long, env = "IMGAPI_URL", global = true, hide = true)]
     imgapi_url: Option<String>,
 
     /// VMAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "VMAPI_URL", global = true)]
+    #[arg(long, env = "VMAPI_URL", global = true, hide = true)]
     vmapi_url: Option<String>,
 
     /// PAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "PAPI_URL", global = true)]
+    #[arg(long, env = "PAPI_URL", global = true, hide = true)]
     papi_url: Option<String>,
 
     /// NAPI base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "NAPI_URL", global = true)]
+    #[arg(long, env = "NAPI_URL", global = true, hide = true)]
     napi_url: Option<String>,
 
     /// Mahi base URL (auto-detected from SDC config if not set)
-    #[arg(long, env = "MAHI_URL", global = true)]
+    #[arg(long, env = "MAHI_URL", global = true, hide = true)]
     mahi_url: Option<String>,
 
     /// Mahi sitter base URL (no SDC default — the sitter has no DNS record)
-    #[arg(long, env = "MAHI_SITTER_URL", global = true)]
+    #[arg(long, env = "MAHI_SITTER_URL", global = true, hide = true)]
     mahi_sitter_url: Option<String>,
 
     /// Updates server URL (default: https://updates.tritondatacenter.com)
-    #[arg(long, env = "UPDATES_URL", global = true)]
+    #[arg(long, env = "UPDATES_URL", global = true, hide = true)]
     updates_url: Option<String>,
 
     #[command(subcommand)]
