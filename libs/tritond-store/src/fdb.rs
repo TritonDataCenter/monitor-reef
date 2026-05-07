@@ -153,8 +153,8 @@ use crate::{
     NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
     NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
     Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet,
-    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code,
-    generate_poll_token,
+    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -4189,7 +4189,7 @@ impl Store for FdbStore {
                         name: "boot".to_string(),
                         description: format!("Boot disk for instance {}", instance.name),
                         kind: DiskKind::Boot,
-                        size_bytes: image.size_bytes,
+                        size_bytes: default_boot_disk_size_bytes(&image),
                         source_image_id: Some(image.id),
                         created_at: now,
                     };

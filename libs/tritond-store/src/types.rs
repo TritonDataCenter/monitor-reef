@@ -1073,6 +1073,28 @@ pub struct ImageCompatibility {
     pub min_smartos_platform: Option<String>,
 }
 
+/// M1 default boot disk size for bhyve instances.
+///
+/// Triton image `size_bytes` tracks the imported image content, which
+/// can be smaller than the host-side zvol's used/reserved size. Until
+/// the package/SKU model lets callers request an explicit disk size,
+/// bhyve boot disks need a real VM-sized floor so SmartOS does not try
+/// to shrink an imported image clone during `vmadm create`.
+pub const BHYVE_M1_MIN_BOOT_DISK_BYTES: u64 = 20 * 1024 * 1024 * 1024;
+
+/// Default the auto-created boot disk size for an instance image.
+pub fn default_boot_disk_size_bytes(image: &Image) -> u64 {
+    if image
+        .compatibility
+        .as_ref()
+        .is_some_and(|compat| compat.brand == "bhyve")
+    {
+        image.size_bytes.max(BHYVE_M1_MIN_BOOT_DISK_BYTES)
+    } else {
+        image.size_bytes
+    }
+}
+
 /// Request body for registering an image in any scope's catalog.
 /// The owning scope (Public / Silo / Tenant / Project / User) is
 /// inferred from the URL path the request hit, *not* from the
@@ -2014,10 +2036,12 @@ pub struct InstanceCreateResult {
 }
 
 /// Per-instance persistent storage. Phase 0 auto-creates a single
-/// boot disk per instance, sized to the source image and tagged
-/// with that image's id. The disk record is the metadata view; the
-/// actual content (zfs dataset, mantafs object, etc.) is materialized
-/// by the agent at provisioning time.
+/// boot disk per instance, sized from the source image and tagged
+/// with that image's id. Bhyve images are clamped to the M1 default
+/// VM boot-disk floor until packages/SKUs expose an explicit size.
+/// The disk record is the metadata view; the actual content (zfs
+/// dataset, mantafs object, etc.) is materialized by the agent at
+/// provisioning time.
 ///
 /// Multi-disk attach (data disks beyond boot) lands as a follow-on
 /// slice. The wire shape here is stable across that change — a
@@ -2032,8 +2056,9 @@ pub struct Disk {
     pub name: String,
     pub description: String,
     pub kind: DiskKind,
-    /// Total size in bytes. Boot disks default to `image.size_bytes`;
-    /// future data disks accept an explicit operator-supplied size.
+    /// Total size in bytes. Boot disks default via
+    /// [`default_boot_disk_size_bytes`]; future data disks accept an
+    /// explicit operator-supplied size.
     pub size_bytes: u64,
     /// Image the boot disk was sourced from. `Some` for `Boot` disks
     /// that came from a registered image; `None` for blank `Data`

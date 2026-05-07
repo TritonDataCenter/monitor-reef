@@ -29,11 +29,11 @@ use crate::{
     NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
     NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
     Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet,
-    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, generate_claim_code,
-    generate_poll_token,
+    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
-use crate::{ApiKeyScope, NewInstanceNic};
+use crate::{ApiKeyScope, BHYVE_M1_MIN_BOOT_DISK_BYTES, ImageCompatibility, NewInstanceNic};
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
 /// candidates and any realistic VPC count, collisions are vanishingly
@@ -2186,7 +2186,7 @@ impl Store for MemStore {
             name: "boot".to_string(),
             description: format!("Boot disk for instance {}", instance.name),
             kind: DiskKind::Boot,
-            size_bytes: image.size_bytes,
+            size_bytes: default_boot_disk_size_bytes(&image),
             source_image_id: Some(image.id),
             created_at: now,
         };
@@ -5651,6 +5651,54 @@ mod tests {
         let listed = store.list_disks_for_instance(instance.id).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, boot.id);
+    }
+
+    #[tokio::test]
+    async fn instance_create_clamps_bhyve_boot_disk_to_m1_floor() {
+        let store = MemStore::new();
+        let (silo_id, tenant_id, project_id, vpc) = make_silo_project_vpc(&store).await;
+        let subnet = store
+            .create_subnet(
+                tenant_id,
+                project_id,
+                vpc.id,
+                NewSubnet {
+                    name: "primary".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.0.1.0/24")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        let mut image_req = image_req("ubuntu-bhyve");
+        image_req.size_bytes = 424_503_531;
+        image_req.compatibility = Some(ImageCompatibility {
+            brand: "bhyve".to_string(),
+            arch: "x86_64".to_string(),
+            min_smartos_platform: None,
+        });
+        let image = store.create_image_silo(silo_id, image_req).await.unwrap();
+        let ssh_key = store
+            .create_ssh_key_silo(
+                silo_id,
+                ssh_key_req("ci", "ssh-ed25519 AAAA"),
+                "SHA256:bhyve".to_string(),
+            )
+            .await
+            .unwrap();
+
+        let InstanceCreateResult { disks, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web", image.id, subnet.id, ssh_key.id),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(disks.len(), 1);
+        assert_eq!(disks[0].size_bytes, BHYVE_M1_MIN_BOOT_DISK_BYTES);
     }
 
     #[tokio::test]

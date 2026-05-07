@@ -69,7 +69,9 @@ handlers + tests + CLI):
   `validate_subnet_cidrs`).
 * `Instance`, `Nic`, `Disk` — instance create allocates a primary
   NIC + boot disk atomically; multi-NIC at create supported via
-  `NewInstance.extra_nics`.
+  `NewInstance.extra_nics`. Bhyve boot disks currently use a 20 GiB
+  M1 floor so `vmadm` does not shrink imported image clones before
+  packages/SKUs provide explicit disk sizing.
 * `FloatingIp` — project-owned, family-symmetric, atomic
   attach-replace, instance-delete cascade-detach. Address allocated
   from hardcoded `FLOATING_IP_V{4,6}_POOL` constants

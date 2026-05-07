@@ -305,6 +305,8 @@ then creates a boot disk device from the boot `Disk` record:
 * choose the `DiskKind::Boot` disk whose `source_image_id` equals the
   blueprint image id;
 * set the boot disk size from `Disk.size_bytes`, not from the image alone;
+  M1 control-plane stores clamp bhyve boot disks to a 20 GiB floor until
+  packages/SKUs expose explicit disk sizing;
 * carry `image_uuid` where SmartOS `vmadm` can clone the imported image;
 * use virtio block unless a future image compatibility record requires a
   different model;
