@@ -132,16 +132,28 @@ NATS-style pub-sub transport can reduce idle latency, but it should carry
 the same durable job ids and completion semantics rather than replacing
 the queue as source of truth.
 
-`tritonagent` applies edge jobs on the selected edge CN:
+`tritonagent` applies edge jobs on the selected edge CN, but the durable
+M1 target is a SmartOS zone lifecycle, not a global-zone child process:
 
 * `TRITONAGENT_EDGE_ROOT` defaults to `/var/lib/tritonagent/edge`.
-  Each edge instance uses `<edge_root>/<edge_instance_id>/manifest.json`,
-  `fhrun.pid`, stdout/stderr logs, and `edge-control.sock`;
+  Each edge instance uses `<edge_root>/<edge_instance_id>/manifest.json`
+  and `edge-control.sock`;
 * `TRITONAGENT_FHRUN_BIN` defaults to `/opt/firehyve/bin/fhrun`;
 * `JobKind::EdgeApply` parses and validates the shared fhrun manifest,
   rejects any v1 dataplane backend other than `nftables`, writes the
-  manifest atomically, runs `fhrun --check`, and starts fhrun as a
-  supervised host process;
+  manifest atomically, and runs `fhrun --check` before handing the
+  runtime to `vmadm`;
+* the selected edge CN creates the host-side north/south links first.
+  The south link must be a real Proteus-backed port so tenant-CN Geneve
+  decapsulation can deliver packets to the edge. The north link is the
+  M1 public/underlay attachment. Both links must exist before `vmadm`
+  starts the edge zone;
+* `vmadm` owns the edge runtime lifecycle. The edge instance UUID is the
+  SmartOS zone UUID, and start/stop/delete/reap operations converge by
+  calling `vmadm`, not by tracking a global-zone `fhrun.pid`;
+* fhrun/firehyve runs inside that zone. The host `tritonagent` keeps the
+  desired manifest and the host side of `edge-control.sock`; the control
+  stream is bridged into the edge guest as `/dev/hvc0`;
 * after fhrun starts, `tritonagent` connects to `edge-control.sock` and
   uses the v1 newline-delimited JSON control protocol:
   `{ "method": "ping" }` validates `protocol =
@@ -151,12 +163,18 @@ the queue as source of truth.
   `NetworkResourceId::EdgeCluster(edge_cluster_id)` with
   `RealizerId::EdgeCluster(edge_cluster_id)` and the job's carried
   `desired_generation`;
-* re-applying an unchanged manifest is idempotent when the recorded fhrun
-  pid is still running. A changed manifest restarts the local fhrun
-  process because live `dataplane.replace` is reserved for a later slice;
-* `JobKind::EdgeReap` best-effort terminates the recorded fhrun pid and
-  removes the runtime directory, so orphan cleanup can be driven through
-  the same durable job queue.
+* re-applying an unchanged manifest is idempotent when the matching zone
+  exists and the edge-control status is healthy. A changed manifest
+  restarts or recreates the `vmadm` zone because live
+  `dataplane.replace` is reserved for a later slice;
+* `JobKind::EdgeReap` best-effort stops/deletes the edge zone and removes
+  the runtime directory, so orphan cleanup can be driven through the same
+  durable job queue.
+
+The current `services/tritonagent/src/edge.rs` host-process executor is a
+pre-vmadm compatibility shim and is not sufficient for M1. The next live
+edge slice must replace it with a vmadm-backed executor once SmartOS-live
+accepts the required edge-zone payload.
 
 ## 3. Current gaps
 
@@ -172,8 +190,22 @@ The host realization path is still Phase 0 shaped:
   explicit cloud-init/no-cloud/metadata ISO contract for Linux guests;
 * NICs are attached to the flat `admin` nic tag with hardcoded netmask,
   resolver, VLAN, and MTU;
-* there is no Proteus port id, no Proteus port create/apply/start path,
-  and no port cleanup;
+* tenant bhyve payloads still attach NICs to the flat `external` nic tag
+  instead of referencing the Proteus client link that the port lifecycle
+  creates;
+* the edge executor still has a global-zone host-process shim; M1 needs a
+  `vmadm`-managed edge zone whose north/south NICs are created before zone
+  start;
+* SmartOS-live/vmadm does not yet expose the required edge-zone contract:
+  either an `fhyve` brand payload that can boot firehyve/fhrun from
+  zonecfg, or an explicit service-zone shape that loans `/dev/vmm`,
+  `/dev/viona`, and the edge links safely;
+* SmartOS-live/vmadm also needs a Proteus-backed NIC parent contract for
+  tenant bhyve VMs and the edge south link. Today `nictag` maps only to
+  existing physical/tagged parents, while Proteus creates dynamic
+  `DATALINK_CLASS_MISC` links;
+* port cleanup exists for provision failure, but Stop/Restart/Delete do
+  not yet pause/reapply/delete Proteus ports end to end;
 * no applied generation is reported for VPC, subnet, route, security
   group, NAT, FIP, or NIC-related desired state;
 * job failures are free-form strings; they are useful, but not yet

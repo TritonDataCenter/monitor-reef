@@ -21,7 +21,8 @@
 //! * `--proteus-dev` / `TRITONAGENT_PROTEUS_DEV` — Proteus device
 //!   node. Default `/dev/proteus`.
 //! * `--edge-root` / `TRITONAGENT_EDGE_ROOT` — directory where edge
-//!   fhrun manifests, pid files, logs, and control sockets live.
+//!   manifests and control sockets live. The legacy host-process edge
+//!   shim also stores pid files and logs there.
 //! * `--fhrun-bin` / `TRITONAGENT_FHRUN_BIN` — fhrun launcher path.
 //! * `--dry-run` / `TRITONAGENT_DRY_RUN`
 //!

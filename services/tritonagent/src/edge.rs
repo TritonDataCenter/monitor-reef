@@ -4,7 +4,12 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Host-side executor for firehyve/fhrun edge instances.
+//! Legacy host-side executor for firehyve/fhrun edge instances.
+//!
+//! This module is a pre-vmadm compatibility shim. The M1 edge runtime
+//! target is a SmartOS zone whose lifecycle is owned by `vmadm`, with
+//! fhrun/firehyve running inside the zone after tritonagent creates the
+//! required north/south links.
 
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
@@ -44,8 +49,12 @@ pub struct EdgeApplyStatus {
     pub error: Option<String>,
 }
 
-/// Apply one edge instance manifest by persisting it under
-/// `edge_root/<edge_instance_id>` and supervising a local fhrun process.
+/// Apply one edge instance manifest through the legacy global-zone fhrun
+/// path.
+///
+/// The vmadm-backed edge executor should preserve this manifest validation
+/// and edge-control probe contract while replacing process supervision with
+/// zone create/start/reap operations.
 pub fn apply(
     edge_root: &Path,
     fhrun_bin: &Path,

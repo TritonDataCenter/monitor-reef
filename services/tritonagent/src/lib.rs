@@ -15,8 +15,10 @@
 //! The agent is the only component that mutates CN-local runtime
 //! state. Provision jobs drive image import, Proteus port realization,
 //! and `vmadm`; edge jobs persist fhrun manifests under the configured
-//! edge root and supervise the local firehyve/fhrun process. Dry-run
-//! mode remains available for transport-only smoke testing.
+//! edge root and currently use the legacy global-zone fhrun shim.
+//! The M1 edge target is vmadm-owned zone lifecycle with fhrun/firehyve
+//! running inside that zone. Dry-run mode remains available for
+//! transport-only smoke testing.
 //!
 //! ## Authentication
 //!
@@ -90,8 +92,9 @@ pub struct AgentConfig {
     /// Proteus kernel device node. The real backend opens this on
     /// SmartOS; non-illumos builds require `dry_run` for provision work.
     pub proteus_dev: PathBuf,
-    /// Root directory for per-edge-instance fhrun manifests, pid
-    /// files, logs, and edge-control Unix sockets.
+    /// Root directory for per-edge-instance manifests and
+    /// edge-control Unix sockets. The legacy host-process edge shim
+    /// also writes pid files and logs here.
     pub edge_root: PathBuf,
     /// Path to the fhrun launcher used for `JobKind::EdgeApply`.
     pub fhrun_bin: PathBuf,
