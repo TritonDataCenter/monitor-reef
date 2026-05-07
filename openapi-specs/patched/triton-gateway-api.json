@@ -1091,8 +1091,11 @@
         "type": "object"
       },
       "Error": {
-        "description": "Error information from a response.",
+        "description": "Error response from the Triton Gateway. Tolerates both cloudapi-style ({code, message, request_id?}) and Dropshot-style ({error_code, message, request_id}) shapes; the gateway proxies cloudapi errors verbatim.",
         "properties": {
+          "code": {
+            "type": "string"
+          },
           "error_code": {
             "type": "string"
           },
@@ -1103,10 +1106,6 @@
             "type": "string"
           }
         },
-        "required": [
-          "message",
-          "request_id"
-        ],
         "type": "object"
       },
       "ExportImageRequest": {

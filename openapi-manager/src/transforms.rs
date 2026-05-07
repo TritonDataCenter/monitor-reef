@@ -943,11 +943,41 @@ fn copy_paths_into(
     Ok(())
 }
 
-/// Build the merged `components` object. Tritonapi wins for any schema
-/// or response collision — today that's just `Error`, which is the
-/// whole reason Phase 0 exists. Any other collision is logged as a
-/// warning so a human can decide whether the gateway merge is still
-/// safe.
+/// Permissive Error schema for the merged gateway spec.
+///
+/// The gateway exposes a hybrid error surface:
+/// - cloudapi-proxied responses pass through unchanged (`{code, message,
+///   request_id?}` per the legacy Node.js Triton convention),
+/// - tritonapi (Dropshot-native) emits `{error_code, message,
+///   request_id}`,
+/// - the gateway's own synthetic errors mirror the cloudapi shape (see
+///   `gateway_error_response` in `services/triton-gateway/src/main.rs`).
+///
+/// Generating clients against any single one of those shapes makes the
+/// other paths fail to deserialize. Treat every field as optional and
+/// let callers inspect whichever fields are actually populated; the
+/// gateway never sends a body without at least one of `code` /
+/// `error_code` / `message`.
+fn gateway_error_schema() -> Value {
+    json!({
+        "description": "Error response from the Triton Gateway. Tolerates both cloudapi-style \
+            ({code, message, request_id?}) and Dropshot-style ({error_code, message, request_id}) \
+            shapes; the gateway proxies cloudapi errors verbatim.",
+        "type": "object",
+        "properties": {
+            "code": { "type": "string" },
+            "error_code": { "type": "string" },
+            "message": { "type": "string" },
+            "request_id": { "type": "string" }
+        }
+    })
+}
+
+/// Build the merged `components` object. Tritonapi wins for non-Error
+/// schema/response collisions; the `Error` schema gets replaced wholesale
+/// with [`gateway_error_schema`] (see comment in [`build_components`]).
+/// Any other collision is logged as a warning so a human can decide
+/// whether the gateway merge is still safe.
 fn build_components(cloudapi_spec: &Value, tritonapi_spec: &Value) -> Result<Map<String, Value>> {
     let mut components = Map::new();
 
@@ -960,6 +990,16 @@ fn build_components(cloudapi_spec: &Value, tritonapi_spec: &Value) -> Result<Map
         "schema",
         &["Error"],
     );
+    // Override the merged Error with a permissive shape that tolerates
+    // every error body that can reach a gateway client. The gateway
+    // proxies cloudapi errors verbatim (`{code, message, request_id?}`,
+    // see `gateway_error_response` in the gateway service); tritonapi
+    // (Dropshot-native) emits `{error_code?, message, request_id}`. A
+    // single strict schema rejects one or the other on the wire — most
+    // visibly with `{"code":"MethodNotAllowedError",...}` from a 405 on
+    // a not-yet-deployed cloudapi endpoint, where the strict tritonapi
+    // shape blew up clients with "missing field `request_id`".
+    schemas.insert("Error".to_string(), gateway_error_schema());
     components.insert("schemas".to_string(), Value::Object(schemas));
 
     // Responses: same precedence rule. `Error` also lives here.
@@ -1288,7 +1328,7 @@ mod tests {
     }
 
     #[test]
-    fn test_gateway_merge_combines_paths_and_keeps_tritonapi_error() {
+    fn test_gateway_merge_combines_paths_and_uses_permissive_error() {
         let cloudapi = cloudapi_fixture();
         let tritonapi = tritonapi_fixture();
 
@@ -1298,22 +1338,32 @@ mod tests {
         assert!(merged["paths"]["/{account}/machines"].is_object());
         assert!(merged["paths"]["/v1/auth/login"].is_object());
 
-        // Error schema: tritonapi's shape wins (has error_code, not code).
+        // Error schema: permissive hybrid that accepts both shapes
+        // (the gateway proxies cloudapi errors verbatim, so clients
+        // must tolerate `{code, message}` AND `{error_code, message,
+        // request_id}`).
         let error = &merged["components"]["schemas"]["Error"];
         assert!(
-            error["properties"]["error_code"].is_object(),
-            "tritonapi Error shape should win (had error_code)"
+            error["properties"]["code"].is_object(),
+            "permissive Error must accept cloudapi-style 'code'"
         );
         assert!(
-            error["properties"]["code"].is_null(),
-            "cloudapi Error shape should be dropped (had code)"
+            error["properties"]["error_code"].is_object(),
+            "permissive Error must accept Dropshot-style 'error_code'"
         );
-        assert_eq!(
-            error["required"].as_array().unwrap(),
-            &[
-                serde_json::json!("message"),
-                serde_json::json!("request_id")
-            ]
+        assert!(
+            error["properties"]["message"].is_object(),
+            "permissive Error must accept 'message'"
+        );
+        assert!(
+            error["properties"]["request_id"].is_object(),
+            "permissive Error must accept 'request_id'"
+        );
+        assert!(
+            error.get("required").is_none(),
+            "permissive Error must mark every field optional so cloudapi 405s \
+             ({{code,message}}) and Dropshot 4xx ({{error_code,message,request_id}}) \
+             both deserialize"
         );
 
         // Non-colliding schemas from both specs are carried through.
