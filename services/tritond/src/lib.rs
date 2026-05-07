@@ -26,7 +26,7 @@ pub mod provisioner;
 pub mod rate_limit;
 pub mod sweeper;
 
-use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -6614,6 +6614,13 @@ fn edge_cn_underlay_ipv6(cn: &Cn) -> Option<Ipv6Addr> {
                 .and_then(|status| status.get("Network Interfaces"))
                 .and_then(first_interface_ipv6)
         })
+        .or_else(|| cn.admin_ip.and_then(lab_underlay_from_admin_ipv4))
+        .or_else(|| {
+            cn.sysinfo
+                .get("Admin IP")
+                .and_then(first_ipv4_from_value)
+                .and_then(lab_underlay_from_admin_ipv4)
+        })
 }
 
 fn first_interface_ipv6(value: &serde_json::Value) -> Option<Ipv6Addr> {
@@ -6637,6 +6644,14 @@ fn first_ipv6_from_value(value: &serde_json::Value) -> Option<Ipv6Addr> {
     }
 }
 
+fn first_ipv4_from_value(value: &serde_json::Value) -> Option<Ipv4Addr> {
+    match value {
+        serde_json::Value::String(s) => s.parse().ok(),
+        serde_json::Value::Array(values) => values.iter().find_map(first_ipv4_from_value),
+        _ => None,
+    }
+}
+
 fn parse_ipv6_hint(value: &str) -> Option<Ipv6Addr> {
     let without_prefix = value.split('/').next().unwrap_or(value);
     let without_zone = without_prefix.split('%').next().unwrap_or(without_prefix);
@@ -6645,6 +6660,72 @@ fn parse_ipv6_hint(value: &str) -> Option<Ipv6Addr> {
         return None;
     }
     Some(addr)
+}
+
+fn lab_underlay_from_admin_ipv4(addr: Ipv4Addr) -> Option<Ipv6Addr> {
+    // M1 lab convention: nuc admin IPv4 10.199.199.X maps to fd00::X.
+    if addr.octets()[0..3] != [10, 199, 199] {
+        return None;
+    }
+    format!("fd00::{}", addr.octets()[3]).parse().ok()
+}
+
+#[cfg(test)]
+mod edge_underlay_tests {
+    use super::*;
+    use chrono::Utc;
+    use serde_json::json;
+
+    fn edge_cn(admin_ip: Option<Ipv4Addr>, sysinfo: serde_json::Value) -> Cn {
+        let now = Utc::now();
+        Cn {
+            server_uuid: Uuid::new_v4(),
+            hostname: "edge-a".to_string(),
+            admin_ip,
+            state: CnState::Approved,
+            role: CnRole::Edge,
+            registered_at: now,
+            approved_at: Some(now),
+            last_seen: Some(now),
+            sysinfo,
+            claim_code: None,
+            claim_code_expires_at: None,
+            poll_token: "poll".to_string(),
+            bound_api_key_id: None,
+            pending_credential: None,
+            last_status: None,
+        }
+    }
+
+    #[test]
+    fn edge_underlay_prefers_explicit_ipv6_hint() {
+        let cn = edge_cn(
+            Some("10.199.199.40".parse().unwrap()),
+            json!({ "triton_edge_underlay_ipv6": "fd00::99" }),
+        );
+
+        assert_eq!(
+            edge_cn_underlay_ipv6(&cn),
+            Some("fd00::99".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn edge_underlay_falls_back_to_m1_lab_admin_ipv4() {
+        let cn = edge_cn(Some("10.199.199.40".parse().unwrap()), json!({}));
+
+        assert_eq!(
+            edge_cn_underlay_ipv6(&cn),
+            Some("fd00::40".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn edge_underlay_ignores_non_lab_admin_ipv4() {
+        let cn = edge_cn(Some("192.0.2.40".parse().unwrap()), json!({}));
+
+        assert_eq!(edge_cn_underlay_ipv6(&cn), None);
+    }
 }
 
 fn new_m1_edge_instance(

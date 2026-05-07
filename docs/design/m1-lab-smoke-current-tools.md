@@ -139,6 +139,10 @@ This is not the final S15 acceptance script yet.
   NAT and edge realization roll-ups use the same valid FDB range-scan
   mode as the rest of the store, including when no realizer has
   reported yet.
+- M1 edge placement accepts an explicit edge underlay IPv6 hint when a
+  CN reports one. If the lab CN only reports its admin IPv4 address,
+  tritond derives the lab ULA convention `fd00::<last-admin-octet>` so
+  the IPv4-only smoke can still materialize a single edge instance.
 
 Once the first lab run passes with this harness, promote the same flow
 into the final workspace-level `triton-vnext/scripts/m1-smoke.sh` using
