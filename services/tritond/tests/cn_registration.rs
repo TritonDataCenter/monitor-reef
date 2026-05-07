@@ -246,10 +246,16 @@ async fn auto_approve_window_promotes_registration() {
         .unwrap()
         .into_inner();
     assert!(matches!(status.state, CnState::Approved));
-    assert!(
-        status.api_key.is_some(),
-        "auto-approve must wire up a credential"
-    );
+    let api_key = status
+        .api_key
+        .expect("auto-approve must wire up a credential");
+
+    let agent = test.bearer_client(&api_key);
+    agent
+        .agent_heartbeat()
+        .send()
+        .await
+        .expect("auto-approved agent credential must authorize heartbeat");
 
     test.close().await;
 }

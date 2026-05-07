@@ -64,6 +64,12 @@ tcadm cn label set "$M1_TENANT_CN_UUID" --role tenant
 tcadm cn label set "$M1_EDGE_CN_UUID" --role edge
 ```
 
+When using a fresh lab FDB cluster, open a short auto-approve window
+before starting `tritonagent` on the CNs. Auto-approved agent
+credentials are persisted as Agent-scoped API keys owned by the
+bootstrap root operator, so the agent can heartbeat and claim jobs
+without gaining broader operator permissions.
+
 For guest provisioning, either provide a concrete image and SSH key:
 
 ```bash

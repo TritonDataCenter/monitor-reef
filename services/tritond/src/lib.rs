@@ -5089,16 +5089,16 @@ async fn mint_and_attach_cn_credential(
     request_id: Option<Uuid>,
     cn: &Cn,
 ) -> Result<Cn, HttpError> {
-    let owner_user_id = require_authenticated(principal.clone())
-        .map(|(uid, _)| uid)
-        .unwrap_or_else(|_| {
-            // Anonymous principal (auto-approve path). Use a
-            // best-effort sentinel so the key has a non-null
-            // owner field; a future slice will introduce a
-            // dedicated "system" user for keys created without
-            // an operator.
-            Uuid::nil()
-        });
+    let owner_user_id = match require_authenticated(principal.clone()) {
+        Ok((uid, _)) => uid,
+        Err(_) => {
+            ctx.store
+                .get_user_by_username(crate::bootstrap::ROOT_USERNAME)
+                .await
+                .map_err(store_error_to_http)?
+                .id
+        }
+    };
 
     let material = generate_api_key()
         .await
