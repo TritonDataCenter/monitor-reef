@@ -22,6 +22,7 @@
 
 use anyhow::{Context, Result};
 
+use crate::commands::image::nocloud::vendor::Release;
 use crate::commands::image::nocloud::vendor::dirlist;
 use crate::commands::image::nocloud::verify::parse_bsd_sums_file;
 
@@ -40,6 +41,21 @@ pub struct Resolved {
     /// fetched at resolve time so `--dry-run` can show the
     /// derived manifest UUID without downloading the qcow2.
     pub sha256: String,
+}
+
+/// Enumerate Rocky Linux majors advertised by the parent index,
+/// newest-first.
+pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
+    let mut majors = dirlist::fetch_numeric_subdirs(http, REPO_BASE, MAJOR_DIR_RE, None).await?;
+    majors.sort_by(|a, b| b.cmp(a));
+    Ok(majors
+        .into_iter()
+        .map(|major| Release {
+            name: major.to_string(),
+            label: Some(format!("Rocky Linux {major}")),
+            note: None,
+        })
+        .collect())
 }
 
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {

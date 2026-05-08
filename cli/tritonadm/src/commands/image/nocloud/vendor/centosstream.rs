@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{PinnedQcow2, ResolvedImage, VendorProfile};
+use super::{PinnedQcow2, Release, ResolvedImage, VendorProfile};
 
 pub struct CentosStream;
 
@@ -45,5 +45,9 @@ impl VendorProfile for CentosStream {
             sha256: resolved.sha256,
         }
         .into_resolved("centos-stream")
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        Ok(releases::list(http).await?)
     }
 }

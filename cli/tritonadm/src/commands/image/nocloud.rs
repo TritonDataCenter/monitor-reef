@@ -49,6 +49,11 @@ pub struct FetchOpts {
     /// Vendor-specific release token. Required with `vendor`; unused
     /// with `vendor_toml`.
     pub release: Option<String>,
+    /// List the vendor's published releases and exit. Mutually
+    /// exclusive with `release` and `vendor_toml`.
+    pub list_releases: bool,
+    /// With `list_releases`, emit JSON instead of a table.
+    pub json: bool,
     /// External TOML profile path. Set when invoked as
     /// `--vendor-toml PATH`; mutually exclusive with `vendor`.
     pub vendor_toml: Option<PathBuf>,
@@ -71,6 +76,21 @@ pub struct FetchOpts {
 }
 
 pub async fn run(mut opts: FetchOpts) -> Result<()> {
+    // `--list-releases` is pure metadata; bypass dry-run promotion,
+    // dataset checks, and the resolve path entirely.
+    if opts.list_releases {
+        let vendor = opts
+            .vendor
+            .ok_or_else(|| anyhow::anyhow!("--list-releases requires --vendor"))?;
+        let http = triton_tls::build_http_client(false)
+            .await
+            .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
+        let profile = vendor::lookup(vendor);
+        let releases = profile.list_releases(&http).await?;
+        print_releases(&vendor.to_string(), &releases, opts.json)?;
+        return Ok(());
+    }
+
     // Auto-promote to --dry-run on non-SmartOS hosts so a developer
     // can smoke-test vendor metadata fetching from a Mac/Linux box
     // without remembering the flag. The build itself still requires
@@ -229,6 +249,34 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
 
     if matches!(opts.target, Target::Smartos | Target::Imgapi) && !opts.keep_files {
         cleanup_artifacts(&outputs.gz_path, &outputs.manifest_path).await;
+    }
+    Ok(())
+}
+
+fn print_releases(vendor: &str, releases: &[vendor::Release], json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(releases)?);
+        return Ok(());
+    }
+    if releases.is_empty() {
+        println!("No releases reported by {vendor}.");
+        return Ok(());
+    }
+    let name_w = "RELEASE"
+        .len()
+        .max(releases.iter().map(|r| r.name.len()).max().unwrap_or(0));
+    let label_w = "LABEL".len().max(
+        releases
+            .iter()
+            .map(|r| r.label.as_deref().unwrap_or("").len())
+            .max()
+            .unwrap_or(0),
+    );
+    println!("{:<name_w$}  {:<label_w$}  NOTE", "RELEASE", "LABEL");
+    for r in releases {
+        let label = r.label.as_deref().unwrap_or("-");
+        let note = r.note.as_deref().unwrap_or("");
+        println!("{:<name_w$}  {:<label_w$}  {note}", r.name, label);
     }
     Ok(())
 }

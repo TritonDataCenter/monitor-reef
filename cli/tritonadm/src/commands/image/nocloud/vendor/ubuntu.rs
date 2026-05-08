@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::{Sha256Pinned, Sha256SumsTls};
 
 pub struct Ubuntu;
@@ -76,6 +76,57 @@ impl VendorProfile for Ubuntu {
             }
         }
     }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        // Streams is the source of truth; fall back to the local table
+        // (which is what `resolve()` would do) if the network path
+        // fails, so air-gapped operators get something useful.
+        match streams::fetch(http).await {
+            Ok(index) => Ok(streams::list_amd64(&index)
+                .into_iter()
+                .map(|p| {
+                    let label = if p.release_title.is_empty() {
+                        None
+                    } else {
+                        Some(p.release_title.clone())
+                    };
+                    // `supported: false` covers both EOL and not-yet-released
+                    // LTSes (e.g. `resolute`/26.04 before release day), so
+                    // we render it neutrally as "unsupported" rather than
+                    // claiming EOL.
+                    let note = match (p.supported, is_lts(&p.release_title)) {
+                        (true, true) => Some("supported LTS".to_string()),
+                        (true, false) => Some("supported".to_string()),
+                        (false, true) => Some("LTS (unsupported)".to_string()),
+                        (false, false) => Some("unsupported".to_string()),
+                    };
+                    Release {
+                        name: p.release.clone(),
+                        label,
+                        note,
+                    }
+                })
+                .collect()),
+            Err(e) => {
+                eprintln!(
+                    "warning: Ubuntu Simple Streams listing failed ({e}); \
+                     falling back to hardcoded series table"
+                );
+                Ok(SERIES
+                    .iter()
+                    .map(|(name, descr, is_lts)| Release {
+                        name: (*name).to_string(),
+                        label: Some((*descr).to_string()),
+                        note: Some(if *is_lts { "LTS" } else { "interim" }.to_string()),
+                    })
+                    .collect())
+            }
+        }
+    }
+}
+
+fn is_lts(title: &str) -> bool {
+    title.contains("LTS")
 }
 
 async fn resolve_via_streams(release: &str, http: &reqwest::Client) -> Result<ResolvedImage> {

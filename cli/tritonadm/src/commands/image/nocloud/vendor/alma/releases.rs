@@ -19,6 +19,7 @@
 
 use anyhow::{Context, Result};
 
+use crate::commands::image::nocloud::vendor::Release;
 use crate::commands::image::nocloud::vendor::dirlist;
 use crate::commands::image::nocloud::verify::parse_sums_file;
 
@@ -35,6 +36,22 @@ pub struct Resolved {
     pub build: String,
     pub sha256: String,
     pub url: String,
+}
+
+/// Enumerate AlmaLinux majors advertised by the parent index page,
+/// newest-first. No EOL signal is published in the listing, so the
+/// note column is left blank.
+pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
+    let mut majors = dirlist::fetch_numeric_subdirs(http, REPO_BASE, MAJOR_DIR_RE, None).await?;
+    majors.sort_by(|a, b| b.cmp(a));
+    Ok(majors
+        .into_iter()
+        .map(|major| Release {
+            name: major.to_string(),
+            label: Some(format!("AlmaLinux {major}")),
+            note: None,
+        })
+        .collect())
 }
 
 /// Resolve a release token. `latest` picks the highest major from

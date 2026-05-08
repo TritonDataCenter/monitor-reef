@@ -202,9 +202,20 @@ pub enum ImageCommand {
         #[arg(long, value_enum, required_unless_present = "vendor_toml")]
         vendor: Option<nocloud::Vendor>,
         /// Vendor-specific release token (e.g. "noble", "jammy", "latest").
-        /// Required with --vendor; ignored with --vendor-toml.
-        #[arg(long, required_unless_present = "vendor_toml")]
+        /// Required with --vendor unless --list-releases is set; ignored
+        /// with --vendor-toml.
+        #[arg(
+            long,
+            required_unless_present_any = ["vendor_toml", "list_releases"],
+        )]
         release: Option<String>,
+        /// List the upstream's published releases for `--vendor` and exit.
+        /// Rolling vendors (smartos, arch) have no list and will error.
+        #[arg(long, conflicts_with_all = ["release", "vendor_toml"])]
+        list_releases: bool,
+        /// With `--list-releases`, emit JSON instead of a table.
+        #[arg(long, requires = "list_releases")]
+        json: bool,
         /// Path to a TOML profile that pins a fully-resolved
         /// (url, sha256, metadata) tuple. See
         /// docs/design/examples/nocloud-vendors/ for the schema and
@@ -759,6 +770,8 @@ impl ImageCommand {
         if let ImageCommand::FetchNocloud {
             vendor,
             release,
+            list_releases,
+            json,
             vendor_toml,
             target,
             output_dir,
@@ -773,6 +786,8 @@ impl ImageCommand {
             return nocloud::run(nocloud::FetchOpts {
                 vendor,
                 release,
+                list_releases,
+                json,
                 vendor_toml,
                 output_dir,
                 workdir,

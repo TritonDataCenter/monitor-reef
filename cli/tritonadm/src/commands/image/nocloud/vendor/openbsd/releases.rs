@@ -26,6 +26,8 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::commands::image::nocloud::vendor::Release as VendorRelease;
+
 const REPO: &str = "hcartiaux/openbsd-cloud-image";
 const ASSET_NAME: &str = "openbsd-min.qcow2";
 
@@ -50,6 +52,27 @@ pub struct Resolved {
     pub tag: String,
     pub url: String,
     pub sha256: String,
+}
+
+/// Enumerate the bsd-cloud-image-org releases via the GitHub API. Up
+/// to 100 results in a single page is enough — the project ships a
+/// release per OpenBSD `<X>.<Y>` and there are only a handful at any
+/// given time. Newest-first (GitHub's default).
+pub async fn list(http: &reqwest::Client) -> Result<Vec<VendorRelease>> {
+    let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=100");
+    eprintln!("Fetching {url}");
+    let releases: Vec<Release> = github_get(http, &url).await?;
+    Ok(releases
+        .into_iter()
+        .filter_map(|r| {
+            let version = parse_version_from_tag(&r.tag_name)?;
+            Some(VendorRelease {
+                name: version.clone(),
+                label: Some(format!("OpenBSD {version}")),
+                note: Some(r.tag_name),
+            })
+        })
+        .collect())
 }
 
 pub async fn resolve(http: &reqwest::Client, release: &str) -> Result<Resolved> {

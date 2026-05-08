@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::Sha256BsdSumsTls;
 
 pub struct FreeBsd;
@@ -75,5 +75,9 @@ impl VendorProfile for FreeBsd {
             // so we don't have the upstream sha256 pre-download.
             expected_sha256: None,
         })
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        Ok(releases::list(http).await?)
     }
 }

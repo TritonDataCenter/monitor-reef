@@ -32,6 +32,8 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
+use crate::commands::image::nocloud::vendor::Release as VendorRelease;
+
 const RELEASES_URL: &str = "https://alpinelinux.org/releases.json";
 
 #[derive(Deserialize)]
@@ -72,6 +74,44 @@ pub async fn fetch(http: &reqwest::Client) -> Result<ReleasesJson> {
         .json::<ReleasesJson>()
         .await
         .with_context(|| format!("parse {RELEASES_URL}"))
+}
+
+/// Branches advertised by Alpine, newest-first. Each row's `name` is
+/// the version-stripped branch (e.g. `3.23`); `note` flags the current
+/// `latest_stable`.
+pub fn list(rj: &ReleasesJson) -> Vec<VendorRelease> {
+    let mut rows: Vec<(String, Option<String>, Option<String>)> = rj
+        .release_branches
+        .iter()
+        .map(|b| {
+            let stripped = b
+                .rel_branch
+                .strip_prefix('v')
+                .unwrap_or(&b.rel_branch)
+                .to_string();
+            let note = if b.rel_branch == rj.latest_stable {
+                Some("latest_stable".to_string())
+            } else {
+                None
+            };
+            let label = b.releases.first().map(|r| r.version.clone());
+            (stripped, label, note)
+        })
+        .collect();
+    // The branch names are <major>.<minor>; sort by parsed numeric
+    // version so 3.23 comes before 3.22 — releases.json is
+    // already in this order, but normalize anyway.
+    rows.sort_by(|a, b| version_key(&b.0).cmp(&version_key(&a.0)));
+    rows.into_iter()
+        .map(|(name, label, note)| VendorRelease { name, label, note })
+        .collect()
+}
+
+fn version_key(s: &str) -> (u32, u32) {
+    let mut parts = s.split('.');
+    let major = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    let minor = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
+    (major, minor)
 }
 
 pub fn resolve(rj: &ReleasesJson, token: &str) -> Result<ResolvedRelease> {
@@ -200,5 +240,15 @@ mod tests {
     #[test]
     fn resolve_unknown_full_version_errors() {
         assert!(resolve(&fixture(), "3.23.99").is_err());
+    }
+
+    #[test]
+    fn list_strips_v_prefix_and_marks_latest_stable() {
+        let rows = list(&fixture());
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["3.23", "3.22"]);
+        assert_eq!(rows[0].note.as_deref(), Some("latest_stable"));
+        assert_eq!(rows[1].note, None);
+        assert_eq!(rows[0].label.as_deref(), Some("3.23.4"));
     }
 }

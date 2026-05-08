@@ -35,10 +35,16 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use url::Url;
 
-use super::{ResolvedImage, SourceFormat, VendorProfile};
+use super::{Release, ResolvedImage, SourceFormat, VendorProfile};
 use crate::commands::image::nocloud::verify::Sha512SumsTls;
 
 pub struct Debian;
+
+/// Suite aliases listable via the apt Release file. `unstable`/`sid`
+/// is intentionally omitted: cloud.debian.org doesn't ship a sid
+/// generic-cloud image, and including it in `--list-releases` would
+/// suggest it works.
+const LISTABLE_SUITES: &[&str] = &["stable", "oldstable", "oldoldstable", "testing"];
 
 /// Translate the user-facing release token to the suite path component
 /// used in the apt Release URL `dists/<suite>/Release`. `latest` is
@@ -103,6 +109,43 @@ impl VendorProfile for Debian {
             // plan will show "(derived after download)".
             expected_sha256: None,
         })
+    }
+
+    async fn list_releases(&self, http: &reqwest::Client) -> Result<Vec<Release>> {
+        // Walk the symbolic suites in priority order and resolve each
+        // to its current codename + version via the apt Release file.
+        // We also list the resolved codenames as their own rows so the
+        // operator sees both "stable" and "trixie" and can pick whichever
+        // they prefer to pin.
+        let mut rows: Vec<Release> = Vec::new();
+        let mut seen_codenames: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for suite in LISTABLE_SUITES {
+            match release_file::fetch(http, suite).await {
+                Ok(info) => {
+                    rows.push(Release {
+                        name: (*suite).to_string(),
+                        label: Some(format!("{} ({})", info.version, info.codename)),
+                        note: Some(format!("alias for {}", info.codename)),
+                    });
+                    if seen_codenames.insert(info.codename.clone()) {
+                        rows.push(Release {
+                            name: info.codename,
+                            label: Some(info.version),
+                            note: Some((*suite).to_string()),
+                        });
+                    }
+                }
+                Err(e) => {
+                    rows.push(Release {
+                        name: (*suite).to_string(),
+                        label: None,
+                        note: Some(format!("unavailable ({e})")),
+                    });
+                }
+            }
+        }
+        Ok(rows)
     }
 }
 
