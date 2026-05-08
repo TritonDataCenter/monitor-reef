@@ -36,13 +36,14 @@
 //! re-export.
 
 use std::collections::BTreeMap;
+use std::net::Ipv4Addr;
 use std::process::Stdio;
 
 use anyhow::{Context, Result, anyhow, bail};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tracing::{debug, info};
-use tritond_client::types::{Disk, Image, Nic, ProvisioningBlueprint};
+use tritond_client::types::{Disk, Image, Nic, ProvisioningBlueprint, Subnet};
 use uuid::Uuid;
 
 pub(crate) type NicTagMap = BTreeMap<Uuid, String>;
@@ -337,7 +338,7 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         .nics
         .iter()
         .enumerate()
-        .map(|(index, nic)| build_bhyve_nic_json(index, nic, nic_tags))
+        .map(|(index, nic)| build_bhyve_nic_json(index, nic, nic_tags, &blueprint.subnets))
         .collect::<Result<Vec<_>>>()?;
 
     let alias = if instance.name.is_empty() {
@@ -425,18 +426,25 @@ fn build_bhyve_nic_json(
     index: usize,
     nic: &Nic,
     nic_tags: &NicTagMap,
+    subnets: &[Subnet],
 ) -> Result<serde_json::Value> {
     let nic_tag = bhyve_nic_tag(nic, nic_tags)?;
-    Ok(serde_json::json!({
+    let (ip_cidr, gateway) = bhyve_ipv4_config(nic, subnets)?;
+    let mut payload = serde_json::json!({
         "interface": format!("net{index}"),
         "nic_tag": nic_tag,
         "model": "virtio",
         "mac": nic.mac,
-        "ip": "dhcp",
-        "dhcp_server": true,
+        "ips": [ip_cidr],
         "mtu": DEFAULT_MTU,
         "primary": index == 0,
-    }))
+    });
+    if index == 0
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert("gateways".to_string(), serde_json::json!([gateway]));
+    }
+    Ok(payload)
 }
 
 fn bhyve_nic_tag<'a>(nic: &'a Nic, nic_tags: &'a NicTagMap) -> Result<&'a str> {
@@ -463,6 +471,71 @@ fn ssh_customer_metadata(
         );
     }
     metadata
+}
+
+fn bhyve_ipv4_config(nic: &Nic, subnets: &[Subnet]) -> Result<(String, String)> {
+    let ip = nic.primary_ipv4.ok_or_else(|| {
+        anyhow!(
+            "NIC {} has no IPv4 — M1 bhyve static guest networking requires v4",
+            nic.id
+        )
+    })?;
+    let subnet = subnets
+        .iter()
+        .find(|subnet| subnet.id == nic.subnet_id)
+        .ok_or_else(|| {
+            anyhow!(
+                "no subnet metadata for bhyve NIC {} subnet {}; refusing DHCP-only payload",
+                nic.id,
+                nic.subnet_id
+            )
+        })?;
+    let cidr = subnet.ipv4_block.as_deref().ok_or_else(|| {
+        anyhow!(
+            "subnet {} has no IPv4 CIDR — M1 bhyve static guest networking requires v4",
+            subnet.id
+        )
+    })?;
+    let (network, prefix) = parse_ipv4_cidr(cidr)?;
+    if prefix > 30 {
+        bail!("subnet {cidr} is too small to derive the conventional .1 gateway");
+    }
+    if !ipv4_contains(network, prefix, ip) {
+        bail!("NIC {} IPv4 {} is outside subnet {}", nic.id, ip, cidr);
+    }
+
+    let mask = ipv4_mask(prefix);
+    let gateway = Ipv4Addr::from((u32::from(network) & mask) + 1);
+    Ok((format!("{ip}/{prefix}"), gateway.to_string()))
+}
+
+fn parse_ipv4_cidr(cidr: &str) -> Result<(Ipv4Addr, u8)> {
+    let (network, prefix) = cidr
+        .split_once('/')
+        .ok_or_else(|| anyhow!("invalid IPv4 CIDR {cidr:?}: missing prefix"))?;
+    let network = network
+        .parse()
+        .with_context(|| format!("parse IPv4 network address from {cidr:?}"))?;
+    let prefix: u8 = prefix
+        .parse()
+        .with_context(|| format!("parse IPv4 prefix from {cidr:?}"))?;
+    if prefix > 32 {
+        bail!("invalid IPv4 CIDR {cidr:?}: prefix {prefix} is greater than 32");
+    }
+    Ok((network, prefix))
+}
+
+fn ipv4_contains(network: Ipv4Addr, prefix: u8, ip: Ipv4Addr) -> bool {
+    let mask = ipv4_mask(prefix);
+    (u32::from(network) & mask) == (u32::from(ip) & mask)
+}
+
+fn ipv4_mask(prefix: u8) -> u32 {
+    if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    }
 }
 
 fn pick_quota_gb(disks: &[Disk], image: &Image) -> u64 {
@@ -525,6 +598,7 @@ mod tests {
         let tenant = fixture_uuid(0xb3);
         let project = fixture_uuid(0xc3);
         let subnet = fixture_uuid(0xd4);
+        let route_table = fixture_uuid(0xd5);
         let vpc = fixture_uuid(0xe5);
         let image_id = fixture_uuid(0xf6);
         let job_id = fixture_uuid(0x07);
@@ -572,6 +646,18 @@ mod tests {
             primary_ipv6: None,
             created_at: now,
         };
+        let subnet_record = Subnet {
+            id: subnet,
+            tenant_id: tenant,
+            project_id: project,
+            vpc_id: vpc,
+            route_table_id: route_table,
+            name: "primary".to_string(),
+            description: String::new(),
+            ipv4_block: Some("10.199.199.0/24".to_string()),
+            ipv6_block: None,
+            created_at: now,
+        };
         ProvisioningBlueprint {
             job_id,
             kind: JobKind::Provision {
@@ -580,6 +666,7 @@ mod tests {
             instance: Some(instance),
             image: Some(image),
             nics: vec![nic],
+            subnets: vec![subnet_record],
             disks: Vec::new(),
             ssh_public_keys: vec!["ssh-ed25519 AAAA test@host".to_string()],
         }
@@ -673,8 +760,8 @@ mod tests {
                     "nic_tag": "external",
                     "model": "virtio",
                     "mac": "02:00:00:de:ad:01",
-                    "ip": "dhcp",
-                    "dhcp_server": true,
+                    "ips": ["10.199.199.77/24"],
+                    "gateways": ["10.199.199.1"],
                     "mtu": 1500,
                     "primary": true,
                 }
@@ -712,6 +799,16 @@ mod tests {
         let payload = create_bhyve_payload_with_nic_tags(&bp, &nic_tags).unwrap();
 
         assert_eq!(payload["nics"][0]["nic_tag"], "proteus49377");
+    }
+
+    #[test]
+    fn create_bhyve_payload_requires_subnet_metadata_for_static_networking() {
+        let mut bp = sample_bhyve_blueprint();
+        bp.subnets.clear();
+
+        let err = create_bhyve_payload(&bp).unwrap_err();
+
+        assert!(err.to_string().contains("no subnet metadata"));
     }
 
     #[test]

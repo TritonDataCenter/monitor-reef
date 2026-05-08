@@ -10,8 +10,9 @@ Copyright 2026 Edgecast Cloud LLC.
 
 > Owner: Agent C (CN dataplane).
 > Status: implementation in progress; tenant Proteus NIC parent plumbing
-> landed in tritonagent, two-VM lab attach smoke passed; guest east-west
-> and north/south edge smoke pending.
+> landed in tritonagent, two-VM lab attach smoke passed, static bhyve
+> guest network config is now the M1 contract while Proteus DHCP is
+> incomplete; guest east-west and north/south edge smoke pending.
 > Scope: `tritonagent` on SmartOS compute nodes.
 > Out of scope: VPC intent APIs, Proteus blueprint compiler,
 > firehyve/fhrun edge runtime, NAT/FIP packet behavior, UI, Kelp.
@@ -198,6 +199,13 @@ The host realization path is still Phase 0 shaped:
   issuing the kernel `CreatePort`, and passes the same `proteusNNN` as
   the bhyve `nic_tag`. The remaining risk is live validation after a
   SmartOS platform with the vmadm/brand-hook patches is installed;
+* Proteus DHCP is not yet wired end to end. The M1 bhyve path must
+  therefore not depend on a tenant dataplane DHCP lease for first boot.
+  `tritond` includes the referenced subnet records in the provisioning
+  blueprint, and `tritonagent` emits static `ips` plus the conventional
+  first-address gateway in the `vmadm` NIC payload. SmartOS metadata then
+  exposes `sdc:nics` to cloud-init's SmartOS datasource for images that
+  consume it;
 * the edge executor still has a global-zone host-process shim; M1 needs a
   `vmadm`-managed edge zone whose north/south NICs are created before zone
   start;
@@ -432,11 +440,18 @@ The minimum v1 path preserves current behavior for zone payloads:
 
 For bhyve MVP payloads, `tritonagent` dispatches from
 `Image.compatibility.brand == "bhyve"` until `Instance` grows an explicit
-brand field. Those payloads include NoCloud seed data in
-`customer_metadata["cloud-init:user-data"]` and
-`customer_metadata["cloud-init:meta-data"]`, plus the SmartOS
-`org.smartos:cloudinit_datasource = "nocloud"` marker. That matches the
-SmartOS NoCloud support now expected for v1 bhyve guests.
+brand field. Those payloads include cloud-init user-data in
+`customer_metadata["cloud-init:user-data"]`, root SSH keys in
+`root_authorized_keys`, and static guest NIC config in the `vmadm` NIC
+shape:
+
+* `ips = ["<allocated-ip>/<subnet-prefix>"]` for every tenant NIC;
+* `gateways = ["<subnet-network-plus-one>"]` on the primary NIC.
+
+The SmartOS datasource is the M1-compatible image path observed in the
+lab Ubuntu 24.04 bhyve image. NoCloud seed metadata remains useful for
+future images that opt into it, but M1 cannot depend on NoCloud
+`network-config` or Proteus DHCP for first boot.
 
 The builder should expose a single `GuestConfig` input enum later:
 
@@ -444,11 +459,13 @@ The builder should expose a single `GuestConfig` input enum later:
 pub enum GuestConfig {
     MetadataOnly,
     NoCloudIso { user_data: String, meta_data: String },
+    SmartOsMetadata { user_data: String },
 }
 ```
 
-Until that type lands, the v1 design claims only the NoCloud shape above;
-generic cloud-init provider support remains out of scope.
+Until that type lands, the v1 design claims the SmartOS metadata shape
+above for the lab images; generic cloud-init provider support remains
+out of scope.
 
 ### 5.5 Proteus-backed attachment
 
@@ -459,7 +476,7 @@ carries all tenant network semantics:
 * VPC identity, VNI, subnet, NIC, instance, and port ids;
 * guest MAC and addresses;
 * virtual gateway;
-* DHCP/DNS defaults;
+* future DHCP/DNS defaults once the dataplane DHCP path is complete;
 * security-group rules;
 * route table and propagated routes;
 * NAT/FIP bindings and edge target refs;

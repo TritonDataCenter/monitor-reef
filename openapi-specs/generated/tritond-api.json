@@ -7353,7 +7353,7 @@
         ]
       },
       "ProvisioningBlueprint": {
-        "description": "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.",
+        "description": "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.",
         "type": "object",
         "properties": {
           "disks": {
@@ -7405,6 +7405,14 @@
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "subnets": {
+            "description": "Subnets referenced by `nics`, deduplicated by id. Empty for non-Provision jobs.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Subnet"
             }
           }
         },

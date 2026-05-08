@@ -6130,6 +6130,7 @@ async fn build_blueprint(
             instance: None,
             image: None,
             nics: Vec::new(),
+            subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
         });
@@ -6158,6 +6159,7 @@ async fn build_blueprint(
             instance,
             image: None,
             nics: Vec::new(),
+            subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
         });
@@ -6170,6 +6172,7 @@ async fn build_blueprint(
             instance: None,
             image: None,
             nics: Vec::new(),
+            subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
         });
@@ -6184,6 +6187,20 @@ async fn build_blueprint(
         .list_nics_for_instance(instance.id)
         .await
         .map_err(store_error_to_http)?;
+    let mut subnets = Vec::new();
+    for nic in &nics {
+        if subnets
+            .iter()
+            .any(|subnet: &Subnet| subnet.id == nic.subnet_id)
+        {
+            continue;
+        }
+        let subnet = store
+            .get_subnet(nic.subnet_id)
+            .await
+            .map_err(store_error_to_http)?;
+        subnets.push(subnet);
+    }
     let disks = store
         .list_disks_for_instance(instance.id)
         .await
@@ -6205,6 +6222,7 @@ async fn build_blueprint(
         instance: Some(instance),
         image,
         nics,
+        subnets,
         disks,
         ssh_public_keys,
     })

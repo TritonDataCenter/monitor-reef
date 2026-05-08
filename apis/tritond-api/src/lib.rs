@@ -240,7 +240,7 @@ pub struct AgentPortBlueprint {
 /// `GET /v2/agent/jobs/{job_id}/blueprint`.
 ///
 /// The shape is intentionally a flat bundle: instance + image +
-/// nics + disks + ssh public keys, all in one response. That lets
+/// nics + subnets + disks + ssh public keys, all in one response. That lets
 /// the agent issue exactly one round-trip per claimed job, and
 /// keeps the queue payload itself opaque to the agent's needs (a
 /// Provision job will eventually want different fields than a
@@ -255,7 +255,9 @@ pub struct AgentPortBlueprint {
 /// Optional fields reflect the per-`JobKind` shape:
 ///
 /// * `Provision` — `instance`, `image`, `nics`, `disks`, and
-///   any `ssh_public_keys` are populated. The agent has
+///   any `ssh_public_keys` are populated. `subnets` carries the
+///   referenced subnet records so the agent can derive static guest
+///   network metadata without relying on dataplane DHCP. The agent has
 ///   everything it needs to call `vmadm create`.
 /// * `Stop` / `Restart` — `instance` populated, others may be
 ///   empty. The agent only needs `instance.id` to call
@@ -278,6 +280,10 @@ pub struct ProvisioningBlueprint {
     /// jobs.
     #[serde(default)]
     pub nics: Vec<Nic>,
+    /// Subnets referenced by `nics`, deduplicated by id. Empty for
+    /// non-Provision jobs.
+    #[serde(default)]
+    pub subnets: Vec<Subnet>,
     /// All disks attached to the instance. Empty for non-Provision
     /// jobs.
     #[serde(default)]

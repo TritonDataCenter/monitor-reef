@@ -4446,13 +4446,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`."]
+    #[doc = "Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\n\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\n\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\n\nOptional fields reflect the per-`JobKind` shape:\n\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\\n\\nThe shape is intentionally a flat bundle: instance + image + nics + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\\n\\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\\n\\nOptional fields reflect the per-`JobKind` shape:\\n\\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.\","]
+    #[doc = "  \"description\": \"Materialised view of everything the agent needs to act on a claimed [`ProvisioningJob`]. Returned by `GET /v2/agent/jobs/{job_id}/blueprint`.\\n\\nThe shape is intentionally a flat bundle: instance + image + nics + subnets + disks + ssh public keys, all in one response. That lets the agent issue exactly one round-trip per claimed job, and keeps the queue payload itself opaque to the agent's needs (a Provision job will eventually want different fields than a hypothetical Migrate or Resize, and embedding everything in the [`ProvisioningJob`] would force lockstep schema migration).\\n\\nTritond's `Instance::id` is the canonical identity reused downstream: the agent passes it as the SmartOS zone UUID at `vmadm create`, so subsequent Stop/Restart jobs can address the zone by the same id without a separate mapping table.\\n\\nOptional fields reflect the per-`JobKind` shape:\\n\\n* `Provision` — `instance`, `image`, `nics`, `disks`, and any `ssh_public_keys` are populated. `subnets` carries the referenced subnet records so the agent can derive static guest network metadata without relying on dataplane DHCP. The agent has everything it needs to call `vmadm create`. * `Stop` / `Restart` — `instance` populated, others may be empty. The agent only needs `instance.id` to call `vmadm stop` / `vmadm reboot`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"job_id\","]
@@ -4519,6 +4519,14 @@ pub mod types {
     #[doc = "      \"items\": {"]
     #[doc = "        \"type\": \"string\""]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"subnets\": {"]
+    #[doc = "      \"description\": \"Subnets referenced by `nics`, deduplicated by id. Empty for non-Provision jobs.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/Subnet\""]
+    #[doc = "      }"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4545,6 +4553,9 @@ pub mod types {
         #[doc = "Raw openssh-form public keys to inject via the SmartOS `root_authorized_keys` metadata at zone-create time. Resolved from `Instance::ssh_key_ids`."]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub ssh_public_keys: ::std::vec::Vec<::std::string::String>,
+        #[doc = "Subnets referenced by `nics`, deduplicated by id. Empty for non-Provision jobs."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub subnets: ::std::vec::Vec<Subnet>,
     }
 
     impl ProvisioningBlueprint {
@@ -10766,6 +10777,7 @@ pub mod types {
                 ::std::vec::Vec<::std::string::String>,
                 ::std::string::String,
             >,
+            subnets: ::std::result::Result<::std::vec::Vec<super::Subnet>, ::std::string::String>,
         }
 
         impl ::std::default::Default for ProvisioningBlueprint {
@@ -10778,6 +10790,7 @@ pub mod types {
                     kind: Err("no value supplied for kind".to_string()),
                     nics: Ok(Default::default()),
                     ssh_public_keys: Ok(Default::default()),
+                    subnets: Ok(Default::default()),
                 }
             }
         }
@@ -10853,6 +10866,16 @@ pub mod types {
                 });
                 self
             }
+            pub fn subnets<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::Subnet>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.subnets = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for subnets: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<ProvisioningBlueprint> for super::ProvisioningBlueprint {
@@ -10868,6 +10891,7 @@ pub mod types {
                     kind: value.kind?,
                     nics: value.nics?,
                     ssh_public_keys: value.ssh_public_keys?,
+                    subnets: value.subnets?,
                 })
             }
         }
@@ -10882,6 +10906,7 @@ pub mod types {
                     kind: Ok(value.kind),
                     nics: Ok(value.nics),
                     ssh_public_keys: Ok(value.ssh_public_keys),
+                    subnets: Ok(value.subnets),
                 }
             }
         }

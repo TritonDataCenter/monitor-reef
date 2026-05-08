@@ -910,6 +910,7 @@ mod tests {
             instance: None,
             image: None,
             nics: vec![nic],
+            subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
         }

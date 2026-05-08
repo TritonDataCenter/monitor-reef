@@ -714,8 +714,43 @@ async fn blueprint_returns_kind_and_instance_when_present() {
     assert!(bp.instance.is_none(), "phantom instance → instance: None");
     assert!(bp.image.is_none());
     assert!(bp.nics.is_empty());
+    assert!(bp.subnets.is_empty());
     assert!(bp.disks.is_empty());
     assert!(bp.ssh_public_keys.is_empty());
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn provision_blueprint_includes_subnet_records_for_static_guest_config() {
+    let test = TestServer::start().await;
+    let secret = mint_key(&test, ApiKeyScope::Agent).await;
+    let client = test.bearer_client(&secret);
+    let (instance, nic) = create_instance_with_primary_nic(&test, "agent-blueprint-subnets").await;
+    let job = test
+        .store
+        .enqueue_job(NewJob {
+            kind: JobKind::Provision {
+                instance_id: instance.id,
+            },
+            target_cn_uuid: None,
+        })
+        .await
+        .unwrap();
+
+    let bp = client
+        .agent_job_blueprint()
+        .job_id(job.id)
+        .send()
+        .await
+        .expect("Agent scope must be able to fetch its blueprint")
+        .into_inner();
+
+    assert_eq!(bp.nics.len(), 1);
+    assert_eq!(bp.nics[0].id, nic.id);
+    assert_eq!(bp.subnets.len(), 1);
+    assert_eq!(bp.subnets[0].id, nic.subnet_id);
+    assert_eq!(bp.subnets[0].ipv4_block.as_deref(), Some("10.0.0.0/29"));
 
     test.close().await;
 }
@@ -755,6 +790,7 @@ async fn blueprint_returns_empty_instance_payload_for_edge_jobs() {
     assert!(bp.instance.is_none());
     assert!(bp.image.is_none());
     assert!(bp.nics.is_empty());
+    assert!(bp.subnets.is_empty());
     assert!(bp.disks.is_empty());
     assert!(bp.ssh_public_keys.is_empty());
 
@@ -1523,6 +1559,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
     assert!(bp.instance.is_none());
     assert!(bp.image.is_none());
     assert!(bp.nics.is_empty());
+    assert!(bp.subnets.is_empty());
 
     // Reporting Completed for a Delete is a clean exit (no
     // lifecycle to advance — the instance is gone).
