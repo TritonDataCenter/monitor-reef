@@ -10,7 +10,8 @@ Copyright 2026 Edgecast Cloud LLC.
 
 > Owner: Agent C (CN dataplane).
 > Status: implementation in progress; tenant Proteus NIC parent plumbing
-> landed in tritonagent, lab VM smoke still pending.
+> landed in tritonagent, two-VM lab attach smoke passed; guest east-west
+> and north/south edge smoke pending.
 > Scope: `tritonagent` on SmartOS compute nodes.
 > Out of scope: VPC intent APIs, Proteus blueprint compiler,
 > firehyve/fhrun edge runtime, NAT/FIP packet behavior, UI, Kelp.
@@ -227,9 +228,14 @@ The host realization path is still Phase 0 shaped:
   `vmadm validate create`, `ksh -n`, and a brand-hook probe that created
   a VNIC over a live Proteus `misc` parent (`proteus49634` on nuc0,
   `proteus49891` on nuc1) with clean removal of the test VNIC, port, and
-  link. The remaining tenant dataplane risk is the integrated
-  tritonagent-to-vmadm VM attach smoke, followed by baking the patches
-  into a platform image;
+  link. The integrated two-VM attach smoke then passed on nuc1 with
+  tritonagent `8a60747`: `web1` and `web2` reached `running`, their
+  Proteus ports were `Applied`, `vmadm get` showed
+  `nic_tag=proteus3055251949` and `nic_tag=proteus4153015818`, and both
+  Ubuntu guests completed cloud-init through `network-online.target`,
+  `ssh.socket`, and `triton-guest.service`. The remaining tenant
+  dataplane risk is proving guest-internal east-west traffic and cross-CN
+  placement, then baking the patches into a platform image;
 * port cleanup exists for provision failure, but Stop/Restart/Delete do
   not yet pause/reapply/delete Proteus ports end to end;
 * no applied generation is reported for VPC, subnet, route, security
