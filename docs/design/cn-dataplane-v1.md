@@ -221,9 +221,15 @@ The host realization path is still Phase 0 shaped:
   `43c8b414` plus nested illumos `845b2131a3`. It accepts
   `nic_tag=proteusNNN` in vmadm validation and teaches the joyent brand
   hook to treat Proteus `misc` links as VNIC parents. `tritonagent` now
-  emits that contract, but this still needs a platform image
-  build/install before the lab CNs run the patched vmadm path from
-  `/usr`;
+  emits that contract. As a lab bridge before the next platform image,
+  nuc0 and nuc1 have lofs-mounted patched copies of `VM.js` and
+  `jcommon/statechange`. Both CNs passed `VM.validate`,
+  `vmadm validate create`, `ksh -n`, and a brand-hook probe that created
+  a VNIC over a live Proteus `misc` parent (`proteus49634` on nuc0,
+  `proteus49891` on nuc1) with clean removal of the test VNIC, port, and
+  link. The remaining tenant dataplane risk is the integrated
+  tritonagent-to-vmadm VM attach smoke, followed by baking the patches
+  into a platform image;
 * port cleanup exists for provision failure, but Stop/Restart/Delete do
   not yet pause/reapply/delete Proteus ports end to end;
 * no applied generation is reported for VPC, subnet, route, security
