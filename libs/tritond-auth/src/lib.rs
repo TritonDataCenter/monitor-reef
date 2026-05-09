@@ -25,6 +25,7 @@
 //!   that must not leak via `Debug` or coredump.
 
 pub mod api_key;
+pub mod identity_hmac;
 pub mod jwt;
 pub mod oidc;
 pub mod password;
@@ -34,6 +35,7 @@ pub use api_key::{
     API_KEY_PREFIX, ApiKeyError, ApiKeyMaterial, LOOKUP_ID_CHARS, SECRET_CHARS, generate_api_key,
     parse_api_key, verify_api_key_secret,
 };
+pub use identity_hmac::{IDENTITY_HMAC_KEY_BYTES, IdentityHmacKey};
 pub use jwt::{
     AccessClaims, JwtError, JwtKey, RefreshClaims, TokenKind, mint_access, mint_refresh, verify,
 };

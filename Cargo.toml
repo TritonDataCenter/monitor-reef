@@ -108,6 +108,8 @@ getrandom = "0.4"
 # /v2/auth/login surface to throttle brute-force attempts per
 # source IP.
 governor = "0.10"
+hex = "0.4"
+hmac = "0.12"
 hostname = "0.4"
 http = "1"
 indexmap = "2"
