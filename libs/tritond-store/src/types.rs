@@ -2734,6 +2734,159 @@ impl RealizedNetworkState {
     }
 }
 
+// ============================================================
+// Storage clusters (operator-only)
+// ============================================================
+//
+// `StorageCluster` registers an external manta-storage daemon
+// (mantad for the S3 surface today; mantafs / manta-block in
+// follow-ups) so tritond can broker operator-driven admin calls
+// to it without leaking the bearer token to admin-backend.
+
+/// Discriminator for the storage surface a registered cluster serves.
+///
+/// Each surface has its own forwarder endpoint family
+/// (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a
+/// surface's endpoint family on a cluster registered under a
+/// different surface returns a `409 Conflict`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum StorageClusterSurface {
+    /// S3-compatible object surface (mantad / mantas3-cluster
+    /// `/admin/v1/*`).
+    S3,
+    /// Filesystem surface (mantafs / tritonfs). Registration is
+    /// accepted; forwarder endpoints are not yet implemented.
+    Fs,
+    /// Block-volume surface (manta-block). Registration is accepted;
+    /// forwarder endpoints are not yet implemented.
+    Block,
+}
+
+impl StorageClusterSurface {
+    /// Stable string label used in URL path segments and FDB indexes.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::S3 => "s3",
+            Self::Fs => "fs",
+            Self::Block => "block",
+        }
+    }
+}
+
+/// Operator-observed health of a registered storage cluster.
+///
+/// Populated by the `/v2/storage/clusters/{id}/health` endpoint, which
+/// runs a probe against the cluster's `/admin/v1/cluster` summary.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Default,
+)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum StorageClusterStatus {
+    /// Last probe succeeded and all nodes were alive.
+    Healthy,
+    /// Last probe succeeded but at least one node was missing.
+    Degraded,
+    /// Last probe failed (connection refused, timeout, 5xx).
+    Unreachable,
+    /// No probe has run yet, or the last probe was too long ago to
+    /// trust.
+    #[default]
+    Unknown,
+}
+
+/// A registered manta-storage cluster.
+///
+/// Operator-only resource (root-allows-all in Cedar). Holds the bearer
+/// token used to authenticate against the cluster's `/admin/v1/*`
+/// surface; admin-backend never sees the raw token because every
+/// admin operation goes through tritond's typed forwarder endpoints
+/// at `/v2/storage/clusters/{id}/...`.
+///
+/// `admin_token` is stored in plaintext for Phase 0 — same precedent
+/// as `IdpConfig.client_secret` (see `STATUS.md` deferred-work table:
+/// "Encryption-at-rest for `IdpConfig.client_secret` → manta-storage
+/// Phase 0 secrets engine ships"). The `StorageClusterView` wire shape
+/// redacts the token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageCluster {
+    pub id: Uuid,
+    /// Operator-chosen short name. Unique cluster-wide. Used as the
+    /// secondary FDB index.
+    pub name: String,
+    /// Surface the cluster serves.
+    pub surface: StorageClusterSurface,
+    /// HTTP base URL for the cluster's admin API
+    /// (e.g. `http://10.199.199.250:7101`).
+    pub endpoint: String,
+    /// Bearer token tritond presents on `/admin/v1/*` calls.
+    pub admin_token: String,
+    /// Default region the surface uses for SigV4 signing
+    /// (informational; admin-backend echoes it to clients).
+    pub default_region: String,
+    /// Optional human-friendly label.
+    pub display_name: Option<String>,
+    /// Most recent health probe outcome.
+    #[serde(default)]
+    pub status: StorageClusterStatus,
+    pub created_at: DateTime<Utc>,
+    /// When `status` was last refreshed by a health probe.
+    pub last_observed_at: Option<DateTime<Utc>>,
+}
+
+/// Body of `POST /v2/storage/clusters`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewStorageCluster {
+    pub name: String,
+    pub surface: StorageClusterSurface,
+    pub endpoint: String,
+    pub admin_token: String,
+    #[serde(default = "default_storage_cluster_region")]
+    pub default_region: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+fn default_storage_cluster_region() -> String {
+    "us-east-1".to_string()
+}
+
+/// Wire-side projection of [`StorageCluster`] that **redacts the
+/// bearer token**. This is what `GET /v2/storage/clusters` and
+/// `GET /v2/storage/clusters/{id}` return.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StorageClusterView {
+    pub id: Uuid,
+    pub name: String,
+    pub surface: StorageClusterSurface,
+    pub endpoint: String,
+    pub default_region: String,
+    pub display_name: Option<String>,
+    pub status: StorageClusterStatus,
+    pub created_at: DateTime<Utc>,
+    pub last_observed_at: Option<DateTime<Utc>>,
+}
+
+impl From<StorageCluster> for StorageClusterView {
+    fn from(c: StorageCluster) -> Self {
+        Self {
+            id: c.id,
+            name: c.name,
+            surface: c.surface,
+            endpoint: c.endpoint,
+            default_region: c.default_region,
+            display_name: c.display_name,
+            status: c.status,
+            created_at: c.created_at,
+            last_observed_at: c.last_observed_at,
+        }
+    }
+}
+
 #[cfg(test)]
 mod realized_state_tests {
     use super::*;
