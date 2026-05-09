@@ -21,7 +21,9 @@
 pub mod audit;
 pub mod auth;
 pub mod bootstrap;
+pub mod dhcp_reconciler;
 pub mod edge;
+pub mod legacy_classify;
 pub mod provisioner;
 pub mod rate_limit;
 pub mod sweeper;
@@ -45,30 +47,34 @@ use proteus_api::ids::{
 };
 use triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1;
 use triton_vpc::tritond_intent_v1::{
-    EdgeClusterIntentV1, FloatingIpAttachmentIntentV1, FloatingIpIntentV1, NatGatewayIntentV1,
-    NicIntentV1, RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1,
-    VpcIntentV1,
+    EdgeClusterIntentV1, FirewallActionIntentV1, FirewallDirectionIntentV1, FirewallRuleIntentV1,
+    FloatingIpAttachmentIntentV1, FloatingIpIntentV1, L4ProtocolIntentV1, NatGatewayIntentV1,
+    NicIntentV1, PortRangeIntentV1, RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1,
+    TritondPortIntentV1, VpcIntentV1,
 };
 use tritond_api::{
     AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
     CnListQuery, CnPath, CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery,
-    LoginRequest, NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle,
-    OpenAutoApproveRequest, ProvisioningBlueprint, RefreshRequest, RegisterCnRequest,
-    RegisterCnResponse, RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SiloPath,
-    SiloTenantPath, SshKeyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
-    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
-    TenantProjectPath, TenantProjectVpcNatGatewayPath, TenantProjectVpcPath,
-    TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    LegacyCnSummary, LegacyVmListQuery, LegacyVmPath, LoginRequest, NetworkRealizationRequest,
+    NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
+    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
+    RegisterStatusResponse, SetCnRoleRequest, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath,
+    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
     TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
-        ApiKeyView, AuditEvent, AutoApproveWindow, CnView, Disk, FloatingIp, IdpConfigView, Image,
-        ImageCompatibility, ImageScope, Instance, JobKind, JobOutcome, JobStatus, LifecycleState,
-        LifecycleStateKind, NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance,
-        NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-        NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizerId, Route,
-        RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Subnet, Tenant, Vpc,
+        ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
+        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageCompatibility, ImageScope,
+        Instance, JobKind, JobOutcome, JobStatus, LegacyVm, LifecycleState, LifecycleStateKind,
+        ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
+        NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
+        NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
+        Project, ProvisioningJob, Quota, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey,
+        SshKeyScope, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -121,6 +127,21 @@ pub struct ApiContext {
     /// don't get an unexpected background task that would
     /// interfere with explicit job-state assertions.
     pub sweeper: Option<SweeperConfig>,
+    /// DHCP-lease reconciler config (γ.3). When `Some(...)`,
+    /// [`start_server_with_context`] spawns the reconciler task
+    /// from [`crate::dhcp_reconciler::spawn`] with the given
+    /// interval + GC threshold. Defaults to `None` so test
+    /// contexts don't get unexpected lease deletes interleaved
+    /// with explicit IPAM assertions.
+    pub dhcp_reconciler: Option<crate::dhcp_reconciler::ReconcilerConfig>,
+    /// Per-deployment HMAC-SHA256 key used to stamp managed-zone
+    /// identity (`instance_id`/`tenant_id`/`project_id`) into
+    /// SmartOS `internal_metadata` at provision time, and to verify
+    /// that identity in CN status reports. `ApiContext::new` defaults
+    /// to a freshly-generated key so tests get isolated per-context
+    /// signatures; `main` overrides via `with_identity_hmac_key` to
+    /// install the bootstrap-loaded, persisted key.
+    pub identity_hmac_key: Arc<tritond_auth::IdentityHmacKey>,
 }
 
 /// Cadence and staleness threshold for the
@@ -141,7 +162,19 @@ impl ApiContext {
             cn_approve_rate_limiter: Arc::new(IpRateLimiter::for_cn_approve()),
             spawn_in_process_provisioner: true,
             sweeper: None,
+            dhcp_reconciler: None,
+            identity_hmac_key: Arc::new(tritond_auth::IdentityHmacKey::generate()),
         }
+    }
+
+    /// Install a specific identity HMAC key (typically the
+    /// bootstrap-loaded persisted one). Tests that need to verify
+    /// identity tags across a context boundary share a key via
+    /// this builder.
+    #[must_use]
+    pub fn with_identity_hmac_key(mut self, key: Arc<tritond_auth::IdentityHmacKey>) -> Self {
+        self.identity_hmac_key = key;
+        self
     }
 
     /// Replace the default CN-approve rate limiter — integration
@@ -160,6 +193,16 @@ impl ApiContext {
     #[must_use]
     pub fn with_sweeper(mut self, cfg: SweeperConfig) -> Self {
         self.sweeper = Some(cfg);
+        self
+    }
+
+    /// Enable the DHCP-lease reconciler (γ.3) at the given
+    /// cadence + GC threshold. Used by `main` (env-driven) and by
+    /// integration tests that want to exercise reconciler
+    /// behaviour with tight thresholds. Defaults to `None`.
+    #[must_use]
+    pub fn with_dhcp_reconciler(mut self, cfg: crate::dhcp_reconciler::ReconcilerConfig) -> Self {
+        self.dhcp_reconciler = Some(cfg);
         self
     }
 
@@ -256,6 +299,16 @@ impl TritondApi for TritondServiceImpl {
                 Err(store_error_to_http(e))
             }
         }
+    }
+
+    async fn list_silos(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Silo>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::SiloList)
+            .await?;
+        let silos = ctx.store.list_silos().await.map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(silos))
     }
 
     async fn get_silo(
@@ -696,7 +749,7 @@ impl TritondApi for TritondServiceImpl {
         if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
             enforce_job_belongs_to_bound_cn(&job, bound)?;
         }
-        let blueprint = build_blueprint(ctx.store.as_ref(), &job).await?;
+        let blueprint = build_blueprint(ctx.store.as_ref(), &ctx.identity_hmac_key, &job).await?;
         Ok(HttpResponseOk(blueprint))
     }
 
@@ -2152,6 +2205,601 @@ impl TritondApi for TritondServiceImpl {
                         Action::RouteDelete,
                         request_id,
                         Some(format!("Route::\"{route_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    // ---- Firewall rules (Slice 1: per-VPC flat rule list) ----------
+
+    async fn list_vpc_firewall_rules(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<FirewallRule>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FirewallRuleList,
+            tenant_id,
+        )
+        .await?;
+
+        let vpc = ctx
+            .store
+            .get_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+            return Err(not_found());
+        }
+        let rules = ctx
+            .store
+            .list_firewall_rules_in_vpc(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(rules))
+    }
+
+    async fn create_vpc_firewall_rule(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewFirewallRule>,
+    ) -> Result<HttpResponseCreated<FirewallRule>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FirewallRuleCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+
+        match ctx
+            .store
+            .create_firewall_rule(tenant_id, project_id, vpc_id, req)
+            .await
+        {
+            Ok(rule) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FirewallRuleCreate,
+                        request_id,
+                        Some(format!("FirewallRule::\"{}\"", rule.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("FirewallRule::\"{}\"", rule.id)),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "name": rule.name,
+                            "priority": rule.priority,
+                            "direction": rule.direction,
+                            "action": rule.action,
+                            "protocol": rule.protocol,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(rule))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FirewallRuleCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn delete_vpc_firewall_rule(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcFirewallRulePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcFirewallRulePath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            firewall_rule_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::FirewallRuleDelete,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+
+        let rule = ctx
+            .store
+            .get_firewall_rule(firewall_rule_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if rule.tenant_id != tenant_id || rule.project_id != project_id || rule.vpc_id != vpc_id {
+            return Err(not_found());
+        }
+        match ctx.store.delete_firewall_rule(firewall_rule_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FirewallRuleDelete,
+                        request_id,
+                        Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::FirewallRuleDelete,
+                        request_id,
+                        Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    // ---- DHCP / IPAM (γ.1 + γ.4) -----------------------------------
+
+    async fn get_vpc_dhcp_pool(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Option<DhcpPool>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpPoolGet,
+            tenant_id,
+        )
+        .await?;
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        let pool = ctx
+            .store
+            .get_dhcp_pool(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(pool))
+    }
+
+    async fn set_vpc_dhcp_pool(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewDhcpPool>,
+    ) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpPoolSet,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        match ctx.store.set_dhcp_pool(vpc_id, body.into_inner()).await {
+            Ok(pool) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpPoolSet,
+                        request_id,
+                        Some(format!("DhcpPool::\"{vpc_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("DhcpPool::\"{vpc_id}\"")),
+                        },
+                        serde_json::json!({
+                            "tenant_id": tenant_id,
+                            "project_id": project_id,
+                            "vpc_id": vpc_id,
+                            "lease_seconds_default": pool.lease_seconds_default,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseOk(pool))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpPoolSet,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn clear_vpc_dhcp_pool(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpPoolClear,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        match ctx.store.clear_dhcp_pool(vpc_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpPoolClear,
+                        request_id,
+                        Some(format!("DhcpPool::\"{vpc_id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("DhcpPool::\"{vpc_id}\"")),
+                        },
+                        serde_json::json!({"vpc_id": vpc_id}),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpPoolClear,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_vpc_dhcp_reservations(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<DhcpReservation>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpReservationList,
+            tenant_id,
+        )
+        .await?;
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        let rs = ctx
+            .store
+            .list_dhcp_reservations(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(rs))
+    }
+
+    async fn create_vpc_dhcp_reservation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewDhcpReservation>,
+    ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpReservationCreate,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        let req = body.into_inner();
+        match ctx.store.create_dhcp_reservation(vpc_id, req).await {
+            Ok(r) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpReservationCreate,
+                        request_id,
+                        Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, r.mac)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, r.mac)),
+                        },
+                        serde_json::json!({
+                            "vpc_id": vpc_id,
+                            "mac": r.mac,
+                            "ipv4": r.ipv4.to_string(),
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(r))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpReservationCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_vpc_dhcp_reservation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseOk<DhcpReservation>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcDhcpMacPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            mac,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpReservationGet,
+            tenant_id,
+        )
+        .await?;
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        let r = ctx
+            .store
+            .get_dhcp_reservation(vpc_id, &mac)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(r))
+    }
+
+    async fn delete_vpc_dhcp_reservation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcDhcpMacPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            mac,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpReservationDelete,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        match ctx.store.delete_dhcp_reservation(vpc_id, &mac).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpReservationDelete,
+                        request_id,
+                        Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
+                        },
+                        serde_json::json!({"vpc_id": vpc_id, "mac": mac}),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpReservationDelete,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn list_vpc_dhcp_leases(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<DhcpLease>>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpLeaseList,
+            tenant_id,
+        )
+        .await?;
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        let l = ctx
+            .store
+            .list_dhcp_leases(vpc_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(l))
+    }
+
+    async fn get_vpc_dhcp_lease(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseOk<DhcpLease>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcDhcpMacPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            mac,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpLeaseGet,
+            tenant_id,
+        )
+        .await?;
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        let l = ctx
+            .store
+            .get_dhcp_lease(vpc_id, &mac)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(l))
+    }
+
+    async fn delete_vpc_dhcp_lease(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectVpcDhcpMacPath {
+            tenant_id,
+            project_id,
+            vpc_id,
+            mac,
+        } = path.into_inner();
+        let principal = authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::DhcpLeaseDelete,
+            tenant_id,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+        match ctx.store.delete_dhcp_lease(vpc_id, &mac).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpLeaseDelete,
+                        request_id,
+                        Some(format!("DhcpLease::\"{}/{}\"", vpc_id, mac)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("DhcpLease::\"{}/{}\"", vpc_id, mac)),
+                        },
+                        serde_json::json!({"vpc_id": vpc_id, "mac": mac}),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::DhcpLeaseDelete,
+                        request_id,
+                        None,
                         store_error_to_audit_outcome(&e),
                         serde_json::Value::Null,
                     )
@@ -4571,13 +5219,30 @@ impl TritondApi for TritondServiceImpl {
         .await?;
         let server_uuid = require_bound_cn(&principal)?;
         let req = body.into_inner();
+        let now = chrono::Utc::now();
+        let payload = req.payload;
         ctx.store
-            .update_cn_status(server_uuid, req.payload, chrono::Utc::now())
+            .update_cn_status(server_uuid, payload.clone(), now)
             .await
             .map_err(store_error_to_http)?;
         // Status updates are also hot (~once per minute or
         // when zoneevent fires); no per-update audit. A future
         // slice may sample at low frequency for forensics.
+        //
+        // Classifier pass is best-effort: parse the report, run the
+        // pure classifier, and fold per-VM outcomes (LegacyVm
+        // upsert, Orphan/StaleFingerprint warnings) into the store.
+        // Any failure is logged but does NOT fail the agent's
+        // status post -- the heartbeater retries on its own cadence
+        // and we'd rather drop one classifier pass than 503 an
+        // operational heartbeat.
+        if let Err(e) = run_classifier_pass(ctx, server_uuid, &payload, now).await {
+            tracing::warn!(
+                error = %e,
+                server_uuid = %server_uuid,
+                "classifier pass failed; status post still acked",
+            );
+        }
         Ok(HttpResponseOk(()))
     }
 
@@ -5069,6 +5734,91 @@ impl TritondApi for TritondServiceImpl {
             .await;
         Ok(HttpResponseDeleted())
     }
+
+    async fn list_legacy_cns(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<LegacyCnSummary>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::LegacyCnList,
+        )
+        .await?;
+        let cns = ctx
+            .store
+            .list_cns(None)
+            .await
+            .map_err(store_error_to_http)?;
+        let mut out = Vec::with_capacity(cns.len());
+        for cn in cns {
+            let managed = ctx
+                .store
+                .list_instances_for_cn(cn.server_uuid)
+                .await
+                .map_err(store_error_to_http)?;
+            let legacy = ctx
+                .store
+                .list_legacy_vms_for_cn(cn.server_uuid)
+                .await
+                .map_err(store_error_to_http)?;
+            out.push(LegacyCnSummary {
+                server_uuid: cn.server_uuid,
+                hostname: cn.hostname,
+                state: cn.state,
+                last_seen: cn.last_seen,
+                managed_instance_count: managed.len(),
+                legacy_vm_count: legacy.len(),
+            });
+        }
+        Ok(HttpResponseOk(out))
+    }
+
+    async fn list_legacy_vms(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<LegacyVmListQuery>,
+    ) -> Result<HttpResponseOk<Vec<LegacyVm>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::LegacyVmList,
+        )
+        .await?;
+        let q = query.into_inner();
+        let vms = match q.host_cn {
+            Some(cn) => ctx.store.list_legacy_vms_for_cn(cn).await,
+            None => ctx.store.list_legacy_vms().await,
+        }
+        .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(vms))
+    }
+
+    async fn get_legacy_vm(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<LegacyVmPath>,
+    ) -> Result<HttpResponseOk<LegacyVm>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::LegacyVmGet,
+        )
+        .await?;
+        let smartos_uuid = path.into_inner().smartos_uuid;
+        let vm = ctx
+            .store
+            .get_legacy_vm(smartos_uuid)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(vm))
+    }
 }
 
 /// Mint a fresh per-CN API key, persist it (with bound_to_cn set
@@ -5186,6 +5936,121 @@ fn enforce_job_belongs_to_bound_cn(job: &ProvisioningJob, bound_cn: Uuid) -> Res
         )
     })?;
     crate::auth::enforce_cn_binding(Some(bound_cn), claimed_uuid)
+}
+
+/// Drive the classifier over a CN status report and fold each VM's
+/// outcome into the store. Called from `agent_status` after the CN's
+/// `last_status` blob has been persisted.
+///
+/// Best-effort: errors here are logged by the caller and do not fail
+/// the heartbeat. The data we produce here (LegacyVm rows, drift
+/// alarms) is operationally important but not load-bearing for the
+/// CN's own ability to claim jobs.
+async fn run_classifier_pass(
+    ctx: &ApiContext,
+    reporting_cn: Uuid,
+    payload: &serde_json::Value,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(), StoreError> {
+    use crate::legacy_classify::{Classification, ClassifierContext, classify_vm};
+    use std::collections::HashMap;
+    use tritond_store::{AdoptableState, LegacyNic, LegacyVm, parse_vm_reports};
+
+    let reports = parse_vm_reports(payload);
+    if reports.is_empty() {
+        return Ok(());
+    }
+    // Pre-fetch every Instance the store thinks is on this CN so the
+    // classifier's instance lookup is a HashMap probe. We classify
+    // every report up-front and collect outcomes -- crucially the
+    // classifier context is dropped before any subsequent
+    // store-mutating awaits, so the trait-object closure can stay
+    // non-Send (the per-report awaits below run on the same task and
+    // don't need to cross an await boundary while holding it).
+    let instances = ctx.store.list_instances_for_cn(reporting_cn).await?;
+    let outcomes: Vec<Classification> = {
+        let by_id: HashMap<Uuid, &Instance> = instances.iter().map(|i| (i.id, i)).collect();
+        let lookup = |id: Uuid| -> Option<&Instance> { by_id.get(&id).copied() };
+        let classifier_ctx = ClassifierContext {
+            reporting_cn_uuid: reporting_cn,
+            instance_lookup: &lookup,
+            identity_hmac_key: &ctx.identity_hmac_key,
+        };
+        reports
+            .iter()
+            .map(|r| classify_vm(r, &classifier_ctx))
+            .collect()
+    };
+
+    for (report, outcome) in reports.iter().zip(outcomes.into_iter()) {
+        match outcome {
+            Classification::Managed { .. } => {
+                // Slice-1 of Phase B records membership only. Folding
+                // operator-driven runtime mutations (memory, quota,
+                // lifecycle) back into the Instance record is a
+                // follow-up commit that wires the existing CAS on
+                // `transition_instance_lifecycle` plus a new
+                // mutate-on-observation op.
+            }
+            Classification::Orphan {
+                instance_id,
+                expected_host,
+            } => {
+                tracing::warn!(
+                    smartos_uuid = %report.uuid,
+                    %instance_id,
+                    ?expected_host,
+                    %reporting_cn,
+                    "managed instance reported by unexpected CN; possible vmadm send|recv evac",
+                );
+            }
+            Classification::StaleFingerprint { reason } => {
+                tracing::warn!(
+                    smartos_uuid = %report.uuid,
+                    ?reason,
+                    %reporting_cn,
+                    "tritond identity tag failed verification",
+                );
+            }
+            Classification::MidProvision { .. } => {
+                // No-op: provisioning is in flight; the agent will
+                // stamp the identity tags on `vmadm create` exit
+                // and the next status report will classify Managed.
+            }
+            Classification::Unmanaged => {
+                // Preserve the original first_seen_at across upserts.
+                let existing = ctx.store.get_legacy_vm(report.uuid).await.ok();
+                let first_seen_at = existing.as_ref().map(|v| v.first_seen_at).unwrap_or(now);
+                let adoptable = existing
+                    .map(|v| v.adoptable)
+                    .unwrap_or(AdoptableState::Unevaluated);
+                let nics: Vec<LegacyNic> =
+                    report.nics.iter().cloned().map(LegacyNic::from).collect();
+                let legacy_vm = LegacyVm {
+                    smartos_uuid: report.uuid,
+                    host_cn_uuid: reporting_cn,
+                    legacy_owner_uuid: report.owner_uuid,
+                    brand: report.brand.clone(),
+                    state: report.state,
+                    zone_state: report.zone_state.clone(),
+                    // vmadm reports `max_physical_memory` in MiB and
+                    // `quota` in GiB. Convert to bytes for the
+                    // tritond-side schema; preserve None when the
+                    // report omits the field (partial vmadm output).
+                    memory_bytes: report.max_physical_memory.map(|mib| mib * 1024 * 1024),
+                    quota_bytes: report.quota.map(|gib| gib * 1024 * 1024 * 1024),
+                    cpu_cap: report.cpu_cap,
+                    last_modified: report.last_modified.clone(),
+                    nics,
+                    adoptable,
+                    first_seen_at,
+                    last_seen_at: now,
+                };
+                ctx.store.upsert_legacy_vm(legacy_vm).await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 403 if a CN-bound key tries to write a realization row for a
@@ -5788,6 +6653,23 @@ fn not_found() -> HttpError {
     )
 }
 
+/// Verify that `vpc_id` exists and that its `tenant_id`+`project_id`
+/// match the URL path. Used by the DHCP endpoints (and any future
+/// VPC-scoped resource) to surface cross-tenant probes as 404 rather
+/// than leak existence via a 403/409.
+async fn check_vpc_parentage(
+    store: &dyn Store,
+    vpc_id: Uuid,
+    tenant_id: Uuid,
+    project_id: Uuid,
+) -> Result<(), HttpError> {
+    let vpc = store.get_vpc(vpc_id).await.map_err(store_error_to_http)?;
+    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+        return Err(not_found());
+    }
+    Ok(())
+}
+
 fn bad_request(message: impl Into<String>) -> HttpError {
     HttpError::for_bad_request(Some("BadRequest".to_string()), message.into())
 }
@@ -6121,6 +7003,7 @@ async fn ingest_bundle(bundle_url: &str) -> anyhow::Result<NewImage> {
 /// `JobOutcome::Failed { reason: "instance gone" }`.
 async fn build_blueprint(
     store: &dyn Store,
+    identity_hmac_key: &tritond_auth::IdentityHmacKey,
     job: &ProvisioningJob,
 ) -> Result<ProvisioningBlueprint, HttpError> {
     let Some(instance_id) = job.kind.instance_id() else {
@@ -6133,6 +7016,7 @@ async fn build_blueprint(
             subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
+            managed_identity: None,
         });
     };
     let instance = match store.get_instance(instance_id).await {
@@ -6162,6 +7046,7 @@ async fn build_blueprint(
             subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
+            managed_identity: None,
         });
     }
 
@@ -6175,6 +7060,7 @@ async fn build_blueprint(
             subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
+            managed_identity: None,
         });
     };
 
@@ -6216,6 +7102,13 @@ async fn build_blueprint(
         }
     }
 
+    let managed_identity = ManagedIdentity {
+        instance_id: instance.id,
+        tenant_id: instance.tenant_id,
+        project_id: instance.project_id,
+        identity_hmac: identity_hmac_key.sign(instance.id, instance.tenant_id, instance.project_id),
+    };
+
     Ok(ProvisioningBlueprint {
         job_id: job.id,
         kind: job.kind.clone(),
@@ -6225,6 +7118,7 @@ async fn build_blueprint(
         subnets,
         disks,
         ssh_public_keys,
+        managed_identity: Some(managed_identity),
     })
 }
 
@@ -6295,6 +7189,12 @@ async fn build_port_blueprint(
         .list_floating_ips_in_project(project.id)
         .await
         .map_err(store_error_to_http)?;
+    // Slice 1 firewall: every rule scoped to the NIC's VPC flows into
+    // the per-port intent. Group-based filtering lands later.
+    let firewall_rules = store
+        .list_firewall_rules_in_vpc(vpc.id)
+        .await
+        .map_err(store_error_to_http)?;
 
     let generation = INITIAL_PROTEUS_PORT_GENERATION;
     let intent = TritondPortIntentV1 {
@@ -6347,6 +7247,7 @@ async fn build_port_blueprint(
             .iter()
             .map(edge_cluster_intent)
             .collect::<Result<Vec<_>, _>>()?,
+        firewall_rules: firewall_rules.iter().map(firewall_rule_intent).collect(),
     };
 
     let plugin_blueprint = intent.compile_blueprint().map_err(|err| {
@@ -7020,6 +7921,44 @@ fn floating_ip_intent(fip: &FloatingIp) -> FloatingIpIntentV1 {
     }
 }
 
+/// Translate a tritond [`FirewallRule`] into the proteus per-port
+/// intent shape. Used by [`build_port_blueprint`] to fold every rule
+/// scoped to the NIC's VPC into the agent payload.
+fn firewall_rule_intent(rule: &tritond_store::FirewallRule) -> FirewallRuleIntentV1 {
+    FirewallRuleIntentV1 {
+        id: rule.id,
+        vpc_id: rule.vpc_id,
+        name: rule.name.clone(),
+        priority: rule.priority,
+        direction: match rule.direction {
+            tritond_store::FirewallDirection::Inbound => FirewallDirectionIntentV1::Inbound,
+            tritond_store::FirewallDirection::Outbound => FirewallDirectionIntentV1::Outbound,
+        },
+        action: match rule.action {
+            tritond_store::FirewallAction::Allow => FirewallActionIntentV1::Allow,
+            tritond_store::FirewallAction::Deny => FirewallActionIntentV1::Deny,
+        },
+        protocol: match rule.protocol {
+            tritond_store::FirewallProtocol::Any => L4ProtocolIntentV1::Any,
+            tritond_store::FirewallProtocol::Tcp => L4ProtocolIntentV1::Tcp,
+            tritond_store::FirewallProtocol::Udp => L4ProtocolIntentV1::Udp,
+            tritond_store::FirewallProtocol::Icmp4 => L4ProtocolIntentV1::Icmp4,
+            tritond_store::FirewallProtocol::Icmp6 => L4ProtocolIntentV1::Icmp6,
+        },
+        source_cidr: rule.source_cidr.map(|cidr| cidr.to_string()),
+        destination_cidr: rule.destination_cidr.map(|cidr| cidr.to_string()),
+        source_ports: rule.source_ports.map(|r| PortRangeIntentV1 {
+            low: r.low,
+            high: r.high,
+        }),
+        destination_ports: rule.destination_ports.map(|r| PortRangeIntentV1 {
+            low: r.low,
+            high: r.high,
+        }),
+        icmp_type_code: rule.icmp_type_code.map(|f| (f.kind, f.code)),
+    }
+}
+
 fn parse_mac_bytes(value: &str) -> Result<[u8; 6], HttpError> {
     let mut mac = [0u8; 6];
     let mut count = 0usize;
@@ -7124,6 +8063,17 @@ pub async fn start_server_with_context(
             sw.interval,
             sw.stale_after,
         );
+    }
+
+    // The DHCP-lease reconciler (γ.3) walks list_all_dhcp_leases
+    // periodically and reaps orphaned, unpinned, stale leases. See
+    // dhcp_reconciler module docs for the exact GC criteria.
+    // Configurable per [`ApiContext::with_dhcp_reconciler`]; tests
+    // typically leave it off so explicit IPAM-state assertions
+    // aren't raced.
+    if let Some(rc) = context.dhcp_reconciler {
+        let _reconciler =
+            dhcp_reconciler::spawn(Arc::clone(&context.store), Arc::clone(&context.audit), rc);
     }
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)

@@ -6,6 +6,121 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v2/admin/legacy/cns": {
+      "get": {
+        "tags": [
+          "legacy-admin"
+        ],
+        "summary": "List CNs with their managed-vs-legacy zone counts. Fleet-admin",
+        "description": "only. Supports the operator workflow of \"show me which CNs still have legacy zones I haven't adopted yet\".",
+        "operationId": "list_legacy_cns",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_LegacyCnSummary",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LegacyCnSummary"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/admin/legacy/vms": {
+      "get": {
+        "tags": [
+          "legacy-admin"
+        ],
+        "summary": "List legacy VMs across the fleet, optionally filtered by host",
+        "description": "CN. Fleet-admin only.",
+        "operationId": "list_legacy_vms",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "host_cn",
+            "description": "Restrict to legacy VMs hosted on the given CN.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_LegacyVm",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LegacyVm"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/admin/legacy/vms/{smartos_uuid}": {
+      "get": {
+        "tags": [
+          "legacy-admin"
+        ],
+        "summary": "Read a single legacy VM by SmartOS zone uuid, including full",
+        "description": "NIC inventory. Fleet-admin only.",
+        "operationId": "get_legacy_vm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "smartos_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyVm"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/blueprints/{port_id}": {
       "get": {
         "tags": [
@@ -1268,6 +1383,36 @@
       }
     },
     "/v2/silos": {
+      "get": {
+        "tags": [
+          "silos"
+        ],
+        "summary": "List every silo, sorted by `name`. Phase 0 has no per-operator",
+        "description": "silo visibility filter so this returns the full set.",
+        "operationId": "list_silos",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Silo",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Silo"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "post": {
         "tags": [
           "silos"
@@ -3822,6 +3967,783 @@
         }
       }
     },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases": {
+      "get": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "List active DHCP leases for a VPC. Each entry was written when",
+        "description": "tritond pre-assigned an IP to a NIC at instance create.",
+        "operationId": "list_vpc_dhcp_leases",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_DhcpLease",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DhcpLease"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}": {
+      "get": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Look up a lease by MAC.",
+        "operationId": "get_vpc_dhcp_lease",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhcpLease"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Operator-driven release: remove the lease record. The",
+        "description": "underlying IP is freed for re-allocation; sticky-by-MAC for this MAC is broken until the operator re-creates the reservation.",
+        "operationId": "delete_vpc_dhcp_lease",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool": {
+      "get": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Read the per-VPC DHCP pool config. Returns the body wrapped",
+        "description": "`Some` when set; returns `None` when the operator hasn't customised this VPC.",
+        "operationId": "get_vpc_dhcp_pool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhcpPool"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Create or replace the per-VPC DHCP pool config.",
+        "operationId": "set_vpc_dhcp_pool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewDhcpPool"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhcpPool"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Remove the per-VPC DHCP pool config (revert to defaults).",
+        "operationId": "clear_vpc_dhcp_pool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations": {
+      "get": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC.",
+        "operationId": "list_vpc_dhcp_reservations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_DhcpReservation",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DhcpReservation"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Create a DHCP reservation pinning a MAC to a specific IPv4.",
+        "description": "Returns 409 if the MAC is already reserved with a different IP.",
+        "operationId": "create_vpc_dhcp_reservation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewDhcpReservation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhcpReservation"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}": {
+      "get": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Look up a reservation by MAC.",
+        "operationId": "get_vpc_dhcp_reservation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhcpReservation"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "dhcp"
+        ],
+        "summary": "Remove a reservation by MAC.",
+        "operationId": "delete_vpc_dhcp_reservation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules": {
+      "get": {
+        "tags": [
+          "firewall-rules"
+        ],
+        "summary": "List firewall rules scoped to a VPC, sorted by `priority`",
+        "description": "descending (highest evaluates first).",
+        "operationId": "list_vpc_firewall_rules",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_FirewallRule",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FirewallRule"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "firewall-rules"
+        ],
+        "summary": "Create a firewall rule scoped to a VPC. Slice 1: every NIC in",
+        "description": "the VPC inherits every rule (no security-group attachment yet). The server assigns `id` and `created_at`.",
+        "operationId": "create_vpc_firewall_rule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewFirewallRule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirewallRule"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules/{firewall_rule_id}": {
+      "delete": {
+        "tags": [
+          "firewall-rules"
+        ],
+        "summary": "Delete a firewall rule by id.",
+        "operationId": "delete_vpc_firewall_rule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "firewall_rule_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways": {
       "get": {
         "tags": [
@@ -5030,6 +5952,46 @@
           "v6"
         ]
       },
+      "AdoptableState": {
+        "description": "Whether a [`LegacyVm`] is eligible for adoption into a tritond tenant/project. Phase B leaves every legacy VM as `Unevaluated`; the (deferred) Phase D adoption flow promotes to `Yes` after brand + NIC compatibility checks, or `No(reason)` when the zone can't be rewritten onto the proteus dataplane.",
+        "oneOf": [
+          {
+            "description": "Adoption has not yet been evaluated for this zone.",
+            "type": "string",
+            "enum": [
+              "unevaluated"
+            ]
+          },
+          {
+            "description": "Zone can be adopted: brand + NIC layout are compatible with a tritond VPC + proteus port.",
+            "type": "string",
+            "enum": [
+              "yes"
+            ]
+          },
+          {
+            "description": "Zone cannot be adopted; reason is operator-readable.",
+            "type": "object",
+            "properties": {
+              "no": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            },
+            "required": [
+              "no"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "AgentPortBlueprint": {
         "description": "Opaque Proteus port blueprint returned to a bound CN agent.\n\n`blueprint_postcard_base64` is a base64-encoded `proteus_api::blueprint::PortBlueprint`. Tritond keeps it opaque at the public API boundary so the agent can decode it against the same Proteus userspace client version it will apply locally.",
         "type": "object",
@@ -5529,8 +6491,178 @@
           }
         ]
       },
+      "DhcpLease": {
+        "description": "One lease the IPAM has handed out. Written when tritond pre-assigns an IP (γ.4 hook on `create_instance`); updated by the lease-renewal event consumer (δ slice, not yet wired).",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "instance_id": {
+            "description": "The instance the lease was assigned to at create time. Stays pinned through instance delete so sticky-by-MAC keeps working when the operator re-creates with the same MAC; cleared when the operator explicitly releases the lease.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "ipv4": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "last_msg_type": {
+            "nullable": true,
+            "description": "Last DHCP message type observed by the kmod for this MAC (DISCOVER, REQUEST, RELEASE, …). `None` until tritonagent starts forwarding events (δ slice).",
+            "default": null,
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "last_renewed_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_xid": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "mac": {
+            "type": "string"
+          },
+          "nic_id": {
+            "description": "NIC the lease is bound to.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "instance_id",
+          "ipv4",
+          "mac",
+          "nic_id",
+          "vpc_id"
+        ]
+      },
+      "DhcpOptionRaw": {
+        "description": "Wire shape of one raw DHCP option. Matches proteus's `DhcpOption`.",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "value": {
+            "description": "Up to 250 bytes (option-length byte caps at 255 minus 2 for code+length, conservatively 250). Serde encodes as a JSON array of integers; the wire-cap check lives in the create handler, not here.",
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0
+            }
+          }
+        },
+        "required": [
+          "code",
+          "value"
+        ]
+      },
+      "DhcpPool": {
+        "description": "Per-VPC DHCPv4 pool config + segment-wide DHCP options. Singleton per VPC; absence means \"use the subnet CIDR directly with defaults.\"",
+        "type": "object",
+        "properties": {
+          "additional_options": {
+            "description": "VPC-wide DHCP options merged into every per-port response (after `Dhcpv4Options.additional_options` from the port's own blueprint). Example: an NTP server, a vendor-specific PXE pointer, etc.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DhcpOptionRaw"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "excluded_ipv4": {
+            "description": "Operator-specified IPv4 addresses to skip during allocation. Useful for reserving the gateway, broadcast, or external services living on the subnet.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lease_seconds_default": {
+            "description": "Renewal-cadence hint emitted in DHCP option 51.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "lease_seconds_default",
+          "updated_at",
+          "vpc_id"
+        ]
+      },
+      "DhcpReservation": {
+        "description": "Operator-pinned MAC→IP mapping. Survives instance delete; an instance booting later with a matching MAC reuses this IP.\n\nPer-MAC additional options are merged on top of the per-VPC pool's `additional_options` and the per-port blueprint's options at response synthesis time.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hostname": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv4": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "mac": {
+            "description": "Canonical lowercase colon-separated form, e.g. `\"02:08:20:ab:cd:ef\"`.",
+            "type": "string"
+          },
+          "per_mac_options": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DhcpOptionRaw"
+            }
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "created_at",
+          "ipv4",
+          "mac",
+          "vpc_id"
+        ]
+      },
       "Disk": {
-        "description": "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized to the source image and tagged with that image's id. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.",
+        "description": "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized from the source image and tagged with that image's id. Bhyve images are clamped to the M1 default VM boot-disk floor until packages/SKUs expose an explicit size. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -5559,7 +6691,7 @@
             "format": "uuid"
           },
           "size_bytes": {
-            "description": "Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size.",
+            "description": "Total size in bytes. Boot disks default via [`default_boot_disk_size_bytes`]; future data disks accept an explicit operator-supplied size.",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -5624,6 +6756,170 @@
         "required": [
           "message",
           "request_id"
+        ]
+      },
+      "FirewallAction": {
+        "type": "string",
+        "enum": [
+          "allow",
+          "deny"
+        ]
+      },
+      "FirewallDirection": {
+        "type": "string",
+        "enum": [
+          "inbound",
+          "outbound"
+        ]
+      },
+      "FirewallIcmpFilter": {
+        "description": "ICMP type + code pair carried as a struct (instead of `(u8, u8)`) so the JSON schema is OpenAPI v3.0–compatible (tuple arrays are not representable until v3.1).",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "type": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "code",
+          "type"
+        ]
+      },
+      "FirewallPortRange": {
+        "type": "object",
+        "properties": {
+          "high": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          },
+          "low": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "high",
+          "low"
+        ]
+      },
+      "FirewallProtocol": {
+        "type": "string",
+        "enum": [
+          "any",
+          "tcp",
+          "udp",
+          "icmp4",
+          "icmp6"
+        ]
+      },
+      "FirewallRule": {
+        "description": "Per-VPC firewall rule. Slice 1 ships a flat per-VPC list — every NIC in the VPC inherits every rule (no security-group attachment yet). Tritond translates this directly into proteus `triton_vpc::tritond_intent_v1::FirewallRuleIntentV1` when computing the per-port blueprint, which the dataplane compiles into one `SecurityGroupRule` per record.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FirewallAction"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string"
+          },
+          "destination_cidr": {
+            "nullable": true,
+            "description": "`None` ⇒ match any destination.",
+            "default": null,
+            "type": "string"
+          },
+          "destination_ports": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirewallPortRange"
+              }
+            ]
+          },
+          "direction": {
+            "$ref": "#/components/schemas/FirewallDirection"
+          },
+          "icmp_type_code": {
+            "nullable": true,
+            "description": "Optional ICMP type/code filter. Only valid when `protocol` is `Icmp4` or `Icmp6`; the API rejects mismatches at create time.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirewallIcmpFilter"
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priority": {
+            "description": "Higher numbers evaluate first inside a layer.",
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/FirewallProtocol"
+          },
+          "source_cidr": {
+            "nullable": true,
+            "description": "`None` ⇒ match any source.",
+            "default": null,
+            "type": "string"
+          },
+          "source_ports": {
+            "nullable": true,
+            "description": "Inclusive port range. `None` ⇒ any port. Ignored for non-TCP/UDP.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirewallPortRange"
+              }
+            ]
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vpc_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "action",
+          "created_at",
+          "description",
+          "direction",
+          "id",
+          "name",
+          "priority",
+          "project_id",
+          "protocol",
+          "tenant_id",
+          "vpc_id"
         ]
       },
       "FloatingIp": {
@@ -6267,6 +7563,182 @@
           }
         ]
       },
+      "LegacyCnSummary": {
+        "description": "Per-CN summary returned by `GET /v2/admin/legacy/cns`.\n\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt.",
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "type": "string"
+          },
+          "last_seen": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time"
+          },
+          "legacy_vm_count": {
+            "description": "Count of legacy (unmanaged) zones tritond's classifier has observed on this CN.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "managed_instance_count": {
+            "description": "Count of tritond-managed instances currently placed on this CN.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "server_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CnState"
+          }
+        },
+        "required": [
+          "hostname",
+          "legacy_vm_count",
+          "managed_instance_count",
+          "server_uuid",
+          "state"
+        ]
+      },
+      "LegacyNic": {
+        "description": "Per-NIC layout for a [`LegacyVm`]. Distinct from [`Nic`] (the tritond-managed NIC type) because legacy zones may carry non-tritond NIC tags (`admin`, `external`, customer VLAN tags), and the IP may have come from DHCP rather than a tritond subnet allocation. Mirrors the per-NIC fields the Phase D adoption flow's pre-flight needs (IP-collision check, network-rewrite preview).",
+        "type": "object",
+        "properties": {
+          "gateway": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ip"
+          },
+          "ip": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "ip"
+          },
+          "mac": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "nic_tag": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "primary": {
+            "default": false,
+            "type": "boolean"
+          },
+          "vlan_id": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          }
+        }
+      },
+      "LegacyVm": {
+        "description": "A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\n\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v2/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D).",
+        "type": "object",
+        "properties": {
+          "adoptable": {
+            "default": "unevaluated",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdoptableState"
+              }
+            ]
+          },
+          "brand": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "cpu_cap": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "first_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "host_cn_uuid": {
+            "description": "CN currently hosting the zone. Updated by the classifier when the same `smartos_uuid` reports from a different CN (caused by an out-of-band `vmadm send|recv` evacuation).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_modified": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "legacy_owner_uuid": {
+            "nullable": true,
+            "description": "`vmadm`'s `owner_uuid` field (the legacy SmartOS owner). Distinct from any tritond identity. May be the zero UUID for system zones.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "memory_bytes": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "nics": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LegacyNic"
+            }
+          },
+          "quota_bytes": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "smartos_uuid": {
+            "description": "SmartOS zone uuid. Stable across status reports.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VmState"
+              }
+            ]
+          },
+          "zone_state": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_seen_at",
+          "host_cn_uuid",
+          "last_seen_at",
+          "smartos_uuid"
+        ]
+      },
       "LifecycleState": {
         "description": "Lifecycle state of a tenant instance. The state machine:\n\n```text create ↓ Pending ──→ Provisioning ──┬→ Running ←──┬── Stopped │             │      ↑ │             │      │ ↓             ↓      │ Failed        Stopping─┘ ```\n\nPhase 0 collapses Pending → Provisioning → Running into a synchronous transition inside the create handler (there is no agent yet). The full async path lands when the provisioning intent queue + stub executor slice ships.\n\nOperator-driven transitions: start (Stopped → Pending), stop (Running → Stopping), restart (Running → Stopping → Pending). Agent-driven transitions: Pending → Provisioning → Running, Provisioning → Failed, Stopping → Stopped.\n\nDelete is allowed only from Stopped or Failed; deleting a Running instance returns 409.",
         "oneOf": [
@@ -6380,6 +7852,35 @@
         "required": [
           "password",
           "username"
+        ]
+      },
+      "ManagedIdentity": {
+        "description": "Tamper-evident identity for a tritond-managed zone.\n\nMinted by tritond at blueprint-fetch time using the per-deployment HMAC key (see `tritond_auth::IdentityHmacKey`). Tritonagent stamps the four fields verbatim into the zone's SmartOS `internal_metadata` (the four `TRITOND_METADATA_*` keys above) inside the same `vmadm create` payload that brings the zone into existence -- so a status report cannot fire between zone creation and identity write.\n\nOn a later status report, the classifier reads the four fields out of the report's `internal_metadata`, recomputes the HMAC from the reported triple, and compares constant-time. A mismatch (or missing tag) means the metadata was tampered with in-zone via `mdata-put` or copied from another deployment, and the zone is quarantined as `StaleFingerprint` rather than treated as managed.",
+        "type": "object",
+        "properties": {
+          "identity_hmac": {
+            "description": "Lowercase hex of HMAC-SHA256 over the canonical `(instance_id, tenant_id, project_id)` triple. Signed with the per-deployment `IdentityHmac` system key.",
+            "type": "string"
+          },
+          "instance_id": {
+            "description": "Tritond `Instance.id`. Reused as the SmartOS zone UUID at `vmadm create` time.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "identity_hmac",
+          "instance_id",
+          "project_id",
+          "tenant_id"
         ]
       },
       "NatGateway": {
@@ -6721,6 +8222,135 @@
           "description"
         ]
       },
+      "NewDhcpPool": {
+        "description": "Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`.",
+        "type": "object",
+        "properties": {
+          "additional_options": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DhcpOptionRaw"
+            }
+          },
+          "excluded_ipv4": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lease_seconds_default": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "lease_seconds_default"
+        ]
+      },
+      "NewDhcpReservation": {
+        "description": "Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`.",
+        "type": "object",
+        "properties": {
+          "hostname": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "ipv4": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "mac": {
+            "type": "string"
+          },
+          "per_mac_options": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DhcpOptionRaw"
+            }
+          }
+        },
+        "required": [
+          "ipv4",
+          "mac"
+        ]
+      },
+      "NewFirewallRule": {
+        "description": "Request body for creating a [`FirewallRule`]. The owning tenant / project / VPC come from the URL path; the server assigns `id` and `created_at`.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FirewallAction"
+          },
+          "description": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "destination_cidr": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "destination_ports": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirewallPortRange"
+              }
+            ]
+          },
+          "direction": {
+            "$ref": "#/components/schemas/FirewallDirection"
+          },
+          "icmp_type_code": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirewallIcmpFilter"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/FirewallProtocol"
+          },
+          "source_cidr": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "source_ports": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirewallPortRange"
+              }
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "direction",
+          "name",
+          "priority",
+          "protocol"
+        ]
+      },
       "NewFloatingIp": {
         "description": "Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address.",
         "type": "object",
@@ -6862,6 +8492,12 @@
           "image_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "mac": {
+            "nullable": true,
+            "description": "Optional MAC address to pin on the primary NIC. Accepted in any case + any of the usual separator styles (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`). Used to opt into sticky-by-MAC IPAM (γ.2): if a reservation or prior lease in the parent VPC matches this MAC and that address is free, the instance is allocated that IP. None (the default) keeps the legacy auto-generated MAC behaviour.",
+            "default": null,
+            "type": "string"
           },
           "memory_bytes": {
             "type": "integer",
@@ -7390,6 +9026,16 @@
           },
           "kind": {
             "$ref": "#/components/schemas/JobKind"
+          },
+          "managed_identity": {
+            "nullable": true,
+            "description": "Tamper-evident managed-zone identity. `Some` for `Provision` jobs (tritond mints + signs at blueprint-fetch time using the per-deployment HMAC key); `None` for `Stop` / `Restart` / `Delete` (the zone identity is already on disk from its original provision) and for any non-instance kind. The agent stamps these four fields verbatim into the zone's `internal_metadata` inside the `vmadm create` payload.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagedIdentity"
+              }
+            ]
           },
           "nics": {
             "description": "All NICs attached to the instance. Empty for non-Provision jobs.",
@@ -8313,6 +9959,39 @@
           }
         ]
       },
+      "VmState": {
+        "description": "Lifecycle states a SmartOS zone may be in, as reported by `vmadm`.\n\n`Unknown` catches any vmadm state we haven't enumerated (forward compatibility per type-safety rule #5). Phase 0 only acts on `Running`, `Stopped`, and `Destroyed`; other states surface in the operator view but do not feed reconciliation rules.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "provisioning",
+              "receiving",
+              "sending",
+              "configured",
+              "incomplete",
+              "failed",
+              "unknown"
+            ]
+          },
+          {
+            "description": "vmadm uses both `installed` (zone is configured but not booted) and `installed`-as-init in different paths. We treat it as equivalent to Stopped for reconciliation.",
+            "type": "string",
+            "enum": [
+              "installed"
+            ]
+          },
+          {
+            "description": "`vmadm destroy` ran. The zone is gone but vmadm may still report it briefly during the reap window.",
+            "type": "string",
+            "enum": [
+              "destroyed"
+            ]
+          }
+        ]
+      },
       "Vpc": {
         "description": "Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices.",
         "type": "object",
@@ -8400,7 +10079,13 @@
       "name": "cns"
     },
     {
+      "name": "dhcp"
+    },
+    {
       "name": "disks"
+    },
+    {
+      "name": "firewall-rules"
     },
     {
       "name": "floating-ips"
@@ -8410,6 +10095,9 @@
     },
     {
       "name": "instances"
+    },
+    {
+      "name": "legacy-admin"
     },
     {
       "name": "nat-gateways"

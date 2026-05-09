@@ -29,11 +29,12 @@ use uuid::Uuid;
 
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
-    CnRole, CnState, CnView, Disk, FloatingIp, IdpConfigView, Image, Instance, JobKind, JobOutcome,
-    NatGateway, NetworkResourceId, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject,
-    NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
-    Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo,
-    SshKey, Subnet, Tenant, Vpc,
+    CnRole, CnState, CnView, DhcpLease, DhcpPool, DhcpReservation, Disk, FirewallRule, FloatingIp,
+    IdpConfigView, Image, Instance, JobKind, JobOutcome, LegacyVm, ManagedIdentity, NatGateway,
+    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage,
+    NewInstance, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizationStatus,
+    RealizerId, Route, RouteTable, Silo, SshKey, Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -293,6 +294,15 @@ pub struct ProvisioningBlueprint {
     /// Resolved from `Instance::ssh_key_ids`.
     #[serde(default)]
     pub ssh_public_keys: Vec<String>,
+    /// Tamper-evident managed-zone identity. `Some` for `Provision`
+    /// jobs (tritond mints + signs at blueprint-fetch time using the
+    /// per-deployment HMAC key); `None` for `Stop` / `Restart` /
+    /// `Delete` (the zone identity is already on disk from its
+    /// original provision) and for any non-instance kind. The agent
+    /// stamps these four fields verbatim into the zone's
+    /// `internal_metadata` inside the `vmadm create` payload.
+    #[serde(default)]
+    pub managed_identity: Option<ManagedIdentity>,
 }
 
 /// Path parameters for endpoints that operate on a single audit event.
@@ -374,6 +384,40 @@ pub struct CnPath {
 pub struct CnListQuery {
     #[serde(default)]
     pub state: Option<CnState>,
+}
+
+/// Path parameter for endpoints addressing one legacy VM by SmartOS
+/// zone uuid.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LegacyVmPath {
+    pub smartos_uuid: Uuid,
+}
+
+/// Optional filter for `GET /v2/admin/legacy/vms`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LegacyVmListQuery {
+    /// Restrict to legacy VMs hosted on the given CN.
+    #[serde(default)]
+    pub host_cn: Option<Uuid>,
+}
+
+/// Per-CN summary returned by `GET /v2/admin/legacy/cns`.
+///
+/// Distinct from [`CnView`]: this view rolls up the discovery
+/// classifier's per-CN counts (how many tritond-managed instances
+/// vs unmanaged legacy zones) so a fleet-admin operator can spot
+/// CNs that still have legacy zones to adopt.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct LegacyCnSummary {
+    pub server_uuid: Uuid,
+    pub hostname: String,
+    pub state: CnState,
+    pub last_seen: Option<DateTime<Utc>>,
+    /// Count of tritond-managed instances currently placed on this CN.
+    pub managed_instance_count: usize,
+    /// Count of legacy (unmanaged) zones tritond's classifier has
+    /// observed on this CN.
+    pub legacy_vm_count: usize,
 }
 
 /// Request body for `POST /v2/cns/approve`.
@@ -470,6 +514,28 @@ pub struct TenantProjectVpcRouteTableRoutePath {
     pub vpc_id: Uuid,
     pub route_table_id: Uuid,
     pub route_id: Uuid,
+}
+
+/// Path parameters for endpoints that operate on a single firewall
+/// rule scoped to a VPC.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantProjectVpcFirewallRulePath {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub firewall_rule_id: Uuid,
+}
+
+/// Path parameters for DHCP reservation / lease endpoints scoped to a
+/// single MAC inside a VPC. Handler re-canonicalises the MAC so any
+/// of `02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, or `0208.20ab.cdef`
+/// is accepted.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantProjectVpcDhcpMacPath {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub mac: String,
 }
 
 /// Path parameters for endpoints that operate on a single NAT gateway
@@ -611,6 +677,17 @@ pub trait TritondApi {
     async fn health(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<HealthResponse>, HttpError>;
+
+    /// List every silo, sorted by `name`. Phase 0 has no per-operator
+    /// silo visibility filter so this returns the full set.
+    #[endpoint {
+        method = GET,
+        path = "/v2/silos",
+        tags = ["silos"],
+    }]
+    async fn list_silos(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Silo>>, HttpError>;
 
     /// Create a silo. Returns 201 with the created silo.
     ///
@@ -1338,6 +1415,166 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcRouteTableRoutePath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    // -- Firewall rules (Slice 1: per-VPC flat rule list) -------------
+
+    /// List firewall rules scoped to a VPC, sorted by `priority`
+    /// descending (highest evaluates first).
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules",
+        tags = ["firewall-rules"],
+    }]
+    async fn list_vpc_firewall_rules(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<FirewallRule>>, HttpError>;
+
+    /// Create a firewall rule scoped to a VPC. Slice 1: every NIC in
+    /// the VPC inherits every rule (no security-group attachment
+    /// yet). The server assigns `id` and `created_at`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules",
+        tags = ["firewall-rules"],
+    }]
+    async fn create_vpc_firewall_rule(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewFirewallRule>,
+    ) -> Result<HttpResponseCreated<FirewallRule>, HttpError>;
+
+    /// Delete a firewall rule by id.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules/{firewall_rule_id}",
+        tags = ["firewall-rules"],
+    }]
+    async fn delete_vpc_firewall_rule(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcFirewallRulePath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    // -- DHCP / IPAM (γ.1 + γ.4: per-VPC pool, reservations, leases)
+
+    /// Read the per-VPC DHCP pool config. Returns the body wrapped
+    /// `Some` when set; returns `None` when the operator hasn't
+    /// customised this VPC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
+        tags = ["dhcp"],
+    }]
+    async fn get_vpc_dhcp_pool(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Option<DhcpPool>>, HttpError>;
+
+    /// Create or replace the per-VPC DHCP pool config.
+    #[endpoint {
+        method = PUT,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
+        tags = ["dhcp"],
+    }]
+    async fn set_vpc_dhcp_pool(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewDhcpPool>,
+    ) -> Result<HttpResponseOk<DhcpPool>, HttpError>;
+
+    /// Remove the per-VPC DHCP pool config (revert to defaults).
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
+        tags = ["dhcp"],
+    }]
+    async fn clear_vpc_dhcp_pool(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations",
+        tags = ["dhcp"],
+    }]
+    async fn list_vpc_dhcp_reservations(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<DhcpReservation>>, HttpError>;
+
+    /// Create a DHCP reservation pinning a MAC to a specific IPv4.
+    /// Returns 409 if the MAC is already reserved with a different IP.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations",
+        tags = ["dhcp"],
+    }]
+    async fn create_vpc_dhcp_reservation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+        body: TypedBody<NewDhcpReservation>,
+    ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError>;
+
+    /// Look up a reservation by MAC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}",
+        tags = ["dhcp"],
+    }]
+    async fn get_vpc_dhcp_reservation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseOk<DhcpReservation>, HttpError>;
+
+    /// Remove a reservation by MAC.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}",
+        tags = ["dhcp"],
+    }]
+    async fn delete_vpc_dhcp_reservation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List active DHCP leases for a VPC. Each entry was written when
+    /// tritond pre-assigned an IP to a NIC at instance create.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases",
+        tags = ["dhcp"],
+    }]
+    async fn list_vpc_dhcp_leases(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcPath>,
+    ) -> Result<HttpResponseOk<Vec<DhcpLease>>, HttpError>;
+
+    /// Look up a lease by MAC.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}",
+        tags = ["dhcp"],
+    }]
+    async fn get_vpc_dhcp_lease(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseOk<DhcpLease>, HttpError>;
+
+    /// Operator-driven release: remove the lease record. The
+    /// underlying IP is freed for re-allocation; sticky-by-MAC for
+    /// this MAC is broken until the operator re-creates the
+    /// reservation.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}",
+        tags = ["dhcp"],
+    }]
+    async fn delete_vpc_dhcp_lease(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectVpcDhcpMacPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
     /// List NAT gateways inside a VPC.
     #[endpoint {
         method = GET,
@@ -1991,4 +2228,42 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
+    // ----- Legacy admin (fleet-scoped) -----
+
+    /// List CNs with their managed-vs-legacy zone counts. Fleet-admin
+    /// only. Supports the operator workflow of "show me which CNs
+    /// still have legacy zones I haven't adopted yet".
+    #[endpoint {
+        method = GET,
+        path = "/v2/admin/legacy/cns",
+        tags = ["legacy-admin"],
+    }]
+    async fn list_legacy_cns(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<LegacyCnSummary>>, HttpError>;
+
+    /// List legacy VMs across the fleet, optionally filtered by host
+    /// CN. Fleet-admin only.
+    #[endpoint {
+        method = GET,
+        path = "/v2/admin/legacy/vms",
+        tags = ["legacy-admin"],
+    }]
+    async fn list_legacy_vms(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<LegacyVmListQuery>,
+    ) -> Result<HttpResponseOk<Vec<LegacyVm>>, HttpError>;
+
+    /// Read a single legacy VM by SmartOS zone uuid, including full
+    /// NIC inventory. Fleet-admin only.
+    #[endpoint {
+        method = GET,
+        path = "/v2/admin/legacy/vms/{smartos_uuid}",
+        tags = ["legacy-admin"],
+    }]
+    async fn get_legacy_vm(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<LegacyVmPath>,
+    ) -> Result<HttpResponseOk<LegacyVm>, HttpError>;
 }

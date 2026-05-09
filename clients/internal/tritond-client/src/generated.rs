@@ -231,6 +231,68 @@ pub mod types {
         }
     }
 
+    #[doc = "Whether a [`LegacyVm`] is eligible for adoption into a tritond tenant/project. Phase B leaves every legacy VM as `Unevaluated`; the (deferred) Phase D adoption flow promotes to `Yes` after brand + NIC compatibility checks, or `No(reason)` when the zone can't be rewritten onto the proteus dataplane."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Whether a [`LegacyVm`] is eligible for adoption into a tritond tenant/project. Phase B leaves every legacy VM as `Unevaluated`; the (deferred) Phase D adoption flow promotes to `Yes` after brand + NIC compatibility checks, or `No(reason)` when the zone can't be rewritten onto the proteus dataplane.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Adoption has not yet been evaluated for this zone.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unevaluated\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Zone can be adopted: brand + NIC layout are compatible with a tritond VPC + proteus port.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"yes\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Zone cannot be adopted; reason is operator-readable.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"required\": ["]
+    #[doc = "        \"no\""]
+    #[doc = "      ],"]
+    #[doc = "      \"properties\": {"]
+    #[doc = "        \"no\": {"]
+    #[doc = "          \"type\": \"object\","]
+    #[doc = "          \"required\": ["]
+    #[doc = "            \"reason\""]
+    #[doc = "          ],"]
+    #[doc = "          \"properties\": {"]
+    #[doc = "            \"reason\": {"]
+    #[doc = "              \"type\": \"string\""]
+    #[doc = "            }"]
+    #[doc = "          }"]
+    #[doc = "        }"]
+    #[doc = "      },"]
+    #[doc = "      \"additionalProperties\": false"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub enum AdoptableState {
+        #[doc = "Adoption has not yet been evaluated for this zone."]
+        #[serde(rename = "unevaluated")]
+        Unevaluated,
+        #[doc = "Zone can be adopted: brand + NIC layout are compatible with a tritond VPC + proteus port."]
+        #[serde(rename = "yes")]
+        Yes,
+        #[doc = "Zone cannot be adopted; reason is operator-readable."]
+        #[serde(rename = "no")]
+        No { reason: ::std::string::String },
+    }
+
     #[doc = "Opaque Proteus port blueprint returned to a bound CN agent.\n\n`blueprint_postcard_base64` is a base64-encoded `proteus_api::blueprint::PortBlueprint`. Tritond keeps it opaque at the public API boundary so the agent can decode it against the same Proteus userspace client version it will apply locally."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1457,13 +1519,301 @@ pub mod types {
         }
     }
 
-    #[doc = "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized to the source image and tagged with that image's id. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`."]
+    #[doc = "One lease the IPAM has handed out. Written when tritond pre-assigns an IP (γ.4 hook on `create_instance`); updated by the lease-renewal event consumer (δ slice, not yet wired)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized to the source image and tagged with that image's id. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\\n\\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.\","]
+    #[doc = "  \"description\": \"One lease the IPAM has handed out. Written when tritond pre-assigns an IP (γ.4 hook on `create_instance`); updated by the lease-renewal event consumer (δ slice, not yet wired).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"ipv4\","]
+    #[doc = "    \"mac\","]
+    #[doc = "    \"nic_id\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"description\": \"The instance the lease was assigned to at create time. Stays pinned through instance delete so sticky-by-MAC keeps working when the operator re-creates with the same MAC; cleared when the operator explicitly releases the lease.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_msg_type\": {"]
+    #[doc = "      \"description\": \"Last DHCP message type observed by the kmod for this MAC (DISCOVER, REQUEST, RELEASE, …). `None` until tritonagent starts forwarding events (δ slice).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint8\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"last_renewed_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_xid\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"mac\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"nic_id\": {"]
+    #[doc = "      \"description\": \"NIC the lease is bound to.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DhcpLease {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "The instance the lease was assigned to at create time. Stays pinned through instance delete so sticky-by-MAC keeps working when the operator re-creates with the same MAC; cleared when the operator explicitly releases the lease."]
+        pub instance_id: ::uuid::Uuid,
+        pub ipv4: ::std::net::Ipv4Addr,
+        #[doc = "Last DHCP message type observed by the kmod for this MAC (DISCOVER, REQUEST, RELEASE, …). `None` until tritonagent starts forwarding events (δ slice)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_msg_type: ::std::option::Option<u8>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_renewed_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_xid: ::std::option::Option<u32>,
+        pub mac: ::std::string::String,
+        #[doc = "NIC the lease is bound to."]
+        pub nic_id: ::uuid::Uuid,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl DhcpLease {
+        pub fn builder() -> builder::DhcpLease {
+            Default::default()
+        }
+    }
+
+    #[doc = "Wire shape of one raw DHCP option. Matches proteus's `DhcpOption`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Wire shape of one raw DHCP option. Matches proteus's `DhcpOption`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint8\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"Up to 250 bytes (option-length byte caps at 255 minus 2 for code+length, conservatively 250). Serde encodes as a JSON array of integers; the wire-cap check lives in the create handler, not here.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"integer\","]
+    #[doc = "        \"format\": \"uint8\","]
+    #[doc = "        \"minimum\": 0.0"]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DhcpOptionRaw {
+        pub code: u8,
+        #[doc = "Up to 250 bytes (option-length byte caps at 255 minus 2 for code+length, conservatively 250). Serde encodes as a JSON array of integers; the wire-cap check lives in the create handler, not here."]
+        pub value: ::std::vec::Vec<u8>,
+    }
+
+    impl DhcpOptionRaw {
+        pub fn builder() -> builder::DhcpOptionRaw {
+            Default::default()
+        }
+    }
+
+    #[doc = "Per-VPC DHCPv4 pool config + segment-wide DHCP options. Singleton per VPC; absence means \"use the subnet CIDR directly with defaults.\""]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-VPC DHCPv4 pool config + segment-wide DHCP options. Singleton per VPC; absence means \\\"use the subnet CIDR directly with defaults.\\\"\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"lease_seconds_default\","]
+    #[doc = "    \"updated_at\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"additional_options\": {"]
+    #[doc = "      \"description\": \"VPC-wide DHCP options merged into every per-port response (after `Dhcpv4Options.additional_options` from the port's own blueprint). Example: an NTP server, a vendor-specific PXE pointer, etc.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DhcpOptionRaw\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"excluded_ipv4\": {"]
+    #[doc = "      \"description\": \"Operator-specified IPv4 addresses to skip during allocation. Useful for reserving the gateway, broadcast, or external services living on the subnet.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"lease_seconds_default\": {"]
+    #[doc = "      \"description\": \"Renewal-cadence hint emitted in DHCP option 51.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DhcpPool {
+        #[doc = "VPC-wide DHCP options merged into every per-port response (after `Dhcpv4Options.additional_options` from the port's own blueprint). Example: an NTP server, a vendor-specific PXE pointer, etc."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub additional_options: ::std::vec::Vec<DhcpOptionRaw>,
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Operator-specified IPv4 addresses to skip during allocation. Useful for reserving the gateway, broadcast, or external services living on the subnet."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub excluded_ipv4: ::std::vec::Vec<::std::string::String>,
+        #[doc = "Renewal-cadence hint emitted in DHCP option 51."]
+        pub lease_seconds_default: u32,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl DhcpPool {
+        pub fn builder() -> builder::DhcpPool {
+            Default::default()
+        }
+    }
+
+    #[doc = "Operator-pinned MAC→IP mapping. Survives instance delete; an instance booting later with a matching MAC reuses this IP.\n\nPer-MAC additional options are merged on top of the per-VPC pool's `additional_options` and the per-port blueprint's options at response synthesis time."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Operator-pinned MAC→IP mapping. Survives instance delete; an instance booting later with a matching MAC reuses this IP.\\n\\nPer-MAC additional options are merged on top of the per-VPC pool's `additional_options` and the per-port blueprint's options at response synthesis time.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"ipv4\","]
+    #[doc = "    \"mac\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"hostname\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"mac\": {"]
+    #[doc = "      \"description\": \"Canonical lowercase colon-separated form, e.g. `\\\"02:08:20:ab:cd:ef\\\"`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"per_mac_options\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DhcpOptionRaw\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DhcpReservation {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub hostname: ::std::option::Option<::std::string::String>,
+        pub ipv4: ::std::net::Ipv4Addr,
+        #[doc = "Canonical lowercase colon-separated form, e.g. `\"02:08:20:ab:cd:ef\"`."]
+        pub mac: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub per_mac_options: ::std::vec::Vec<DhcpOptionRaw>,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl DhcpReservation {
+        pub fn builder() -> builder::DhcpReservation {
+            Default::default()
+        }
+    }
+
+    #[doc = "Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized from the source image and tagged with that image's id. Bhyve images are clamped to the M1 default VM boot-disk floor until packages/SKUs expose an explicit size. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\n\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-instance persistent storage. Phase 0 auto-creates a single boot disk per instance, sized from the source image and tagged with that image's id. Bhyve images are clamped to the M1 default VM boot-disk floor until packages/SKUs expose an explicit size. The disk record is the metadata view; the actual content (zfs dataset, mantafs object, etc.) is materialized by the agent at provisioning time.\\n\\nMulti-disk attach (data disks beyond boot) lands as a follow-on slice. The wire shape here is stable across that change — a `kind: Data` disk is a strict superset of what `Boot` carries once `source_image_id` is allowed to be `None`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -1503,7 +1853,7 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"size_bytes\": {"]
-    #[doc = "      \"description\": \"Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size.\","]
+    #[doc = "      \"description\": \"Total size in bytes. Boot disks default via [`default_boot_disk_size_bytes`]; future data disks accept an explicit operator-supplied size.\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
@@ -1535,7 +1885,7 @@ pub mod types {
         pub kind: DiskKind,
         pub name: ::std::string::String,
         pub project_id: ::uuid::Uuid,
-        #[doc = "Total size in bytes. Boot disks default to `image.size_bytes`; future data disks accept an explicit operator-supplied size."]
+        #[doc = "Total size in bytes. Boot disks default via [`default_boot_disk_size_bytes`]; future data disks accept an explicit operator-supplied size."]
         pub size_bytes: u64,
         #[doc = "Image the boot disk was sourced from. `Some` for `Boot` disks that came from a registered image; `None` for blank `Data` disks (Phase 0 has no callers that produce `None`, but the type allows it for the multi-disk slice)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -1680,6 +2030,503 @@ pub mod types {
 
     impl Error {
         pub fn builder() -> builder::Error {
+            Default::default()
+        }
+    }
+
+    #[doc = "`FirewallAction`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"allow\","]
+    #[doc = "    \"deny\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum FirewallAction {
+        #[serde(rename = "allow")]
+        Allow,
+        #[serde(rename = "deny")]
+        Deny,
+    }
+
+    impl ::std::fmt::Display for FirewallAction {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Allow => f.write_str("allow"),
+                Self::Deny => f.write_str("deny"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for FirewallAction {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "allow" => Ok(Self::Allow),
+                "deny" => Ok(Self::Deny),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for FirewallAction {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for FirewallAction {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for FirewallAction {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "`FirewallDirection`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"inbound\","]
+    #[doc = "    \"outbound\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum FirewallDirection {
+        #[serde(rename = "inbound")]
+        Inbound,
+        #[serde(rename = "outbound")]
+        Outbound,
+    }
+
+    impl ::std::fmt::Display for FirewallDirection {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Inbound => f.write_str("inbound"),
+                Self::Outbound => f.write_str("outbound"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for FirewallDirection {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "inbound" => Ok(Self::Inbound),
+                "outbound" => Ok(Self::Outbound),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for FirewallDirection {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for FirewallDirection {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for FirewallDirection {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "ICMP type + code pair carried as a struct (instead of `(u8, u8)`) so the JSON schema is OpenAPI v3.0–compatible (tuple arrays are not representable until v3.1)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"ICMP type + code pair carried as a struct (instead of `(u8, u8)`) so the JSON schema is OpenAPI v3.0–compatible (tuple arrays are not representable until v3.1).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"code\","]
+    #[doc = "    \"type\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint8\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"type\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint8\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct FirewallIcmpFilter {
+        pub code: u8,
+        #[serde(rename = "type")]
+        pub type_: u8,
+    }
+
+    impl FirewallIcmpFilter {
+        pub fn builder() -> builder::FirewallIcmpFilter {
+            Default::default()
+        }
+    }
+
+    #[doc = "`FirewallPortRange`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"high\","]
+    #[doc = "    \"low\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"high\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"low\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct FirewallPortRange {
+        pub high: u16,
+        pub low: u16,
+    }
+
+    impl FirewallPortRange {
+        pub fn builder() -> builder::FirewallPortRange {
+            Default::default()
+        }
+    }
+
+    #[doc = "`FirewallProtocol`"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"any\","]
+    #[doc = "    \"tcp\","]
+    #[doc = "    \"udp\","]
+    #[doc = "    \"icmp4\","]
+    #[doc = "    \"icmp6\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum FirewallProtocol {
+        #[serde(rename = "any")]
+        Any,
+        #[serde(rename = "tcp")]
+        Tcp,
+        #[serde(rename = "udp")]
+        Udp,
+        #[serde(rename = "icmp4")]
+        Icmp4,
+        #[serde(rename = "icmp6")]
+        Icmp6,
+    }
+
+    impl ::std::fmt::Display for FirewallProtocol {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Any => f.write_str("any"),
+                Self::Tcp => f.write_str("tcp"),
+                Self::Udp => f.write_str("udp"),
+                Self::Icmp4 => f.write_str("icmp4"),
+                Self::Icmp6 => f.write_str("icmp6"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for FirewallProtocol {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "any" => Ok(Self::Any),
+                "tcp" => Ok(Self::Tcp),
+                "udp" => Ok(Self::Udp),
+                "icmp4" => Ok(Self::Icmp4),
+                "icmp6" => Ok(Self::Icmp6),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for FirewallProtocol {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for FirewallProtocol {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for FirewallProtocol {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Per-VPC firewall rule. Slice 1 ships a flat per-VPC list — every NIC in the VPC inherits every rule (no security-group attachment yet). Tritond translates this directly into proteus `triton_vpc::tritond_intent_v1::FirewallRuleIntentV1` when computing the per-port blueprint, which the dataplane compiles into one `SecurityGroupRule` per record."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-VPC firewall rule. Slice 1 ships a flat per-VPC list — every NIC in the VPC inherits every rule (no security-group attachment yet). Tritond translates this directly into proteus `triton_vpc::tritond_intent_v1::FirewallRuleIntentV1` when computing the per-port blueprint, which the dataplane compiles into one `SecurityGroupRule` per record.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"action\","]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"direction\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"priority\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"protocol\","]
+    #[doc = "    \"tenant_id\","]
+    #[doc = "    \"vpc_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"action\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/FirewallAction\""]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"destination_cidr\": {"]
+    #[doc = "      \"description\": \"`None` ⇒ match any destination.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"destination_ports\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FirewallPortRange\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"direction\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/FirewallDirection\""]
+    #[doc = "    },"]
+    #[doc = "    \"icmp_type_code\": {"]
+    #[doc = "      \"description\": \"Optional ICMP type/code filter. Only valid when `protocol` is `Icmp4` or `Icmp6`; the API rejects mismatches at create time.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FirewallIcmpFilter\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"priority\": {"]
+    #[doc = "      \"description\": \"Higher numbers evaluate first inside a layer.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"protocol\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/FirewallProtocol\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_cidr\": {"]
+    #[doc = "      \"description\": \"`None` ⇒ match any source.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"source_ports\": {"]
+    #[doc = "      \"description\": \"Inclusive port range. `None` ⇒ any port. Ignored for non-TCP/UDP.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FirewallPortRange\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"vpc_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct FirewallRule {
+        pub action: FirewallAction,
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub description: ::std::string::String,
+        #[doc = "`None` ⇒ match any destination."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub destination_cidr: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub destination_ports: ::std::option::Option<FirewallPortRange>,
+        pub direction: FirewallDirection,
+        #[doc = "Optional ICMP type/code filter. Only valid when `protocol` is `Icmp4` or `Icmp6`; the API rejects mismatches at create time."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub icmp_type_code: ::std::option::Option<FirewallIcmpFilter>,
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        #[doc = "Higher numbers evaluate first inside a layer."]
+        pub priority: u16,
+        pub project_id: ::uuid::Uuid,
+        pub protocol: FirewallProtocol,
+        #[doc = "`None` ⇒ match any source."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_cidr: ::std::option::Option<::std::string::String>,
+        #[doc = "Inclusive port range. `None` ⇒ any port. Ignored for non-TCP/UDP."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_ports: ::std::option::Option<FirewallPortRange>,
+        pub tenant_id: ::uuid::Uuid,
+        pub vpc_id: ::uuid::Uuid,
+    }
+
+    impl FirewallRule {
+        pub fn builder() -> builder::FirewallRule {
             Default::default()
         }
     }
@@ -2644,6 +3491,319 @@ pub mod types {
         Failed(::std::string::String),
     }
 
+    #[doc = "Per-CN summary returned by `GET /v2/admin/legacy/cns`.\n\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-CN summary returned by `GET /v2/admin/legacy/cns`.\\n\\nDistinct from [`CnView`]: this view rolls up the discovery classifier's per-CN counts (how many tritond-managed instances vs unmanaged legacy zones) so a fleet-admin operator can spot CNs that still have legacy zones to adopt.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"hostname\","]
+    #[doc = "    \"legacy_vm_count\","]
+    #[doc = "    \"managed_instance_count\","]
+    #[doc = "    \"server_uuid\","]
+    #[doc = "    \"state\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"hostname\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_seen\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"legacy_vm_count\": {"]
+    #[doc = "      \"description\": \"Count of legacy (unmanaged) zones tritond's classifier has observed on this CN.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"managed_instance_count\": {"]
+    #[doc = "      \"description\": \"Count of tritond-managed instances currently placed on this CN.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"server_uuid\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct LegacyCnSummary {
+        pub hostname: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_seen: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[doc = "Count of legacy (unmanaged) zones tritond's classifier has observed on this CN."]
+        pub legacy_vm_count: u32,
+        #[doc = "Count of tritond-managed instances currently placed on this CN."]
+        pub managed_instance_count: u32,
+        pub server_uuid: ::uuid::Uuid,
+        pub state: CnState,
+    }
+
+    impl LegacyCnSummary {
+        pub fn builder() -> builder::LegacyCnSummary {
+            Default::default()
+        }
+    }
+
+    #[doc = "Per-NIC layout for a [`LegacyVm`]. Distinct from [`Nic`] (the tritond-managed NIC type) because legacy zones may carry non-tritond NIC tags (`admin`, `external`, customer VLAN tags), and the IP may have come from DHCP rather than a tritond subnet allocation. Mirrors the per-NIC fields the Phase D adoption flow's pre-flight needs (IP-collision check, network-rewrite preview)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-NIC layout for a [`LegacyVm`]. Distinct from [`Nic`] (the tritond-managed NIC type) because legacy zones may carry non-tritond NIC tags (`admin`, `external`, customer VLAN tags), and the IP may have come from DHCP rather than a tritond subnet allocation. Mirrors the per-NIC fields the Phase D adoption flow's pre-flight needs (IP-collision check, network-rewrite preview).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"gateway\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ip\""]
+    #[doc = "    },"]
+    #[doc = "    \"ip\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"ip\""]
+    #[doc = "    },"]
+    #[doc = "    \"mac\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"nic_tag\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"primary\": {"]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"vlan_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct LegacyNic {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub gateway: ::std::option::Option<::std::net::IpAddr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ip: ::std::option::Option<::std::net::IpAddr>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub mac: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub nic_tag: ::std::option::Option<::std::string::String>,
+        #[serde(default)]
+        pub primary: bool,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub vlan_id: ::std::option::Option<u16>,
+    }
+
+    impl ::std::default::Default for LegacyNic {
+        fn default() -> Self {
+            Self {
+                gateway: Default::default(),
+                ip: Default::default(),
+                mac: Default::default(),
+                nic_tag: Default::default(),
+                primary: Default::default(),
+                vlan_id: Default::default(),
+            }
+        }
+    }
+
+    impl LegacyNic {
+        pub fn builder() -> builder::LegacyNic {
+            Default::default()
+        }
+    }
+
+    #[doc = "A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\n\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v2/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A SmartOS zone observed on a registered CN that does not carry the tritond `internal_metadata` identity tags -- i.e. it pre-existed before tritonagent was installed on the CN, or was created by an operator running `vmadm create` directly.\\n\\nLegacy VMs live in their own FDB keyspace (`legacy_vm/...`) and are visible only to fleet-admin operators via `/v2/admin/legacy/vms`. They are NOT part of any tenant's workload tree until adopted (deferred Phase D).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"first_seen_at\","]
+    #[doc = "    \"host_cn_uuid\","]
+    #[doc = "    \"last_seen_at\","]
+    #[doc = "    \"smartos_uuid\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"adoptable\": {"]
+    #[doc = "      \"default\": \"unevaluated\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/AdoptableState\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"brand\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"cpu_cap\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"first_seen_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"host_cn_uuid\": {"]
+    #[doc = "      \"description\": \"CN currently hosting the zone. Updated by the classifier when the same `smartos_uuid` reports from a different CN (caused by an out-of-band `vmadm send|recv` evacuation).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_modified\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"last_seen_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"legacy_owner_uuid\": {"]
+    #[doc = "      \"description\": \"`vmadm`'s `owner_uuid` field (the legacy SmartOS owner). Distinct from any tritond identity. May be the zero UUID for system zones.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"memory_bytes\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"nics\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/LegacyNic\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"quota_bytes\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"smartos_uuid\": {"]
+    #[doc = "      \"description\": \"SmartOS zone uuid. Stable across status reports.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/VmState\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"zone_state\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct LegacyVm {
+        #[serde(default = "defaults::legacy_vm_adoptable")]
+        pub adoptable: AdoptableState,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub brand: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub cpu_cap: ::std::option::Option<u32>,
+        pub first_seen_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "CN currently hosting the zone. Updated by the classifier when the same `smartos_uuid` reports from a different CN (caused by an out-of-band `vmadm send|recv` evacuation)."]
+        pub host_cn_uuid: ::uuid::Uuid,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_modified: ::std::option::Option<::std::string::String>,
+        pub last_seen_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "`vmadm`'s `owner_uuid` field (the legacy SmartOS owner). Distinct from any tritond identity. May be the zero UUID for system zones."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub legacy_owner_uuid: ::std::option::Option<::uuid::Uuid>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub memory_bytes: ::std::option::Option<u64>,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub nics: ::std::vec::Vec<LegacyNic>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub quota_bytes: ::std::option::Option<u64>,
+        #[doc = "SmartOS zone uuid. Stable across status reports."]
+        pub smartos_uuid: ::uuid::Uuid,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub state: ::std::option::Option<VmState>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub zone_state: ::std::option::Option<::std::string::String>,
+    }
+
+    impl LegacyVm {
+        pub fn builder() -> builder::LegacyVm {
+            Default::default()
+        }
+    }
+
     #[doc = "Lifecycle state of a tenant instance. The state machine:\n\n```text create ↓ Pending ──→ Provisioning ──┬→ Running ←──┬── Stopped │             │      ↑ │             │      │ ↓             ↓      │ Failed        Stopping─┘ ```\n\nPhase 0 collapses Pending → Provisioning → Running into a synchronous transition inside the create handler (there is no agent yet). The full async path lands when the provisioning intent queue + stub executor slice ships.\n\nOperator-driven transitions: start (Stopped → Pending), stop (Running → Stopping), restart (Running → Stopping → Pending). Agent-driven transitions: Pending → Provisioning → Running, Provisioning → Failed, Stopping → Stopped.\n\nDelete is allowed only from Stopped or Failed; deleting a Running instance returns 409."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2803,6 +3963,60 @@ pub mod types {
 
     impl LoginRequest {
         pub fn builder() -> builder::LoginRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Tamper-evident identity for a tritond-managed zone.\n\nMinted by tritond at blueprint-fetch time using the per-deployment HMAC key (see `tritond_auth::IdentityHmacKey`). Tritonagent stamps the four fields verbatim into the zone's SmartOS `internal_metadata` (the four `TRITOND_METADATA_*` keys above) inside the same `vmadm create` payload that brings the zone into existence -- so a status report cannot fire between zone creation and identity write.\n\nOn a later status report, the classifier reads the four fields out of the report's `internal_metadata`, recomputes the HMAC from the reported triple, and compares constant-time. A mismatch (or missing tag) means the metadata was tampered with in-zone via `mdata-put` or copied from another deployment, and the zone is quarantined as `StaleFingerprint` rather than treated as managed."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Tamper-evident identity for a tritond-managed zone.\\n\\nMinted by tritond at blueprint-fetch time using the per-deployment HMAC key (see `tritond_auth::IdentityHmacKey`). Tritonagent stamps the four fields verbatim into the zone's SmartOS `internal_metadata` (the four `TRITOND_METADATA_*` keys above) inside the same `vmadm create` payload that brings the zone into existence -- so a status report cannot fire between zone creation and identity write.\\n\\nOn a later status report, the classifier reads the four fields out of the report's `internal_metadata`, recomputes the HMAC from the reported triple, and compares constant-time. A mismatch (or missing tag) means the metadata was tampered with in-zone via `mdata-put` or copied from another deployment, and the zone is quarantined as `StaleFingerprint` rather than treated as managed.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"identity_hmac\","]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"tenant_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"identity_hmac\": {"]
+    #[doc = "      \"description\": \"Lowercase hex of HMAC-SHA256 over the canonical `(instance_id, tenant_id, project_id)` triple. Signed with the per-deployment `IdentityHmac` system key.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"description\": \"Tritond `Instance.id`. Reused as the SmartOS zone UUID at `vmadm create` time.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ManagedIdentity {
+        #[doc = "Lowercase hex of HMAC-SHA256 over the canonical `(instance_id, tenant_id, project_id)` triple. Signed with the per-deployment `IdentityHmac` system key."]
+        pub identity_hmac: ::std::string::String,
+        #[doc = "Tritond `Instance.id`. Reused as the SmartOS zone UUID at `vmadm create` time."]
+        pub instance_id: ::uuid::Uuid,
+        pub project_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
+    }
+
+    impl ManagedIdentity {
+        pub fn builder() -> builder::ManagedIdentity {
             Default::default()
         }
     }
@@ -3278,6 +4492,239 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"lease_seconds_default\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"additional_options\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DhcpOptionRaw\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"excluded_ipv4\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"lease_seconds_default\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewDhcpPool {
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub additional_options: ::std::vec::Vec<DhcpOptionRaw>,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub excluded_ipv4: ::std::vec::Vec<::std::string::String>,
+        pub lease_seconds_default: u32,
+    }
+
+    impl NewDhcpPool {
+        pub fn builder() -> builder::NewDhcpPool {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ipv4\","]
+    #[doc = "    \"mac\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"hostname\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"ipv4\""]
+    #[doc = "    },"]
+    #[doc = "    \"mac\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"per_mac_options\": {"]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DhcpOptionRaw\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewDhcpReservation {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub hostname: ::std::option::Option<::std::string::String>,
+        pub ipv4: ::std::net::Ipv4Addr,
+        pub mac: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub per_mac_options: ::std::vec::Vec<DhcpOptionRaw>,
+    }
+
+    impl NewDhcpReservation {
+        pub fn builder() -> builder::NewDhcpReservation {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for creating a [`FirewallRule`]. The owning tenant / project / VPC come from the URL path; the server assigns `id` and `created_at`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for creating a [`FirewallRule`]. The owning tenant / project / VPC come from the URL path; the server assigns `id` and `created_at`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"action\","]
+    #[doc = "    \"direction\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"priority\","]
+    #[doc = "    \"protocol\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"action\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/FirewallAction\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"destination_cidr\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"destination_ports\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FirewallPortRange\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"direction\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/FirewallDirection\""]
+    #[doc = "    },"]
+    #[doc = "    \"icmp_type_code\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FirewallIcmpFilter\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"priority\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"protocol\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/FirewallProtocol\""]
+    #[doc = "    },"]
+    #[doc = "    \"source_cidr\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"source_ports\": {"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/FirewallPortRange\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewFirewallRule {
+        pub action: FirewallAction,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub destination_cidr: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub destination_ports: ::std::option::Option<FirewallPortRange>,
+        pub direction: FirewallDirection,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub icmp_type_code: ::std::option::Option<FirewallIcmpFilter>,
+        pub name: ::std::string::String,
+        pub priority: u16,
+        pub protocol: FirewallProtocol,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_cidr: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub source_ports: ::std::option::Option<FirewallPortRange>,
+    }
+
+    impl NewFirewallRule {
+        pub fn builder() -> builder::NewFirewallRule {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for allocating a new FloatingIp. The server picks the actual address from the family-specific Phase 0 pool; the caller asks for `V4` or `V6` and gets the lowest free address."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3545,6 +4992,13 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
+    #[doc = "    \"mac\": {"]
+    #[doc = "      \"description\": \"Optional MAC address to pin on the primary NIC. Accepted in any case + any of the usual separator styles (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`). Used to opt into sticky-by-MAC IPAM (γ.2): if a reservation or prior lease in the parent VPC matches this MAC and that address is free, the instance is allocated that IP. None (the default) keeps the legacy auto-generated MAC behaviour.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"memory_bytes\": {"]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"uint64\","]
@@ -3580,6 +5034,9 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub extra_nics: ::std::vec::Vec<NewInstanceNic>,
         pub image_id: ::uuid::Uuid,
+        #[doc = "Optional MAC address to pin on the primary NIC. Accepted in any case + any of the usual separator styles (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`). Used to opt into sticky-by-MAC IPAM (γ.2): if a reservation or prior lease in the parent VPC matches this MAC and that address is free, the instance is allocated that IP. None (the default) keeps the legacy auto-generated MAC behaviour."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub mac: ::std::option::Option<::std::string::String>,
         pub memory_bytes: u64,
         pub name: ::std::string::String,
         pub primary_subnet_id: ::uuid::Uuid,
@@ -4504,6 +5961,21 @@ pub mod types {
     #[doc = "    \"kind\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/JobKind\""]
     #[doc = "    },"]
+    #[doc = "    \"managed_identity\": {"]
+    #[doc = "      \"description\": \"Tamper-evident managed-zone identity. `Some` for `Provision` jobs (tritond mints + signs at blueprint-fetch time using the per-deployment HMAC key); `None` for `Stop` / `Restart` / `Delete` (the zone identity is already on disk from its original provision) and for any non-instance kind. The agent stamps these four fields verbatim into the zone's `internal_metadata` inside the `vmadm create` payload.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ManagedIdentity\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"nics\": {"]
     #[doc = "      \"description\": \"All NICs attached to the instance. Empty for non-Provision jobs.\","]
     #[doc = "      \"default\": [],"]
@@ -4547,6 +6019,9 @@ pub mod types {
         pub instance: ::std::option::Option<Instance>,
         pub job_id: ::uuid::Uuid,
         pub kind: JobKind,
+        #[doc = "Tamper-evident managed-zone identity. `Some` for `Provision` jobs (tritond mints + signs at blueprint-fetch time using the per-deployment HMAC key); `None` for `Stop` / `Restart` / `Delete` (the zone identity is already on disk from its original provision) and for any non-instance kind. The agent stamps these four fields verbatim into the zone's `internal_metadata` inside the `vmadm create` payload."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub managed_identity: ::std::option::Option<ManagedIdentity>,
         #[doc = "All NICs attached to the instance. Empty for non-Provision jobs."]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub nics: ::std::vec::Vec<Nic>,
@@ -6072,6 +7547,149 @@ pub mod types {
         },
     }
 
+    #[doc = "Lifecycle states a SmartOS zone may be in, as reported by `vmadm`.\n\n`Unknown` catches any vmadm state we haven't enumerated (forward compatibility per type-safety rule #5). Phase 0 only acts on `Running`, `Stopped`, and `Destroyed`; other states surface in the operator view but do not feed reconciliation rules."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Lifecycle states a SmartOS zone may be in, as reported by `vmadm`.\\n\\n`Unknown` catches any vmadm state we haven't enumerated (forward compatibility per type-safety rule #5). Phase 0 only acts on `Running`, `Stopped`, and `Destroyed`; other states surface in the operator view but do not feed reconciliation rules.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"running\","]
+    #[doc = "        \"stopped\","]
+    #[doc = "        \"provisioning\","]
+    #[doc = "        \"receiving\","]
+    #[doc = "        \"sending\","]
+    #[doc = "        \"configured\","]
+    #[doc = "        \"incomplete\","]
+    #[doc = "        \"failed\","]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"vmadm uses both `installed` (zone is configured but not booted) and `installed`-as-init in different paths. We treat it as equivalent to Stopped for reconciliation.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"installed\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"`vmadm destroy` ran. The zone is gone but vmadm may still report it briefly during the reap window.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"destroyed\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum VmState {
+        #[serde(rename = "running")]
+        Running,
+        #[serde(rename = "stopped")]
+        Stopped,
+        #[serde(rename = "provisioning")]
+        Provisioning,
+        #[serde(rename = "receiving")]
+        Receiving,
+        #[serde(rename = "sending")]
+        Sending,
+        #[serde(rename = "configured")]
+        Configured,
+        #[serde(rename = "incomplete")]
+        Incomplete,
+        #[serde(rename = "failed")]
+        Failed,
+        #[serde(rename = "unknown")]
+        Unknown,
+        #[doc = "vmadm uses both `installed` (zone is configured but not booted) and `installed`-as-init in different paths. We treat it as equivalent to Stopped for reconciliation."]
+        #[serde(rename = "installed")]
+        Installed,
+        #[doc = "`vmadm destroy` ran. The zone is gone but vmadm may still report it briefly during the reap window."]
+        #[serde(rename = "destroyed")]
+        Destroyed,
+    }
+
+    impl ::std::fmt::Display for VmState {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Running => f.write_str("running"),
+                Self::Stopped => f.write_str("stopped"),
+                Self::Provisioning => f.write_str("provisioning"),
+                Self::Receiving => f.write_str("receiving"),
+                Self::Sending => f.write_str("sending"),
+                Self::Configured => f.write_str("configured"),
+                Self::Incomplete => f.write_str("incomplete"),
+                Self::Failed => f.write_str("failed"),
+                Self::Unknown => f.write_str("unknown"),
+                Self::Installed => f.write_str("installed"),
+                Self::Destroyed => f.write_str("destroyed"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for VmState {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "running" => Ok(Self::Running),
+                "stopped" => Ok(Self::Stopped),
+                "provisioning" => Ok(Self::Provisioning),
+                "receiving" => Ok(Self::Receiving),
+                "sending" => Ok(Self::Sending),
+                "configured" => Ok(Self::Configured),
+                "incomplete" => Ok(Self::Incomplete),
+                "failed" => Ok(Self::Failed),
+                "unknown" => Ok(Self::Unknown),
+                "installed" => Ok(Self::Installed),
+                "destroyed" => Ok(Self::Destroyed),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for VmState {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for VmState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for VmState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Tenant VPC. Project-scoped, tenant-rooted. Mirrors the per-VPC fields OPTE consumes in `oxide_vpc::api::VpcCfg`: a 24-bit Geneve VNI plus an optional primary IPv4 CIDR and optional primary IPv6 CIDR (matching OPTE's `IpCfg` enum: Ipv4-only, Ipv6-only, or dual-stack). Per-NIC concerns (guest MAC, private IPs, external IPs, attached_subnets, DHCP) are *not* on the VPC record — those land on subnet/instance/NIC resources in later slices."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7479,6 +9097,479 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct DhcpLease {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            ipv4: ::std::result::Result<::std::net::Ipv4Addr, ::std::string::String>,
+            last_msg_type: ::std::result::Result<::std::option::Option<u8>, ::std::string::String>,
+            last_renewed_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            last_xid: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
+            mac: ::std::result::Result<::std::string::String, ::std::string::String>,
+            nic_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DhcpLease {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    ipv4: Err("no value supplied for ipv4".to_string()),
+                    last_msg_type: Ok(Default::default()),
+                    last_renewed_at: Ok(Default::default()),
+                    last_xid: Ok(Default::default()),
+                    mac: Err("no value supplied for mac".to_string()),
+                    nic_id: Err("no value supplied for nic_id".to_string()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl DhcpLease {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::net::Ipv4Addr>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4: {e}"));
+                self
+            }
+            pub fn last_msg_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u8>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_msg_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_msg_type: {e}"));
+                self
+            }
+            pub fn last_renewed_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_renewed_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for last_renewed_at: {e}")
+                });
+                self
+            }
+            pub fn last_xid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_xid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_xid: {e}"));
+                self
+            }
+            pub fn mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mac: {e}"));
+                self
+            }
+            pub fn nic_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_id: {e}"));
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DhcpLease> for super::DhcpLease {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DhcpLease,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    instance_id: value.instance_id?,
+                    ipv4: value.ipv4?,
+                    last_msg_type: value.last_msg_type?,
+                    last_renewed_at: value.last_renewed_at?,
+                    last_xid: value.last_xid?,
+                    mac: value.mac?,
+                    nic_id: value.nic_id?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DhcpLease> for DhcpLease {
+            fn from(value: super::DhcpLease) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    instance_id: Ok(value.instance_id),
+                    ipv4: Ok(value.ipv4),
+                    last_msg_type: Ok(value.last_msg_type),
+                    last_renewed_at: Ok(value.last_renewed_at),
+                    last_xid: Ok(value.last_xid),
+                    mac: Ok(value.mac),
+                    nic_id: Ok(value.nic_id),
+                    vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DhcpOptionRaw {
+            code: ::std::result::Result<u8, ::std::string::String>,
+            value: ::std::result::Result<::std::vec::Vec<u8>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DhcpOptionRaw {
+            fn default() -> Self {
+                Self {
+                    code: Err("no value supplied for code".to_string()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl DhcpOptionRaw {
+            pub fn code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u8>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<u8>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DhcpOptionRaw> for super::DhcpOptionRaw {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DhcpOptionRaw,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    code: value.code?,
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DhcpOptionRaw> for DhcpOptionRaw {
+            fn from(value: super::DhcpOptionRaw) -> Self {
+                Self {
+                    code: Ok(value.code),
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DhcpPool {
+            additional_options:
+                ::std::result::Result<::std::vec::Vec<super::DhcpOptionRaw>, ::std::string::String>,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            excluded_ipv4: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            lease_seconds_default: ::std::result::Result<u32, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DhcpPool {
+            fn default() -> Self {
+                Self {
+                    additional_options: Ok(Default::default()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    excluded_ipv4: Ok(Default::default()),
+                    lease_seconds_default: Err(
+                        "no value supplied for lease_seconds_default".to_string()
+                    ),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl DhcpPool {
+            pub fn additional_options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DhcpOptionRaw>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.additional_options = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for additional_options: {e}")
+                });
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn excluded_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.excluded_ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for excluded_ipv4: {e}"));
+                self
+            }
+            pub fn lease_seconds_default<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.lease_seconds_default = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for lease_seconds_default: {e}")
+                });
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DhcpPool> for super::DhcpPool {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DhcpPool,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    additional_options: value.additional_options?,
+                    created_at: value.created_at?,
+                    excluded_ipv4: value.excluded_ipv4?,
+                    lease_seconds_default: value.lease_seconds_default?,
+                    updated_at: value.updated_at?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DhcpPool> for DhcpPool {
+            fn from(value: super::DhcpPool) -> Self {
+                Self {
+                    additional_options: Ok(value.additional_options),
+                    created_at: Ok(value.created_at),
+                    excluded_ipv4: Ok(value.excluded_ipv4),
+                    lease_seconds_default: Ok(value.lease_seconds_default),
+                    updated_at: Ok(value.updated_at),
+                    vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DhcpReservation {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            hostname: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv4: ::std::result::Result<::std::net::Ipv4Addr, ::std::string::String>,
+            mac: ::std::result::Result<::std::string::String, ::std::string::String>,
+            per_mac_options:
+                ::std::result::Result<::std::vec::Vec<super::DhcpOptionRaw>, ::std::string::String>,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DhcpReservation {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    hostname: Ok(Default::default()),
+                    ipv4: Err("no value supplied for ipv4".to_string()),
+                    mac: Err("no value supplied for mac".to_string()),
+                    per_mac_options: Ok(Default::default()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl DhcpReservation {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn hostname<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hostname = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hostname: {e}"));
+                self
+            }
+            pub fn ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::net::Ipv4Addr>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4: {e}"));
+                self
+            }
+            pub fn mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mac: {e}"));
+                self
+            }
+            pub fn per_mac_options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DhcpOptionRaw>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.per_mac_options = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for per_mac_options: {e}")
+                });
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DhcpReservation> for super::DhcpReservation {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DhcpReservation,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    hostname: value.hostname?,
+                    ipv4: value.ipv4?,
+                    mac: value.mac?,
+                    per_mac_options: value.per_mac_options?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DhcpReservation> for DhcpReservation {
+            fn from(value: super::DhcpReservation) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    hostname: Ok(value.hostname),
+                    ipv4: Ok(value.ipv4),
+                    mac: Ok(value.mac),
+                    per_mac_options: Ok(value.per_mac_options),
+                    vpc_id: Ok(value.vpc_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Disk {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -7723,6 +9814,397 @@ pub mod types {
                     error_code: Ok(value.error_code),
                     message: Ok(value.message),
                     request_id: Ok(value.request_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct FirewallIcmpFilter {
+            code: ::std::result::Result<u8, ::std::string::String>,
+            type_: ::std::result::Result<u8, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for FirewallIcmpFilter {
+            fn default() -> Self {
+                Self {
+                    code: Err("no value supplied for code".to_string()),
+                    type_: Err("no value supplied for type_".to_string()),
+                }
+            }
+        }
+
+        impl FirewallIcmpFilter {
+            pub fn code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u8>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
+                self
+            }
+            pub fn type_<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u8>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.type_ = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for type_: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<FirewallIcmpFilter> for super::FirewallIcmpFilter {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FirewallIcmpFilter,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    code: value.code?,
+                    type_: value.type_?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::FirewallIcmpFilter> for FirewallIcmpFilter {
+            fn from(value: super::FirewallIcmpFilter) -> Self {
+                Self {
+                    code: Ok(value.code),
+                    type_: Ok(value.type_),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct FirewallPortRange {
+            high: ::std::result::Result<u16, ::std::string::String>,
+            low: ::std::result::Result<u16, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for FirewallPortRange {
+            fn default() -> Self {
+                Self {
+                    high: Err("no value supplied for high".to_string()),
+                    low: Err("no value supplied for low".to_string()),
+                }
+            }
+        }
+
+        impl FirewallPortRange {
+            pub fn high<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.high = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for high: {e}"));
+                self
+            }
+            pub fn low<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.low = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for low: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<FirewallPortRange> for super::FirewallPortRange {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FirewallPortRange,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    high: value.high?,
+                    low: value.low?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::FirewallPortRange> for FirewallPortRange {
+            fn from(value: super::FirewallPortRange) -> Self {
+                Self {
+                    high: Ok(value.high),
+                    low: Ok(value.low),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct FirewallRule {
+            action: ::std::result::Result<super::FirewallAction, ::std::string::String>,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            destination_cidr: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            destination_ports: ::std::result::Result<
+                ::std::option::Option<super::FirewallPortRange>,
+                ::std::string::String,
+            >,
+            direction: ::std::result::Result<super::FirewallDirection, ::std::string::String>,
+            icmp_type_code: ::std::result::Result<
+                ::std::option::Option<super::FirewallIcmpFilter>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            priority: ::std::result::Result<u16, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            protocol: ::std::result::Result<super::FirewallProtocol, ::std::string::String>,
+            source_cidr: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            source_ports: ::std::result::Result<
+                ::std::option::Option<super::FirewallPortRange>,
+                ::std::string::String,
+            >,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            vpc_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for FirewallRule {
+            fn default() -> Self {
+                Self {
+                    action: Err("no value supplied for action".to_string()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    destination_cidr: Ok(Default::default()),
+                    destination_ports: Ok(Default::default()),
+                    direction: Err("no value supplied for direction".to_string()),
+                    icmp_type_code: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    priority: Err("no value supplied for priority".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    protocol: Err("no value supplied for protocol".to_string()),
+                    source_cidr: Ok(Default::default()),
+                    source_ports: Ok(Default::default()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
+                    vpc_id: Err("no value supplied for vpc_id".to_string()),
+                }
+            }
+        }
+
+        impl FirewallRule {
+            pub fn action<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::FirewallAction>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.action = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for action: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn destination_cidr<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.destination_cidr = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for destination_cidr: {e}")
+                });
+                self
+            }
+            pub fn destination_ports<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FirewallPortRange>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.destination_ports = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for destination_ports: {e}")
+                });
+                self
+            }
+            pub fn direction<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::FirewallDirection>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.direction = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for direction: {e}"));
+                self
+            }
+            pub fn icmp_type_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FirewallIcmpFilter>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.icmp_type_code = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for icmp_type_code: {e}")
+                });
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn priority<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.priority = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for priority: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn protocol<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::FirewallProtocol>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.protocol = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for protocol: {e}"));
+                self
+            }
+            pub fn source_cidr<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_cidr = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_cidr: {e}"));
+                self
+            }
+            pub fn source_ports<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FirewallPortRange>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_ports = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_ports: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+            pub fn vpc_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vpc_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vpc_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<FirewallRule> for super::FirewallRule {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: FirewallRule,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    action: value.action?,
+                    created_at: value.created_at?,
+                    description: value.description?,
+                    destination_cidr: value.destination_cidr?,
+                    destination_ports: value.destination_ports?,
+                    direction: value.direction?,
+                    icmp_type_code: value.icmp_type_code?,
+                    id: value.id?,
+                    name: value.name?,
+                    priority: value.priority?,
+                    project_id: value.project_id?,
+                    protocol: value.protocol?,
+                    source_cidr: value.source_cidr?,
+                    source_ports: value.source_ports?,
+                    tenant_id: value.tenant_id?,
+                    vpc_id: value.vpc_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::FirewallRule> for FirewallRule {
+            fn from(value: super::FirewallRule) -> Self {
+                Self {
+                    action: Ok(value.action),
+                    created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    destination_cidr: Ok(value.destination_cidr),
+                    destination_ports: Ok(value.destination_ports),
+                    direction: Ok(value.direction),
+                    icmp_type_code: Ok(value.icmp_type_code),
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    priority: Ok(value.priority),
+                    project_id: Ok(value.project_id),
+                    protocol: Ok(value.protocol),
+                    source_cidr: Ok(value.source_cidr),
+                    source_ports: Ok(value.source_ports),
+                    tenant_id: Ok(value.tenant_id),
+                    vpc_id: Ok(value.vpc_id),
                 }
             }
         }
@@ -8610,6 +11092,499 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct LegacyCnSummary {
+            hostname: ::std::result::Result<::std::string::String, ::std::string::String>,
+            last_seen: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            legacy_vm_count: ::std::result::Result<u32, ::std::string::String>,
+            managed_instance_count: ::std::result::Result<u32, ::std::string::String>,
+            server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            state: ::std::result::Result<super::CnState, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for LegacyCnSummary {
+            fn default() -> Self {
+                Self {
+                    hostname: Err("no value supplied for hostname".to_string()),
+                    last_seen: Ok(Default::default()),
+                    legacy_vm_count: Err("no value supplied for legacy_vm_count".to_string()),
+                    managed_instance_count: Err(
+                        "no value supplied for managed_instance_count".to_string()
+                    ),
+                    server_uuid: Err("no value supplied for server_uuid".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                }
+            }
+        }
+
+        impl LegacyCnSummary {
+            pub fn hostname<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hostname = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hostname: {e}"));
+                self
+            }
+            pub fn last_seen<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_seen = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_seen: {e}"));
+                self
+            }
+            pub fn legacy_vm_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.legacy_vm_count = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for legacy_vm_count: {e}")
+                });
+                self
+            }
+            pub fn managed_instance_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.managed_instance_count = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for managed_instance_count: {e}")
+                });
+                self
+            }
+            pub fn server_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.server_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for server_uuid: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CnState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<LegacyCnSummary> for super::LegacyCnSummary {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegacyCnSummary,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    hostname: value.hostname?,
+                    last_seen: value.last_seen?,
+                    legacy_vm_count: value.legacy_vm_count?,
+                    managed_instance_count: value.managed_instance_count?,
+                    server_uuid: value.server_uuid?,
+                    state: value.state?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::LegacyCnSummary> for LegacyCnSummary {
+            fn from(value: super::LegacyCnSummary) -> Self {
+                Self {
+                    hostname: Ok(value.hostname),
+                    last_seen: Ok(value.last_seen),
+                    legacy_vm_count: Ok(value.legacy_vm_count),
+                    managed_instance_count: Ok(value.managed_instance_count),
+                    server_uuid: Ok(value.server_uuid),
+                    state: Ok(value.state),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct LegacyNic {
+            gateway: ::std::result::Result<
+                ::std::option::Option<::std::net::IpAddr>,
+                ::std::string::String,
+            >,
+            ip: ::std::result::Result<
+                ::std::option::Option<::std::net::IpAddr>,
+                ::std::string::String,
+            >,
+            mac: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            nic_tag: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            primary: ::std::result::Result<bool, ::std::string::String>,
+            vlan_id: ::std::result::Result<::std::option::Option<u16>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for LegacyNic {
+            fn default() -> Self {
+                Self {
+                    gateway: Ok(Default::default()),
+                    ip: Ok(Default::default()),
+                    mac: Ok(Default::default()),
+                    nic_tag: Ok(Default::default()),
+                    primary: Ok(Default::default()),
+                    vlan_id: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl LegacyNic {
+            pub fn gateway<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::IpAddr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.gateway = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for gateway: {e}"));
+                self
+            }
+            pub fn ip<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::net::IpAddr>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ip = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ip: {e}"));
+                self
+            }
+            pub fn mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mac: {e}"));
+                self
+            }
+            pub fn nic_tag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_tag = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_tag: {e}"));
+                self
+            }
+            pub fn primary<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.primary = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for primary: {e}"));
+                self
+            }
+            pub fn vlan_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u16>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vlan_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vlan_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<LegacyNic> for super::LegacyNic {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegacyNic,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    gateway: value.gateway?,
+                    ip: value.ip?,
+                    mac: value.mac?,
+                    nic_tag: value.nic_tag?,
+                    primary: value.primary?,
+                    vlan_id: value.vlan_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::LegacyNic> for LegacyNic {
+            fn from(value: super::LegacyNic) -> Self {
+                Self {
+                    gateway: Ok(value.gateway),
+                    ip: Ok(value.ip),
+                    mac: Ok(value.mac),
+                    nic_tag: Ok(value.nic_tag),
+                    primary: Ok(value.primary),
+                    vlan_id: Ok(value.vlan_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct LegacyVm {
+            adoptable: ::std::result::Result<super::AdoptableState, ::std::string::String>,
+            brand: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            cpu_cap: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
+            first_seen_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            host_cn_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            last_modified: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            last_seen_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            legacy_owner_uuid:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            memory_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            nics: ::std::result::Result<::std::vec::Vec<super::LegacyNic>, ::std::string::String>,
+            quota_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            smartos_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            state:
+                ::std::result::Result<::std::option::Option<super::VmState>, ::std::string::String>,
+            zone_state: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for LegacyVm {
+            fn default() -> Self {
+                Self {
+                    adoptable: Ok(super::defaults::legacy_vm_adoptable()),
+                    brand: Ok(Default::default()),
+                    cpu_cap: Ok(Default::default()),
+                    first_seen_at: Err("no value supplied for first_seen_at".to_string()),
+                    host_cn_uuid: Err("no value supplied for host_cn_uuid".to_string()),
+                    last_modified: Ok(Default::default()),
+                    last_seen_at: Err("no value supplied for last_seen_at".to_string()),
+                    legacy_owner_uuid: Ok(Default::default()),
+                    memory_bytes: Ok(Default::default()),
+                    nics: Ok(Default::default()),
+                    quota_bytes: Ok(Default::default()),
+                    smartos_uuid: Err("no value supplied for smartos_uuid".to_string()),
+                    state: Ok(Default::default()),
+                    zone_state: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl LegacyVm {
+            pub fn adoptable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::AdoptableState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.adoptable = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for adoptable: {e}"));
+                self
+            }
+            pub fn brand<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.brand = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for brand: {e}"));
+                self
+            }
+            pub fn cpu_cap<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_cap = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cpu_cap: {e}"));
+                self
+            }
+            pub fn first_seen_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.first_seen_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for first_seen_at: {e}"));
+                self
+            }
+            pub fn host_cn_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.host_cn_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for host_cn_uuid: {e}"));
+                self
+            }
+            pub fn last_modified<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_modified = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_modified: {e}"));
+                self
+            }
+            pub fn last_seen_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_seen_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_seen_at: {e}"));
+                self
+            }
+            pub fn legacy_owner_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.legacy_owner_uuid = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for legacy_owner_uuid: {e}")
+                });
+                self
+            }
+            pub fn memory_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.memory_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for memory_bytes: {e}"));
+                self
+            }
+            pub fn nics<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::LegacyNic>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nics = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nics: {e}"));
+                self
+            }
+            pub fn quota_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.quota_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for quota_bytes: {e}"));
+                self
+            }
+            pub fn smartos_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.smartos_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for smartos_uuid: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::VmState>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn zone_state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.zone_state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for zone_state: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<LegacyVm> for super::LegacyVm {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LegacyVm,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    adoptable: value.adoptable?,
+                    brand: value.brand?,
+                    cpu_cap: value.cpu_cap?,
+                    first_seen_at: value.first_seen_at?,
+                    host_cn_uuid: value.host_cn_uuid?,
+                    last_modified: value.last_modified?,
+                    last_seen_at: value.last_seen_at?,
+                    legacy_owner_uuid: value.legacy_owner_uuid?,
+                    memory_bytes: value.memory_bytes?,
+                    nics: value.nics?,
+                    quota_bytes: value.quota_bytes?,
+                    smartos_uuid: value.smartos_uuid?,
+                    state: value.state?,
+                    zone_state: value.zone_state?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::LegacyVm> for LegacyVm {
+            fn from(value: super::LegacyVm) -> Self {
+                Self {
+                    adoptable: Ok(value.adoptable),
+                    brand: Ok(value.brand),
+                    cpu_cap: Ok(value.cpu_cap),
+                    first_seen_at: Ok(value.first_seen_at),
+                    host_cn_uuid: Ok(value.host_cn_uuid),
+                    last_modified: Ok(value.last_modified),
+                    last_seen_at: Ok(value.last_seen_at),
+                    legacy_owner_uuid: Ok(value.legacy_owner_uuid),
+                    memory_bytes: Ok(value.memory_bytes),
+                    nics: Ok(value.nics),
+                    quota_bytes: Ok(value.quota_bytes),
+                    smartos_uuid: Ok(value.smartos_uuid),
+                    state: Ok(value.state),
+                    zone_state: Ok(value.zone_state),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
             username: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -8664,6 +11639,93 @@ pub mod types {
                 Self {
                     password: Ok(value.password),
                     username: Ok(value.username),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ManagedIdentity {
+            identity_hmac: ::std::result::Result<::std::string::String, ::std::string::String>,
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ManagedIdentity {
+            fn default() -> Self {
+                Self {
+                    identity_hmac: Err("no value supplied for identity_hmac".to_string()),
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
+                }
+            }
+        }
+
+        impl ManagedIdentity {
+            pub fn identity_hmac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.identity_hmac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for identity_hmac: {e}"));
+                self
+            }
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ManagedIdentity> for super::ManagedIdentity {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ManagedIdentity,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    identity_hmac: value.identity_hmac?,
+                    instance_id: value.instance_id?,
+                    project_id: value.project_id?,
+                    tenant_id: value.tenant_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ManagedIdentity> for ManagedIdentity {
+            fn from(value: super::ManagedIdentity) -> Self {
+                Self {
+                    identity_hmac: Ok(value.identity_hmac),
+                    instance_id: Ok(value.instance_id),
+                    project_id: Ok(value.project_id),
+                    tenant_id: Ok(value.tenant_id),
                 }
             }
         }
@@ -9047,6 +12109,379 @@ pub mod types {
                 Self {
                     description: Ok(value.description),
                     scope: Ok(value.scope),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewDhcpPool {
+            additional_options:
+                ::std::result::Result<::std::vec::Vec<super::DhcpOptionRaw>, ::std::string::String>,
+            excluded_ipv4: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            lease_seconds_default: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewDhcpPool {
+            fn default() -> Self {
+                Self {
+                    additional_options: Ok(Default::default()),
+                    excluded_ipv4: Ok(Default::default()),
+                    lease_seconds_default: Err(
+                        "no value supplied for lease_seconds_default".to_string()
+                    ),
+                }
+            }
+        }
+
+        impl NewDhcpPool {
+            pub fn additional_options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DhcpOptionRaw>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.additional_options = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for additional_options: {e}")
+                });
+                self
+            }
+            pub fn excluded_ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.excluded_ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for excluded_ipv4: {e}"));
+                self
+            }
+            pub fn lease_seconds_default<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.lease_seconds_default = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for lease_seconds_default: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewDhcpPool> for super::NewDhcpPool {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewDhcpPool,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    additional_options: value.additional_options?,
+                    excluded_ipv4: value.excluded_ipv4?,
+                    lease_seconds_default: value.lease_seconds_default?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewDhcpPool> for NewDhcpPool {
+            fn from(value: super::NewDhcpPool) -> Self {
+                Self {
+                    additional_options: Ok(value.additional_options),
+                    excluded_ipv4: Ok(value.excluded_ipv4),
+                    lease_seconds_default: Ok(value.lease_seconds_default),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewDhcpReservation {
+            hostname: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            ipv4: ::std::result::Result<::std::net::Ipv4Addr, ::std::string::String>,
+            mac: ::std::result::Result<::std::string::String, ::std::string::String>,
+            per_mac_options:
+                ::std::result::Result<::std::vec::Vec<super::DhcpOptionRaw>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewDhcpReservation {
+            fn default() -> Self {
+                Self {
+                    hostname: Ok(Default::default()),
+                    ipv4: Err("no value supplied for ipv4".to_string()),
+                    mac: Err("no value supplied for mac".to_string()),
+                    per_mac_options: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl NewDhcpReservation {
+            pub fn hostname<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.hostname = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for hostname: {e}"));
+                self
+            }
+            pub fn ipv4<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::net::Ipv4Addr>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4: {e}"));
+                self
+            }
+            pub fn mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mac: {e}"));
+                self
+            }
+            pub fn per_mac_options<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DhcpOptionRaw>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.per_mac_options = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for per_mac_options: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewDhcpReservation> for super::NewDhcpReservation {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewDhcpReservation,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    hostname: value.hostname?,
+                    ipv4: value.ipv4?,
+                    mac: value.mac?,
+                    per_mac_options: value.per_mac_options?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewDhcpReservation> for NewDhcpReservation {
+            fn from(value: super::NewDhcpReservation) -> Self {
+                Self {
+                    hostname: Ok(value.hostname),
+                    ipv4: Ok(value.ipv4),
+                    mac: Ok(value.mac),
+                    per_mac_options: Ok(value.per_mac_options),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewFirewallRule {
+            action: ::std::result::Result<super::FirewallAction, ::std::string::String>,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            destination_cidr: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            destination_ports: ::std::result::Result<
+                ::std::option::Option<super::FirewallPortRange>,
+                ::std::string::String,
+            >,
+            direction: ::std::result::Result<super::FirewallDirection, ::std::string::String>,
+            icmp_type_code: ::std::result::Result<
+                ::std::option::Option<super::FirewallIcmpFilter>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            priority: ::std::result::Result<u16, ::std::string::String>,
+            protocol: ::std::result::Result<super::FirewallProtocol, ::std::string::String>,
+            source_cidr: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            source_ports: ::std::result::Result<
+                ::std::option::Option<super::FirewallPortRange>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for NewFirewallRule {
+            fn default() -> Self {
+                Self {
+                    action: Err("no value supplied for action".to_string()),
+                    description: Ok(Default::default()),
+                    destination_cidr: Ok(Default::default()),
+                    destination_ports: Ok(Default::default()),
+                    direction: Err("no value supplied for direction".to_string()),
+                    icmp_type_code: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    priority: Err("no value supplied for priority".to_string()),
+                    protocol: Err("no value supplied for protocol".to_string()),
+                    source_cidr: Ok(Default::default()),
+                    source_ports: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl NewFirewallRule {
+            pub fn action<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::FirewallAction>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.action = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for action: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn destination_cidr<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.destination_cidr = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for destination_cidr: {e}")
+                });
+                self
+            }
+            pub fn destination_ports<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FirewallPortRange>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.destination_ports = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for destination_ports: {e}")
+                });
+                self
+            }
+            pub fn direction<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::FirewallDirection>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.direction = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for direction: {e}"));
+                self
+            }
+            pub fn icmp_type_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FirewallIcmpFilter>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.icmp_type_code = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for icmp_type_code: {e}")
+                });
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn priority<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u16>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.priority = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for priority: {e}"));
+                self
+            }
+            pub fn protocol<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::FirewallProtocol>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.protocol = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for protocol: {e}"));
+                self
+            }
+            pub fn source_cidr<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_cidr = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_cidr: {e}"));
+                self
+            }
+            pub fn source_ports<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::FirewallPortRange>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.source_ports = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for source_ports: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewFirewallRule> for super::NewFirewallRule {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewFirewallRule,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    action: value.action?,
+                    description: value.description?,
+                    destination_cidr: value.destination_cidr?,
+                    destination_ports: value.destination_ports?,
+                    direction: value.direction?,
+                    icmp_type_code: value.icmp_type_code?,
+                    name: value.name?,
+                    priority: value.priority?,
+                    protocol: value.protocol?,
+                    source_cidr: value.source_cidr?,
+                    source_ports: value.source_ports?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewFirewallRule> for NewFirewallRule {
+            fn from(value: super::NewFirewallRule) -> Self {
+                Self {
+                    action: Ok(value.action),
+                    description: Ok(value.description),
+                    destination_cidr: Ok(value.destination_cidr),
+                    destination_ports: Ok(value.destination_ports),
+                    direction: Ok(value.direction),
+                    icmp_type_code: Ok(value.icmp_type_code),
+                    name: Ok(value.name),
+                    priority: Ok(value.priority),
+                    protocol: Ok(value.protocol),
+                    source_cidr: Ok(value.source_cidr),
+                    source_ports: Ok(value.source_ports),
                 }
             }
         }
@@ -9440,6 +12875,10 @@ pub mod types {
                 ::std::string::String,
             >,
             image_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            mac: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             memory_bytes: ::std::result::Result<u64, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             primary_subnet_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -9454,6 +12893,7 @@ pub mod types {
                     description: Ok(Default::default()),
                     extra_nics: Ok(Default::default()),
                     image_id: Err("no value supplied for image_id".to_string()),
+                    mac: Ok(Default::default()),
                     memory_bytes: Err("no value supplied for memory_bytes".to_string()),
                     name: Err("no value supplied for name".to_string()),
                     primary_subnet_id: Err("no value supplied for primary_subnet_id".to_string()),
@@ -9501,6 +12941,16 @@ pub mod types {
                 self.image_id = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for image_id: {e}"));
+                self
+            }
+            pub fn mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for mac: {e}"));
                 self
             }
             pub fn memory_bytes<T>(mut self, value: T) -> Self
@@ -9555,6 +13005,7 @@ pub mod types {
                     description: value.description?,
                     extra_nics: value.extra_nics?,
                     image_id: value.image_id?,
+                    mac: value.mac?,
                     memory_bytes: value.memory_bytes?,
                     name: value.name?,
                     primary_subnet_id: value.primary_subnet_id?,
@@ -9570,6 +13021,7 @@ pub mod types {
                     description: Ok(value.description),
                     extra_nics: Ok(value.extra_nics),
                     image_id: Ok(value.image_id),
+                    mac: Ok(value.mac),
                     memory_bytes: Ok(value.memory_bytes),
                     name: Ok(value.name),
                     primary_subnet_id: Ok(value.primary_subnet_id),
@@ -10772,6 +14224,10 @@ pub mod types {
             >,
             job_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             kind: ::std::result::Result<super::JobKind, ::std::string::String>,
+            managed_identity: ::std::result::Result<
+                ::std::option::Option<super::ManagedIdentity>,
+                ::std::string::String,
+            >,
             nics: ::std::result::Result<::std::vec::Vec<super::Nic>, ::std::string::String>,
             ssh_public_keys: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
@@ -10788,6 +14244,7 @@ pub mod types {
                     instance: Ok(Default::default()),
                     job_id: Err("no value supplied for job_id".to_string()),
                     kind: Err("no value supplied for kind".to_string()),
+                    managed_identity: Ok(Default::default()),
                     nics: Ok(Default::default()),
                     ssh_public_keys: Ok(Default::default()),
                     subnets: Ok(Default::default()),
@@ -10846,6 +14303,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for kind: {e}"));
                 self
             }
+            pub fn managed_identity<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::ManagedIdentity>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.managed_identity = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for managed_identity: {e}")
+                });
+                self
+            }
             pub fn nics<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::vec::Vec<super::Nic>>,
@@ -10889,6 +14356,7 @@ pub mod types {
                     instance: value.instance?,
                     job_id: value.job_id?,
                     kind: value.kind?,
+                    managed_identity: value.managed_identity?,
                     nics: value.nics?,
                     ssh_public_keys: value.ssh_public_keys?,
                     subnets: value.subnets?,
@@ -10904,6 +14372,7 @@ pub mod types {
                     instance: Ok(value.instance),
                     job_id: Ok(value.job_id),
                     kind: Ok(value.kind),
+                    managed_identity: Ok(value.managed_identity),
                     nics: Ok(value.nics),
                     ssh_public_keys: Ok(value.ssh_public_keys),
                     subnets: Ok(value.subnets),
@@ -12862,6 +16331,10 @@ pub mod types {
 
     #[doc = r" Generation of default values for serde."]
     pub mod defaults {
+        pub(super) fn legacy_vm_adoptable() -> super::AdoptableState {
+            super::AdoptableState::Unevaluated
+        }
+
         pub(super) fn new_api_key_scope() -> super::ApiKeyScope {
             super::ApiKeyScope::Full
         }
@@ -12928,6 +16401,21 @@ impl ClientInfo<()> for Client {
 
 impl ClientHooks<()> for &Client {}
 impl Client {
+    #[doc = "List CNs with their managed-vs-legacy zone counts. Fleet-admin\n\nonly. Supports the operator workflow of \"show me which CNs still have legacy zones I haven't adopted yet\".\n\nSends a `GET` request to `/v2/admin/legacy/cns`\n\n```ignore\nlet response = client.list_legacy_cns()\n    .send()\n    .await;\n```"]
+    pub fn list_legacy_cns(&self) -> builder::ListLegacyCns<'_> {
+        builder::ListLegacyCns::new(self)
+    }
+
+    #[doc = "List legacy VMs across the fleet, optionally filtered by host\n\nCN. Fleet-admin only.\n\nSends a `GET` request to `/v2/admin/legacy/vms`\n\nArguments:\n- `host_cn`: Restrict to legacy VMs hosted on the given CN.\n```ignore\nlet response = client.list_legacy_vms()\n    .host_cn(host_cn)\n    .send()\n    .await;\n```"]
+    pub fn list_legacy_vms(&self) -> builder::ListLegacyVms<'_> {
+        builder::ListLegacyVms::new(self)
+    }
+
+    #[doc = "Read a single legacy VM by SmartOS zone uuid, including full\n\nNIC inventory. Fleet-admin only.\n\nSends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}`\n\n```ignore\nlet response = client.get_legacy_vm()\n    .smartos_uuid(smartos_uuid)\n    .send()\n    .await;\n```"]
+    pub fn get_legacy_vm(&self) -> builder::GetLegacyVm<'_> {
+        builder::GetLegacyVm::new(self)
+    }
+
     #[doc = "Materialise the Proteus per-port blueprint for a NIC. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.\n\nSends a `GET` request to `/v2/agent/blueprints/{port_id}`\n\n```ignore\nlet response = client.agent_port_blueprint()\n    .port_id(port_id)\n    .send()\n    .await;\n```"]
     pub fn agent_port_blueprint(&self) -> builder::AgentPortBlueprint<'_> {
         builder::AgentPortBlueprint::new(self)
@@ -13096,6 +16584,11 @@ impl Client {
     #[doc = "Delete an image by id. Returns 404 when the image does\n\nnot exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/images/{image_id}`\n\n```ignore\nlet response = client.delete_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
     pub fn delete_image(&self) -> builder::DeleteImage<'_> {
         builder::DeleteImage::new(self)
+    }
+
+    #[doc = "List every silo, sorted by `name`. Phase 0 has no per-operator\n\nsilo visibility filter so this returns the full set.\n\nSends a `GET` request to `/v2/silos`\n\n```ignore\nlet response = client.list_silos()\n    .send()\n    .await;\n```"]
+    pub fn list_silos(&self) -> builder::ListSilos<'_> {
+        builder::ListSilos::new(self)
     }
 
     #[doc = "Create a silo. Returns 201 with the created silo\n\nFails with 409 if a silo with the requested name already exists.\n\nSends a `POST` request to `/v2/silos`\n\n```ignore\nlet response = client.create_silo()\n    .body(body)\n    .send()\n    .await;\n```"]
@@ -13358,6 +16851,71 @@ impl Client {
         builder::DeleteProjectVpc::new(self)
     }
 
+    #[doc = "List active DHCP leases for a VPC. Each entry was written when\n\ntritond pre-assigned an IP to a NIC at instance create.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases`\n\n```ignore\nlet response = client.list_vpc_dhcp_leases()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn list_vpc_dhcp_leases(&self) -> builder::ListVpcDhcpLeases<'_> {
+        builder::ListVpcDhcpLeases::new(self)
+    }
+
+    #[doc = "Look up a lease by MAC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`\n\n```ignore\nlet response = client.get_vpc_dhcp_lease()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    pub fn get_vpc_dhcp_lease(&self) -> builder::GetVpcDhcpLease<'_> {
+        builder::GetVpcDhcpLease::new(self)
+    }
+
+    #[doc = "Operator-driven release: remove the lease record. The\n\nunderlying IP is freed for re-allocation; sticky-by-MAC for this MAC is broken until the operator re-creates the reservation.\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`\n\n```ignore\nlet response = client.delete_vpc_dhcp_lease()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_dhcp_lease(&self) -> builder::DeleteVpcDhcpLease<'_> {
+        builder::DeleteVpcDhcpLease::new(self)
+    }
+
+    #[doc = "Read the per-VPC DHCP pool config. Returns the body wrapped\n\n`Some` when set; returns `None` when the operator hasn't customised this VPC.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`\n\n```ignore\nlet response = client.get_vpc_dhcp_pool()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn get_vpc_dhcp_pool(&self) -> builder::GetVpcDhcpPool<'_> {
+        builder::GetVpcDhcpPool::new(self)
+    }
+
+    #[doc = "Create or replace the per-VPC DHCP pool config\n\nSends a `PUT` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`\n\n```ignore\nlet response = client.set_vpc_dhcp_pool()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_vpc_dhcp_pool(&self) -> builder::SetVpcDhcpPool<'_> {
+        builder::SetVpcDhcpPool::new(self)
+    }
+
+    #[doc = "Remove the per-VPC DHCP pool config (revert to defaults)\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`\n\n```ignore\nlet response = client.clear_vpc_dhcp_pool()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn clear_vpc_dhcp_pool(&self) -> builder::ClearVpcDhcpPool<'_> {
+        builder::ClearVpcDhcpPool::new(self)
+    }
+
+    #[doc = "List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`\n\n```ignore\nlet response = client.list_vpc_dhcp_reservations()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn list_vpc_dhcp_reservations(&self) -> builder::ListVpcDhcpReservations<'_> {
+        builder::ListVpcDhcpReservations::new(self)
+    }
+
+    #[doc = "Create a DHCP reservation pinning a MAC to a specific IPv4\n\nReturns 409 if the MAC is already reserved with a different IP.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`\n\n```ignore\nlet response = client.create_vpc_dhcp_reservation()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_vpc_dhcp_reservation(&self) -> builder::CreateVpcDhcpReservation<'_> {
+        builder::CreateVpcDhcpReservation::new(self)
+    }
+
+    #[doc = "Look up a reservation by MAC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`\n\n```ignore\nlet response = client.get_vpc_dhcp_reservation()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    pub fn get_vpc_dhcp_reservation(&self) -> builder::GetVpcDhcpReservation<'_> {
+        builder::GetVpcDhcpReservation::new(self)
+    }
+
+    #[doc = "Remove a reservation by MAC\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`\n\n```ignore\nlet response = client.delete_vpc_dhcp_reservation()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .mac(mac)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_dhcp_reservation(&self) -> builder::DeleteVpcDhcpReservation<'_> {
+        builder::DeleteVpcDhcpReservation::new(self)
+    }
+
+    #[doc = "List firewall rules scoped to a VPC, sorted by `priority`\n\ndescending (highest evaluates first).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`\n\n```ignore\nlet response = client.list_vpc_firewall_rules()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn list_vpc_firewall_rules(&self) -> builder::ListVpcFirewallRules<'_> {
+        builder::ListVpcFirewallRules::new(self)
+    }
+
+    #[doc = "Create a firewall rule scoped to a VPC. Slice 1: every NIC in\n\nthe VPC inherits every rule (no security-group attachment yet). The server assigns `id` and `created_at`.\n\nSends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`\n\n```ignore\nlet response = client.create_vpc_firewall_rule()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_vpc_firewall_rule(&self) -> builder::CreateVpcFirewallRule<'_> {
+        builder::CreateVpcFirewallRule::new(self)
+    }
+
+    #[doc = "Delete a firewall rule by id\n\nSends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules/{firewall_rule_id}`\n\n```ignore\nlet response = client.delete_vpc_firewall_rule()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .firewall_rule_id(firewall_rule_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_firewall_rule(&self) -> builder::DeleteVpcFirewallRule<'_> {
+        builder::DeleteVpcFirewallRule::new(self)
+    }
+
     #[doc = "List NAT gateways inside a VPC\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways`\n\n```ignore\nlet response = client.list_vpc_nat_gateways()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn list_vpc_nat_gateways(&self) -> builder::ListVpcNatGateways<'_> {
         builder::ListVpcNatGateways::new(self)
@@ -13458,6 +17016,200 @@ pub mod builder {
         ByteStream, ClientHooks, ClientInfo, Error, OperationInfo, RequestBuilderExt,
         ResponseValue, encode_path,
     };
+    #[doc = "Builder for [`Client::list_legacy_cns`]\n\n[`Client::list_legacy_cns`]: super::Client::list_legacy_cns"]
+    #[derive(Debug, Clone)]
+    pub struct ListLegacyCns<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListLegacyCns<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/admin/legacy/cns`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::LegacyCnSummary>>, Error<types::Error>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v2/admin/legacy/cns", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_legacy_cns",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_legacy_vms`]\n\n[`Client::list_legacy_vms`]: super::Client::list_legacy_vms"]
+    #[derive(Debug, Clone)]
+    pub struct ListLegacyVms<'a> {
+        client: &'a super::Client,
+        host_cn: Result<Option<::uuid::Uuid>, String>,
+    }
+
+    impl<'a> ListLegacyVms<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                host_cn: Ok(None),
+            }
+        }
+
+        pub fn host_cn<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.host_cn = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for host_cn failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/admin/legacy/vms`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::LegacyVm>>, Error<types::Error>> {
+            let Self { client, host_cn } = self;
+            let host_cn = host_cn.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/admin/legacy/vms", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("host_cn", &host_cn))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_legacy_vms",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_legacy_vm`]\n\n[`Client::get_legacy_vm`]: super::Client::get_legacy_vm"]
+    #[derive(Debug, Clone)]
+    pub struct GetLegacyVm<'a> {
+        client: &'a super::Client,
+        smartos_uuid: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetLegacyVm<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                smartos_uuid: Err("smartos_uuid was not initialized".to_string()),
+            }
+        }
+
+        pub fn smartos_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.smartos_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for smartos_uuid failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::LegacyVm>, Error<types::Error>> {
+            let Self {
+                client,
+                smartos_uuid,
+            } = self;
+            let smartos_uuid = smartos_uuid.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/admin/legacy/vms/{}",
+                client.baseurl,
+                encode_path(&smartos_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_legacy_vm",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::agent_port_blueprint`]\n\n[`Client::agent_port_blueprint`]: super::Client::agent_port_blueprint"]
     #[derive(Debug, Clone)]
     pub struct AgentPortBlueprint<'a> {
@@ -15903,6 +19655,58 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_silos`]\n\n[`Client::list_silos`]: super::Client::list_silos"]
+    #[derive(Debug, Clone)]
+    pub struct ListSilos<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListSilos<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/silos`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::Silo>>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/silos", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_silos",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -20768,6 +24572,1502 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_project_vpc",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_vpc_dhcp_leases`]\n\n[`Client::list_vpc_dhcp_leases`]: super::Client::list_vpc_dhcp_leases"]
+    #[derive(Debug, Clone)]
+    pub struct ListVpcDhcpLeases<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListVpcDhcpLeases<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::DhcpLease>>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/leases",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_vpc_dhcp_leases",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_vpc_dhcp_lease`]\n\n[`Client::get_vpc_dhcp_lease`]: super::Client::get_vpc_dhcp_lease"]
+    #[derive(Debug, Clone)]
+    pub struct GetVpcDhcpLease<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        mac: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetVpcDhcpLease<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                mac: Err("mac was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn mac<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.mac = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for mac failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::DhcpLease>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                mac,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let mac = mac.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/leases/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&mac.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_vpc_dhcp_lease",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_dhcp_lease`]\n\n[`Client::delete_vpc_dhcp_lease`]: super::Client::delete_vpc_dhcp_lease"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcDhcpLease<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        mac: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteVpcDhcpLease<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                mac: Err("mac was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn mac<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.mac = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for mac failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/leases/{mac}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                mac,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let mac = mac.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/leases/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&mac.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_dhcp_lease",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_vpc_dhcp_pool`]\n\n[`Client::get_vpc_dhcp_pool`]: super::Client::get_vpc_dhcp_pool"]
+    #[derive(Debug, Clone)]
+    pub struct GetVpcDhcpPool<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetVpcDhcpPool<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`"]
+        pub async fn send(self) -> Result<ResponseValue<types::DhcpPool>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/pool",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_vpc_dhcp_pool",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::set_vpc_dhcp_pool`]\n\n[`Client::set_vpc_dhcp_pool`]: super::Client::set_vpc_dhcp_pool"]
+    #[derive(Debug, Clone)]
+    pub struct SetVpcDhcpPool<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewDhcpPool, String>,
+    }
+
+    impl<'a> SetVpcDhcpPool<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewDhcpPool>,
+            <V as std::convert::TryInto<types::NewDhcpPool>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewDhcpPool` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewDhcpPool) -> types::builder::NewDhcpPool,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`"]
+        pub async fn send(self) -> Result<ResponseValue<types::DhcpPool>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewDhcpPool::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/pool",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_vpc_dhcp_pool",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::clear_vpc_dhcp_pool`]\n\n[`Client::clear_vpc_dhcp_pool`]: super::Client::clear_vpc_dhcp_pool"]
+    #[derive(Debug, Clone)]
+    pub struct ClearVpcDhcpPool<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ClearVpcDhcpPool<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/pool",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "clear_vpc_dhcp_pool",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_vpc_dhcp_reservations`]\n\n[`Client::list_vpc_dhcp_reservations`]: super::Client::list_vpc_dhcp_reservations"]
+    #[derive(Debug, Clone)]
+    pub struct ListVpcDhcpReservations<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListVpcDhcpReservations<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::DhcpReservation>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_vpc_dhcp_reservations",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_vpc_dhcp_reservation`]\n\n[`Client::create_vpc_dhcp_reservation`]: super::Client::create_vpc_dhcp_reservation"]
+    #[derive(Debug, Clone)]
+    pub struct CreateVpcDhcpReservation<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewDhcpReservation, String>,
+    }
+
+    impl<'a> CreateVpcDhcpReservation<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewDhcpReservation>,
+            <V as std::convert::TryInto<types::NewDhcpReservation>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewDhcpReservation` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NewDhcpReservation,
+                ) -> types::builder::NewDhcpReservation,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::DhcpReservation>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewDhcpReservation::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_vpc_dhcp_reservation",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_vpc_dhcp_reservation`]\n\n[`Client::get_vpc_dhcp_reservation`]: super::Client::get_vpc_dhcp_reservation"]
+    #[derive(Debug, Clone)]
+    pub struct GetVpcDhcpReservation<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        mac: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetVpcDhcpReservation<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                mac: Err("mac was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn mac<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.mac = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for mac failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::DhcpReservation>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                mac,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let mac = mac.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&mac.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_vpc_dhcp_reservation",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_dhcp_reservation`]\n\n[`Client::delete_vpc_dhcp_reservation`]: super::Client::delete_vpc_dhcp_reservation"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcDhcpReservation<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        mac: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteVpcDhcpReservation<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                mac: Err("mac was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn mac<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.mac = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for mac failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                mac,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let mac = mac.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/dhcp/reservations/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&mac.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_dhcp_reservation",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_vpc_firewall_rules`]\n\n[`Client::list_vpc_firewall_rules`]: super::Client::list_vpc_firewall_rules"]
+    #[derive(Debug, Clone)]
+    pub struct ListVpcFirewallRules<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListVpcFirewallRules<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::FirewallRule>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/firewall-rules",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_vpc_firewall_rules",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_vpc_firewall_rule`]\n\n[`Client::create_vpc_firewall_rule`]: super::Client::create_vpc_firewall_rule"]
+    #[derive(Debug, Clone)]
+    pub struct CreateVpcFirewallRule<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewFirewallRule, String>,
+    }
+
+    impl<'a> CreateVpcFirewallRule<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewFirewallRule>,
+            <V as std::convert::TryInto<types::NewFirewallRule>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewFirewallRule` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewFirewallRule) -> types::builder::NewFirewallRule,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules`"]
+        pub async fn send(self) -> Result<ResponseValue<types::FirewallRule>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                body,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewFirewallRule::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/firewall-rules",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_vpc_firewall_rule",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_firewall_rule`]\n\n[`Client::delete_vpc_firewall_rule`]: super::Client::delete_vpc_firewall_rule"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcFirewallRule<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        vpc_id: Result<::uuid::Uuid, String>,
+        firewall_rule_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteVpcFirewallRule<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+                firewall_rule_id: Err("firewall_rule_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        pub fn firewall_rule_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.firewall_rule_id = value.try_into().map_err(|_| {
+                "conversion to `:: uuid :: Uuid` for firewall_rule_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules/{firewall_rule_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                vpc_id,
+                firewall_rule_id,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let firewall_rule_id = firewall_rule_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/vpcs/{}/firewall-rules/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&vpc_id.to_string()),
+                encode_path(&firewall_rule_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_firewall_rule",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
