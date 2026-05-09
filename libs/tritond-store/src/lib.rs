@@ -31,23 +31,27 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    AUTO_APPROVE_WINDOW_MAX, AddressFamily, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
-    BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn, CnRole,
-    CnState, CnView, Disk, DiskKind, EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState,
+    AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, ApiKey, ApiKeyScope, ApiKeyView,
+    AutoApproveWindow, BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN,
+    CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, DhcpLease, DhcpOptionRaw, DhcpPool,
+    DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState,
     EdgeClusterKind, EdgeClusterResource, EdgeNicCoord, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
-    Federation, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView, Image,
-    ImageCompatibility, ImageScope, Instance, InstanceCreateResult, IpCidr, JobKind, JobOutcome,
-    JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId,
-    NewEdgeCluster, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway,
-    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable, RouteTarget, Silo,
-    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, StorageClusterSurface,
-    StorageClusterView, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_SSH_KEY_NAMESPACE,
-    Tenant, User, UserView,
-    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, derive_image_id,
-    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
-    normalize_claim_code,
+    Federation, FirewallAction, FirewallDirection, FirewallIcmpFilter, FirewallPortRange,
+    FirewallProtocol, FirewallRule, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView,
+    Image, ImageCompatibility, ImageScope, Instance, InstanceCreateResult, IpCidr, JobKind,
+    JobOutcome, JobStatus, JobStatusKind, LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind,
+    ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
+    NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob,
+    NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
+    Realization, RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable,
+    RouteTarget, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus,
+    StorageClusterSurface, StorageClusterView, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
+    TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID,
+    TRITOND_METADATA_TENANT_ID, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc, default_boot_disk_size_bytes,
+    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
+    generate_poll_token, normalize_claim_code, parse_vm_reports,
 };
 
 use async_trait::async_trait;
@@ -1120,6 +1124,34 @@ pub trait Store: Send + Sync + 'static {
         at: DateTime<Utc>,
     ) -> Result<(), StoreError>;
 
+    // ---- Legacy VMs (zones discovered on a CN that aren't tritond-managed) ----
+
+    /// Insert or update a [`LegacyVm`] record. The store rewrites the
+    /// `legacy_vm/in_host_cn` membership index when the zone's
+    /// `host_cn_uuid` differs from the existing record (e.g. zone
+    /// migrated externally via `vmadm send|recv`).
+    async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError>;
+
+    /// Look up a legacy VM by its SmartOS zone uuid.
+    async fn get_legacy_vm(&self, smartos_uuid: Uuid) -> Result<LegacyVm, StoreError>;
+
+    /// List every legacy VM tritond knows about. Bounded by the
+    /// total fleet size; fine for fleet-admin read paths.
+    async fn list_legacy_vms(&self) -> Result<Vec<LegacyVm>, StoreError>;
+
+    /// List the legacy VMs hosted on a specific CN. Used by per-CN
+    /// admin endpoints and by the classifier's "what did we know
+    /// about this CN before?" lookup.
+    async fn list_legacy_vms_for_cn(&self, host_cn_uuid: Uuid)
+    -> Result<Vec<LegacyVm>, StoreError>;
+
+    /// Remove a legacy VM record. Used when (a) the zone vanishes
+    /// from a CN's reports for long enough to be considered
+    /// destroyed, and (b) when adoption (deferred Phase D) succeeds
+    /// and the zone graduates to a tritond `Instance`. Idempotent:
+    /// returns `Ok(())` when the record is already absent.
+    async fn delete_legacy_vm(&self, smartos_uuid: Uuid) -> Result<(), StoreError>;
+
     // ---- Auto-approve window (singleton) ----
 
     /// Read the current auto-approve window, if one is open.
@@ -1184,4 +1216,113 @@ pub trait Store: Send + Sync + 'static {
         &self,
         resource: NetworkResourceId,
     ) -> Result<Vec<Realization>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Firewall rules (Slice 1: per-VPC flat rule list)
+    // ------------------------------------------------------------------
+
+    /// Create a firewall rule scoped to a VPC.
+    ///
+    /// Invariants enforced by the implementation:
+    /// * VPC must exist and match `tenant_id` + `project_id`.
+    /// * Rule name must be unique within the VPC.
+    /// * Port ranges must satisfy `low <= high`.
+    /// * `icmp_type_code` is only allowed when `protocol` is `Icmp4`/`Icmp6`.
+    /// * Source/destination CIDR families (when set) must be present on
+    ///   the parent VPC.
+    async fn create_firewall_rule(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewFirewallRule,
+    ) -> Result<FirewallRule, StoreError>;
+
+    /// Look up a firewall rule by id.
+    async fn get_firewall_rule(&self, rule_id: Uuid) -> Result<FirewallRule, StoreError>;
+
+    /// List every firewall rule scoped to a VPC, sorted by `priority`
+    /// descending (highest evaluates first), `created_at` ascending as
+    /// tiebreaker.
+    async fn list_firewall_rules_in_vpc(
+        &self,
+        vpc_id: Uuid,
+    ) -> Result<Vec<FirewallRule>, StoreError>;
+
+    /// Delete a firewall rule by id.
+    async fn delete_firewall_rule(&self, rule_id: Uuid) -> Result<(), StoreError>;
+
+    /// List every silo, sorted by `name` (lexicographic). Used by the
+    /// admin UI's silo picker; phase 0 has no per-operator silo
+    /// visibility filter, so this returns the full set.
+    async fn list_silos(&self) -> Result<Vec<Silo>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // DHCP / IPAM (Phase γ.1 + γ.4)
+    // ------------------------------------------------------------------
+
+    /// Per-VPC pool config. `None` means the operator hasn't customised
+    /// this VPC's DHCP and the defaults bake in at synth time
+    /// (subnet CIDR, 24-hour lease cadence, no extra options).
+    async fn get_dhcp_pool(&self, vpc_id: Uuid) -> Result<Option<DhcpPool>, StoreError>;
+
+    /// PUT-style replace of the per-VPC pool config.
+    async fn set_dhcp_pool(&self, vpc_id: Uuid, req: NewDhcpPool) -> Result<DhcpPool, StoreError>;
+
+    /// Remove the per-VPC pool config. After this call the VPC
+    /// behaves as if no pool was ever set (synth uses defaults).
+    async fn clear_dhcp_pool(&self, vpc_id: Uuid) -> Result<(), StoreError>;
+
+    /// List MAC→IP reservations for a VPC, sorted by mac.
+    async fn list_dhcp_reservations(
+        &self,
+        vpc_id: Uuid,
+    ) -> Result<Vec<DhcpReservation>, StoreError>;
+
+    /// Create or replace a reservation (sticky MAC→IP). Returns
+    /// `Conflict` if `mac` is already reserved with a different IP.
+    async fn create_dhcp_reservation(
+        &self,
+        vpc_id: Uuid,
+        req: NewDhcpReservation,
+    ) -> Result<DhcpReservation, StoreError>;
+
+    /// Look up a reservation by MAC.
+    async fn get_dhcp_reservation(
+        &self,
+        vpc_id: Uuid,
+        mac: &str,
+    ) -> Result<DhcpReservation, StoreError>;
+
+    /// Remove a reservation by MAC. Does not affect any active lease
+    /// using that IP — operator separately releases via
+    /// `delete_dhcp_lease` if they want the IP back in the pool.
+    async fn delete_dhcp_reservation(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError>;
+
+    /// List active leases for a VPC, sorted by `created_at` ascending.
+    async fn list_dhcp_leases(&self, vpc_id: Uuid) -> Result<Vec<DhcpLease>, StoreError>;
+
+    /// List every active lease across every VPC, sorted by
+    /// `(vpc_id, created_at)`. Used by the γ.3 reconciliation
+    /// worker to enumerate the entire IPAM lease table when
+    /// looking for orphaned entries to GC. Backends are free to
+    /// stream / paginate internally; the trait surface returns
+    /// the full snapshot because the caller iterates it once
+    /// per reconcile cycle and the per-VPC alternative would
+    /// require enumerating VPCs first (extra round-trips for no
+    /// gain).
+    async fn list_all_dhcp_leases(&self) -> Result<Vec<DhcpLease>, StoreError>;
+
+    /// Look up a lease by MAC.
+    async fn get_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<DhcpLease, StoreError>;
+
+    /// Record a freshly assigned lease. Called by `create_instance`
+    /// once the primary NIC's IP has been allocated.
+    async fn record_dhcp_lease(&self, lease: DhcpLease) -> Result<DhcpLease, StoreError>;
+
+    /// Operator-driven release: remove the lease record and free the
+    /// underlying IP for re-allocation. Independent of the
+    /// instance's own lifecycle (sticky-by-MAC keeps the lease
+    /// across instance delete).
+    async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError>;
 }

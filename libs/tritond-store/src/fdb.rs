@@ -128,6 +128,16 @@
 //!                                       both kept in lockstep with
 //!                                       `NetworkResourceId::kind_tag` and
 //!                                       `RealizerId::kind_tag`.)
+//! dhcp_pool/by_vpc/<vpc>            -> JSON-encoded DhcpPool (singleton per VPC)
+//! dhcp_reservation/by_vpc/<vpc>/<mac>
+//!                                   -> JSON-encoded DhcpReservation (mac is
+//!                                      canonical lowercase colon form;
+//!                                      list-by-vpc range-scans the
+//!                                      `dhcp_reservation/by_vpc/<vpc>/`
+//!                                      prefix)
+//! dhcp_lease/by_vpc/<vpc>/<mac>     -> JSON-encoded DhcpLease (same shape;
+//!                                      `list_all_dhcp_leases` range-scans
+//!                                      `dhcp_lease/by_vpc/`)
 //! ```
 //!
 //! Each multi-key write happens in a single transaction so name
@@ -145,15 +155,16 @@ use uuid::Uuid;
 
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
-    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, Disk, DiskKind,
-    EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
-    FloatingIp, FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceCreateResult,
-    JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NatGateway,
-    NetworkResourceId, NewEdgeCluster, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway,
-    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
-    Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet,
-    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, DhcpLease,
+    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
+    IdpConfig, Image, ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus,
+    JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId,
+    NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage,
+    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
+    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
+    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 
@@ -742,6 +753,22 @@ impl FdbStore {
         b"auto_approve/window"
     }
 
+    fn legacy_vm_by_id_key(smartos_uuid: Uuid) -> Vec<u8> {
+        format!("legacy_vm/by_id/{smartos_uuid}").into_bytes()
+    }
+
+    fn legacy_vm_in_host_cn_key(host_cn_uuid: Uuid, smartos_uuid: Uuid) -> Vec<u8> {
+        format!("legacy_vm/in_host_cn/{host_cn_uuid}/{smartos_uuid}").into_bytes()
+    }
+
+    fn legacy_vm_in_host_cn_prefix(host_cn_uuid: Uuid) -> Vec<u8> {
+        format!("legacy_vm/in_host_cn/{host_cn_uuid}/").into_bytes()
+    }
+
+    fn legacy_vm_by_id_prefix() -> &'static [u8] {
+        b"legacy_vm/by_id/"
+    }
+
     /// Key for one realization row. `network_realization/<kind>/<resource_id>/<realizer_kind>/<realizer_id>`.
     fn network_realization_key(resource: NetworkResourceId, realizer: RealizerId) -> Vec<u8> {
         format!(
@@ -762,6 +789,30 @@ impl FdbStore {
             resource.id(),
         )
         .into_bytes()
+    }
+
+    fn dhcp_pool_by_vpc_key(vpc_id: Uuid) -> Vec<u8> {
+        format!("dhcp_pool/by_vpc/{vpc_id}").into_bytes()
+    }
+
+    fn dhcp_reservation_by_vpc_mac_key(vpc_id: Uuid, mac: &str) -> Vec<u8> {
+        format!("dhcp_reservation/by_vpc/{vpc_id}/{mac}").into_bytes()
+    }
+
+    fn dhcp_reservation_by_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
+        format!("dhcp_reservation/by_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn dhcp_lease_by_vpc_mac_key(vpc_id: Uuid, mac: &str) -> Vec<u8> {
+        format!("dhcp_lease/by_vpc/{vpc_id}/{mac}").into_bytes()
+    }
+
+    fn dhcp_lease_by_vpc_prefix(vpc_id: Uuid) -> Vec<u8> {
+        format!("dhcp_lease/by_vpc/{vpc_id}/").into_bytes()
+    }
+
+    fn dhcp_lease_global_prefix() -> &'static [u8] {
+        b"dhcp_lease/by_vpc/"
     }
 }
 
@@ -6095,6 +6146,161 @@ impl Store for FdbStore {
         }
     }
 
+    async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {
+        let smartos_uuid = legacy_vm.smartos_uuid;
+        let new_host = legacy_vm.host_cn_uuid;
+        let by_id_key = Self::legacy_vm_by_id_key(smartos_uuid);
+        let new_membership_key = Self::legacy_vm_in_host_cn_key(new_host, smartos_uuid);
+        let value = serde_json::to_vec(&legacy_vm)
+            .map_err(|e| StoreError::Backend(format!("serialize legacy_vm: {e}")))?;
+
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let new_membership_key = new_membership_key.clone();
+                let value = value.clone();
+                async move {
+                    // If a record already exists with a different host,
+                    // drop the old membership-index entry inside the
+                    // same txn so the move is atomic.
+                    if let Some(existing_bytes) = tr.get(&by_id_key, false).await? {
+                        let existing: LegacyVm =
+                            serde_json::from_slice(&existing_bytes).map_err(|e| {
+                                FdbBindingError::CustomError(
+                                    format!("deserialize legacy_vm: {e}").into(),
+                                )
+                            })?;
+                        if existing.host_cn_uuid != new_host {
+                            let old_membership_key =
+                                Self::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
+                            tr.clear(&old_membership_key);
+                        }
+                    }
+                    tr.set(&by_id_key, &value);
+                    tr.set(&new_membership_key, b"");
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn get_legacy_vm(&self, smartos_uuid: Uuid) -> Result<LegacyVm, StoreError> {
+        let key = Self::legacy_vm_by_id_key(smartos_uuid);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize legacy_vm: {e}")))
+    }
+
+    async fn list_legacy_vms(&self) -> Result<Vec<LegacyVm>, StoreError> {
+        let prefix = Self::legacy_vm_by_id_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut out = Vec::new();
+                    for kv in kvs.iter() {
+                        out.push(kv.value().to_vec());
+                    }
+                    Ok(out)
+                }
+            })
+            .await;
+        let bytes_list =
+            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(bytes_list.len());
+        for bytes in bytes_list {
+            let v: LegacyVm = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize legacy_vm: {e}")))?;
+            out.push(v);
+        }
+        out.sort_by_key(|v| v.smartos_uuid);
+        Ok(out)
+    }
+
+    async fn list_legacy_vms_for_cn(
+        &self,
+        host_cn_uuid: Uuid,
+    ) -> Result<Vec<LegacyVm>, StoreError> {
+        let prefix = Self::legacy_vm_in_host_cn_prefix(host_cn_uuid);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("legacy_vm host index uuid: {e}")))?;
+            let by_id_key = Self::legacy_vm_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let v: LegacyVm = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize legacy_vm: {e}")))?;
+                out.push(v);
+            }
+        }
+        out.sort_by_key(|v| v.smartos_uuid);
+        Ok(out)
+    }
+
+    async fn delete_legacy_vm(&self, smartos_uuid: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::legacy_vm_by_id_key(smartos_uuid);
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    if let Some(bytes) = tr.get(&by_id_key, false).await? {
+                        let existing: LegacyVm = serde_json::from_slice(&bytes).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("deserialize legacy_vm: {e}").into(),
+                            )
+                        })?;
+                        let membership_key =
+                            Self::legacy_vm_in_host_cn_key(existing.host_cn_uuid, smartos_uuid);
+                        tr.clear(&membership_key);
+                        tr.clear(&by_id_key);
+                    }
+                    // Idempotent: missing record is not an error.
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
     async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError> {
         let key = Self::auto_approve_window_key().to_vec();
         let bytes = self.read_bytes(&key).await?;
@@ -6261,6 +6467,428 @@ impl Store for FdbStore {
         });
         Ok(rows)
     }
+
+    // ----- Firewall rules (Slice 1): not yet implemented in FDB ------
+    //
+    // Slice 1 lands the per-VPC firewall rule API on top of the
+    // in-memory backend so the tritond → proteus blueprint pipeline
+    // can be exercised end-to-end without depending on FDB. The FDB
+    // keyspace + transactional CRUD lands as a follow-up; the trait
+    // forces these methods to exist so service handlers compile in
+    // both feature combinations, but they all surface the same
+    // explicit not-yet-implemented backend error so any production
+    // tritond accidentally calling them gets a clear signal rather
+    // than wrong-data corruption.
+
+    async fn list_silos(&self) -> Result<Vec<Silo>, StoreError> {
+        // Range-scan `silo/by_id/` and decode each value (silos store
+        // their full JSON in the by_id key, no separate index lookup).
+        let prefix = b"silo/by_id/".to_vec();
+        let (begin, end) = prefix_range(&prefix);
+
+        let kvs: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let kvs = kvs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(kvs.len());
+        for bytes in kvs {
+            let silo: Silo = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize silo: {e}")))?;
+            out.push(silo);
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn create_firewall_rule(
+        &self,
+        _tenant_id: Uuid,
+        _project_id: Uuid,
+        _vpc_id: Uuid,
+        _req: NewFirewallRule,
+    ) -> Result<FirewallRule, StoreError> {
+        Err(firewall_rules_not_in_fdb_yet())
+    }
+
+    async fn get_firewall_rule(&self, _rule_id: Uuid) -> Result<FirewallRule, StoreError> {
+        Err(firewall_rules_not_in_fdb_yet())
+    }
+
+    async fn list_firewall_rules_in_vpc(
+        &self,
+        _vpc_id: Uuid,
+    ) -> Result<Vec<FirewallRule>, StoreError> {
+        // Empty list rather than an error so an FDB-backed tritond's
+        // build_port_blueprint call still succeeds (with the dataplane
+        // baseline-only firewall behaviour) until the FDB CRUD lands.
+        Ok(Vec::new())
+    }
+
+    async fn delete_firewall_rule(&self, _rule_id: Uuid) -> Result<(), StoreError> {
+        Err(firewall_rules_not_in_fdb_yet())
+    }
+
+    // ------------------------------------------------------------------
+    // DHCP / IPAM (γ.1, γ.4, γ.3)
+    //
+    // Schema: see the module-level doc-comment at the top of this file.
+    // Every multi-key write happens inside a single transaction so name
+    // uniqueness, cidr containment, and existence-of-parent checks are
+    // enforced atomically. Each method mirrors the in-memory store's
+    // semantics so a deployment that switches backends sees the same
+    // wire behaviour.
+    // ------------------------------------------------------------------
+
+    async fn get_dhcp_pool(&self, vpc_id: Uuid) -> Result<Option<DhcpPool>, StoreError> {
+        let key = Self::dhcp_pool_by_vpc_key(vpc_id);
+        match self.read_bytes(&key).await? {
+            None => Ok(None),
+            Some(bytes) => {
+                let pool: DhcpPool = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize dhcp pool: {e}")))?;
+                Ok(Some(pool))
+            }
+        }
+    }
+
+    async fn set_dhcp_pool(&self, vpc_id: Uuid, req: NewDhcpPool) -> Result<DhcpPool, StoreError> {
+        let vpc_key = Self::vpc_by_id_key(vpc_id);
+        let pool_key = Self::dhcp_pool_by_vpc_key(vpc_id);
+
+        enum Outcome {
+            Stored(Box<DhcpPool>),
+            VpcMissing,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let vpc_key = vpc_key.clone();
+                let pool_key = pool_key.clone();
+                let req = req.clone();
+                async move {
+                    if tr.get(&vpc_key, false).await?.is_none() {
+                        return Ok(Outcome::VpcMissing);
+                    }
+                    let now = Utc::now();
+                    let created_at = match tr.get(&pool_key, false).await? {
+                        Some(b) => match serde_json::from_slice::<DhcpPool>(&b) {
+                            Ok(existing) => existing.created_at,
+                            Err(_) => now,
+                        },
+                        None => now,
+                    };
+                    let pool = DhcpPool {
+                        vpc_id,
+                        lease_seconds_default: req.lease_seconds_default,
+                        excluded_ipv4: req.excluded_ipv4,
+                        additional_options: req.additional_options,
+                        created_at,
+                        updated_at: now,
+                    };
+                    let value = serde_json::to_vec(&pool).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize dhcp pool: {e}").into())
+                    })?;
+                    tr.set(&pool_key, &value);
+                    Ok(Outcome::Stored(Box::new(pool)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Stored(pool)) => Ok(*pool),
+            Ok(Outcome::VpcMissing) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn clear_dhcp_pool(&self, vpc_id: Uuid) -> Result<(), StoreError> {
+        let pool_key = Self::dhcp_pool_by_vpc_key(vpc_id);
+
+        enum Out {
+            Cleared,
+            Missing,
+        }
+
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let pool_key = pool_key.clone();
+                async move {
+                    if tr.get(&pool_key, false).await?.is_none() {
+                        return Ok(Out::Missing);
+                    }
+                    tr.clear(&pool_key);
+                    Ok(Out::Cleared)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Cleared) => Ok(()),
+            Ok(Out::Missing) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_dhcp_reservations(
+        &self,
+        vpc_id: Uuid,
+    ) -> Result<Vec<DhcpReservation>, StoreError> {
+        let prefix = Self::dhcp_reservation_by_vpc_prefix(vpc_id);
+        let (begin, end) = prefix_range(&prefix);
+
+        let values: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let values = values.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(values.len());
+        for bytes in values {
+            let reservation: DhcpReservation = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize dhcp reservation: {e}")))?;
+            out.push(reservation);
+        }
+        out.sort_by(|a, b| a.mac.cmp(&b.mac));
+        Ok(out)
+    }
+
+    async fn create_dhcp_reservation(
+        &self,
+        vpc_id: Uuid,
+        req: NewDhcpReservation,
+    ) -> Result<DhcpReservation, StoreError> {
+        let mac = crate::types::canonical_mac(&req.mac)?;
+        let vpc_key = Self::vpc_by_id_key(vpc_id);
+        let res_key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
+
+        enum Outcome {
+            Created(Box<DhcpReservation>),
+            VpcMissing,
+            OutsideCidr,
+            MacAlreadyReservedDifferent { existing_ipv4: std::net::Ipv4Addr },
+        }
+
+        let mac_for_txn = mac.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let vpc_key = vpc_key.clone();
+                let res_key = res_key.clone();
+                let req = req.clone();
+                let mac = mac_for_txn.clone();
+                async move {
+                    let vpc_bytes = match tr.get(&vpc_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::VpcMissing),
+                    };
+                    let vpc: Vpc = match serde_json::from_slice(&vpc_bytes) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::VpcMissing),
+                    };
+                    if let Some(cidr) = vpc.ipv4_block
+                        && !crate::types::cidr_contains_ipv4(IpNetwork::V4(cidr), req.ipv4)
+                    {
+                        return Ok(Outcome::OutsideCidr);
+                    }
+                    if let Some(b) = tr.get(&res_key, false).await?
+                        && let Ok(existing) = serde_json::from_slice::<DhcpReservation>(&b)
+                        && existing.ipv4 != req.ipv4
+                    {
+                        return Ok(Outcome::MacAlreadyReservedDifferent {
+                            existing_ipv4: existing.ipv4,
+                        });
+                    }
+                    let now = Utc::now();
+                    let reservation = DhcpReservation {
+                        vpc_id,
+                        mac,
+                        ipv4: req.ipv4,
+                        hostname: req.hostname,
+                        per_mac_options: req.per_mac_options,
+                        created_at: now,
+                    };
+                    let value = serde_json::to_vec(&reservation).map_err(|e| {
+                        FdbBindingError::CustomError(
+                            format!("serialize dhcp reservation: {e}").into(),
+                        )
+                    })?;
+                    tr.set(&res_key, &value);
+                    Ok(Outcome::Created(Box::new(reservation)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(r)) => Ok(*r),
+            Ok(Outcome::VpcMissing) => Err(StoreError::NotFound),
+            Ok(Outcome::OutsideCidr) => Err(StoreError::Conflict(format!(
+                "reservation ipv4 {} is outside vpc ipv4 block",
+                req.ipv4
+            ))),
+            Ok(Outcome::MacAlreadyReservedDifferent { existing_ipv4 }) => {
+                Err(StoreError::Conflict(format!(
+                    "mac {mac} already reserved with a different ipv4 ({existing_ipv4}); delete first"
+                )))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_dhcp_reservation(
+        &self,
+        vpc_id: Uuid,
+        mac: &str,
+    ) -> Result<DhcpReservation, StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize dhcp reservation: {e}")))
+    }
+
+    async fn delete_dhcp_reservation(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let key = Self::dhcp_reservation_by_vpc_mac_key(vpc_id, &mac);
+
+        enum Out {
+            Deleted,
+            Missing,
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    if tr.get(&key, false).await?.is_none() {
+                        return Ok(Out::Missing);
+                    }
+                    tr.clear(&key);
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Missing) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_dhcp_leases(&self, vpc_id: Uuid) -> Result<Vec<DhcpLease>, StoreError> {
+        let prefix = Self::dhcp_lease_by_vpc_prefix(vpc_id);
+        self.scan_dhcp_leases(prefix).await.map(|mut v| {
+            v.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            v
+        })
+    }
+
+    async fn get_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<DhcpLease, StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize dhcp lease: {e}")))
+    }
+
+    async fn record_dhcp_lease(&self, mut lease: DhcpLease) -> Result<DhcpLease, StoreError> {
+        lease.mac = crate::types::canonical_mac(&lease.mac)?;
+        let key = Self::dhcp_lease_by_vpc_mac_key(lease.vpc_id, &lease.mac);
+        let value = serde_json::to_vec(&lease)
+            .map_err(|e| StoreError::Backend(format!("serialize dhcp lease: {e}")))?;
+
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&key, &value);
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        Ok(lease)
+    }
+
+    async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+
+        enum Out {
+            Deleted,
+            Missing,
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    if tr.get(&key, false).await?.is_none() {
+                        return Ok(Out::Missing);
+                    }
+                    tr.clear(&key);
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) => Ok(()),
+            Ok(Out::Missing) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_all_dhcp_leases(&self) -> Result<Vec<DhcpLease>, StoreError> {
+        let prefix = Self::dhcp_lease_global_prefix().to_vec();
+        self.scan_dhcp_leases(prefix).await.map(|mut v| {
+            v.sort_by(|a, b| {
+                a.vpc_id
+                    .cmp(&b.vpc_id)
+                    .then(a.created_at.cmp(&b.created_at))
+            });
+            v
+        })
+    }
+}
+
+fn firewall_rules_not_in_fdb_yet() -> StoreError {
+    StoreError::Backend(
+        "firewall rule CRUD is not yet implemented in the FoundationDB backend (Slice 1 ships \
+         only on the in-memory store; the FDB keyspace + transactional CRUD is the immediate \
+         follow-up)"
+            .into(),
+    )
 }
 
 /// Parse an 8-byte big-endian counter value.
@@ -6410,6 +7038,38 @@ impl FdbStore {
         let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
         serde_json::from_slice(&bytes)
             .map_err(|e| StoreError::Backend(format!("deserialize nat gateway: {e}")))
+    }
+
+    /// Range-scan a `dhcp_lease/by_vpc/...` prefix and decode every
+    /// value as a [`DhcpLease`]. Used by both the per-VPC list and
+    /// the `list_all_dhcp_leases` reconciler-feeding scan.
+    async fn scan_dhcp_leases(&self, prefix: Vec<u8>) -> Result<Vec<DhcpLease>, StoreError> {
+        let (begin, end) = prefix_range(&prefix);
+        let values: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let values = values.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(values.len());
+        for bytes in values {
+            let lease: DhcpLease = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize dhcp lease: {e}")))?;
+            out.push(lease);
+        }
+        Ok(out)
     }
 
     async fn read_edge_cluster_record(

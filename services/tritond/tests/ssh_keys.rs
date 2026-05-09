@@ -51,6 +51,7 @@ impl TestServer {
                 .await
                 .unwrap(),
             is_root: true,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
@@ -184,11 +185,7 @@ async fn ssh_key_round_trip_within_silo() {
         .into_inner();
     assert_eq!(fetched.fingerprint, key.fingerprint);
 
-    root.delete_ssh_key()
-        .key_id(key.id)
-        .send()
-        .await
-        .unwrap();
+    root.delete_ssh_key().key_id(key.id).send().await.unwrap();
     let err = root
         .get_ssh_key()
         .key_id(key.id)

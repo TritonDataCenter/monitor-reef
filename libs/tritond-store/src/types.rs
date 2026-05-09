@@ -6,7 +6,7 @@
 
 //! Domain types shared between the storage layer and the wire surface.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use chrono::{DateTime, Utc};
@@ -76,6 +76,16 @@ pub struct User {
     /// short-circuit to "permit anything" until per-action policies
     /// are written.
     pub is_root: bool,
+    /// True for operators with the fleet-admin role (the
+    /// `fleet-admin-allows-fleet-actions` Cedar rule). Distinct from
+    /// `is_root`: a fleet-admin can list/inspect cross-silo CN +
+    /// legacy-VM state but cannot perform tenant-scoped writes.
+    /// `false` for federated users; today only operators with `is_root`
+    /// also implicitly have fleet-admin (via the root-allows-all rule).
+    /// Defaults to `false` so existing persisted user records
+    /// round-trip without churn.
+    #[serde(default)]
+    pub fleet_admin: bool,
     pub created_at: DateTime<Utc>,
     /// Tenant this user belongs to. `None` for the bootstrap root
     /// operator and other cluster-wide accounts. Federated users
@@ -377,6 +387,229 @@ pub enum RouteTarget {
     /// Reserved for system-installed routes. Public v1 API rejects
     /// this target at the edge.
     FloatingIp { floating_ip_id: Uuid },
+}
+
+// =============================================================================
+// DHCP / IPAM (Phase γ.1 + γ.4: per-VPC pool, reservations, leases)
+// =============================================================================
+//
+// The kmod plugin already synthesizes DHCP OFFER/ACK/NAK from each port's
+// pre-assigned IP (per α). This block adds the operator-facing IPAM
+// surface: per-VPC pool tuning, sticky reservations, and a lease record
+// that's written when an instance gets an IP. Once tritonagent forwards
+// kmod DhcpRequest events (β.2) into tritond, those events will update
+// `last_renewed_at` on the existing lease record — the schema below is
+// shaped for that follow-up.
+
+/// Per-VPC DHCPv4 pool config + segment-wide DHCP options. Singleton
+/// per VPC; absence means "use the subnet CIDR directly with defaults."
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DhcpPool {
+    pub vpc_id: Uuid,
+    /// Renewal-cadence hint emitted in DHCP option 51.
+    pub lease_seconds_default: u32,
+    /// Operator-specified IPv4 addresses to skip during allocation.
+    /// Useful for reserving the gateway, broadcast, or external
+    /// services living on the subnet.
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    pub excluded_ipv4: Vec<Ipv4Addr>,
+    /// VPC-wide DHCP options merged into every per-port response
+    /// (after `Dhcpv4Options.additional_options` from the port's own
+    /// blueprint). Example: an NTP server, a vendor-specific PXE
+    /// pointer, etc.
+    #[serde(default)]
+    pub additional_options: Vec<DhcpOptionRaw>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Wire shape of one raw DHCP option. Matches proteus's `DhcpOption`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DhcpOptionRaw {
+    pub code: u8,
+    /// Up to 250 bytes (option-length byte caps at 255 minus 2 for
+    /// code+length, conservatively 250). Serde encodes as a JSON
+    /// array of integers; the wire-cap check lives in the create
+    /// handler, not here.
+    pub value: Vec<u8>,
+}
+
+/// Request body for `PUT /v2/.../vpcs/{vpc_id}/dhcp/pool`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewDhcpPool {
+    pub lease_seconds_default: u32,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    pub excluded_ipv4: Vec<Ipv4Addr>,
+    #[serde(default)]
+    pub additional_options: Vec<DhcpOptionRaw>,
+}
+
+/// Operator-pinned MAC→IP mapping. Survives instance delete; an
+/// instance booting later with a matching MAC reuses this IP.
+///
+/// Per-MAC additional options are merged on top of the per-VPC pool's
+/// `additional_options` and the per-port blueprint's options at
+/// response synthesis time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DhcpReservation {
+    pub vpc_id: Uuid,
+    /// Canonical lowercase colon-separated form, e.g. `"02:08:20:ab:cd:ef"`.
+    pub mac: String,
+    pub ipv4: Ipv4Addr,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default)]
+    pub per_mac_options: Vec<DhcpOptionRaw>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for `POST /v2/.../vpcs/{vpc_id}/dhcp/reservations`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewDhcpReservation {
+    pub mac: String,
+    pub ipv4: Ipv4Addr,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default)]
+    pub per_mac_options: Vec<DhcpOptionRaw>,
+}
+
+/// One lease the IPAM has handed out. Written when tritond pre-assigns
+/// an IP (γ.4 hook on `create_instance`); updated by the lease-renewal
+/// event consumer (δ slice, not yet wired).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DhcpLease {
+    pub vpc_id: Uuid,
+    pub mac: String,
+    pub ipv4: Ipv4Addr,
+    /// The instance the lease was assigned to at create time. Stays
+    /// pinned through instance delete so sticky-by-MAC keeps working
+    /// when the operator re-creates with the same MAC; cleared when
+    /// the operator explicitly releases the lease.
+    pub instance_id: Uuid,
+    /// NIC the lease is bound to.
+    pub nic_id: Uuid,
+    /// Last DHCP message type observed by the kmod for this MAC
+    /// (DISCOVER, REQUEST, RELEASE, …). `None` until tritonagent
+    /// starts forwarding events (δ slice).
+    #[serde(default)]
+    pub last_msg_type: Option<u8>,
+    #[serde(default)]
+    pub last_xid: Option<u32>,
+    #[serde(default)]
+    pub last_renewed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+// =============================================================================
+// Firewall rules (Slice 1: per-VPC flat rule list)
+// =============================================================================
+
+/// Per-VPC firewall rule. Slice 1 ships a flat per-VPC list — every NIC in
+/// the VPC inherits every rule (no security-group attachment yet). Tritond
+/// translates this directly into proteus
+/// `triton_vpc::tritond_intent_v1::FirewallRuleIntentV1` when computing the
+/// per-port blueprint, which the dataplane compiles into one
+/// `SecurityGroupRule` per record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FirewallRule {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub vpc_id: Uuid,
+    pub name: String,
+    pub description: String,
+    /// Higher numbers evaluate first inside a layer.
+    pub priority: u16,
+    pub direction: FirewallDirection,
+    pub action: FirewallAction,
+    pub protocol: FirewallProtocol,
+    /// `None` ⇒ match any source.
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub source_cidr: Option<IpNetwork>,
+    /// `None` ⇒ match any destination.
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub destination_cidr: Option<IpNetwork>,
+    /// Inclusive port range. `None` ⇒ any port. Ignored for non-TCP/UDP.
+    #[serde(default)]
+    pub source_ports: Option<FirewallPortRange>,
+    #[serde(default)]
+    pub destination_ports: Option<FirewallPortRange>,
+    /// Optional ICMP type/code filter. Only valid when `protocol` is
+    /// `Icmp4` or `Icmp6`; the API rejects mismatches at create time.
+    #[serde(default)]
+    pub icmp_type_code: Option<FirewallIcmpFilter>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Request body for creating a [`FirewallRule`]. The owning tenant /
+/// project / VPC come from the URL path; the server assigns `id` and
+/// `created_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewFirewallRule {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub priority: u16,
+    pub direction: FirewallDirection,
+    pub action: FirewallAction,
+    pub protocol: FirewallProtocol,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub source_cidr: Option<IpNetwork>,
+    #[serde(default)]
+    #[schemars(with = "Option<String>")]
+    pub destination_cidr: Option<IpNetwork>,
+    #[serde(default)]
+    pub source_ports: Option<FirewallPortRange>,
+    #[serde(default)]
+    pub destination_ports: Option<FirewallPortRange>,
+    #[serde(default)]
+    pub icmp_type_code: Option<FirewallIcmpFilter>,
+}
+
+/// ICMP type + code pair carried as a struct (instead of `(u8, u8)`)
+/// so the JSON schema is OpenAPI v3.0–compatible (tuple arrays are
+/// not representable until v3.1).
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FirewallIcmpFilter {
+    #[serde(rename = "type")]
+    pub kind: u8,
+    pub code: u8,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FirewallDirection {
+    Inbound,
+    Outbound,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FirewallAction {
+    Allow,
+    Deny,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FirewallProtocol {
+    Any,
+    Tcp,
+    Udp,
+    Icmp4,
+    Icmp6,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FirewallPortRange {
+    pub low: u16,
+    pub high: u16,
 }
 
 /// Project-owned VPC egress point. A NAT gateway reserves one public
@@ -721,6 +954,13 @@ pub(crate) fn route_destination_family_present(vpc: &Vpc, destination: IpNetwork
         IpNetwork::V4(_) => vpc.ipv4_block.is_some(),
         IpNetwork::V6(_) => vpc.ipv6_block.is_some(),
     }
+}
+
+/// True if `ip` is contained in the IPv4 block of `network` (or the
+/// network is V6, in which case the answer is trivially false).
+#[must_use]
+pub(crate) fn cidr_contains_ipv4(network: IpNetwork, ip: Ipv4Addr) -> bool {
+    network.contains(IpAddr::V4(ip))
 }
 
 impl From<IdpConfig> for IdpConfigView {
@@ -1589,6 +1829,15 @@ pub struct NewInstance {
     pub ssh_key_ids: Vec<Uuid>,
     pub cpu: u32,
     pub memory_bytes: u64,
+    /// Optional MAC address to pin on the primary NIC. Accepted in
+    /// any case + any of the usual separator styles
+    /// (`02:08:20:ab:cd:ef`, `02-08-20-AB-CD-EF`, `0208.20ab.cdef`).
+    /// Used to opt into sticky-by-MAC IPAM (γ.2): if a reservation
+    /// or prior lease in the parent VPC matches this MAC and that
+    /// address is free, the instance is allocated that IP. None
+    /// (the default) keeps the legacy auto-generated MAC behaviour.
+    #[serde(default)]
+    pub mac: Option<String>,
     /// Additional NICs beyond the primary one on
     /// `primary_subnet_id`. Each entry causes the store to
     /// allocate one NIC + IP from the named subnet at create
@@ -1887,6 +2136,66 @@ pub enum JobOutcome {
     Failed { reason: String },
 }
 
+/// SmartOS `internal_metadata` key carrying the canonical tritond
+/// instance UUID for a managed zone.
+pub const TRITOND_METADATA_INSTANCE_ID: &str = "tritond:instance_id";
+/// SmartOS `internal_metadata` key carrying the tenant UUID a
+/// managed zone belongs to.
+pub const TRITOND_METADATA_TENANT_ID: &str = "tritond:tenant_id";
+/// SmartOS `internal_metadata` key carrying the project UUID a
+/// managed zone belongs to.
+pub const TRITOND_METADATA_PROJECT_ID: &str = "tritond:project_id";
+/// SmartOS `internal_metadata` key carrying the lowercase-hex
+/// HMAC-SHA256 tag over `(instance_id, tenant_id, project_id)`,
+/// signed with the per-deployment identity HMAC key.
+pub const TRITOND_METADATA_IDENTITY_HMAC: &str = "tritond:identity_hmac";
+
+/// Tamper-evident identity for a tritond-managed zone.
+///
+/// Minted by tritond at blueprint-fetch time using the per-deployment
+/// HMAC key (see `tritond_auth::IdentityHmacKey`). Tritonagent stamps
+/// the four fields verbatim into the zone's SmartOS
+/// `internal_metadata` (the four `TRITOND_METADATA_*` keys above)
+/// inside the same `vmadm create` payload that brings the zone into
+/// existence -- so a status report cannot fire between zone creation
+/// and identity write.
+///
+/// On a later status report, the classifier reads the four fields
+/// out of the report's `internal_metadata`, recomputes the HMAC
+/// from the reported triple, and compares constant-time. A
+/// mismatch (or missing tag) means the metadata was tampered with
+/// in-zone via `mdata-put` or copied from another deployment, and
+/// the zone is quarantined as `StaleFingerprint` rather than
+/// treated as managed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ManagedIdentity {
+    /// Tritond `Instance.id`. Reused as the SmartOS zone UUID at
+    /// `vmadm create` time.
+    pub instance_id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    /// Lowercase hex of HMAC-SHA256 over the canonical
+    /// `(instance_id, tenant_id, project_id)` triple. Signed with
+    /// the per-deployment `IdentityHmac` system key.
+    pub identity_hmac: String,
+}
+
+impl ManagedIdentity {
+    /// Render this identity as the four `internal_metadata` entries
+    /// tritonagent must fold into the `vmadm create` payload.
+    /// Returned as `(key, value)` pairs in a stable order so test
+    /// assertions can compare exact JSON.
+    #[must_use]
+    pub fn as_internal_metadata(&self) -> [(&'static str, String); 4] {
+        [
+            (TRITOND_METADATA_INSTANCE_ID, self.instance_id.to_string()),
+            (TRITOND_METADATA_TENANT_ID, self.tenant_id.to_string()),
+            (TRITOND_METADATA_PROJECT_ID, self.project_id.to_string()),
+            (TRITOND_METADATA_IDENTITY_HMAC, self.identity_hmac.clone()),
+        ]
+    }
+}
+
 /// Per-instance network interface. Auto-created at instance create
 /// time with a single "primary" NIC; multi-NIC attach/detach is a
 /// future slice. Mirrors what the dataplane (OPTE per-NIC config)
@@ -1950,6 +2259,32 @@ pub fn allocate_ipv4(cidr: Ipv4Network, already_allocated: &HashSet<Ipv4Addr>) -
     None
 }
 
+/// Sticky-aware variant: if `prefer` is `Some(ip)`, the IP lives
+/// inside `cidr`, isn't a reserved network/gateway/broadcast slot,
+/// and isn't already allocated, return it. Otherwise fall back to
+/// [`allocate_ipv4`]'s linear scan. Used by γ.2 to honor DHCP
+/// reservations and prior leases at instance-create time.
+#[must_use]
+pub fn allocate_ipv4_sticky(
+    cidr: Ipv4Network,
+    already_allocated: &HashSet<Ipv4Addr>,
+    prefer: Option<Ipv4Addr>,
+) -> Option<Ipv4Addr> {
+    if let Some(want) = prefer {
+        if cidr.contains(want) {
+            let network = cidr.network();
+            let broadcast = cidr.broadcast();
+            let gateway = next_ipv4(network);
+            let is_reserved =
+                want == network || want == broadcast || gateway.map(|g| g == want).unwrap_or(false);
+            if !is_reserved && !already_allocated.contains(&want) {
+                return Some(want);
+            }
+        }
+    }
+    allocate_ipv4(cidr, already_allocated)
+}
+
 /// Allocate the lowest unused IPv6 address inside `cidr`, skipping
 /// the network address and the gateway (`network + 1`,
 /// conventionally `::1` in `fdXX::/N` subnets).
@@ -2002,6 +2337,34 @@ pub fn generate_mac<R: rand::Rng>(rng: &mut R) -> String {
         "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]
     )
+}
+
+/// Normalise a MAC address to canonical lowercase colon-separated form
+/// (e.g. `02:08:20:ab:cd:ef`). Accepts colon, hyphen, dot, or
+/// no-separator input. Rejects anything that isn't 12 hex digits.
+///
+/// Shared between [`crate::MemStore`] and [`crate::FdbStore`] so MAC
+/// canonicalisation is byte-identical across backends — important for
+/// the DHCP keyspace where the canonical form is part of the key.
+pub fn canonical_mac(s: &str) -> Result<String, crate::StoreError> {
+    let cleaned: String = s
+        .chars()
+        .filter(|c| !matches!(*c, ':' | '-' | '.' | ' '))
+        .collect();
+    if cleaned.len() != 12 || !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(crate::StoreError::Conflict(format!(
+            "mac {s:?} is not 12 hex digits"
+        )));
+    }
+    let lower = cleaned.to_ascii_lowercase();
+    let mut out = String::with_capacity(17);
+    for (i, c) in lower.chars().enumerate() {
+        if i > 0 && i % 2 == 0 {
+            out.push(':');
+        }
+        out.push(c);
+    }
+    Ok(out)
 }
 
 /// What a disk is for. Phase 0 ships only `Boot` disks (auto-created
@@ -2168,13 +2531,21 @@ pub struct NewFloatingIp {
     pub family: AddressFamily,
 }
 
-/// Cluster-level system keys. Phase 0 has exactly one
-/// (`SystemKey::JwtSigning`); future entries will include the
-/// transit-engine master key and any per-silo OIDC client secrets.
+/// Cluster-level system keys. Phase 0 ships two: the JWT signing
+/// key, and the per-deployment HMAC key used to stamp tritond
+/// identity into managed-zone metadata. Future entries will include
+/// the transit-engine master key and any per-silo OIDC client
+/// secrets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SystemKey {
     /// 32-byte HS256 secret used to sign and validate operator JWTs.
     JwtSigning,
+    /// 32-byte HMAC-SHA256 secret used to sign the
+    /// `(instance_id, tenant_id, project_id)` triple stamped into
+    /// SmartOS `internal_metadata` for managed zones, and to verify
+    /// that triple in CN status reports.
+    IdentityHmac,
 }
 
 impl SystemKey {
@@ -2182,6 +2553,7 @@ impl SystemKey {
     pub fn tag(self) -> &'static str {
         match self {
             SystemKey::JwtSigning => "jwt_signing",
+            SystemKey::IdentityHmac => "identity_hmac",
         }
     }
 }
@@ -2340,6 +2712,154 @@ impl From<Cn> for CnView {
     }
 }
 
+// ---------------------------------------------------------------------
+// Per-VM status report types
+// ---------------------------------------------------------------------
+
+/// Lifecycle states a SmartOS zone may be in, as reported by `vmadm`.
+///
+/// `Unknown` catches any vmadm state we haven't enumerated (forward
+/// compatibility per type-safety rule #5). Phase 0 only acts on
+/// `Running`, `Stopped`, and `Destroyed`; other states surface in
+/// the operator view but do not feed reconciliation rules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum VmState {
+    Running,
+    Stopped,
+    Provisioning,
+    Receiving,
+    Sending,
+    Configured,
+    Incomplete,
+    Failed,
+    /// vmadm uses both `installed` (zone is configured but not booted)
+    /// and `installed`-as-init in different paths. We treat it as
+    /// equivalent to Stopped for reconciliation.
+    Installed,
+    /// `vmadm destroy` ran. The zone is gone but vmadm may still report
+    /// it briefly during the reap window.
+    Destroyed,
+    #[serde(other)]
+    Unknown,
+}
+
+/// One NIC as reported by `vmadm lookup`. Used by the discovery
+/// classifier to populate `LegacyVm.nics` and by the (deferred)
+/// adoption flow's IP-collision pre-flight.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct VmNicReport {
+    /// Guest MAC, lowercase colon-separated.
+    #[serde(default)]
+    pub mac: Option<String>,
+    /// Primary IPv4 in the zone. May be DHCP-assigned, set by the
+    /// guest, or static via vmadm; we record it as-is.
+    #[serde(default)]
+    pub ip: Option<IpAddr>,
+    /// SmartOS NIC tag the link rides on (e.g. `admin`, `external`,
+    /// or a proteus link tag for managed VPCs). Required to
+    /// classify legacy fabric vs managed-by-proteus.
+    #[serde(default)]
+    pub nic_tag: Option<String>,
+    /// VLAN id when the NIC is on a tagged tag. Optional.
+    #[serde(default)]
+    pub vlan_id: Option<u16>,
+    /// Gateway address advertised to the guest (DHCP / cloud-init).
+    /// Optional.
+    #[serde(default)]
+    pub gateway: Option<IpAddr>,
+    /// `true` if this is the zone's primary NIC.
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// One VM as reported by tritonagent's status collector.
+///
+/// Mirrors the per-VM object inside `Cn.last_status["vms"][uuid]`.
+/// All fields are optional except `uuid` because vmadm fields can
+/// be missing on partially-configured zones, and missing fields
+/// must not abort the parse for the rest of the inventory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct VmReport {
+    /// SmartOS zone uuid (== tritond `Instance::id` for managed zones).
+    pub uuid: Uuid,
+    #[serde(default)]
+    pub brand: Option<String>,
+    #[serde(default)]
+    pub state: Option<VmState>,
+    #[serde(default)]
+    pub zone_state: Option<String>,
+    #[serde(default)]
+    pub max_physical_memory: Option<u64>,
+    #[serde(default)]
+    pub quota: Option<u64>,
+    #[serde(default)]
+    pub cpu_cap: Option<u32>,
+    /// Legacy SmartOS `owner_uuid`. Distinct from tritond
+    /// `tenant_id`/`project_id`; preserved on the report so a legacy
+    /// VM can be filtered by its operator-assigned owner.
+    #[serde(default)]
+    pub owner_uuid: Option<Uuid>,
+    /// ISO-8601 string from vmadm. Kept as a string because vmadm's
+    /// timezone handling has historically varied across SmartOS
+    /// platform images and we don't want a parse failure to drop the
+    /// whole VM from the report.
+    #[serde(default)]
+    pub last_modified: Option<String>,
+    /// Full `internal_metadata` map. The classifier reads the
+    /// `tritond:*` identity keys out of this. Other keys (legacy
+    /// `tritond.image_sha256`, `cloudinit_datasource`, etc.) are
+    /// preserved opaquely.
+    #[serde(default)]
+    pub internal_metadata: BTreeMap<String, String>,
+    #[serde(default)]
+    pub nics: Vec<VmNicReport>,
+}
+
+impl VmReport {
+    /// Return the four `tritond:*` identity fields if all four are
+    /// present in `internal_metadata` and parseable. Returns `None`
+    /// if any field is missing, malformed, or the HMAC string is
+    /// empty -- the classifier treats that as "no managed identity"
+    /// (i.e. legacy / unmanaged), not as a tampered record.
+    #[must_use]
+    pub fn extract_managed_identity(&self) -> Option<ManagedIdentity> {
+        let instance_id = self.internal_metadata.get(TRITOND_METADATA_INSTANCE_ID)?;
+        let tenant_id = self.internal_metadata.get(TRITOND_METADATA_TENANT_ID)?;
+        let project_id = self.internal_metadata.get(TRITOND_METADATA_PROJECT_ID)?;
+        let identity_hmac = self.internal_metadata.get(TRITOND_METADATA_IDENTITY_HMAC)?;
+        if identity_hmac.is_empty() {
+            return None;
+        }
+        Some(ManagedIdentity {
+            instance_id: Uuid::parse_str(instance_id).ok()?,
+            tenant_id: Uuid::parse_str(tenant_id).ok()?,
+            project_id: Uuid::parse_str(project_id).ok()?,
+            identity_hmac: identity_hmac.clone(),
+        })
+    }
+}
+
+/// Parse the `vms` section of a [`Cn::last_status`] payload into a
+/// list of typed [`VmReport`]. The status payload is shaped as
+/// `{ "vms": { "<uuid>": { ... } }, "zpools": ..., ... }` per the
+/// legacy reporter convention.
+///
+/// Per-VM parse errors are silently dropped: a single malformed VM
+/// must not erase the rest of a CN's inventory from the operator
+/// view. Returns an empty Vec when the input has no `vms` key or
+/// when the entire blob is malformed.
+#[must_use]
+pub fn parse_vm_reports(status: &serde_json::Value) -> Vec<VmReport> {
+    let Some(vms) = status.get("vms").and_then(|v| v.as_object()) else {
+        return Vec::new();
+    };
+    vms.values()
+        .filter_map(|v| serde_json::from_value::<VmReport>(v.clone()).ok())
+        .collect()
+}
+
 /// Auto-approve window: while open, new Pending CN registrations are
 /// promoted to Approved without operator action. Bounded by both wall
 /// time (`expires_at`) and a remaining-count budget so an operator
@@ -2428,6 +2948,305 @@ pub fn generate_poll_token<R: rand::Rng + ?Sized>(rng: &mut R) -> String {
         hex.push_str(&format!("{b:02x}"));
     }
     hex
+}
+
+// ---------------------------------------------------------------------
+// Legacy VMs (zones discovered on a CN that aren't tritond-managed)
+// ---------------------------------------------------------------------
+
+/// Whether a [`LegacyVm`] is eligible for adoption into a tritond
+/// tenant/project. Phase B leaves every legacy VM as `Unevaluated`;
+/// the (deferred) Phase D adoption flow promotes to `Yes` after
+/// brand + NIC compatibility checks, or `No(reason)` when the zone
+/// can't be rewritten onto the proteus dataplane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum AdoptableState {
+    /// Adoption has not yet been evaluated for this zone.
+    Unevaluated,
+    /// Zone can be adopted: brand + NIC layout are compatible with
+    /// a tritond VPC + proteus port.
+    Yes,
+    /// Zone cannot be adopted; reason is operator-readable.
+    No { reason: String },
+}
+
+/// Per-NIC layout for a [`LegacyVm`]. Distinct from [`Nic`] (the
+/// tritond-managed NIC type) because legacy zones may carry
+/// non-tritond NIC tags (`admin`, `external`, customer VLAN tags),
+/// and the IP may have come from DHCP rather than a tritond subnet
+/// allocation. Mirrors the per-NIC fields the Phase D adoption flow's
+/// pre-flight needs (IP-collision check, network-rewrite preview).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LegacyNic {
+    #[serde(default)]
+    pub mac: Option<String>,
+    #[serde(default)]
+    pub ip: Option<IpAddr>,
+    #[serde(default)]
+    pub nic_tag: Option<String>,
+    #[serde(default)]
+    pub vlan_id: Option<u16>,
+    #[serde(default)]
+    pub gateway: Option<IpAddr>,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+impl From<VmNicReport> for LegacyNic {
+    fn from(r: VmNicReport) -> Self {
+        Self {
+            mac: r.mac,
+            ip: r.ip,
+            nic_tag: r.nic_tag,
+            vlan_id: r.vlan_id,
+            gateway: r.gateway,
+            primary: r.primary,
+        }
+    }
+}
+
+/// A SmartOS zone observed on a registered CN that does not carry
+/// the tritond `internal_metadata` identity tags -- i.e. it
+/// pre-existed before tritonagent was installed on the CN, or was
+/// created by an operator running `vmadm create` directly.
+///
+/// Legacy VMs live in their own FDB keyspace (`legacy_vm/...`) and
+/// are visible only to fleet-admin operators via
+/// `/v2/admin/legacy/vms`. They are NOT part of any tenant's
+/// workload tree until adopted (deferred Phase D).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LegacyVm {
+    /// SmartOS zone uuid. Stable across status reports.
+    pub smartos_uuid: Uuid,
+    /// CN currently hosting the zone. Updated by the classifier when
+    /// the same `smartos_uuid` reports from a different CN (caused by
+    /// an out-of-band `vmadm send|recv` evacuation).
+    pub host_cn_uuid: Uuid,
+    /// `vmadm`'s `owner_uuid` field (the legacy SmartOS owner).
+    /// Distinct from any tritond identity. May be the zero UUID for
+    /// system zones.
+    #[serde(default)]
+    pub legacy_owner_uuid: Option<Uuid>,
+    #[serde(default)]
+    pub brand: Option<String>,
+    #[serde(default)]
+    pub state: Option<VmState>,
+    #[serde(default)]
+    pub zone_state: Option<String>,
+    #[serde(default)]
+    pub memory_bytes: Option<u64>,
+    #[serde(default)]
+    pub quota_bytes: Option<u64>,
+    #[serde(default)]
+    pub cpu_cap: Option<u32>,
+    #[serde(default)]
+    pub last_modified: Option<String>,
+    #[serde(default)]
+    pub nics: Vec<LegacyNic>,
+    #[serde(default = "default_adoptable_state")]
+    pub adoptable: AdoptableState,
+    pub first_seen_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+fn default_adoptable_state() -> AdoptableState {
+    AdoptableState::Unevaluated
+}
+
+#[cfg(test)]
+mod vm_report_tests {
+    use super::*;
+
+    fn ids() -> (Uuid, Uuid, Uuid) {
+        (
+            Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+            Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
+            Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+        )
+    }
+
+    fn report_with_metadata(metadata: BTreeMap<String, String>) -> VmReport {
+        VmReport {
+            uuid: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+            brand: Some("joyent-minimal".to_string()),
+            state: Some(VmState::Running),
+            zone_state: Some("running".to_string()),
+            max_physical_memory: Some(512),
+            quota: Some(20),
+            cpu_cap: Some(200),
+            owner_uuid: Some(Uuid::nil()),
+            last_modified: Some("2026-05-08T10:00:00Z".to_string()),
+            internal_metadata: metadata,
+            nics: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn extract_managed_identity_returns_some_for_complete_metadata() {
+        let (i, t, p) = ids();
+        let mut md = BTreeMap::new();
+        md.insert(TRITOND_METADATA_INSTANCE_ID.to_string(), i.to_string());
+        md.insert(TRITOND_METADATA_TENANT_ID.to_string(), t.to_string());
+        md.insert(TRITOND_METADATA_PROJECT_ID.to_string(), p.to_string());
+        md.insert(
+            TRITOND_METADATA_IDENTITY_HMAC.to_string(),
+            "deadbeef".to_string(),
+        );
+        let report = report_with_metadata(md);
+        let identity = report.extract_managed_identity().expect("identity present");
+        assert_eq!(identity.instance_id, i);
+        assert_eq!(identity.tenant_id, t);
+        assert_eq!(identity.project_id, p);
+        assert_eq!(identity.identity_hmac, "deadbeef");
+    }
+
+    #[test]
+    fn extract_managed_identity_returns_none_when_any_key_is_missing() {
+        let (i, t, p) = ids();
+        for omit in [
+            TRITOND_METADATA_INSTANCE_ID,
+            TRITOND_METADATA_TENANT_ID,
+            TRITOND_METADATA_PROJECT_ID,
+            TRITOND_METADATA_IDENTITY_HMAC,
+        ] {
+            let mut md = BTreeMap::new();
+            md.insert(TRITOND_METADATA_INSTANCE_ID.to_string(), i.to_string());
+            md.insert(TRITOND_METADATA_TENANT_ID.to_string(), t.to_string());
+            md.insert(TRITOND_METADATA_PROJECT_ID.to_string(), p.to_string());
+            md.insert(
+                TRITOND_METADATA_IDENTITY_HMAC.to_string(),
+                "abc".to_string(),
+            );
+            md.remove(omit);
+            assert!(
+                report_with_metadata(md)
+                    .extract_managed_identity()
+                    .is_none(),
+                "expected None when {omit} is missing",
+            );
+        }
+    }
+
+    #[test]
+    fn extract_managed_identity_returns_none_for_unparseable_uuid() {
+        let mut md = BTreeMap::new();
+        md.insert(
+            TRITOND_METADATA_INSTANCE_ID.to_string(),
+            "not-a-uuid".to_string(),
+        );
+        md.insert(
+            TRITOND_METADATA_TENANT_ID.to_string(),
+            Uuid::nil().to_string(),
+        );
+        md.insert(
+            TRITOND_METADATA_PROJECT_ID.to_string(),
+            Uuid::nil().to_string(),
+        );
+        md.insert(
+            TRITOND_METADATA_IDENTITY_HMAC.to_string(),
+            "abc".to_string(),
+        );
+        assert!(
+            report_with_metadata(md)
+                .extract_managed_identity()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn extract_managed_identity_returns_none_for_empty_hmac() {
+        let (i, t, p) = ids();
+        let mut md = BTreeMap::new();
+        md.insert(TRITOND_METADATA_INSTANCE_ID.to_string(), i.to_string());
+        md.insert(TRITOND_METADATA_TENANT_ID.to_string(), t.to_string());
+        md.insert(TRITOND_METADATA_PROJECT_ID.to_string(), p.to_string());
+        md.insert(TRITOND_METADATA_IDENTITY_HMAC.to_string(), String::new());
+        assert!(
+            report_with_metadata(md)
+                .extract_managed_identity()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn parse_vm_reports_returns_empty_vec_for_blob_without_vms_key() {
+        assert!(parse_vm_reports(&serde_json::json!({})).is_empty());
+        assert!(parse_vm_reports(&serde_json::json!({"timestamp": "..."})).is_empty());
+    }
+
+    #[test]
+    fn parse_vm_reports_skips_unparseable_per_vm_entries_but_keeps_rest() {
+        let blob = serde_json::json!({
+            "vms": {
+                "11111111-1111-1111-1111-111111111111": {
+                    "uuid": "11111111-1111-1111-1111-111111111111",
+                    "brand": "joyent-minimal",
+                    "state": "running",
+                },
+                // Malformed entry: not an object.
+                "22222222-2222-2222-2222-222222222222": "garbage",
+                "33333333-3333-3333-3333-333333333333": {
+                    "uuid": "33333333-3333-3333-3333-333333333333",
+                    "brand": "bhyve",
+                    "state": "stopped",
+                },
+            }
+        });
+        let reports = parse_vm_reports(&blob);
+        assert_eq!(reports.len(), 2);
+        let states: Vec<_> = reports.iter().filter_map(|r| r.state).collect();
+        assert!(states.contains(&VmState::Running));
+        assert!(states.contains(&VmState::Stopped));
+    }
+
+    #[test]
+    fn vm_state_unknown_catches_unrecognized_values() {
+        // Forward-compat invariant per type-safety rule #5: an unknown
+        // wire value does not abort the parse.
+        let blob = serde_json::json!({
+            "vms": {
+                "11111111-1111-1111-1111-111111111111": {
+                    "uuid": "11111111-1111-1111-1111-111111111111",
+                    "state": "some-future-state",
+                }
+            }
+        });
+        let reports = parse_vm_reports(&blob);
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].state, Some(VmState::Unknown));
+    }
+
+    #[test]
+    fn parse_vm_reports_populates_internal_metadata_and_nics() {
+        let blob = serde_json::json!({
+            "vms": {
+                "11111111-1111-1111-1111-111111111111": {
+                    "uuid": "11111111-1111-1111-1111-111111111111",
+                    "internal_metadata": {
+                        "tritond:instance_id": "11111111-1111-1111-1111-111111111111",
+                        "tritond:tenant_id": "22222222-2222-2222-2222-222222222222",
+                    },
+                    "nics": [
+                        {
+                            "mac": "02:00:00:de:ad:01",
+                            "ip": "10.199.199.77",
+                            "nic_tag": "admin",
+                            "primary": true,
+                        }
+                    ],
+                }
+            }
+        });
+        let reports = parse_vm_reports(&blob);
+        assert_eq!(reports.len(), 1);
+        let r = &reports[0];
+        assert_eq!(r.internal_metadata.len(), 2);
+        assert_eq!(r.nics.len(), 1);
+        assert_eq!(r.nics[0].nic_tag.as_deref(), Some("admin"));
+        assert!(r.nics[0].primary);
+    }
 }
 
 #[cfg(test)]
@@ -2749,9 +3568,7 @@ impl RealizedNetworkState {
 /// (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a
 /// surface's endpoint family on a cluster registered under a
 /// different surface returns a `409 Conflict`.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum StorageClusterSurface {
@@ -2781,9 +3598,7 @@ impl StorageClusterSurface {
 ///
 /// Populated by the `/v2/storage/clusters/{id}/health` endpoint, which
 /// runs a probe against the cluster's `/admin/v1/cluster` summary.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Default,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum StorageClusterStatus {

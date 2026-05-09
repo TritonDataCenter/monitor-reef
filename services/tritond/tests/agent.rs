@@ -54,6 +54,7 @@ impl TestServer {
                 .await
                 .unwrap(),
             is_root: true,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
@@ -353,6 +354,7 @@ async fn create_instance_with_primary_nic(test: &TestServer, silo_name: &str) ->
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
                 extra_nics: Vec::new(),
+                mac: None,
             },
         )
         .await
@@ -451,6 +453,7 @@ fn client_instance_req(name: &str, image_id: Uuid, subnet_id: Uuid) -> ClientNew
         cpu: 1,
         memory_bytes: 256 * 1024 * 1024,
         extra_nics: Vec::new(),
+        mac: None,
     }
 }
 
@@ -1236,6 +1239,7 @@ async fn provision_job_drives_lifecycle_pending_to_running() {
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
                 extra_nics: Vec::new(),
+                mac: None,
             },
         )
         .await
@@ -1322,6 +1326,7 @@ async fn sweeper_reaps_stale_inprogress_job() {
             .await
             .unwrap(),
         is_root: true,
+        fleet_admin: false,
         created_at: Utc::now(),
         tenant_id: None,
         federation: None,
@@ -1480,6 +1485,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
                 extra_nics: Vec::new(),
+                mac: None,
             },
         )
         .await
@@ -1664,6 +1670,7 @@ async fn provision_job_failed_outcome_lands_in_failed_state() {
                 cpu: 1,
                 memory_bytes: 256 * 1024 * 1024,
                 extra_nics: Vec::new(),
+                mac: None,
             },
         )
         .await

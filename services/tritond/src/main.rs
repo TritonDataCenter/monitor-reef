@@ -23,6 +23,11 @@
 //!   stale-claim sweeper. Default 60.
 //! * `TRITOND_STALE_CLAIM_THRESHOLD_SECS` — how old a claim
 //!   must be before the sweeper reaps it. Default 600 (10 min).
+//! * `TRITOND_DHCP_RECONCILE_INTERVAL_SECS` — cadence for the
+//!   γ.3 DHCP lease reconciler. Default 300 (5 min).
+//! * `TRITOND_DHCP_LEASE_GC_THRESHOLD_SECS` — minimum
+//!   `now - last_activity` before a lease is GC-eligible.
+//!   Default 604_800 (7 days).
 //!
 //! Startup runs [`tritond::bootstrap::ensure`] which mints the JWT
 //! signing key and the root operator on first run, then loads them on
@@ -38,7 +43,8 @@ use tracing::info;
 use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::{
-    ApiContext, DEFAULT_BIND_ADDRESS, SweeperConfig, VERSION, bootstrap, start_server_with_context,
+    ApiContext, DEFAULT_BIND_ADDRESS, SweeperConfig, VERSION, bootstrap, dhcp_reconciler,
+    start_server_with_context,
 };
 use tritond_audit::{Chain, MemChain};
 use tritond_store::{MemStore, Store};
@@ -87,12 +93,13 @@ async fn serve() -> Result<()> {
         std::env::var("TRITOND_BIND_ADDRESS").unwrap_or_else(|_| DEFAULT_BIND_ADDRESS.to_string());
 
     let (store, audit_chain) = build_store_and_audit(None)?;
-    let jwt_key = bootstrap::ensure(store.as_ref())
+    let (jwt_key, identity_hmac_key) = bootstrap::ensure(store.as_ref())
         .await
         .context("first-run bootstrap")?;
     let auth = Arc::new(AuthService::new(jwt_key).context("build auth service")?);
     let audit = Arc::new(AuditService::new(audit_chain));
-    let mut context = ApiContext::new(store, auth, audit);
+    let mut context =
+        ApiContext::new(store, auth, audit).with_identity_hmac_key(Arc::new(identity_hmac_key));
     if env_flag("TRITOND_DISABLE_INPROCESS_PROVISIONER") {
         info!("disabling in-process stub provisioner; expecting external tritonagent");
         context = context.without_in_process_provisioner();
@@ -109,6 +116,20 @@ async fn serve() -> Result<()> {
     context = context.with_sweeper(SweeperConfig {
         interval: sweeper_interval,
         stale_after,
+    });
+
+    let dhcp_reconcile_interval = env_secs("TRITOND_DHCP_RECONCILE_INTERVAL_SECS")
+        .unwrap_or(dhcp_reconciler::DEFAULT_RECONCILE_INTERVAL);
+    let dhcp_gc_threshold = env_secs("TRITOND_DHCP_LEASE_GC_THRESHOLD_SECS")
+        .unwrap_or(dhcp_reconciler::DEFAULT_LEASE_GC_THRESHOLD);
+    info!(
+        dhcp_reconcile_interval_secs = dhcp_reconcile_interval.as_secs(),
+        dhcp_gc_threshold_secs = dhcp_gc_threshold.as_secs(),
+        "enabling dhcp lease reconciler",
+    );
+    context = context.with_dhcp_reconciler(dhcp_reconciler::ReconcilerConfig {
+        interval: dhcp_reconcile_interval,
+        gc_threshold: dhcp_gc_threshold,
     });
 
     info!(version = VERSION, %bind_address, "tritond starting");

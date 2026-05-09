@@ -21,16 +21,18 @@ use uuid::Uuid;
 
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
-    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, Disk, DiskKind,
-    EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
-    FloatingIp, FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceCreateResult,
-    JobOutcome, JobStatus, JobStatusKind, LifecycleState, LifecycleStateKind, NatGateway,
-    NetworkResourceId, NewEdgeCluster, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway,
-    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
-    Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Store, StoreError, Subnet,
-    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, DhcpLease,
+    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp,
+    FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceCreateResult, JobOutcome,
+    JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway,
+    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule,
+    NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
+    NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo,
+    SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
+    generate_poll_token,
 };
 #[cfg(test)]
 use crate::{ApiKeyScope, BHYVE_M1_MIN_BOOT_DISK_BYTES, ImageCompatibility, NewInstanceNic};
@@ -147,6 +149,20 @@ struct Inner {
     /// `(route_table_id, canonical destination)` → route_id index for
     /// per-table destination uniqueness.
     route_id_by_table_destination: HashMap<(Uuid, IpNetwork), Uuid>,
+    /// Slice 1 firewall rules, scoped per-VPC.
+    firewall_rules_by_id: HashMap<Uuid, FirewallRule>,
+    /// `(vpc_id, name)` → firewall_rule_id index for within-VPC name
+    /// uniqueness.
+    firewall_rule_id_by_vpc_name: HashMap<(Uuid, String), Uuid>,
+    /// `vpc_id` → ordered list of firewall rule ids (insertion order).
+    firewall_rule_ids_by_vpc: HashMap<Uuid, Vec<Uuid>>,
+    /// γ.1 DHCP — per-VPC pool config (singleton per VPC).
+    dhcp_pools_by_vpc: HashMap<Uuid, DhcpPool>,
+    /// γ.1 DHCP — `(vpc_id, normalised_mac)` → reservation. MAC stored
+    /// in canonical lowercase colon form.
+    dhcp_reservations: HashMap<(Uuid, String), DhcpReservation>,
+    /// γ.4 DHCP — `(vpc_id, normalised_mac)` → active lease.
+    dhcp_leases: HashMap<(Uuid, String), DhcpLease>,
     nat_gateways_by_id: HashMap<Uuid, NatGatewayRecord>,
     /// `(vpc_id, name)` → nat_gateway_id index for within-VPC name
     /// uniqueness.
@@ -219,6 +235,15 @@ struct Inner {
     cn_server_uuid_by_poll_token: HashMap<String, Uuid>,
     /// Singleton auto-approve window. `None` when closed.
     auto_approve_window: Option<AutoApproveWindow>,
+    /// Legacy (non-tritond-managed) zones discovered on a CN, keyed
+    /// by SmartOS zone uuid. Populated by the classifier when a
+    /// status report shows a zone with no `tritond:*` identity tags.
+    legacy_vms_by_smartos_uuid: HashMap<Uuid, LegacyVm>,
+    /// `host_cn_uuid` → set of SmartOS zone uuids hosted there. The
+    /// reverse index maintained alongside
+    /// [`Self::legacy_vms_by_smartos_uuid`] so per-CN listing is O(k)
+    /// in the count of zones, not O(N) over the full fleet.
+    legacy_vm_smartos_uuids_by_cn: HashMap<Uuid, HashSet<Uuid>>,
     /// Per-`(resource, realizer)` realization rows. Mirrors the FDB
     /// `network_realization/<kind>/<id>/<realizer_kind>/<realizer_id>`
     /// keyspace. Written by [`Store::record_network_realization`];
@@ -2134,14 +2159,54 @@ impl Store for MemStore {
             )));
         }
 
+        // Resolve the primary NIC's MAC up-front: operator-supplied
+        // (γ.2 sticky-by-MAC entry point) or auto-generated. Doing
+        // this before allocation lets us consult reservations/leases
+        // for that MAC and prefer the sticky IP when free.
+        let mut rng = rand::rng();
+        let primary_mac: String = match req.mac.as_deref() {
+            Some(s) => crate::types::canonical_mac(s)?,
+            None => crate::types::generate_mac(&mut rng),
+        };
+        // Reject MAC collisions against any existing NIC; reuse
+        // would break per-frame `(vni, guest_mac) → port_id` lookup
+        // in the dataplane.
+        if guard.nics_by_id.values().any(|n| n.mac == primary_mac) {
+            return Err(StoreError::Conflict(format!(
+                "mac {primary_mac} already in use by another nic"
+            )));
+        }
+
+        // γ.2 sticky preference: a reservation pins the IP outright;
+        // a prior lease for the same MAC re-binds the previous IP
+        // when free (operator destroyed an instance and recreates
+        // with the same explicit MAC). Both fall back gracefully to
+        // the linear allocator when the candidate is unavailable.
+        let sticky_v4: Option<Ipv4Addr> = guard
+            .dhcp_reservations
+            .get(&(subnet.vpc_id, primary_mac.clone()))
+            .map(|r| r.ipv4)
+            .or_else(|| {
+                guard
+                    .dhcp_leases
+                    .get(&(subnet.vpc_id, primary_mac.clone()))
+                    .map(|l| l.ipv4)
+            });
+
         // Allocate the primary NIC's addresses. Each family is
         // allocated only when the parent subnet has it.
+        //
+        // γ.4: a `DhcpLease` record is written below per NIC that
+        // gets an IPv4 so the operator-visible IPAM surface stays
+        // accurate and the renewal-event consumer (δ slice) has
+        // somewhere to update `last_renewed_at`.
         let allocated_v4 = guard.allocated_ipv4_by_subnet.entry(subnet.id).or_default();
         let primary_ipv4 = match subnet.ipv4_block {
             Some(cidr) => {
-                let ip = crate::types::allocate_ipv4(cidr, allocated_v4).ok_or_else(|| {
-                    StoreError::Backend(format!("subnet {} ipv4 pool exhausted", subnet.id))
-                })?;
+                let ip = crate::types::allocate_ipv4_sticky(cidr, allocated_v4, sticky_v4)
+                    .ok_or_else(|| {
+                        StoreError::Backend(format!("subnet {} ipv4 pool exhausted", subnet.id))
+                    })?;
                 allocated_v4.insert(ip);
                 Some(ip)
             }
@@ -2161,7 +2226,6 @@ impl Store for MemStore {
 
         let now = Utc::now();
         let instance_id = Uuid::new_v4();
-        let mut rng = rand::rng();
         let nic = Nic {
             id: Uuid::new_v4(),
             tenant_id,
@@ -2170,7 +2234,7 @@ impl Store for MemStore {
             vpc_id: subnet.vpc_id,
             subnet_id: subnet.id,
             name: "primary".to_string(),
-            mac: crate::types::generate_mac(&mut rng),
+            mac: primary_mac,
             primary_ipv4,
             primary_ipv6,
             created_at: now,
@@ -2280,6 +2344,32 @@ impl Store for MemStore {
         guard.instances_by_id.insert(instance.id, instance.clone());
         for n in &nic_records {
             guard.nics_by_id.insert(n.id, n.clone());
+
+            // γ.4: write a DhcpLease record per NIC that got an IPv4
+            // so the operator-visible IPAM surface reflects the
+            // assignment. Sticky-by-MAC enforcement (γ.2) layers on
+            // top of these records later. MAC normalisation is
+            // tolerant of generate_mac()'s output (already canonical
+            // colon form), so the canonical_mac() call below is a
+            // belt-and-braces validation.
+            if let Some(ipv4) = n.primary_ipv4
+                && let Ok(mac) = crate::types::canonical_mac(&n.mac)
+            {
+                let lease = DhcpLease {
+                    vpc_id: n.vpc_id,
+                    mac,
+                    ipv4,
+                    instance_id: instance.id,
+                    nic_id: n.id,
+                    last_msg_type: None,
+                    last_xid: None,
+                    last_renewed_at: None,
+                    created_at: now,
+                };
+                guard
+                    .dhcp_leases
+                    .insert((lease.vpc_id, lease.mac.clone()), lease);
+            }
         }
         guard.disks_by_id.insert(boot_disk.id, boot_disk.clone());
         Ok(InstanceCreateResult {
@@ -3074,6 +3164,86 @@ impl Store for MemStore {
         Ok(())
     }
 
+    async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let smartos_uuid = legacy_vm.smartos_uuid;
+        let new_host = legacy_vm.host_cn_uuid;
+
+        // Maintain the per-CN reverse index. If the zone moved
+        // between CNs (e.g. external `vmadm send|recv`), drop the
+        // old mapping before installing the new one.
+        if let Some(existing) = guard.legacy_vms_by_smartos_uuid.get(&smartos_uuid) {
+            let old_host = existing.host_cn_uuid;
+            if old_host != new_host
+                && let Some(set) = guard.legacy_vm_smartos_uuids_by_cn.get_mut(&old_host)
+            {
+                set.remove(&smartos_uuid);
+                if set.is_empty() {
+                    guard.legacy_vm_smartos_uuids_by_cn.remove(&old_host);
+                }
+            }
+        }
+        guard
+            .legacy_vm_smartos_uuids_by_cn
+            .entry(new_host)
+            .or_default()
+            .insert(smartos_uuid);
+        guard
+            .legacy_vms_by_smartos_uuid
+            .insert(smartos_uuid, legacy_vm);
+        Ok(())
+    }
+
+    async fn get_legacy_vm(&self, smartos_uuid: Uuid) -> Result<LegacyVm, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .legacy_vms_by_smartos_uuid
+            .get(&smartos_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_legacy_vms(&self) -> Result<Vec<LegacyVm>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut out: Vec<LegacyVm> = guard.legacy_vms_by_smartos_uuid.values().cloned().collect();
+        out.sort_by_key(|v| v.smartos_uuid);
+        Ok(out)
+    }
+
+    async fn list_legacy_vms_for_cn(
+        &self,
+        host_cn_uuid: Uuid,
+    ) -> Result<Vec<LegacyVm>, StoreError> {
+        let guard = self.inner.read().await;
+        let Some(uuids) = guard.legacy_vm_smartos_uuids_by_cn.get(&host_cn_uuid) else {
+            return Ok(Vec::new());
+        };
+        let mut out: Vec<LegacyVm> = uuids
+            .iter()
+            .filter_map(|u| guard.legacy_vms_by_smartos_uuid.get(u).cloned())
+            .collect();
+        out.sort_by_key(|v| v.smartos_uuid);
+        Ok(out)
+    }
+
+    async fn delete_legacy_vm(&self, smartos_uuid: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        if let Some(removed) = guard.legacy_vms_by_smartos_uuid.remove(&smartos_uuid)
+            && let Some(set) = guard
+                .legacy_vm_smartos_uuids_by_cn
+                .get_mut(&removed.host_cn_uuid)
+        {
+            set.remove(&smartos_uuid);
+            if set.is_empty() {
+                guard
+                    .legacy_vm_smartos_uuids_by_cn
+                    .remove(&removed.host_cn_uuid);
+            }
+        }
+        // Idempotent: missing record is not an error.
+        Ok(())
+    }
+
     async fn get_auto_approve_window(&self) -> Result<Option<AutoApproveWindow>, StoreError> {
         let guard = self.inner.read().await;
         Ok(guard.auto_approve_window.clone())
@@ -3141,6 +3311,342 @@ impl Store for MemStore {
         let inner = self.inner.read().await;
         Ok(realization_rows(&inner.network_realizations, resource))
     }
+
+    // ----- Firewall rules (Slice 1) ----------------------------------
+
+    async fn create_firewall_rule(
+        &self,
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        req: NewFirewallRule,
+    ) -> Result<FirewallRule, StoreError> {
+        validate_new_firewall_rule(&req)?;
+
+        let mut guard = self.inner.write().await;
+
+        let vpc = guard
+            .vpcs_by_id
+            .get(&vpc_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+            return Err(StoreError::NotFound);
+        }
+
+        // Source / destination CIDR families must be present on the VPC.
+        for cidr in [req.source_cidr, req.destination_cidr]
+            .into_iter()
+            .flatten()
+        {
+            let canonical = crate::types::canonical_ip_network(cidr);
+            if !crate::types::route_destination_family_present(&vpc, canonical) {
+                return Err(StoreError::Conflict(format!(
+                    "firewall rule cidr {canonical} uses an address family not present on vpc {vpc_id}"
+                )));
+            }
+        }
+
+        let key = (vpc_id, req.name.clone());
+        if guard.firewall_rule_id_by_vpc_name.contains_key(&key) {
+            return Err(StoreError::Conflict(format!(
+                "firewall rule named {:?} already exists in vpc {vpc_id}",
+                req.name
+            )));
+        }
+
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        let rule = FirewallRule {
+            id,
+            tenant_id,
+            project_id,
+            vpc_id,
+            name: req.name.clone(),
+            description: req.description.unwrap_or_default(),
+            priority: req.priority,
+            direction: req.direction,
+            action: req.action,
+            protocol: req.protocol,
+            source_cidr: req.source_cidr.map(crate::types::canonical_ip_network),
+            destination_cidr: req.destination_cidr.map(crate::types::canonical_ip_network),
+            source_ports: req.source_ports,
+            destination_ports: req.destination_ports,
+            icmp_type_code: req.icmp_type_code,
+            created_at: now,
+        };
+
+        guard.firewall_rule_id_by_vpc_name.insert(key, id);
+        guard
+            .firewall_rule_ids_by_vpc
+            .entry(vpc_id)
+            .or_default()
+            .push(id);
+        guard.firewall_rules_by_id.insert(id, rule.clone());
+        Ok(rule)
+    }
+
+    async fn get_firewall_rule(&self, rule_id: Uuid) -> Result<FirewallRule, StoreError> {
+        let inner = self.inner.read().await;
+        inner
+            .firewall_rules_by_id
+            .get(&rule_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_firewall_rules_in_vpc(
+        &self,
+        vpc_id: Uuid,
+    ) -> Result<Vec<FirewallRule>, StoreError> {
+        let inner = self.inner.read().await;
+        let mut rules: Vec<FirewallRule> = inner
+            .firewall_rule_ids_by_vpc
+            .get(&vpc_id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| inner.firewall_rules_by_id.get(id).cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        // Highest priority first, then oldest first as a stable tie-break.
+        rules.sort_by(|a, b| {
+            b.priority
+                .cmp(&a.priority)
+                .then_with(|| a.created_at.cmp(&b.created_at))
+        });
+        Ok(rules)
+    }
+
+    async fn list_silos(&self) -> Result<Vec<Silo>, StoreError> {
+        let inner = self.inner.read().await;
+        let mut out: Vec<Silo> = inner.silos_by_id.values().cloned().collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    // ----- DHCP / IPAM (γ.1 + γ.4) ------------------------------------
+
+    async fn get_dhcp_pool(&self, vpc_id: Uuid) -> Result<Option<DhcpPool>, StoreError> {
+        let inner = self.inner.read().await;
+        Ok(inner.dhcp_pools_by_vpc.get(&vpc_id).cloned())
+    }
+
+    async fn set_dhcp_pool(&self, vpc_id: Uuid, req: NewDhcpPool) -> Result<DhcpPool, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.vpcs_by_id.contains_key(&vpc_id) {
+            return Err(StoreError::NotFound);
+        }
+        let now = Utc::now();
+        let created_at = guard
+            .dhcp_pools_by_vpc
+            .get(&vpc_id)
+            .map(|p| p.created_at)
+            .unwrap_or(now);
+        let pool = DhcpPool {
+            vpc_id,
+            lease_seconds_default: req.lease_seconds_default,
+            excluded_ipv4: req.excluded_ipv4,
+            additional_options: req.additional_options,
+            created_at,
+            updated_at: now,
+        };
+        guard.dhcp_pools_by_vpc.insert(vpc_id, pool.clone());
+        Ok(pool)
+    }
+
+    async fn clear_dhcp_pool(&self, vpc_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard
+            .dhcp_pools_by_vpc
+            .remove(&vpc_id)
+            .map(|_| ())
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_dhcp_reservations(
+        &self,
+        vpc_id: Uuid,
+    ) -> Result<Vec<DhcpReservation>, StoreError> {
+        let inner = self.inner.read().await;
+        let mut out: Vec<DhcpReservation> = inner
+            .dhcp_reservations
+            .iter()
+            .filter(|((vid, _), _)| *vid == vpc_id)
+            .map(|(_, r)| r.clone())
+            .collect();
+        out.sort_by(|a, b| a.mac.cmp(&b.mac));
+        Ok(out)
+    }
+
+    async fn create_dhcp_reservation(
+        &self,
+        vpc_id: Uuid,
+        req: NewDhcpReservation,
+    ) -> Result<DhcpReservation, StoreError> {
+        let mac = crate::types::canonical_mac(&req.mac)?;
+        let mut guard = self.inner.write().await;
+        let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
+        // Sanity: reserved IP must live inside the VPC's IPv4 block.
+        if let Some(cidr) = vpc.ipv4_block
+            && !crate::types::cidr_contains_ipv4(IpNetwork::V4(cidr), req.ipv4)
+        {
+            return Err(StoreError::Conflict(format!(
+                "reservation ipv4 {} is outside vpc ipv4 block",
+                req.ipv4
+            )));
+        }
+        let key = (vpc_id, mac.clone());
+        if let Some(existing) = guard.dhcp_reservations.get(&key)
+            && existing.ipv4 != req.ipv4
+        {
+            return Err(StoreError::Conflict(format!(
+                "mac {} already reserved with a different ipv4 ({}); delete first",
+                mac, existing.ipv4
+            )));
+        }
+        let now = Utc::now();
+        let reservation = DhcpReservation {
+            vpc_id,
+            mac: mac.clone(),
+            ipv4: req.ipv4,
+            hostname: req.hostname,
+            per_mac_options: req.per_mac_options,
+            created_at: now,
+        };
+        guard.dhcp_reservations.insert(key, reservation.clone());
+        Ok(reservation)
+    }
+
+    async fn get_dhcp_reservation(
+        &self,
+        vpc_id: Uuid,
+        mac: &str,
+    ) -> Result<DhcpReservation, StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let inner = self.inner.read().await;
+        inner
+            .dhcp_reservations
+            .get(&(vpc_id, mac))
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn delete_dhcp_reservation(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let mut guard = self.inner.write().await;
+        guard
+            .dhcp_reservations
+            .remove(&(vpc_id, mac))
+            .map(|_| ())
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_dhcp_leases(&self, vpc_id: Uuid) -> Result<Vec<DhcpLease>, StoreError> {
+        let inner = self.inner.read().await;
+        let mut out: Vec<DhcpLease> = inner
+            .dhcp_leases
+            .iter()
+            .filter(|((vid, _), _)| *vid == vpc_id)
+            .map(|(_, l)| l.clone())
+            .collect();
+        out.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(out)
+    }
+
+    async fn list_all_dhcp_leases(&self) -> Result<Vec<DhcpLease>, StoreError> {
+        let inner = self.inner.read().await;
+        let mut out: Vec<DhcpLease> = inner.dhcp_leases.values().cloned().collect();
+        out.sort_by(|a, b| {
+            a.vpc_id
+                .cmp(&b.vpc_id)
+                .then(a.created_at.cmp(&b.created_at))
+        });
+        Ok(out)
+    }
+
+    async fn get_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<DhcpLease, StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let inner = self.inner.read().await;
+        inner
+            .dhcp_leases
+            .get(&(vpc_id, mac))
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn record_dhcp_lease(&self, mut lease: DhcpLease) -> Result<DhcpLease, StoreError> {
+        lease.mac = crate::types::canonical_mac(&lease.mac)?;
+        let mut guard = self.inner.write().await;
+        guard
+            .dhcp_leases
+            .insert((lease.vpc_id, lease.mac.clone()), lease.clone());
+        Ok(lease)
+    }
+
+    async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let mut guard = self.inner.write().await;
+        guard
+            .dhcp_leases
+            .remove(&(vpc_id, mac))
+            .map(|_| ())
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn delete_firewall_rule(&self, rule_id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let rule = guard
+            .firewall_rules_by_id
+            .remove(&rule_id)
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .firewall_rule_id_by_vpc_name
+            .remove(&(rule.vpc_id, rule.name.clone()));
+        if let Some(ids) = guard.firewall_rule_ids_by_vpc.get_mut(&rule.vpc_id) {
+            ids.retain(|id| *id != rule_id);
+            if ids.is_empty() {
+                guard.firewall_rule_ids_by_vpc.remove(&rule.vpc_id);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Shared validation for both `create_firewall_rule` and any future
+/// `update_firewall_rule` slice. Centralised so the API trait, the
+/// store, and integration tests all see the same predicate.
+fn validate_new_firewall_rule(req: &NewFirewallRule) -> Result<(), StoreError> {
+    if req.name.trim().is_empty() {
+        return Err(StoreError::Conflict("firewall rule name is empty".into()));
+    }
+    if let Some(r) = req.source_ports
+        && r.low > r.high
+    {
+        return Err(StoreError::Conflict(format!(
+            "firewall rule source port range {} > {}",
+            r.low, r.high
+        )));
+    }
+    if let Some(r) = req.destination_ports
+        && r.low > r.high
+    {
+        return Err(StoreError::Conflict(format!(
+            "firewall rule destination port range {} > {}",
+            r.low, r.high
+        )));
+    }
+    if req.icmp_type_code.is_some()
+        && !matches!(
+            req.protocol,
+            FirewallProtocol::Icmp4 | FirewallProtocol::Icmp6
+        )
+    {
+        return Err(StoreError::Conflict(
+            "firewall rule sets icmp type/code on a non-ICMP protocol".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// `chrono::Duration` form of [`CLAIM_CODE_TTL`]. Hand-converted (the
@@ -3226,6 +3732,7 @@ mod tests {
             username: name.to_string(),
             password_hash: "$2y$12$dummyhash".to_string(),
             is_root: false,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
@@ -3239,6 +3746,7 @@ mod tests {
             username: format!("{subject}@{issuer}"),
             password_hash: String::new(),
             is_root: false,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: Some(tenant_id),
             federation: Some(Federation {
@@ -4927,6 +5435,7 @@ mod tests {
                 username: "alice".to_string(),
                 password_hash: "$2y$dummy".to_string(),
                 is_root: false,
+                fleet_admin: false,
                 created_at: Utc::now(),
                 tenant_id: Some(tenant_id),
                 federation: None,
@@ -5171,6 +5680,7 @@ mod tests {
             ssh_key_ids: vec![ssh_key_id],
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
+            mac: None,
             extra_nics: Vec::new(),
         }
     }
@@ -5578,6 +6088,356 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(new_nics[0].primary_ipv4, Some(original_ip));
+    }
+
+    #[tokio::test]
+    async fn create_instance_writes_dhcp_lease_record() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult { instance, nics, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("dhcp-vm", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let nic = &nics[0];
+        let vpc_id = nic.vpc_id;
+        let mac = &nic.mac;
+        let ipv4 = nic.primary_ipv4.unwrap();
+
+        // γ.4: a lease record is written automatically.
+        let lease = store.get_dhcp_lease(vpc_id, mac).await.unwrap();
+        assert_eq!(lease.vpc_id, vpc_id);
+        assert_eq!(lease.mac, *mac);
+        assert_eq!(lease.ipv4, ipv4);
+        assert_eq!(lease.instance_id, instance.id);
+        assert_eq!(lease.nic_id, nic.id);
+        assert!(lease.last_renewed_at.is_none());
+        assert!(lease.last_msg_type.is_none());
+
+        // List shows the same record.
+        let leases = store.list_dhcp_leases(vpc_id).await.unwrap();
+        assert_eq!(leases.len(), 1);
+        assert_eq!(leases[0].mac, *mac);
+
+        // Sticky-by-MAC tracking: lease persists through instance
+        // delete (γ.2 enforcement layers on top later; today we just
+        // prove the record stays put).
+        store
+            .transition_instance_lifecycle(
+                instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Stopped,
+            )
+            .await
+            .unwrap();
+        store.delete_instance(instance.id, false).await.unwrap();
+        let leases_after = store.list_dhcp_leases(vpc_id).await.unwrap();
+        assert_eq!(
+            leases_after.len(),
+            1,
+            "lease must survive instance delete (sticky-by-MAC stays in place)",
+        );
+
+        // Operator-driven release clears it.
+        store.delete_dhcp_lease(vpc_id, mac).await.unwrap();
+        let leases_final = store.list_dhcp_leases(vpc_id).await.unwrap();
+        assert!(leases_final.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_all_dhcp_leases_spans_vpcs_and_sorts_deterministically() {
+        // γ.3 reconciler relies on `list_all_dhcp_leases` returning
+        // every lease across every VPC. Build two parallel
+        // (project, vpc, subnet) chains, create one instance in
+        // each, and verify both leases come back from a single
+        // call sorted by (vpc_id, created_at).
+        let store = MemStore::new();
+        let (tenant_id_a, project_id_a, image_a, subnet_a, ssh_a) =
+            make_instance_fixture(&store).await;
+        let _ = store
+            .create_instance(
+                tenant_id_a,
+                project_id_a,
+                instance_req("alpha", image_a, subnet_a, ssh_a),
+            )
+            .await
+            .unwrap();
+
+        let (tenant_id_b, project_id_b, image_b, subnet_b, ssh_b) =
+            make_instance_fixture(&store).await;
+        let _ = store
+            .create_instance(
+                tenant_id_b,
+                project_id_b,
+                instance_req("beta", image_b, subnet_b, ssh_b),
+            )
+            .await
+            .unwrap();
+
+        let all = store.list_all_dhcp_leases().await.unwrap();
+        assert_eq!(all.len(), 2, "expected one lease per vpc, got {all:?}");
+        // Confirm the global list is sorted: vpc_id asc, then
+        // created_at asc — the reconciler relies on a stable order
+        // for deterministic logging.
+        let mut sorted = all.clone();
+        sorted.sort_by(|a, b| {
+            a.vpc_id
+                .cmp(&b.vpc_id)
+                .then(a.created_at.cmp(&b.created_at))
+        });
+        assert_eq!(all, sorted);
+    }
+
+    #[tokio::test]
+    async fn create_instance_honors_dhcp_reservation_for_explicit_mac() {
+        // γ.2 — operator pre-pins MAC→IP via reservation, then
+        // creates an instance with that explicit MAC; the IPAM
+        // allocator MUST honor the reservation and assign the
+        // pre-pinned IP regardless of where the linear allocator
+        // would otherwise land.
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+
+        // Look up the VPC ID via the subnet so we can register a
+        // reservation on it.
+        let subnet = store.get_subnet(subnet_id).await.unwrap();
+        let vpc_id = subnet.vpc_id;
+
+        // Reservation: 02:08:20:de:ad:01 → an IP we pick well above
+        // what the linear allocator would naturally hit (.50 in
+        // a /24 starts at .2).
+        let reserved_ip: std::net::Ipv4Addr = subnet.ipv4_block.unwrap().nth(50).unwrap();
+        store
+            .create_dhcp_reservation(
+                vpc_id,
+                NewDhcpReservation {
+                    mac: "02:08:20:de:ad:01".into(),
+                    ipv4: reserved_ip,
+                    hostname: Some("pinned-vm".into()),
+                    per_mac_options: vec![],
+                },
+            )
+            .await
+            .unwrap();
+
+        // Create with the matching MAC. Allocator must prefer the
+        // reservation over the linear scan.
+        let mut req = instance_req("pinned-vm", image_id, subnet_id, ssh_key_id);
+        req.mac = Some("02:08:20:DE:AD:01".into()); // mixed case to exercise canonicalisation
+        let InstanceCreateResult { nics, .. } = store
+            .create_instance(tenant_id, project_id, req)
+            .await
+            .unwrap();
+        assert_eq!(nics[0].mac, "02:08:20:de:ad:01");
+        assert_eq!(
+            nics[0].primary_ipv4,
+            Some(reserved_ip),
+            "instance should have inherited the reserved IP",
+        );
+
+        // Lease record should also reflect the reserved IP.
+        let lease = store
+            .get_dhcp_lease(vpc_id, "02:08:20:de:ad:01")
+            .await
+            .unwrap();
+        assert_eq!(lease.ipv4, reserved_ip);
+    }
+
+    #[tokio::test]
+    async fn create_instance_falls_back_when_reserved_ip_already_taken() {
+        // γ.2 — graceful fallback: another instance grabbed the
+        // reserved IP first (race or operator misconfiguration), so
+        // the new instance with the matching MAC doesn't fail —
+        // it just falls back to the linear allocator's next free
+        // slot. The reservation stays put for future cleanup.
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let subnet = store.get_subnet(subnet_id).await.unwrap();
+        let vpc_id = subnet.vpc_id;
+        let target_ip: std::net::Ipv4Addr = subnet.ipv4_block.unwrap().nth(50).unwrap();
+
+        // Set up the reservation, then take its IP via a regular
+        // (no-MAC) instance that just happens to walk the linear
+        // allocator past the gateway. We force this by advancing
+        // the linear allocator with 49 throwaway instances first
+        // — instead we simulate by directly poking the allocated
+        // set.
+        store
+            .create_dhcp_reservation(
+                vpc_id,
+                NewDhcpReservation {
+                    mac: "02:08:20:de:ad:02".into(),
+                    ipv4: target_ip,
+                    hostname: None,
+                    per_mac_options: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        // Pre-occupy the reserved IP from "outside" so we can
+        // observe the fallback. Simulates someone else grabbing
+        // it first.
+        {
+            let mut guard = store.inner.write().await;
+            guard
+                .allocated_ipv4_by_subnet
+                .entry(subnet_id)
+                .or_default()
+                .insert(target_ip);
+        }
+
+        let mut req = instance_req("collide-vm", image_id, subnet_id, ssh_key_id);
+        req.mac = Some("02:08:20:de:ad:02".into());
+        let InstanceCreateResult { nics, .. } = store
+            .create_instance(tenant_id, project_id, req)
+            .await
+            .unwrap();
+        assert_ne!(
+            nics[0].primary_ipv4.unwrap(),
+            target_ip,
+            "should have fallen back since the reserved IP was already taken",
+        );
+    }
+
+    #[tokio::test]
+    async fn create_instance_rejects_duplicate_mac() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+
+        let mut req1 = instance_req("a", image_id, subnet_id, ssh_key_id);
+        req1.mac = Some("02:08:20:11:22:33".into());
+        store
+            .create_instance(tenant_id, project_id, req1)
+            .await
+            .unwrap();
+
+        let mut req2 = instance_req("b", image_id, subnet_id, ssh_key_id);
+        req2.mac = Some("02:08:20:11:22:33".into());
+        let err = store
+            .create_instance(tenant_id, project_id, req2)
+            .await
+            .expect_err("duplicate mac");
+        assert!(
+            matches!(err, StoreError::Conflict(ref m) if m.contains("mac") && m.contains("already in use")),
+            "got {err:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn dhcp_pool_set_get_clear_round_trip() {
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = store
+            .create_vpc(
+                tenant_id,
+                project_id,
+                NewVpc {
+                    name: "vpc1".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.99.0.0/16")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(store.get_dhcp_pool(vpc.id).await.unwrap().is_none());
+        let pool = store
+            .set_dhcp_pool(
+                vpc.id,
+                NewDhcpPool {
+                    lease_seconds_default: 3600,
+                    excluded_ipv4: vec!["10.99.0.1".parse().unwrap()],
+                    additional_options: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(pool.lease_seconds_default, 3600);
+        assert_eq!(pool.excluded_ipv4.len(), 1);
+
+        let pool2 = store.get_dhcp_pool(vpc.id).await.unwrap().unwrap();
+        assert_eq!(pool2.created_at, pool.created_at);
+
+        store.clear_dhcp_pool(vpc.id).await.unwrap();
+        assert!(store.get_dhcp_pool(vpc.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn dhcp_reservation_canonicalises_mac_and_rejects_out_of_cidr() {
+        let store = MemStore::new();
+        let (_silo, tenant_id, project_id) = make_silo_and_project(&store).await;
+        let vpc = store
+            .create_vpc(
+                tenant_id,
+                project_id,
+                NewVpc {
+                    name: "vpc-r".to_string(),
+                    description: None,
+                    ipv4_block: Some(ipv4_cidr("10.42.0.0/16")),
+                    ipv6_block: None,
+                },
+            )
+            .await
+            .unwrap();
+        // Mixed-case + hyphens: must canonicalise to lowercase colon form.
+        let r = store
+            .create_dhcp_reservation(
+                vpc.id,
+                NewDhcpReservation {
+                    mac: "02-08-20-AB-CD-EF".to_string(),
+                    ipv4: "10.42.0.50".parse().unwrap(),
+                    hostname: Some("web01".into()),
+                    per_mac_options: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(r.mac, "02:08:20:ab:cd:ef");
+        // Lookup by either form works.
+        store
+            .get_dhcp_reservation(vpc.id, "02:08:20:ab:cd:ef")
+            .await
+            .unwrap();
+        store
+            .get_dhcp_reservation(vpc.id, "0208.20AB.CDEF")
+            .await
+            .unwrap();
+        // Out-of-CIDR is rejected.
+        let err = store
+            .create_dhcp_reservation(
+                vpc.id,
+                NewDhcpReservation {
+                    mac: "02:08:20:ff:ff:ff".into(),
+                    ipv4: "192.168.1.1".parse().unwrap(),
+                    hostname: None,
+                    per_mac_options: vec![],
+                },
+            )
+            .await
+            .expect_err("out-of-cidr");
+        assert!(matches!(err, StoreError::Conflict(_)), "got {err:?}");
+        // Re-reserving the same MAC with a *different* IP also rejects.
+        let err = store
+            .create_dhcp_reservation(
+                vpc.id,
+                NewDhcpReservation {
+                    mac: "02:08:20:ab:cd:ef".into(),
+                    ipv4: "10.42.0.99".parse().unwrap(),
+                    hostname: None,
+                    per_mac_options: vec![],
+                },
+            )
+            .await
+            .expect_err("duplicate mac with different ip");
+        assert!(matches!(err, StoreError::Conflict(_)), "got {err:?}");
     }
 
     #[tokio::test]
@@ -7324,5 +8184,140 @@ mod tests {
             .await
             .unwrap();
         assert!(rows.is_empty());
+    }
+
+    fn legacy_vm_fixture(host_cn: Uuid, smartos_uuid: Uuid) -> LegacyVm {
+        let now = Utc::now();
+        LegacyVm {
+            smartos_uuid,
+            host_cn_uuid: host_cn,
+            legacy_owner_uuid: Some(Uuid::nil()),
+            brand: Some("joyent-minimal".to_string()),
+            state: Some(crate::VmState::Running),
+            zone_state: Some("running".to_string()),
+            memory_bytes: Some(512 * 1024 * 1024),
+            quota_bytes: Some(20 * 1024 * 1024 * 1024),
+            cpu_cap: Some(200),
+            last_modified: Some("2026-05-08T10:00:00Z".to_string()),
+            nics: Vec::new(),
+            adoptable: crate::AdoptableState::Unevaluated,
+            first_seen_at: now,
+            last_seen_at: now,
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_vm_upsert_and_get_round_trip() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let smartos_uuid = Uuid::new_v4();
+        let vm = legacy_vm_fixture(cn, smartos_uuid);
+        store.upsert_legacy_vm(vm.clone()).await.unwrap();
+        let fetched = store.get_legacy_vm(smartos_uuid).await.unwrap();
+        assert_eq!(fetched, vm);
+    }
+
+    #[tokio::test]
+    async fn legacy_vm_list_returns_sorted_by_smartos_uuid() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let mut ids = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+        for id in &ids {
+            store
+                .upsert_legacy_vm(legacy_vm_fixture(cn, *id))
+                .await
+                .unwrap();
+        }
+        ids.sort();
+        let listed = store.list_legacy_vms().await.unwrap();
+        let listed_ids: Vec<_> = listed.iter().map(|v| v.smartos_uuid).collect();
+        assert_eq!(listed_ids, ids);
+    }
+
+    #[tokio::test]
+    async fn legacy_vm_list_for_cn_filters_by_host() {
+        let store = MemStore::new();
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+        let on_a_1 = Uuid::new_v4();
+        let on_a_2 = Uuid::new_v4();
+        let on_b = Uuid::new_v4();
+        store
+            .upsert_legacy_vm(legacy_vm_fixture(cn_a, on_a_1))
+            .await
+            .unwrap();
+        store
+            .upsert_legacy_vm(legacy_vm_fixture(cn_a, on_a_2))
+            .await
+            .unwrap();
+        store
+            .upsert_legacy_vm(legacy_vm_fixture(cn_b, on_b))
+            .await
+            .unwrap();
+
+        let on_a = store.list_legacy_vms_for_cn(cn_a).await.unwrap();
+        assert_eq!(on_a.len(), 2);
+        assert!(on_a.iter().all(|v| v.host_cn_uuid == cn_a));
+
+        let on_b_list = store.list_legacy_vms_for_cn(cn_b).await.unwrap();
+        assert_eq!(on_b_list.len(), 1);
+        assert_eq!(on_b_list[0].smartos_uuid, on_b);
+
+        let unknown = store.list_legacy_vms_for_cn(Uuid::new_v4()).await.unwrap();
+        assert!(unknown.is_empty());
+    }
+
+    #[tokio::test]
+    async fn legacy_vm_upsert_to_new_cn_moves_membership_index() {
+        let store = MemStore::new();
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+        let smartos_uuid = Uuid::new_v4();
+
+        // First seen on CN A.
+        store
+            .upsert_legacy_vm(legacy_vm_fixture(cn_a, smartos_uuid))
+            .await
+            .unwrap();
+        assert_eq!(store.list_legacy_vms_for_cn(cn_a).await.unwrap().len(), 1);
+        assert_eq!(store.list_legacy_vms_for_cn(cn_b).await.unwrap().len(), 0);
+
+        // External `vmadm send|recv` moves the zone to CN B.
+        let mut moved = legacy_vm_fixture(cn_b, smartos_uuid);
+        moved.host_cn_uuid = cn_b;
+        store.upsert_legacy_vm(moved).await.unwrap();
+
+        // The membership index must follow the move; the zone must
+        // not appear under CN A after the upsert.
+        assert_eq!(store.list_legacy_vms_for_cn(cn_a).await.unwrap().len(), 0);
+        assert_eq!(store.list_legacy_vms_for_cn(cn_b).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn legacy_vm_delete_clears_membership_and_is_idempotent() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let smartos_uuid = Uuid::new_v4();
+        store
+            .upsert_legacy_vm(legacy_vm_fixture(cn, smartos_uuid))
+            .await
+            .unwrap();
+
+        store.delete_legacy_vm(smartos_uuid).await.unwrap();
+        assert!(matches!(
+            store.get_legacy_vm(smartos_uuid).await,
+            Err(StoreError::NotFound)
+        ));
+        assert!(store.list_legacy_vms_for_cn(cn).await.unwrap().is_empty());
+
+        // Idempotent: second delete does not error.
+        store.delete_legacy_vm(smartos_uuid).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn legacy_vm_get_unknown_is_not_found() {
+        let store = MemStore::new();
+        let err = store.get_legacy_vm(Uuid::new_v4()).await.unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
     }
 }

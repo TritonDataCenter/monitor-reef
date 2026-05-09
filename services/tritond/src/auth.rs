@@ -50,7 +50,7 @@ use crate::audit::AuditService;
 
 /// Embedded Cedar policy bundle.
 ///
-/// Five rules, ordered by specificity:
+/// Six rules, ordered by specificity:
 ///
 /// * Anonymous callers can hit `health`, `login`, `refresh`,
 ///   and the public-listing / by-id read actions for image and
@@ -73,6 +73,11 @@ use crate::audit::AuditService;
 ///   /v2/{ssh-keys,images}/{id} and /v2/auth/* endpoints whose
 ///   visibility is enforced in the handler via the visibility
 ///   predicate.
+/// * Fleet-admin operators (`principal.fleet_admin == true`) can
+///   inspect cross-silo CN + legacy-VM state at `/v2/admin/legacy/*`.
+///   Distinct from `is_root` so an operator can be granted
+///   read-only fleet visibility without picking up cluster-wide
+///   write authority.
 ///
 /// Every other access falls through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
@@ -209,6 +214,21 @@ permit(
     !(resource has silo_id) &&
     !(resource has tenant_id)
 };
+
+@id("fleet-admin-allows-fleet-actions")
+permit(
+    principal,
+    action in [
+        Action::"legacy_cn_list",
+        Action::"legacy_cn_get",
+        Action::"legacy_vm_list",
+        Action::"legacy_vm_get",
+        Action::"legacy_alarm_list"
+    ],
+    resource
+) when {
+    principal has fleet_admin && principal.fleet_admin == true
+};
 "#;
 
 /// Result of authenticating an inbound request.
@@ -230,6 +250,13 @@ pub enum Principal {
     Operator {
         user_id: Uuid,
         is_root: bool,
+        /// Fleet-admin role from the underlying [`User`] record.
+        /// Independent of `is_root`: a fleet-admin can read CN +
+        /// legacy-VM state across silos but cannot perform
+        /// tenant-scoped writes. `is_root` already covers
+        /// fleet-admin actions via the root-allows-all rule, so
+        /// for root operators this is typically also `true`.
+        fleet_admin: bool,
         /// Tenant the user belongs to. `None` for cluster-wide
         /// (root) operators. Source of truth for tenant
         /// membership; `silo_id` below is a cached derivation.
@@ -303,6 +330,7 @@ impl Principal {
         if let Principal::Operator {
             user_id,
             is_root,
+            fleet_admin,
             silo_id,
             tenant_id,
             ..
@@ -311,6 +339,10 @@ impl Principal {
             attrs.insert(
                 "is_root".to_string(),
                 RestrictedExpression::new_bool(*is_root),
+            );
+            attrs.insert(
+                "fleet_admin".to_string(),
+                RestrictedExpression::new_bool(*fleet_admin),
             );
             // user_id is always present on an authenticated
             // operator; emitting it as an attribute lets Cedar
@@ -383,6 +415,22 @@ pub enum Action {
     NatGatewayCreate,
     NatGatewayGet,
     NatGatewayDelete,
+    FirewallRuleList,
+    FirewallRuleCreate,
+    FirewallRuleDelete,
+    /// List every silo. Used by the admin UI's silo picker.
+    SiloList,
+    /// γ.1 — DHCP / IPAM read+write actions, scoped per VPC.
+    DhcpPoolGet,
+    DhcpPoolSet,
+    DhcpPoolClear,
+    DhcpReservationList,
+    DhcpReservationCreate,
+    DhcpReservationGet,
+    DhcpReservationDelete,
+    DhcpLeaseList,
+    DhcpLeaseGet,
+    DhcpLeaseDelete,
     /// Scope-aware ssh-key list (silo/tenant/project/user URLs).
     /// Gated by per-scope Cedar rules.
     SshKeyList,
@@ -475,6 +523,13 @@ pub enum Action {
     AutoApproveSet,
     /// Close the auto-approve window early.
     AutoApproveClear,
+    /// Fleet-scoped legacy-discovery surface
+    /// (`/v2/admin/legacy/*`). Gated by the fleet-admin Cedar rule.
+    LegacyCnList,
+    LegacyCnGet,
+    LegacyVmList,
+    LegacyVmGet,
+    LegacyAlarmList,
 }
 
 impl Action {
@@ -526,6 +581,20 @@ impl Action {
             Action::NatGatewayCreate => "nat_gateway_create",
             Action::NatGatewayGet => "nat_gateway_get",
             Action::NatGatewayDelete => "nat_gateway_delete",
+            Action::FirewallRuleList => "firewall_rule_list",
+            Action::FirewallRuleCreate => "firewall_rule_create",
+            Action::FirewallRuleDelete => "firewall_rule_delete",
+            Action::SiloList => "silo_list",
+            Action::DhcpPoolGet => "dhcp_pool_get",
+            Action::DhcpPoolSet => "dhcp_pool_set",
+            Action::DhcpPoolClear => "dhcp_pool_clear",
+            Action::DhcpReservationList => "dhcp_reservation_list",
+            Action::DhcpReservationCreate => "dhcp_reservation_create",
+            Action::DhcpReservationGet => "dhcp_reservation_get",
+            Action::DhcpReservationDelete => "dhcp_reservation_delete",
+            Action::DhcpLeaseList => "dhcp_lease_list",
+            Action::DhcpLeaseGet => "dhcp_lease_get",
+            Action::DhcpLeaseDelete => "dhcp_lease_delete",
             Action::SshKeyList => "ssh_key_list",
             Action::SshKeyListPublic => "ssh_key_list_public",
             Action::SshKeyCreate => "ssh_key_create",
@@ -572,6 +641,11 @@ impl Action {
             Action::AutoApproveGet => "auto_approve_get",
             Action::AutoApproveSet => "auto_approve_set",
             Action::AutoApproveClear => "auto_approve_clear",
+            Action::LegacyCnList => "legacy_cn_list",
+            Action::LegacyCnGet => "legacy_cn_get",
+            Action::LegacyVmList => "legacy_vm_list",
+            Action::LegacyVmGet => "legacy_vm_get",
+            Action::LegacyAlarmList => "legacy_alarm_list",
         }
     }
 
@@ -652,6 +726,7 @@ impl AuthService {
                     Ok(Principal::Operator {
                         user_id: user.id,
                         is_root: user.is_root,
+                        fleet_admin: user.fleet_admin,
                         tenant_id: user.tenant_id,
                         silo_id,
                         // JWT-authenticated principals carry the user's
@@ -730,6 +805,7 @@ impl AuthService {
                     username: format!("{}@{tenant_id}", claims.username),
                     password_hash: String::new(),
                     is_root: false,
+                    fleet_admin: false,
                     created_at: Utc::now(),
                     tenant_id: Some(tenant_id),
                     federation: Some(Federation {
@@ -765,6 +841,7 @@ impl AuthService {
         Ok(Principal::Operator {
             user_id: user.id,
             is_root: user.is_root,
+            fleet_admin: user.fleet_admin,
             tenant_id: user.tenant_id,
             silo_id: derived_silo_id,
             // OIDC-authenticated principals carry the user's full
@@ -806,6 +883,7 @@ impl AuthService {
                 Ok(Principal::Operator {
                     user_id: user.id,
                     is_root: user.is_root,
+                    fleet_admin: user.fleet_admin,
                     tenant_id: user.tenant_id,
                     silo_id,
                     // The API key's scope rides along on the principal so
@@ -1046,6 +1124,7 @@ fn is_read_action(action: Action) -> bool {
         Action::Health | Action::Login | Action::Refresh => true,
         // Read-only fleet & per-silo metadata.
         Action::GetSilo
+        | Action::SiloList
         | Action::ListApiKeys
         | Action::AuditList
         | Action::AuditFetch
@@ -1066,6 +1145,12 @@ fn is_read_action(action: Action) -> bool {
         | Action::RouteGet
         | Action::NatGatewayList
         | Action::NatGatewayGet
+        | Action::FirewallRuleList
+        | Action::DhcpPoolGet
+        | Action::DhcpReservationList
+        | Action::DhcpReservationGet
+        | Action::DhcpLeaseList
+        | Action::DhcpLeaseGet
         | Action::SshKeyList
         | Action::SshKeyListPublic
         | Action::SshKeyGet
@@ -1101,6 +1186,13 @@ fn is_read_action(action: Action) -> bool {
         | Action::RouteDelete
         | Action::NatGatewayCreate
         | Action::NatGatewayDelete
+        | Action::FirewallRuleCreate
+        | Action::FirewallRuleDelete
+        | Action::DhcpPoolSet
+        | Action::DhcpPoolClear
+        | Action::DhcpReservationCreate
+        | Action::DhcpReservationDelete
+        | Action::DhcpLeaseDelete
         | Action::SshKeyCreate
         | Action::SshKeyDelete
         | Action::ImageCreate
@@ -1142,6 +1234,12 @@ fn is_read_action(action: Action) -> bool {
         | Action::AutoApproveClear => false,
         // CN reads.
         Action::CnList | Action::CnGet | Action::AutoApproveGet => true,
+        // Legacy admin reads.
+        Action::LegacyCnList
+        | Action::LegacyCnGet
+        | Action::LegacyVmList
+        | Action::LegacyVmGet
+        | Action::LegacyAlarmList => true,
     }
 }
 
@@ -1377,6 +1475,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            fleet_admin: true,
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1399,6 +1498,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: false,
+            fleet_admin: false,
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1417,6 +1517,7 @@ mod tests {
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            fleet_admin: true,
             tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::ReadOnly),
@@ -1437,11 +1538,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fleet_admin_can_hit_legacy_admin_actions() {
+        // Decision #2 sixth rule: a non-root operator with
+        // `fleet_admin == true` can list legacy CNs / VMs / alarms.
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: false,
+            fleet_admin: true,
+            tenant_id: None,
+            silo_id: None,
+            scope: None,
+            bound_cn: None,
+        };
+        for action in [
+            Action::LegacyCnList,
+            Action::LegacyCnGet,
+            Action::LegacyVmList,
+            Action::LegacyVmGet,
+            Action::LegacyAlarmList,
+        ] {
+            assert!(
+                auth.authorize(&p, action).is_ok(),
+                "fleet-admin denied {action:?}",
+            );
+        }
+        // Tenant-scoped writes still denied — fleet_admin is not
+        // is_root.
+        let err = auth
+            .authorize(&p, Action::CreateSilo)
+            .expect_err("fleet-admin should not be able to create silos");
+        assert_eq!(err.status_code.as_status().as_u16(), 403);
+    }
+
+    #[tokio::test]
+    async fn non_fleet_admin_is_denied_legacy_admin_actions() {
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: false,
+            fleet_admin: false,
+            tenant_id: None,
+            silo_id: None,
+            scope: None,
+            bound_cn: None,
+        };
+        for action in [
+            Action::LegacyCnList,
+            Action::LegacyVmList,
+            Action::LegacyAlarmList,
+        ] {
+            let err = auth
+                .authorize(&p, action)
+                .expect_err("non-fleet-admin should be denied");
+            assert_eq!(err.status_code.as_status().as_u16(), 403);
+        }
+    }
+
+    #[tokio::test]
     async fn audit_only_scope_permits_only_audit_reads() {
         let auth = fresh_service();
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
             is_root: true,
+            fleet_admin: true,
             tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::AuditOnly),
@@ -1466,6 +1626,7 @@ mod tests {
             username: "root".to_string(),
             password_hash: "$2y$12$dummy".to_string(),
             is_root: true,
+            fleet_admin: true,
             created_at: chrono::Utc::now(),
             tenant_id: None,
             federation: None,

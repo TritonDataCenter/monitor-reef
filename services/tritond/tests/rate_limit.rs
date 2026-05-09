@@ -43,6 +43,7 @@ async fn build_rate_limited_server() -> dropshot::HttpServer<ApiContext> {
             .await
             .unwrap(),
         is_root: true,
+        fleet_admin: false,
         created_at: Utc::now(),
         tenant_id: None,
         federation: None,
@@ -119,6 +120,7 @@ async fn rate_limit_audits_throttle_event() {
             .await
             .unwrap(),
         is_root: true,
+        fleet_admin: false,
         created_at: Utc::now(),
         tenant_id: None,
         federation: None,

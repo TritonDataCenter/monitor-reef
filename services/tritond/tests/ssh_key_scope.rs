@@ -33,7 +33,9 @@ use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
 use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
-use tritond_client::types::{NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, SshKeyScope};
+use tritond_client::types::{
+    NewImage, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc, SshKeyScope,
+};
 use tritond_store::{MemStore, Store, User};
 use uuid::Uuid;
 
@@ -60,6 +62,7 @@ impl TestServer {
                 .await
                 .unwrap(),
             is_root: true,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
@@ -120,6 +123,7 @@ impl TestServer {
             username: username.to_string(),
             password_hash: "$2y$12$placeholder".to_string(),
             is_root: false,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: Some(tenant_id),
             federation: None,
@@ -208,7 +212,9 @@ async fn public_ssh_key_create_is_root_only() {
     let test = TestServer::start().await;
     let root = test.root_client();
     let silo = make_silo(&root, "members").await;
-    let (_user_id, member_token) = test.make_tenant_user(silo.default_tenant_id, "member").await;
+    let (_user_id, member_token) = test
+        .make_tenant_user(silo.default_tenant_id, "member")
+        .await;
     let member = test.bearer_client(&member_token);
 
     let err = member
@@ -690,6 +696,7 @@ async fn instance_create_with_visible_ssh_key_succeeds() {
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
             extra_nics: Vec::new(),
+            mac: None,
         })
         .send()
         .await
@@ -787,6 +794,7 @@ async fn instance_create_with_invisible_ssh_key_returns_404() {
             cpu: 2,
             memory_bytes: 2 * 1024 * 1024 * 1024,
             extra_nics: Vec::new(),
+            mac: None,
         })
         .send()
         .await

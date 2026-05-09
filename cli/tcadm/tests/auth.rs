@@ -46,6 +46,7 @@ impl TestServer {
                 .await
                 .unwrap(),
             is_root: true,
+            fleet_admin: true,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,

@@ -11,30 +11,39 @@
 //!
 //! 1. A JWT signing key. Generated cryptographically and persisted
 //!    under [`SystemKey::JwtSigning`] if absent.
-//! 2. A root operator account. Created with a random base64 password
+//! 2. A per-deployment HMAC-SHA256 key used to stamp tritond
+//!    identity into managed-zone metadata. Generated and persisted
+//!    under [`SystemKey::IdentityHmac`] if absent.
+//! 3. A root operator account. Created with a random base64 password
 //!    if no users exist. The password is logged once to stderr with
 //!    a clear "save this, it's only shown now" banner; it is not
 //!    written anywhere else.
 //!
-//! Idempotent — subsequent runs find both records and do nothing.
-//! The function returns the loaded [`JwtKey`] so the caller can hand
-//! it to [`crate::auth::AuthService::new`].
+//! Idempotent — subsequent runs find every record and do nothing.
+//! The function returns the loaded [`JwtKey`] and [`IdentityHmacKey`]
+//! so the caller can hand them to [`crate::auth::AuthService::new`]
+//! and [`crate::ApiContext::with_identity_hmac_key`] respectively.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
 use tracing::info;
-use tritond_auth::{JwtKey, RedactedString, generate_random_password, hash_password};
+use tritond_auth::{
+    IDENTITY_HMAC_KEY_BYTES, IdentityHmacKey, JwtKey, RedactedString, generate_random_password,
+    hash_password,
+};
 use tritond_store::{Store, StoreError, SystemKey, User};
 use uuid::Uuid;
 
 /// Username of the bootstrap root operator.
 pub const ROOT_USERNAME: &str = "root";
 
-/// Run first-run bootstrap if needed and return the JWT signing key.
-pub async fn ensure(store: &dyn Store) -> Result<JwtKey> {
+/// Run first-run bootstrap if needed and return the JWT signing key
+/// plus the per-deployment identity HMAC key.
+pub async fn ensure(store: &dyn Store) -> Result<(JwtKey, IdentityHmacKey)> {
     let jwt_key = ensure_jwt_key(store).await?;
+    let identity_hmac_key = ensure_identity_hmac_key(store).await?;
     ensure_root_user(store).await?;
-    Ok(jwt_key)
+    Ok((jwt_key, identity_hmac_key))
 }
 
 /// Generate a new root password, update the stored root hash, and
@@ -86,6 +95,28 @@ async fn ensure_jwt_key(store: &dyn Store) -> Result<JwtKey> {
     }
 }
 
+async fn ensure_identity_hmac_key(store: &dyn Store) -> Result<IdentityHmacKey> {
+    match store.get_system_key(SystemKey::IdentityHmac).await {
+        Ok(bytes) => {
+            let array: [u8; IDENTITY_HMAC_KEY_BYTES] = bytes
+                .as_slice()
+                .try_into()
+                .context("stored identity HMAC key has wrong length")?;
+            Ok(IdentityHmacKey::from_bytes(array))
+        }
+        Err(StoreError::NotFound) => {
+            let key = IdentityHmacKey::generate();
+            store
+                .put_system_key(SystemKey::IdentityHmac, key.bytes().to_vec())
+                .await
+                .context("persist identity HMAC key")?;
+            info!("generated and persisted new identity HMAC key");
+            Ok(key)
+        }
+        Err(e) => Err(anyhow::anyhow!("read identity HMAC key: {e}")),
+    }
+}
+
 async fn ensure_root_user(store: &dyn Store) -> Result<()> {
     if store
         .has_any_user()
@@ -104,6 +135,13 @@ async fn ensure_root_user(store: &dyn Store) -> Result<()> {
         username: ROOT_USERNAME.to_string(),
         password_hash,
         is_root: true,
+        // Bootstrap root operator gets fleet-admin too -- the
+        // root-allows-all rule already grants every action, but
+        // surfacing the flag explicitly means the fleet-admin Cedar
+        // rule fires for these operators in the test surface
+        // (which doesn't exercise root-allows-all when narrowing the
+        // policy bundle for unit-test Cedar evaluation).
+        fleet_admin: true,
         created_at: Utc::now(),
         tenant_id: None,
         federation: None,
@@ -142,14 +180,15 @@ mod tests {
     #[tokio::test]
     async fn fresh_store_creates_root_and_persists_key() {
         let store = MemStore::new();
-        let key1 = ensure(&store).await.unwrap();
+        let (jwt1, hmac1) = ensure(&store).await.unwrap();
         assert!(store.has_any_user().await.unwrap());
         let user = store.get_user_by_username(ROOT_USERNAME).await.unwrap();
         assert!(user.is_root);
 
-        // Second call must be idempotent: same key, no second user.
-        let key2 = ensure(&store).await.unwrap();
-        assert_eq!(key1.bytes(), key2.bytes());
+        // Second call must be idempotent: same keys, no second user.
+        let (jwt2, hmac2) = ensure(&store).await.unwrap();
+        assert_eq!(jwt1.bytes(), jwt2.bytes());
+        assert_eq!(hmac1.bytes(), hmac2.bytes());
         assert_eq!(
             store.get_user_by_username(ROOT_USERNAME).await.unwrap().id,
             user.id
@@ -191,6 +230,7 @@ mod tests {
             username: ROOT_USERNAME.to_string(),
             password_hash: "$2y$12$dummyhash".to_string(),
             is_root: false,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,

@@ -48,6 +48,7 @@ impl TestServer {
                 .await
                 .unwrap(),
             is_root: true,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
@@ -161,11 +162,7 @@ async fn image_round_trip_within_silo() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, img.id);
 
-    root.delete_image()
-        .image_id(img.id)
-        .send()
-        .await
-        .unwrap();
+    root.delete_image().image_id(img.id).send().await.unwrap();
 
     test.close().await;
 }

@@ -61,6 +61,7 @@ impl TestServer {
                 .await
                 .unwrap(),
             is_root: true,
+            fleet_admin: false,
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
@@ -269,6 +270,7 @@ fn instance_req(fx: &Fixture, name: &str) -> NewInstance {
         cpu: 2,
         memory_bytes: 2 * 1024 * 1024 * 1024,
         extra_nics: Vec::new(),
+        mac: None,
     }
 }
 
