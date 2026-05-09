@@ -913,6 +913,7 @@ mod tests {
             subnets: Vec::new(),
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
+            managed_identity: None,
         }
     }
 

@@ -65,6 +65,48 @@ const BHYVE_M1_NIC_TAG: &str = "external";
 /// Default MTU on the admin network.
 const DEFAULT_MTU: u32 = 1500;
 
+// Wire contract: SmartOS `internal_metadata` keys carrying the
+// tamper-evident managed-zone identity stamped at provision time.
+// The canonical definitions live in
+// `tritond_store::types::TRITOND_METADATA_*`; the constants here are
+// duplicated to keep tritonagent's runtime dep set lean, and the
+// `vmadm_identity_constants_match_canonical` test in the
+// integration suite asserts they cannot drift.
+pub(crate) const TRITOND_METADATA_INSTANCE_ID: &str = "tritond:instance_id";
+pub(crate) const TRITOND_METADATA_TENANT_ID: &str = "tritond:tenant_id";
+pub(crate) const TRITOND_METADATA_PROJECT_ID: &str = "tritond:project_id";
+pub(crate) const TRITOND_METADATA_IDENTITY_HMAC: &str = "tritond:identity_hmac";
+
+/// Insert the four `tritond:*` identity keys into a vmadm
+/// `internal_metadata` map when the blueprint carries a
+/// `managed_identity`. No-op when absent (Stop/Restart/Delete jobs do
+/// not carry identity; the zone already has it from its original
+/// provision).
+fn apply_managed_identity(
+    metadata: &mut serde_json::Map<String, serde_json::Value>,
+    blueprint: &ProvisioningBlueprint,
+) {
+    let Some(identity) = blueprint.managed_identity.as_ref() else {
+        return;
+    };
+    metadata.insert(
+        TRITOND_METADATA_INSTANCE_ID.to_string(),
+        serde_json::Value::String(identity.instance_id.to_string()),
+    );
+    metadata.insert(
+        TRITOND_METADATA_TENANT_ID.to_string(),
+        serde_json::Value::String(identity.tenant_id.to_string()),
+    );
+    metadata.insert(
+        TRITOND_METADATA_PROJECT_ID.to_string(),
+        serde_json::Value::String(identity.project_id.to_string()),
+    );
+    metadata.insert(
+        TRITOND_METADATA_IDENTITY_HMAC.to_string(),
+        serde_json::Value::String(identity.identity_hmac.clone()),
+    );
+}
+
 /// Run a `Provision` job: build the vmadm payload from the
 /// blueprint, exec `vmadm create`, and wait for completion.
 /// Returns the SmartOS zone UUID on success, which equals the
@@ -295,11 +337,15 @@ pub(crate) fn create_zone_payload(blueprint: &ProvisioningBlueprint) -> Result<s
     // Force the agent's identity onto the zone description for
     // operator visibility (`zoneadm list -p` shows it).
     if let Some(obj) = payload.as_object_mut() {
+        let mut internal_metadata = serde_json::Map::new();
+        internal_metadata.insert(
+            "tritond.image_sha256".to_string(),
+            serde_json::Value::String(image.sha256.clone()),
+        );
+        apply_managed_identity(&mut internal_metadata, blueprint);
         obj.insert(
             "internal_metadata".to_string(),
-            serde_json::json!({
-                "tritond.image_sha256": image.sha256,
-            }),
+            serde_json::Value::Object(internal_metadata),
         );
     }
 
@@ -362,6 +408,17 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         serde_json::Value::String("nocloud".to_string()),
     );
 
+    let mut internal_metadata = serde_json::Map::new();
+    internal_metadata.insert(
+        "tritond.image_sha256".to_string(),
+        serde_json::Value::String(image.sha256.clone()),
+    );
+    internal_metadata.insert(
+        "cloudinit_datasource".to_string(),
+        serde_json::Value::String("nocloud".to_string()),
+    );
+    apply_managed_identity(&mut internal_metadata, blueprint);
+
     Ok(serde_json::json!({
         "uuid": instance.id,
         "brand": "bhyve",
@@ -379,10 +436,7 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         ],
         "nics": nics_json,
         "customer_metadata": serde_json::Value::Object(customer_metadata),
-        "internal_metadata": {
-            "tritond.image_sha256": image.sha256,
-            "cloudinit_datasource": "nocloud",
-        },
+        "internal_metadata": serde_json::Value::Object(internal_metadata),
         "tags": {
             "tritond.instance_id": instance.id.to_string(),
             "tritond.tenant_id": instance.tenant_id.to_string(),
@@ -669,7 +723,23 @@ mod tests {
             subnets: vec![subnet_record],
             disks: Vec::new(),
             ssh_public_keys: vec!["ssh-ed25519 AAAA test@host".to_string()],
+            managed_identity: None,
         }
+    }
+
+    /// Variant that carries a populated `managed_identity`. Used by the
+    /// tests asserting the four `tritond:*` keys land in the vmadm
+    /// `internal_metadata` payload.
+    fn sample_blueprint_with_identity() -> ProvisioningBlueprint {
+        let mut bp = sample_blueprint();
+        let inst = bp.instance.as_ref().unwrap();
+        bp.managed_identity = Some(tritond_client::types::ManagedIdentity {
+            instance_id: inst.id,
+            tenant_id: inst.tenant_id,
+            project_id: inst.project_id,
+            identity_hmac: "deadbeef".repeat(8),
+        });
+        bp
     }
 
     fn sample_bhyve_blueprint() -> ProvisioningBlueprint {
@@ -788,6 +858,102 @@ mod tests {
 
         let payload = create_bhyve_payload(&bp).unwrap();
         assert_eq!(payload, expected);
+    }
+
+    #[test]
+    fn zone_payload_carries_tritond_identity_metadata_when_present() {
+        let bp = sample_blueprint_with_identity();
+        let identity = bp.managed_identity.as_ref().unwrap();
+        let payload = build_create_payload(&bp).unwrap();
+        let im = &payload["internal_metadata"];
+        assert_eq!(
+            im[TRITOND_METADATA_INSTANCE_ID],
+            identity.instance_id.to_string()
+        );
+        assert_eq!(
+            im[TRITOND_METADATA_TENANT_ID],
+            identity.tenant_id.to_string()
+        );
+        assert_eq!(
+            im[TRITOND_METADATA_PROJECT_ID],
+            identity.project_id.to_string()
+        );
+        assert_eq!(im[TRITOND_METADATA_IDENTITY_HMAC], identity.identity_hmac);
+        // Pre-existing key must still be there alongside the four new ones.
+        assert_eq!(
+            im["tritond.image_sha256"],
+            bp.image.as_ref().unwrap().sha256
+        );
+    }
+
+    #[test]
+    fn zone_payload_omits_tritond_identity_metadata_when_absent() {
+        let bp = sample_blueprint();
+        assert!(bp.managed_identity.is_none());
+        let payload = build_create_payload(&bp).unwrap();
+        let im = &payload["internal_metadata"];
+        assert!(im.get(TRITOND_METADATA_INSTANCE_ID).is_none());
+        assert!(im.get(TRITOND_METADATA_TENANT_ID).is_none());
+        assert!(im.get(TRITOND_METADATA_PROJECT_ID).is_none());
+        assert!(im.get(TRITOND_METADATA_IDENTITY_HMAC).is_none());
+    }
+
+    #[test]
+    fn bhyve_payload_carries_tritond_identity_metadata_when_present() {
+        let mut bp = sample_bhyve_blueprint();
+        let inst = bp.instance.as_ref().unwrap();
+        bp.managed_identity = Some(tritond_client::types::ManagedIdentity {
+            instance_id: inst.id,
+            tenant_id: inst.tenant_id,
+            project_id: inst.project_id,
+            identity_hmac: "feedface".repeat(8),
+        });
+        let identity = bp.managed_identity.as_ref().unwrap();
+        let payload = create_bhyve_payload(&bp).unwrap();
+        let im = &payload["internal_metadata"];
+        assert_eq!(
+            im[TRITOND_METADATA_INSTANCE_ID],
+            identity.instance_id.to_string()
+        );
+        assert_eq!(
+            im[TRITOND_METADATA_TENANT_ID],
+            identity.tenant_id.to_string()
+        );
+        assert_eq!(
+            im[TRITOND_METADATA_PROJECT_ID],
+            identity.project_id.to_string()
+        );
+        assert_eq!(im[TRITOND_METADATA_IDENTITY_HMAC], identity.identity_hmac);
+        // Pre-existing keys must still be there alongside the four new ones.
+        assert_eq!(
+            im["tritond.image_sha256"],
+            bp.image.as_ref().unwrap().sha256
+        );
+        assert_eq!(im["cloudinit_datasource"], "nocloud");
+    }
+
+    /// Wire-contract regression: tritonagent's local copies of the
+    /// `tritond:*` metadata keys must match the canonical definitions
+    /// in `tritond_store::types`. Without this, a rename in
+    /// tritond-store would silently break the classifier.
+    #[test]
+    fn vmadm_identity_constants_match_canonical() {
+        assert_eq!(
+            TRITOND_METADATA_INSTANCE_ID,
+            tritond_store::TRITOND_METADATA_INSTANCE_ID
+        );
+        assert_eq!(
+            TRITOND_METADATA_TENANT_ID,
+            tritond_store::TRITOND_METADATA_TENANT_ID
+        );
+        assert_eq!(
+            TRITOND_METADATA_PROJECT_ID,
+            tritond_store::TRITOND_METADATA_PROJECT_ID
+        );
+        assert_eq!(
+            TRITOND_METADATA_IDENTITY_HMAC,
+            tritond_store::TRITOND_METADATA_IDENTITY_HMAC
+        );
     }
 
     #[test]
