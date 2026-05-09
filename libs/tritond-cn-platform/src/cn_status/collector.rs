@@ -35,13 +35,21 @@ use crate::smartos::{VmadmTool, ZfsTool};
 /// `zonepath` / `disks` are not in the legacy status payload itself, but the
 /// disk-usage sampler needs them, so we fetch them in the same `vmadm
 /// lookup` and strip them from the outbound copy.
+///
+/// `internal_metadata` and `nics` were added for the discovery + adoption
+/// path: tritond's classifier reads the `tritond:*` identity keys out of
+/// `internal_metadata` to distinguish managed-by-tritond zones from
+/// pre-existing legacy zones, and uses `nics` for adoption pre-flight
+/// (IP-collision check, network-rewrite preview).
 pub const VM_LOOKUP_FIELDS: &[&str] = &[
     "brand",
     "cpu_cap",
     "disks",
     "do_not_inventory",
+    "internal_metadata",
     "last_modified",
     "max_physical_memory",
+    "nics",
     "owner_uuid",
     "quota",
     "state",
@@ -54,12 +62,16 @@ pub const VM_LOOKUP_FIELDS: &[&str] = &[
 
 /// Subset of fields preserved in the vms map sent to the [`StatusSink`].
 /// Mirrors the `newSample.vms[uuid] = { ... }` object in the legacy
-/// heartbeater.
+/// heartbeater, plus `internal_metadata` (carries the `tritond:*`
+/// identity keys for managed zones) and `nics` (full per-NIC layout for
+/// adoption pre-flight + legacy NIC inventory).
 pub const VM_POSTED_FIELDS: &[&str] = &[
     "brand",
     "cpu_cap",
+    "internal_metadata",
     "last_modified",
     "max_physical_memory",
+    "nics",
     "owner_uuid",
     "quota",
     "state",
