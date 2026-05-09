@@ -98,6 +98,12 @@ enum Commands {
         #[command(subcommand)]
         command: CnCommand,
     },
+    /// Inspect legacy (non-tritond-managed) zones discovered by the
+    /// classifier on registered CNs. Fleet-admin only.
+    Legacy {
+        #[command(subcommand)]
+        command: LegacyCommand,
+    },
     /// Inspect and verify the audit log.
     Audit {
         #[command(subcommand)]
@@ -1208,6 +1214,30 @@ enum CnCommand {
 }
 
 #[derive(Subcommand)]
+enum LegacyCommand {
+    /// List CNs with their managed-vs-legacy zone counts.
+    Cns {
+        #[arg(long)]
+        json: bool,
+    },
+    /// List legacy zones across the fleet, optionally filtered by host CN.
+    Vms {
+        /// Restrict to legacy zones hosted on the given CN.
+        #[arg(long)]
+        host_cn: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show one legacy zone's full record (including NIC inventory).
+    Show {
+        /// SmartOS zone uuid.
+        smartos_uuid: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum CnLabelCommand {
     /// Set placement labels used by the vnext placers.
     Set {
@@ -1401,6 +1431,17 @@ async fn main() -> Result<()> {
                     commands::cn_auto_approve_close(cli.endpoint, cli.api_key).await
                 }
             },
+        },
+        Commands::Legacy { command } => match command {
+            LegacyCommand::Cns { json } => {
+                commands::legacy_cn_list(cli.endpoint, cli.api_key, json).await
+            }
+            LegacyCommand::Vms { host_cn, json } => {
+                commands::legacy_vm_list(cli.endpoint, cli.api_key, host_cn, json).await
+            }
+            LegacyCommand::Show { smartos_uuid, json } => {
+                commands::legacy_vm_show(cli.endpoint, cli.api_key, smartos_uuid, json).await
+            }
         },
         Commands::Audit { command } => match command {
             AuditCommand::List {

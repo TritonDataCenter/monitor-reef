@@ -698,6 +698,9 @@ pub async fn tenant_project_instance_create(
             // build the JSON body directly via curl. Future:
             // a `--extra-nic SUBNET_ID:NAME` repeated flag.
             extra_nics: Vec::new(),
+            // sticky-by-MAC IPAM (γ.2) is opt-in; tcadm's create
+            // path leaves it unset to preserve auto-MAC behaviour.
+            mac: None,
         })
         .send()
         .await
@@ -3341,6 +3344,199 @@ pub async fn cn_auto_approve_close(
         .context("close auto-approve window")?;
     println!("Auto-approve window closed.");
     Ok(())
+}
+
+// ---------------------------------------------------------------------
+// Legacy admin (fleet-scoped)
+// ---------------------------------------------------------------------
+
+/// List CNs with managed-vs-legacy zone counts. Fleet-admin only.
+pub async fn legacy_cn_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let cns = client
+        .list_legacy_cns()
+        .send()
+        .await
+        .context("list legacy cns")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cns)?);
+        return Ok(());
+    }
+    if cns.is_empty() {
+        println!("(no compute nodes)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<9}  {:>8}  {:>7}  LAST_SEEN",
+        "SERVER_UUID", "HOSTNAME", "STATE", "MANAGED", "LEGACY"
+    );
+    for cn in cns {
+        println!(
+            "{:<36}  {:<24}  {:<9}  {:>8}  {:>7}  {}",
+            cn.server_uuid,
+            cn.hostname,
+            cn_state_label(&cn.state),
+            cn.managed_instance_count,
+            cn.legacy_vm_count,
+            fmt_opt_ts(&cn.last_seen),
+        );
+    }
+    Ok(())
+}
+
+/// List legacy VMs across the fleet, optionally filtered by host CN.
+pub async fn legacy_vm_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    host_cn: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_legacy_vms();
+    if let Some(cn) = host_cn {
+        req = req.host_cn(cn);
+    }
+    let vms = req.send().await.context("list legacy vms")?.into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&vms)?);
+        return Ok(());
+    }
+    if vms.is_empty() {
+        println!("(no legacy VMs)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<36}  {:<14}  {:<7}  {:<11}  LAST_SEEN_AT",
+        "SMARTOS_UUID", "HOST_CN_UUID", "BRAND", "STATE", "ZONE_STATE"
+    );
+    for vm in vms {
+        println!(
+            "{:<36}  {:<36}  {:<14}  {:<7}  {:<11}  {}",
+            vm.smartos_uuid,
+            vm.host_cn_uuid,
+            vm.brand.as_deref().unwrap_or("-"),
+            // VmState is a Progenitor enum without a Display impl;
+            // enum_to_display from rust_utils renders the wire-form
+            // string, but for compactness here we strip the Debug
+            // form to lowercase via a small inline helper.
+            vm_state_short(vm.state.as_ref()),
+            vm.zone_state.as_deref().unwrap_or("-"),
+            vm.last_seen_at.to_rfc3339(),
+        );
+    }
+    Ok(())
+}
+
+/// Show one legacy VM record in full (including NICs).
+pub async fn legacy_vm_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    smartos_uuid: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let vm = client
+        .get_legacy_vm()
+        .smartos_uuid(smartos_uuid)
+        .send()
+        .await
+        .context("get legacy vm")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&vm)?);
+        return Ok(());
+    }
+    println!("LegacyVm {}", vm.smartos_uuid);
+    println!("  host_cn_uuid:      {}", vm.host_cn_uuid);
+    println!(
+        "  legacy_owner:      {}",
+        vm.legacy_owner_uuid
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "  brand:             {}",
+        vm.brand.as_deref().unwrap_or("-")
+    );
+    println!("  state:             {}", vm_state_short(vm.state.as_ref()));
+    println!(
+        "  zone_state:        {}",
+        vm.zone_state.as_deref().unwrap_or("-")
+    );
+    println!(
+        "  memory_bytes:      {}",
+        vm.memory_bytes
+            .map(|m| m.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "  quota_bytes:       {}",
+        vm.quota_bytes
+            .map(|q| q.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "  cpu_cap:           {}",
+        vm.cpu_cap
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "-".to_string())
+    );
+    println!(
+        "  last_modified:     {}",
+        vm.last_modified.as_deref().unwrap_or("-")
+    );
+    println!("  first_seen_at:     {}", vm.first_seen_at.to_rfc3339());
+    println!("  last_seen_at:      {}", vm.last_seen_at.to_rfc3339());
+    println!("  adoptable:         {:?}", vm.adoptable);
+    if vm.nics.is_empty() {
+        println!("  nics:              (none)");
+    } else {
+        println!("  nics:");
+        for (i, nic) in vm.nics.iter().enumerate() {
+            println!(
+                "    [{i}] mac={} ip={} tag={} vlan={} primary={}",
+                nic.mac.as_deref().unwrap_or("-"),
+                nic.ip
+                    .map(|ip| ip.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                nic.nic_tag.as_deref().unwrap_or("-"),
+                nic.vlan_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                nic.primary,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn vm_state_short(state: Option<&tritond_client::types::VmState>) -> &'static str {
+    use tritond_client::types::VmState;
+    match state {
+        Some(VmState::Running) => "running",
+        Some(VmState::Stopped) => "stopped",
+        Some(VmState::Provisioning) => "prov",
+        Some(VmState::Receiving) => "recv",
+        Some(VmState::Sending) => "send",
+        Some(VmState::Configured) => "config",
+        Some(VmState::Incomplete) => "incomp",
+        Some(VmState::Failed) => "failed",
+        Some(VmState::Installed) => "instal",
+        Some(VmState::Destroyed) => "destr",
+        Some(VmState::Unknown) => "unknwn",
+        None => "-",
+    }
 }
 
 async fn exchange_password(endpoint: &str, username: &str, password: &str) -> Result<Tokens> {
