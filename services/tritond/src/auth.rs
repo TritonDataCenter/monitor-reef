@@ -585,6 +585,31 @@ pub enum Action {
     StorageUserPolicyGet,
     StorageUserPolicyPut,
     StorageUserPolicyDelete,
+    /// Configure (or rotate) the per-cluster IAM presigner credential
+    /// tritond signs presigned S3 URLs with. Distinct from the bucket
+    /// `Create*`/`Delete*` actions because rotating the signer
+    /// credential is a registration-level concern.
+    StorageClusterSetPresigner,
+    /// Mint a single-shot presigned PUT URL for a bucket/key. The URL
+    /// grants the holder the ability to write that object, so this
+    /// is classified as a *write* (a ReadOnly tritond key cannot
+    /// mint URLs that would mutate cluster state).
+    StorageObjectPresignPut,
+    /// Mint a single-shot presigned GET URL for a bucket/key. The URL
+    /// grants read access, so this is a *read* (audit-friendly: a
+    /// shared download link gets logged at mint time).
+    StorageObjectPresignGet,
+    /// Initiate a multipart upload (`POST ?uploads`). Returns the
+    /// upload id needed by every subsequent presigned-part URL.
+    StorageObjectMultipartInit,
+    /// Mint per-part presigned PUT URLs against an active upload id.
+    StorageObjectMultipartParts,
+    /// Complete a multipart upload (`POST ?uploadId=...`); commits
+    /// the assembled object atomically.
+    StorageObjectMultipartComplete,
+    /// Abort a multipart upload (`DELETE ?uploadId=...`). mantad will
+    /// garbage-collect the parts.
+    StorageObjectMultipartAbort,
 }
 
 impl Action {
@@ -731,6 +756,13 @@ impl Action {
             Action::StorageUserPolicyGet => "storage_user_policy_get",
             Action::StorageUserPolicyPut => "storage_user_policy_put",
             Action::StorageUserPolicyDelete => "storage_user_policy_delete",
+            Action::StorageClusterSetPresigner => "storage_cluster_set_presigner",
+            Action::StorageObjectPresignPut => "storage_object_presign_put",
+            Action::StorageObjectPresignGet => "storage_object_presign_get",
+            Action::StorageObjectMultipartInit => "storage_object_multipart_init",
+            Action::StorageObjectMultipartParts => "storage_object_multipart_parts",
+            Action::StorageObjectMultipartComplete => "storage_object_multipart_complete",
+            Action::StorageObjectMultipartAbort => "storage_object_multipart_abort",
         }
     }
 
@@ -1339,7 +1371,17 @@ fn is_read_action(action: Action) -> bool {
         | Action::StorageAccessKeyCreate
         | Action::StorageAccessKeyDelete
         | Action::StorageUserPolicyPut
-        | Action::StorageUserPolicyDelete => false,
+        | Action::StorageUserPolicyDelete
+        // Presigner config + object mutations: rotating the signing
+        // credential, minting a PUT URL, and the multipart lifecycle
+        // (init/parts/complete/abort) all change cluster-side state
+        // and are off-limits to a ReadOnly tritond key.
+        | Action::StorageClusterSetPresigner
+        | Action::StorageObjectPresignPut
+        | Action::StorageObjectMultipartInit
+        | Action::StorageObjectMultipartParts
+        | Action::StorageObjectMultipartComplete
+        | Action::StorageObjectMultipartAbort => false,
         // CN reads.
         Action::CnList | Action::CnGet | Action::AutoApproveGet => true,
         // Legacy admin reads.
@@ -1362,7 +1404,10 @@ fn is_read_action(action: Action) -> bool {
         | Action::StorageUserGet
         | Action::StorageAccessKeyList
         | Action::StorageUserPolicyList
-        | Action::StorageUserPolicyGet => true,
+        | Action::StorageUserPolicyGet
+        // Presigned GET grants read access only, so it's a read
+        // even though it's auditable as a separate Action.
+        | Action::StorageObjectPresignGet => true,
     }
 }
 
@@ -1754,6 +1799,13 @@ mod tests {
         Action::StorageUserPolicyGet,
         Action::StorageUserPolicyPut,
         Action::StorageUserPolicyDelete,
+        Action::StorageClusterSetPresigner,
+        Action::StorageObjectPresignPut,
+        Action::StorageObjectPresignGet,
+        Action::StorageObjectMultipartInit,
+        Action::StorageObjectMultipartParts,
+        Action::StorageObjectMultipartComplete,
+        Action::StorageObjectMultipartAbort,
     ];
 
     #[tokio::test]
