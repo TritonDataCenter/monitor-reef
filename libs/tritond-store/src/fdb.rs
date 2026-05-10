@@ -6983,6 +6983,9 @@ impl Store for FdbStore {
                         status: StorageClusterStatus::Unknown,
                         created_at: Utc::now(),
                         last_observed_at: None,
+                        s3_endpoint: None,
+                        presigner_access_key_id: None,
+                        presigner_secret_access_key: None,
                     };
                     let value = match serde_json::to_vec(&cluster) {
                         Ok(v) => v,
@@ -7142,6 +7145,74 @@ impl Store for FdbStore {
                     };
                     cluster.status = status;
                     cluster.last_observed_at = Some(observed_at);
+                    let value = match serde_json::to_vec(&cluster) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Out::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Updated(Box::new(cluster)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Updated(c)) => Ok(*c),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
+                "deserialize storage cluster: {e}"
+            ))),
+            Ok(Out::SerializeFailed(e)) => Err(StoreError::Backend(format!(
+                "serialize storage cluster: {e}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn update_storage_cluster_presigner(
+        &self,
+        id: Uuid,
+        s3_endpoint: Option<String>,
+        access_key_id: Option<String>,
+        secret_access_key: Option<String>,
+    ) -> Result<StorageCluster, StoreError> {
+        match (&access_key_id, &secret_access_key) {
+            (Some(_), Some(_)) | (None, None) => {}
+            _ => {
+                return Err(StoreError::Conflict(
+                    "presigner credentials must be set or cleared together".into(),
+                ));
+            }
+        }
+        let by_id_key = Self::storage_cluster_by_id_key(id);
+
+        enum Out {
+            Updated(Box<StorageCluster>),
+            Vanished,
+            Corrupt(String),
+            SerializeFailed(String),
+        }
+
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let s3_endpoint = s3_endpoint.clone();
+                let access_key_id = access_key_id.clone();
+                let secret_access_key = secret_access_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let mut cluster: StorageCluster = match serde_json::from_slice(&bytes) {
+                        Ok(c) => c,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    if let Some(ep) = s3_endpoint {
+                        cluster.s3_endpoint = Some(ep);
+                    }
+                    cluster.presigner_access_key_id = access_key_id;
+                    cluster.presigner_secret_access_key = secret_access_key;
                     let value = match serde_json::to_vec(&cluster) {
                         Ok(v) => v,
                         Err(e) => return Ok(Out::SerializeFailed(e.to_string())),

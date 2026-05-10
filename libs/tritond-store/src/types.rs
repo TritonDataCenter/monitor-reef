@@ -3661,6 +3661,23 @@ pub struct StorageCluster {
     pub created_at: DateTime<Utc>,
     /// When `status` was last refreshed by a health probe.
     pub last_observed_at: Option<DateTime<Utc>>,
+    /// HTTP base URL for the cluster's S3 data plane (where presigned
+    /// URLs point — typically `https://<host>:7443`). When `None`,
+    /// presign endpoints return 409.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_endpoint: Option<String>,
+    /// IAM access key tritond signs presigned S3 URLs with. The
+    /// operator configures this once per cluster via
+    /// `POST /v2/storage/clusters/{id}/presigner`. Both fields are
+    /// either `Some(_)` together or both `None`. Same Phase 0
+    /// plaintext caveat as `admin_token`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presigner_access_key_id: Option<String>,
+    /// Cleartext IAM secret key for the presigner identity. Never
+    /// returned by any read endpoint; the wire-side
+    /// [`StorageClusterView`] omits it entirely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presigner_secret_access_key: Option<String>,
 }
 
 /// Body of `POST /v2/storage/clusters`.
@@ -3680,9 +3697,10 @@ fn default_storage_cluster_region() -> String {
     "us-east-1".to_string()
 }
 
-/// Wire-side projection of [`StorageCluster`] that **redacts the
-/// bearer token**. This is what `GET /v2/storage/clusters` and
-/// `GET /v2/storage/clusters/{id}` return.
+/// Wire-side projection of [`StorageCluster`] that **redacts every
+/// secret field** (admin token, presigner secret access key). This
+/// is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}`
+/// return.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StorageClusterView {
     pub id: Uuid,
@@ -3694,6 +3712,17 @@ pub struct StorageClusterView {
     pub status: StorageClusterStatus,
     pub created_at: DateTime<Utc>,
     pub last_observed_at: Option<DateTime<Utc>>,
+    /// S3 data-plane endpoint, surfaced to the UI so it can render
+    /// "presigned uploads target X". `None` when no presigner is
+    /// configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_endpoint: Option<String>,
+    /// True when the cluster has a presigner identity configured.
+    /// The frontend can hide upload UI when this is false. The
+    /// AKID itself is non-sensitive (stable + auditable) and is
+    /// surfaced so operators can confirm which identity is signing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presigner_access_key_id: Option<String>,
 }
 
 impl From<StorageCluster> for StorageClusterView {
@@ -3708,8 +3737,27 @@ impl From<StorageCluster> for StorageClusterView {
             status: c.status,
             created_at: c.created_at,
             last_observed_at: c.last_observed_at,
+            s3_endpoint: c.s3_endpoint,
+            // Surface the AKID but never the secret.
+            presigner_access_key_id: c.presigner_access_key_id,
         }
     }
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/presigner`. Operator
+/// configures the IAM credential tritond signs presigned S3 URLs with.
+/// Both fields are required so the call is unambiguous — to clear
+/// the presigner, send empty strings (the handler treats that as
+/// "unset").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SetPresignerRequest {
+    /// Optional. When `None`, the cluster's existing
+    /// `s3_endpoint` is left unchanged; when `Some`, it's replaced.
+    /// Omit on subsequent rotations of the credential alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_endpoint: Option<String>,
+    pub access_key_id: String,
+    pub secret_access_key: String,
 }
 
 #[cfg(test)]

@@ -3659,6 +3659,9 @@ impl Store for MemStore {
             status: StorageClusterStatus::Unknown,
             created_at: Utc::now(),
             last_observed_at: None,
+            s3_endpoint: None,
+            presigner_access_key_id: None,
+            presigner_secret_access_key: None,
         };
         guard.storage_cluster_id_by_name.insert(req.name, id);
         guard.storage_clusters_by_id.insert(id, cluster.clone());
@@ -3716,6 +3719,37 @@ impl Store for MemStore {
             .ok_or(StoreError::NotFound)?;
         cluster.status = status;
         cluster.last_observed_at = Some(observed_at);
+        Ok(cluster.clone())
+    }
+
+    async fn update_storage_cluster_presigner(
+        &self,
+        id: Uuid,
+        s3_endpoint: Option<String>,
+        access_key_id: Option<String>,
+        secret_access_key: Option<String>,
+    ) -> Result<StorageCluster, StoreError> {
+        // Validate the (akid, secret) pairing matches the contract
+        // documented on `Store::update_storage_cluster_presigner`:
+        // both Some or both None.
+        match (&access_key_id, &secret_access_key) {
+            (Some(_), Some(_)) | (None, None) => {}
+            _ => {
+                return Err(StoreError::Conflict(
+                    "presigner credentials must be set or cleared together".into(),
+                ));
+            }
+        }
+        let mut guard = self.inner.write().await;
+        let cluster = guard
+            .storage_clusters_by_id
+            .get_mut(&id)
+            .ok_or(StoreError::NotFound)?;
+        if let Some(ep) = s3_endpoint {
+            cluster.s3_endpoint = Some(ep);
+        }
+        cluster.presigner_access_key_id = access_key_id;
+        cluster.presigner_secret_access_key = secret_access_key;
         Ok(cluster.clone())
     }
 }
@@ -8547,6 +8581,124 @@ mod tests {
                 Uuid::new_v4(),
                 StorageClusterStatus::Healthy,
                 Utc::now(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_presigner_default_is_unconfigured() {
+        let store = MemStore::new();
+        let cluster = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        assert!(cluster.s3_endpoint.is_none());
+        assert!(cluster.presigner_access_key_id.is_none());
+        assert!(cluster.presigner_secret_access_key.is_none());
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_set_presigner_round_trips_and_redacts() {
+        let store = MemStore::new();
+        let cluster = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        let updated = store
+            .update_storage_cluster_presigner(
+                cluster.id,
+                Some("https://primary.example:7443".to_string()),
+                Some("AKIAEXAMPLE".to_string()),
+                Some("SECRET-not-real".to_string()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            updated.s3_endpoint.as_deref(),
+            Some("https://primary.example:7443")
+        );
+        assert_eq!(
+            updated.presigner_access_key_id.as_deref(),
+            Some("AKIAEXAMPLE")
+        );
+        assert_eq!(
+            updated.presigner_secret_access_key.as_deref(),
+            Some("SECRET-not-real")
+        );
+
+        // Wire-side view leaks the AKID (operator wants to see it)
+        // but never the secret.
+        let view: crate::StorageClusterView = updated.clone().into();
+        assert_eq!(view.presigner_access_key_id.as_deref(), Some("AKIAEXAMPLE"));
+        let serialised = serde_json::to_string(&view).unwrap();
+        assert!(
+            !serialised.contains("SECRET-not-real"),
+            "view leaked secret access key: {serialised}"
+        );
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_clear_presigner_keeps_endpoint() {
+        let store = MemStore::new();
+        let cluster = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        store
+            .update_storage_cluster_presigner(
+                cluster.id,
+                Some("https://primary.example:7443".to_string()),
+                Some("AKIA".to_string()),
+                Some("SECRET".to_string()),
+            )
+            .await
+            .unwrap();
+        let cleared = store
+            .update_storage_cluster_presigner(cluster.id, None, None, None)
+            .await
+            .unwrap();
+        // s3_endpoint preserved (None on the second call means
+        // "leave alone"), credentials cleared.
+        assert_eq!(
+            cleared.s3_endpoint.as_deref(),
+            Some("https://primary.example:7443")
+        );
+        assert!(cleared.presigner_access_key_id.is_none());
+        assert!(cleared.presigner_secret_access_key.is_none());
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_set_presigner_rejects_half_credentials() {
+        let store = MemStore::new();
+        let cluster = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        // Only AKID, no secret → 409.
+        let err = store
+            .update_storage_cluster_presigner(cluster.id, None, Some("AKIA".to_string()), None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Conflict(_)));
+        // Only secret, no AKID → 409.
+        let err = store
+            .update_storage_cluster_presigner(cluster.id, None, None, Some("SECRET".to_string()))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_set_presigner_unknown_id_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .update_storage_cluster_presigner(
+                Uuid::new_v4(),
+                None,
+                Some("AKIA".to_string()),
+                Some("SECRET".to_string()),
             )
             .await
             .unwrap_err();

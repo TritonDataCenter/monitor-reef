@@ -1383,4 +1383,23 @@ pub trait Store: Send + Sync + 'static {
         status: StorageClusterStatus,
         observed_at: DateTime<Utc>,
     ) -> Result<StorageCluster, StoreError>;
+
+    /// Replace (or clear) the IAM presigner credential tritond uses to
+    /// sign S3 presigned URLs for this cluster.
+    ///
+    /// * `(Some(akid), Some(secret))` → store the pair.
+    /// * `(None, None)` → clear the presigner; subsequent presign calls
+    ///   return `409`.
+    /// * Any other combination is treated as a `Conflict`.
+    ///
+    /// `s3_endpoint` is `Some(_)` to update the data-plane URL the
+    /// presigned URLs target, `None` to leave the existing value.
+    /// Returns the refreshed record.
+    async fn update_storage_cluster_presigner(
+        &self,
+        id: Uuid,
+        s3_endpoint: Option<String>,
+        access_key_id: Option<String>,
+        secret_access_key: Option<String>,
+    ) -> Result<StorageCluster, StoreError>;
 }
