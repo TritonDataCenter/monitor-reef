@@ -78,10 +78,11 @@ use tritond_api::{
         ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
         NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
         NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet,
-        NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizerId, Route, RouteTable,
-        RouteTarget, Silo, SshKey, SshKeyScope, StorageAccessKey, StorageBucket,
-        StorageClusterSummary, StorageClusterView, StorageMembership, StorageNode,
-        StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
+        NewTenant, NewVpc, Nic, PresignGetRequest, PresignPutRequest, PresignResponse, Project,
+        ProvisioningJob, Quota, RealizerId, Route, RouteTable, RouteTarget, SetPresignerRequest,
+        Silo, SshKey, SshKeyScope, StorageAccessKey, StorageBucket, StorageClusterSummary,
+        StorageClusterView, StorageMembership, StorageNode, StorageObjectsPage, StorageUser,
+        Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -6915,6 +6916,156 @@ impl TritondApi for TritondServiceImpl {
                 Err(http_err)
             }
         }
+    }
+
+    async fn set_storage_cluster_presigner(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<SetPresignerRequest>,
+    ) -> Result<HttpResponseOk<StorageClusterView>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterSetPresigner,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        let req = body.into_inner();
+        // Empty strings on the wire mean "clear the credentials" —
+        // map them to None so the store layer's contract (Some+Some
+        // or None+None) is honored.
+        let akid = if req.access_key_id.is_empty() {
+            None
+        } else {
+            Some(req.access_key_id.clone())
+        };
+        let secret = if req.secret_access_key.is_empty() {
+            None
+        } else {
+            Some(req.secret_access_key)
+        };
+        // Audit payload deliberately captures only AKID + endpoint
+        // — the secret is opaque to the audit chain just like
+        // mantad's admin token.
+        let audit_payload = serde_json::json!({
+            "s3_endpoint": req.s3_endpoint,
+            "access_key_id": akid,
+        });
+        match ctx
+            .store
+            .update_storage_cluster_presigner(id, req.s3_endpoint, akid, secret)
+            .await
+        {
+            Ok(cluster) => {
+                let view: StorageClusterView = cluster.into();
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageClusterSetPresigner,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageCluster::\"{id}\"")),
+                        },
+                        audit_payload,
+                    )
+                    .await;
+                Ok(HttpResponseOk(view))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageClusterSetPresigner,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        audit_payload,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn presign_storage_cluster_object_put(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<PresignPutRequest>,
+    ) -> Result<HttpResponseOk<PresignResponse>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageObjectPresignPut,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        let req = body.into_inner();
+        let resp = crate::storage::mint_presigned_url(
+            &ctx.store,
+            id,
+            "PUT",
+            &req.bucket,
+            &req.key,
+            req.expires_secs,
+        )
+        .await?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::StorageObjectPresignPut,
+                request_id,
+                Some(format!("StorageObject::\"{}/{}\"", req.bucket, req.key)),
+                AuditOutcome::Success {
+                    resource: Some(format!("StorageObject::\"{}/{}\"", req.bucket, req.key)),
+                },
+                serde_json::json!({
+                    "bucket": req.bucket,
+                    "key": req.key,
+                    "expires_secs": req.expires_secs,
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(resp))
+    }
+
+    async fn presign_storage_cluster_object_get(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<PresignGetRequest>,
+    ) -> Result<HttpResponseOk<PresignResponse>, HttpError> {
+        let ctx = rqctx.context();
+        // Reads still get audited via authenticate_and_authorize
+        // (Allow event), but we don't emit a record_mutation —
+        // the GET URL doesn't change cluster state.
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageObjectPresignGet,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let req = body.into_inner();
+        let resp = crate::storage::mint_presigned_url(
+            &ctx.store,
+            id,
+            "GET",
+            &req.bucket,
+            &req.key,
+            req.expires_secs,
+        )
+        .await?;
+        Ok(HttpResponseOk(resp))
     }
 }
 

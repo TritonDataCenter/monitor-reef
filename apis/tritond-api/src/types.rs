@@ -34,8 +34,11 @@ pub use tritond_store::{
 };
 
 pub use crate::{
-    StorageAccessKey, StorageAddNodeRequest, StorageBucket, StorageBucketListQuery,
-    StorageClusterSummary, StorageCreateBucketRequest, StorageCreateUserRequest, StorageMembership,
-    StorageNode, StorageObjectSummary, StorageObjectsPage, StorageObjectsQuery, StoragePeerEntry,
-    StorageReweightRequest, StorageUser,
+    CompletedMultipartPart, MultipartAbortRequest, MultipartCompleteRequest,
+    MultipartCompleteResponse, MultipartInitiateRequest, MultipartInitiateResponse, MultipartPart,
+    MultipartPartsRequest, MultipartPartsResponse, PresignGetRequest, PresignPutRequest,
+    PresignResponse, SetPresignerRequest, StorageAccessKey, StorageAddNodeRequest, StorageBucket,
+    StorageBucketListQuery, StorageClusterSummary, StorageCreateBucketRequest,
+    StorageCreateUserRequest, StorageMembership, StorageNode, StorageObjectSummary,
+    StorageObjectsPage, StorageObjectsQuery, StoragePeerEntry, StorageReweightRequest, StorageUser,
 };

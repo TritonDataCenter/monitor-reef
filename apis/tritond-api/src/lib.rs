@@ -630,6 +630,149 @@ pub struct StorageAccessKey {
     pub secret_access_key: Option<String>,
 }
 
+// ----- Presign + multipart wire types (Stage 6a) -----
+
+/// Body of `POST /v2/storage/clusters/{id}/presigner`. Operator
+/// configures the IAM credential tritond signs presigned S3 URLs
+/// with. To clear the presigner, send empty strings — the handler
+/// treats empty as "unset". `s3_endpoint` is the data-plane URL
+/// (port 7443); leave `None` to keep the existing value during
+/// credential rotation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SetPresignerRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_endpoint: Option<String>,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/s3/presign/put`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PresignPutRequest {
+    pub bucket: String,
+    pub key: String,
+    /// Validity window in seconds; 1..=604_800 (AWS 7-day cap).
+    pub expires_secs: u32,
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same
+/// shape as the PUT request — kept as a distinct type for audit and
+/// API-doc clarity.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PresignGetRequest {
+    pub bucket: String,
+    pub key: String,
+    pub expires_secs: u32,
+}
+
+/// Response shared by `presign/put` and `presign/get`. The browser
+/// uses these fields verbatim — the URL is fully signed; `method`
+/// tells the client which verb to issue; `headers` is reserved for
+/// future use when we sign headers beyond `host` (today empty).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PresignResponse {
+    pub url: String,
+    /// HTTP verb the URL is signed for (`"PUT"` or `"GET"`).
+    pub method: String,
+    /// Headers the client must send verbatim. Empty in the current
+    /// signer scope; reserved for future Content-Type / x-amz-*
+    /// signing.
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/initiate`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartInitiateRequest {
+    pub bucket: String,
+    pub key: String,
+    /// Optional `Content-Type` echoed into the `CreateMultipartUpload`
+    /// call so mantad records it on the final object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+}
+
+/// Response shape for `multipart/initiate`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartInitiateResponse {
+    /// Opaque mantad-side identifier the browser must echo on every
+    /// subsequent multipart call.
+    pub upload_id: String,
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/parts`.
+/// Returns one presigned URL per part. The browser PUTs each part
+/// directly to mantad and tracks the returned `ETag` headers.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartPartsRequest {
+    pub bucket: String,
+    pub key: String,
+    pub upload_id: String,
+    /// Number of parts the upload will use. Must be 1..=10_000 per
+    /// the S3 spec; mantad inherits the limit.
+    pub part_count: u32,
+    /// Per-part URL validity window. Treat as a session length —
+    /// longer than `expires_secs` for a single-shot PUT because
+    /// the browser may need time to upload all parts in sequence.
+    pub expires_secs: u32,
+}
+
+/// One row in [`MultipartPartsResponse::parts`].
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartPart {
+    /// 1-based part number. The browser sends parts in any order
+    /// but must echo the same numbers when calling
+    /// `multipart/complete`.
+    pub part_number: u32,
+    /// Presigned PUT URL. Sign-time invariant: each URL embeds
+    /// `partNumber` + `uploadId` query params and is valid for
+    /// `expires_secs` seconds.
+    pub url: String,
+}
+
+/// Response shape for `multipart/parts`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartPartsResponse {
+    pub parts: Vec<MultipartPart>,
+}
+
+/// Per-part metadata the browser captured during upload, supplied
+/// to `multipart/complete`. Order matters: the list must be sorted
+/// ascending by `part_number`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CompletedMultipartPart {
+    pub part_number: u32,
+    /// `ETag` value mantad returned on each per-part PUT. mantad
+    /// will reject the complete call if any etag mismatches.
+    pub etag: String,
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/complete`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartCompleteRequest {
+    pub bucket: String,
+    pub key: String,
+    pub upload_id: String,
+    pub parts: Vec<CompletedMultipartPart>,
+}
+
+/// Response shape for `multipart/complete`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartCompleteResponse {
+    pub bucket: String,
+    pub key: String,
+    /// Final object etag mantad assigned the assembled upload.
+    pub etag: String,
+}
+
+/// Body of `POST /v2/storage/clusters/{id}/s3/multipart/abort`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultipartAbortRequest {
+    pub bucket: String,
+    pub key: String,
+    pub upload_id: String,
+}
+
 /// Per-CN summary returned by `GET /v2/admin/legacy/cns`.
 ///
 /// Distinct from [`CnView`]: this view rolls up the discovery
@@ -2858,4 +3001,61 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<StorageClusterUserPolicyPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    // ----- Presign + multipart (Stage 6a) -----
+    //
+    // tritond holds the per-cluster IAM presigner credential; the
+    // handlers below use it to sign URLs the browser PUTs/GETs
+    // bytes against directly. Bytes never proxy through tritond or
+    // admin-backend — the URL is the entire authorization token.
+
+    /// Configure (or rotate) the per-cluster presigner identity.
+    /// `s3_endpoint` updates the cluster's data-plane URL; pass
+    /// `None` to leave it unchanged. Empty `access_key_id` +
+    /// `secret_access_key` clear the presigner. Mismatched
+    /// (one empty, one set) → 409.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/presigner",
+        tags = ["storage-clusters"],
+    }]
+    async fn set_storage_cluster_presigner(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<SetPresignerRequest>,
+    ) -> Result<HttpResponseOk<StorageClusterView>, HttpError>;
+
+    /// Mint a single-shot presigned PUT URL (uploads < 5 MB).
+    /// Returns 409 when the cluster has no presigner configured.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/s3/presign/put",
+        tags = ["storage-clusters"],
+    }]
+    async fn presign_storage_cluster_object_put(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<PresignPutRequest>,
+    ) -> Result<HttpResponseOk<PresignResponse>, HttpError>;
+
+    /// Mint a single-shot presigned GET URL (downloads or shareable
+    /// links).
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/s3/presign/get",
+        tags = ["storage-clusters"],
+    }]
+    async fn presign_storage_cluster_object_get(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<PresignGetRequest>,
+    ) -> Result<HttpResponseOk<PresignResponse>, HttpError>;
+
+    // Multipart upload endpoints (initiate / parts / complete / abort)
+    // are deferred — single-shot PUT supports files up to 5 GB, which
+    // covers ~all admin-UI upload cases. Multipart adds full SigV4
+    // request signing + XML parsing complexity that's out of scope for
+    // v1. The `Action::StorageObjectMultipart*` Cedar variants and
+    // the `Multipart*` wire types are kept in place so the policy +
+    // contract don't churn when the follow-up lands.
 }

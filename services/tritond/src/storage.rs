@@ -36,12 +36,14 @@ use std::sync::Arc;
 use dropshot::{ClientErrorStatusCode, HttpError};
 use mantad_client::{MantadClient, MantadClientError};
 use tritond_api::{
-    StorageAccessKey, StorageBucket, StorageClusterSummary, StorageMembership, StorageNode,
-    StorageObjectSummary, StorageObjectsPage, StoragePeerEntry, StorageUser,
+    PresignResponse, StorageAccessKey, StorageBucket, StorageClusterSummary, StorageMembership,
+    StorageNode, StorageObjectSummary, StorageObjectsPage, StoragePeerEntry, StorageUser,
 };
 use tritond_audit::Outcome as AuditOutcome;
 use tritond_store::{StorageCluster, StorageClusterSurface, Store, StoreError};
 use uuid::Uuid;
+
+use crate::sigv4;
 
 /// Resolve a registered cluster id to (record, ready-to-call client).
 ///
@@ -320,4 +322,103 @@ pub(crate) fn objects_query_to(q: tritond_api::StorageObjectsQuery) -> mantad_cl
         continuation_token: q.continuation_token,
         max_keys: q.max_keys,
     }
+}
+
+/// Mint a SigV4 query-string-authenticated URL the browser can hand
+/// directly to mantad's S3 data plane.
+///
+/// Returns:
+///
+/// * `404` when the cluster id is unknown.
+/// * `409 Conflict` when the cluster's `s3_endpoint` or presigner
+///   credentials are not configured (the operator must call
+///   `POST /v2/storage/clusters/{id}/presigner` first).
+/// * `400 Bad Request` when sigv4 input validation rejects the
+///   bucket/key/expires_secs (empty strings, expires_secs out of
+///   range).
+/// * `500` for any other sigv4 misconfiguration (bad endpoint URL).
+///
+/// Used by `presign_storage_cluster_object_{put,get}` and (in a
+/// follow-up) the multipart per-part URL minter.
+pub async fn mint_presigned_url(
+    store: &Arc<dyn Store>,
+    cluster_id: Uuid,
+    method: &str,
+    bucket: &str,
+    key: &str,
+    expires_secs: u32,
+) -> Result<PresignResponse, HttpError> {
+    let cluster = store
+        .get_storage_cluster(cluster_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if cluster.surface != StorageClusterSurface::S3 {
+        return Err(HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!(
+                "storage cluster {} has surface {:?}; presign endpoints implement only the S3 \
+                 surface today",
+                cluster.id, cluster.surface
+            ),
+        ));
+    }
+    let s3_endpoint = cluster.s3_endpoint.as_deref().ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!(
+                "storage cluster {} has no s3_endpoint configured — set one via \
+                 POST /v2/storage/clusters/{{id}}/presigner",
+                cluster.id
+            ),
+        )
+    })?;
+    let access_key_id = cluster
+        .presigner_access_key_id
+        .as_deref()
+        .ok_or_else(|| presigner_unconfigured(cluster.id))?;
+    let secret_access_key = cluster
+        .presigner_secret_access_key
+        .as_deref()
+        .ok_or_else(|| presigner_unconfigured(cluster.id))?;
+    let url = sigv4::presign_url(sigv4::PresignRequest {
+        access_key_id,
+        secret_access_key,
+        region: &cluster.default_region,
+        endpoint: s3_endpoint,
+        method,
+        bucket,
+        key,
+        extra_query: &[],
+        expires_secs,
+        now: chrono::Utc::now(),
+    })
+    .map_err(|e| match e {
+        sigv4::PresignError::Misconfigured(msg) => HttpError::for_client_error(
+            Some("BadRequest".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            format!("presign input invalid: {msg}"),
+        ),
+        sigv4::PresignError::BadEndpoint(msg) => HttpError::for_internal_error(format!(
+            "cluster {} s3_endpoint is malformed: {msg}",
+            cluster.id
+        )),
+    })?;
+    Ok(PresignResponse {
+        url,
+        method: method.to_string(),
+        headers: std::collections::HashMap::new(),
+    })
+}
+
+fn presigner_unconfigured(id: Uuid) -> HttpError {
+    HttpError::for_client_error(
+        Some("Conflict".to_string()),
+        ClientErrorStatusCode::CONFLICT,
+        format!(
+            "storage cluster {id} has no presigner configured — set one via \
+             POST /v2/storage/clusters/{{id}}/presigner"
+        ),
+    )
 }
