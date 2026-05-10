@@ -26,6 +26,7 @@ pub mod edge;
 pub mod legacy_classify;
 pub mod provisioner;
 pub mod rate_limit;
+pub mod storage;
 pub mod sweeper;
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -36,8 +37,9 @@ use anyhow::{Context, Result};
 use base64::Engine;
 use dropshot::{
     ApiDescription, ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel,
-    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, HttpServer,
-    HttpServerStarter, Path, Query, RequestContext, TypedBody,
+    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
+    HttpResponseUpdatedNoContent, HttpServer, HttpServerStarter, Path, Query, RequestContext,
+    TypedBody,
 };
 use proteus_api::blueprint::{
     ClientLinkConfig, PORT_BLUEPRINT_SCHEMA_V0, PluginConfigBytes, PortBlueprint, PortLimits,
@@ -61,11 +63,13 @@ use tritond_api::{
     NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
     RegisterStatusResponse, SetCnRoleRequest, SiloPath, SiloTenantPath, SshKeyPath,
-    StorageClusterPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
-    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
-    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
-    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
-    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
+    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
+    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageCompatibility, ImageScope,
@@ -74,7 +78,9 @@ use tritond_api::{
         NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
         NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet,
         NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizerId, Route, RouteTable,
-        RouteTarget, Silo, SshKey, SshKeyScope, StorageClusterView, Subnet, Tenant, Vpc,
+        RouteTarget, Silo, SshKey, SshKeyScope, StorageAccessKey, StorageBucket,
+        StorageClusterSummary, StorageClusterView, StorageMembership, StorageNode,
+        StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -5968,6 +5974,1000 @@ impl TritondApi for TritondServiceImpl {
                     .await;
                 Err(store_error_to_http(e))
             }
+        }
+    }
+
+    async fn probe_storage_cluster_health(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageClusterView>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterHealthProbe,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let observed_at = chrono::Utc::now();
+        let new_status = match client.cluster_summary().await {
+            Ok(summary) => {
+                if summary.nodes_alive == summary.nodes_total {
+                    tritond_store::StorageClusterStatus::Healthy
+                } else if summary.nodes_alive == 0 {
+                    tritond_store::StorageClusterStatus::Unreachable
+                } else {
+                    tritond_store::StorageClusterStatus::Degraded
+                }
+            }
+            Err(_) => tritond_store::StorageClusterStatus::Unreachable,
+        };
+        let updated = ctx
+            .store
+            .update_storage_cluster_status(id, new_status, observed_at)
+            .await
+            .map_err(store_error_to_http)?;
+        let view: StorageClusterView = updated.into();
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::StorageClusterHealthProbe,
+                request_id,
+                Some(format!("StorageCluster::\"{id}\"")),
+                AuditOutcome::Success {
+                    resource: Some(format!("StorageCluster::\"{id}\"")),
+                },
+                serde_json::json!({ "observed_status": view.status }),
+            )
+            .await;
+        Ok(HttpResponseOk(view))
+    }
+
+    async fn get_storage_cluster_summary(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageClusterSummary>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterSummary,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let summary = client
+            .cluster_summary()
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(crate::storage::cluster_summary_from(
+            summary,
+        )))
+    }
+
+    async fn list_storage_cluster_nodes(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageNode>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageNodeList,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let nodes = client
+            .list_nodes()
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(
+            nodes.into_iter().map(crate::storage::node_from).collect(),
+        ))
+    }
+
+    async fn get_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageNode>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageNodeGet,
+        )
+        .await?;
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let node = client
+            .get_node(p.node_id)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(crate::storage::node_from(node)))
+    }
+
+    async fn add_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<tritond_api::StorageAddNodeRequest>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageNodeAdd,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        let req = body.into_inner();
+        let audit_payload = serde_json::json!({
+            "node_id": req.id,
+            "rack": req.rack,
+            "internal_url": req.internal_url,
+        });
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let mantad_req = crate::storage::add_node_request_to(req);
+        match client.add_node(&mantad_req).await {
+            Ok(m) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageNodeAdd,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageCluster::\"{id}\"")),
+                        },
+                        audit_payload,
+                    )
+                    .await;
+                Ok(HttpResponseOk(crate::storage::membership_from(m)))
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageNodeAdd,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        audit_outcome,
+                        audit_payload,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn remove_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageNodeRemove,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let payload = serde_json::json!({ "node_id": p.node_id });
+        match client.remove_node(p.node_id).await {
+            Ok(m) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageNodeRemove,
+                        request_id,
+                        Some(format!("StorageCluster::\"{}\"", p.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageCluster::\"{}\"", p.id)),
+                        },
+                        payload,
+                    )
+                    .await;
+                Ok(HttpResponseOk(crate::storage::membership_from(m)))
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageNodeRemove,
+                        request_id,
+                        Some(format!("StorageCluster::\"{}\"", p.id)),
+                        audit_outcome,
+                        payload,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn drain_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError> {
+        forward_node_membership_op(
+            &rqctx,
+            path,
+            Action::StorageNodeDrain,
+            |client, node_id| async move { client.drain_node(node_id).await },
+        )
+        .await
+    }
+
+    async fn undrain_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError> {
+        forward_node_membership_op(
+            &rqctx,
+            path,
+            Action::StorageNodeUndrain,
+            |client, node_id| async move { client.undrain_node(node_id).await },
+        )
+        .await
+    }
+
+    async fn reweight_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+        body: TypedBody<tritond_api::StorageReweightRequest>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageNodeReweight,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let req = body.into_inner();
+        let payload = serde_json::json!({
+            "node_id": p.node_id,
+            "factor": req.factor,
+        });
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let mantad_req = crate::storage::reweight_request_to(req);
+        match client.reweight_node(p.node_id, &mantad_req).await {
+            Ok(m) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageNodeReweight,
+                        request_id,
+                        Some(format!("StorageCluster::\"{}\"", p.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageCluster::\"{}\"", p.id)),
+                        },
+                        payload,
+                    )
+                    .await;
+                Ok(HttpResponseOk(crate::storage::membership_from(m)))
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageNodeReweight,
+                        request_id,
+                        Some(format!("StorageCluster::\"{}\"", p.id)),
+                        audit_outcome,
+                        payload,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn get_storage_cluster_membership(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageMembershipGet,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let m = client
+            .membership()
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(crate::storage::membership_from(m)))
+    }
+
+    async fn list_storage_cluster_buckets(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        query: Query<tritond_api::StorageBucketListQuery>,
+    ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageBucketList,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let with_stats = query.into_inner().stats.unwrap_or(false);
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let buckets = client
+            .list_buckets(with_stats)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(
+            buckets
+                .into_iter()
+                .map(crate::storage::bucket_from)
+                .collect(),
+        ))
+    }
+
+    async fn get_storage_cluster_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterBucketPath>,
+    ) -> Result<HttpResponseOk<StorageBucket>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageBucketGet,
+        )
+        .await?;
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let b = client
+            .get_bucket(&p.bucket)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(crate::storage::bucket_from(b)))
+    }
+
+    async fn create_storage_cluster_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<tritond_api::StorageCreateBucketRequest>,
+    ) -> Result<HttpResponseCreated<StorageBucket>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageBucketCreate,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        let req = body.into_inner();
+        let payload = serde_json::json!({
+            "name": req.name,
+            "owner": req.owner,
+        });
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let mantad_req = crate::storage::create_bucket_request_to(req);
+        match client.create_bucket(&mantad_req).await {
+            Ok(b) => {
+                let view = crate::storage::bucket_from(b);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageBucketCreate,
+                        request_id,
+                        Some(format!("StorageBucket::\"{}\"", view.name)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageBucket::\"{}\"", view.name)),
+                        },
+                        payload,
+                    )
+                    .await;
+                Ok(HttpResponseCreated(view))
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageBucketCreate,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        audit_outcome,
+                        payload,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn delete_storage_cluster_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterBucketPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageBucketDelete,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        match client.delete_bucket(&p.bucket).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageBucketDelete,
+                        request_id,
+                        Some(format!("StorageBucket::\"{}\"", p.bucket)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageBucket::\"{}\"", p.bucket)),
+                        },
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageBucketDelete,
+                        request_id,
+                        Some(format!("StorageBucket::\"{}\"", p.bucket)),
+                        audit_outcome,
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn list_storage_cluster_objects(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterBucketPath>,
+        query: Query<tritond_api::StorageObjectsQuery>,
+    ) -> Result<HttpResponseOk<StorageObjectsPage>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageObjectList,
+        )
+        .await?;
+        let p = path.into_inner();
+        let q = crate::storage::objects_query_to(query.into_inner());
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let page = client
+            .list_objects(&p.bucket, &q)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(crate::storage::objects_page_from(page)))
+    }
+
+    async fn list_storage_cluster_users(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageUser>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserList,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let users = client
+            .list_users()
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(
+            users.into_iter().map(crate::storage::user_from).collect(),
+        ))
+    }
+
+    async fn create_storage_cluster_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<tritond_api::StorageCreateUserRequest>,
+    ) -> Result<HttpResponseCreated<StorageUser>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserCreate,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        let req = body.into_inner();
+        let payload = serde_json::json!({ "name": req.name });
+        let (_, client) = crate::storage::client_for(&ctx.store, id).await?;
+        let mantad_req = crate::storage::create_user_request_to(req);
+        match client.create_user(&mantad_req).await {
+            Ok(u) => {
+                let view = crate::storage::user_from(u);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserCreate,
+                        request_id,
+                        Some(format!("StorageUser::\"{}\"", view.name)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageUser::\"{}\"", view.name)),
+                        },
+                        payload,
+                    )
+                    .await;
+                Ok(HttpResponseCreated(view))
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserCreate,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        audit_outcome,
+                        payload,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn get_storage_cluster_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseOk<StorageUser>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserGet,
+        )
+        .await?;
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let u = client
+            .get_user(&p.user)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(crate::storage::user_from(u)))
+    }
+
+    async fn delete_storage_cluster_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserDelete,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        match client.delete_user(&p.user).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserDelete,
+                        request_id,
+                        Some(format!("StorageUser::\"{}\"", p.user)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageUser::\"{}\"", p.user)),
+                        },
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserDelete,
+                        request_id,
+                        Some(format!("StorageUser::\"{}\"", p.user)),
+                        audit_outcome,
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn list_storage_cluster_access_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageAccessKey>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageAccessKeyList,
+        )
+        .await?;
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let keys = client
+            .list_access_keys(&p.user)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(
+            keys.into_iter()
+                .map(crate::storage::access_key_from)
+                .collect(),
+        ))
+    }
+
+    async fn create_storage_cluster_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageAccessKeyCreate,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let payload = serde_json::json!({ "user": p.user });
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        match client.create_access_key(&p.user).await {
+            Ok(k) => {
+                let view = crate::storage::access_key_from(k);
+                // Audit captures only the AKID — the cleartext
+                // secret is in the response and must not enter the
+                // audit chain.
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageAccessKeyCreate,
+                        request_id,
+                        Some(format!("StorageAccessKey::\"{}\"", view.access_key_id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageAccessKey::\"{}\"", view.access_key_id)),
+                        },
+                        serde_json::json!({
+                            "user": view.user,
+                            "access_key_id": view.access_key_id,
+                        }),
+                    )
+                    .await;
+                Ok(HttpResponseCreated(view))
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageAccessKeyCreate,
+                        request_id,
+                        None,
+                        audit_outcome,
+                        payload,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn delete_storage_cluster_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterAccessKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageAccessKeyDelete,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        match client.delete_access_key(&p.access_key_id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageAccessKeyDelete,
+                        request_id,
+                        Some(format!("StorageAccessKey::\"{}\"", p.access_key_id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageAccessKey::\"{}\"", p.access_key_id)),
+                        },
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageAccessKeyDelete,
+                        request_id,
+                        Some(format!("StorageAccessKey::\"{}\"", p.access_key_id)),
+                        audit_outcome,
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn list_storage_cluster_user_policies(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseOk<Vec<String>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserPolicyList,
+        )
+        .await?;
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let policies = client
+            .list_user_policies(&p.user)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(policies))
+    }
+
+    async fn get_storage_cluster_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPolicyPath>,
+    ) -> Result<HttpResponseOk<serde_json::Value>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserPolicyGet,
+        )
+        .await?;
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let doc = client
+            .get_user_policy(&p.user, &p.policy)
+            .await
+            .map_err(crate::storage::mantad_error_to_http)?;
+        Ok(HttpResponseOk(doc))
+    }
+
+    async fn put_storage_cluster_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPolicyPath>,
+        body: TypedBody<serde_json::Value>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserPolicyPut,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let doc = body.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let resource = format!("StorageUserPolicy::\"{}/{}\"", p.user, p.policy);
+        match client.put_user_policy(&p.user, &p.policy, &doc).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserPolicyPut,
+                        request_id,
+                        Some(resource.clone()),
+                        AuditOutcome::Success {
+                            resource: Some(resource),
+                        },
+                        serde_json::json!({ "user": p.user, "policy": p.policy }),
+                    )
+                    .await;
+                Ok(HttpResponseUpdatedNoContent())
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserPolicyPut,
+                        request_id,
+                        Some(resource),
+                        audit_outcome,
+                        serde_json::json!({ "user": p.user, "policy": p.policy }),
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+
+    async fn delete_storage_cluster_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPolicyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageUserPolicyDelete,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let p = path.into_inner();
+        let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+        let resource = format!("StorageUserPolicy::\"{}/{}\"", p.user, p.policy);
+        match client.delete_user_policy(&p.user, &p.policy).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserPolicyDelete,
+                        request_id,
+                        Some(resource.clone()),
+                        AuditOutcome::Success {
+                            resource: Some(resource),
+                        },
+                        serde_json::json!({ "user": p.user, "policy": p.policy }),
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageUserPolicyDelete,
+                        request_id,
+                        Some(resource),
+                        audit_outcome,
+                        serde_json::json!({ "user": p.user, "policy": p.policy }),
+                    )
+                    .await;
+                Err(http_err)
+            }
+        }
+    }
+}
+
+/// Shared body for the parameter-less, mantad-side mutation endpoints
+/// that take only a node id (drain / undrain). Centralises the auth
+/// + audit pattern so each handler is a 3-line wrapper.
+async fn forward_node_membership_op<F, Fut>(
+    rqctx: &RequestContext<ApiContext>,
+    path: Path<StorageClusterNodePath>,
+    action: Action,
+    op: F,
+) -> Result<HttpResponseOk<StorageMembership>, HttpError>
+where
+    F: FnOnce(mantad_client::MantadClient, u32) -> Fut,
+    Fut: std::future::Future<
+            Output = Result<mantad_client::Membership, mantad_client::MantadClientError>,
+        >,
+{
+    let ctx = rqctx.context();
+    let principal =
+        authenticate_and_authorize(rqctx, &ctx.auth, &ctx.audit, &ctx.store, action).await?;
+    let request_id = parse_request_id(rqctx);
+    let p = path.into_inner();
+    let (_, client) = crate::storage::client_for(&ctx.store, p.id).await?;
+    let payload = serde_json::json!({ "node_id": p.node_id });
+    match op(client, p.node_id).await {
+        Ok(m) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    action,
+                    request_id,
+                    Some(format!("StorageCluster::\"{}\"", p.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("StorageCluster::\"{}\"", p.id)),
+                    },
+                    payload,
+                )
+                .await;
+            Ok(HttpResponseOk(crate::storage::membership_from(m)))
+        }
+        Err(e) => {
+            let (http_err, audit_outcome) = crate::storage::mantad_error_to_http_audit(e);
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    action,
+                    request_id,
+                    Some(format!("StorageCluster::\"{}\"", p.id)),
+                    audit_outcome,
+                    payload,
+                )
+                .await;
+            Err(http_err)
         }
     }
 }

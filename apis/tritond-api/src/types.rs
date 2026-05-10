@@ -32,3 +32,10 @@ pub use tritond_store::{
     TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID,
     TRITOND_METADATA_TENANT_ID, Tenant, UserView, VmNicReport, VmReport, VmState, Vpc,
 };
+
+pub use crate::{
+    StorageAccessKey, StorageAddNodeRequest, StorageBucket, StorageBucketListQuery,
+    StorageClusterSummary, StorageCreateBucketRequest, StorageCreateUserRequest, StorageMembership,
+    StorageNode, StorageObjectSummary, StorageObjectsPage, StorageObjectsQuery, StoragePeerEntry,
+    StorageReweightRequest, StorageUser,
+};

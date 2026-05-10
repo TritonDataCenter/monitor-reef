@@ -19,8 +19,8 @@ pub mod types;
 
 use chrono::{DateTime, Utc};
 use dropshot::{
-    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, Path, Query,
-    RequestContext, TypedBody,
+    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
+    HttpResponseUpdatedNoContent, Path, Query, RequestContext, TypedBody,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -407,6 +407,227 @@ pub struct LegacyVmListQuery {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct StorageClusterPath {
     pub id: Uuid,
+}
+
+/// Per-node forwarder path, e.g.
+/// `/v2/storage/clusters/{id}/nodes/{node_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StorageClusterNodePath {
+    pub id: Uuid,
+    /// Numeric storage-node identifier (mirrors `manta_place::NodeId`,
+    /// which is a `u32`). Re-serialised verbatim to mantad.
+    pub node_id: u32,
+}
+
+/// Per-bucket forwarder path,
+/// `/v2/storage/clusters/{id}/buckets/{bucket}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StorageClusterBucketPath {
+    pub id: Uuid,
+    pub bucket: String,
+}
+
+/// Per-IAM-user forwarder path,
+/// `/v2/storage/clusters/{id}/users/{user}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StorageClusterUserPath {
+    pub id: Uuid,
+    pub user: String,
+}
+
+/// Per-access-key forwarder path,
+/// `/v2/storage/clusters/{id}/access-keys/{access_key_id}`. Note that
+/// access-key delete in mantad's API is *not* nested under the user
+/// (the AKID alone identifies the key) — the path mirrors that shape.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StorageClusterAccessKeyPath {
+    pub id: Uuid,
+    pub access_key_id: String,
+}
+
+/// Per-policy forwarder path,
+/// `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StorageClusterUserPolicyPath {
+    pub id: Uuid,
+    pub user: String,
+    pub policy: String,
+}
+
+// ----- Storage cluster forwarder mirror types -----
+//
+// These types mirror `mantad_client::types::*` field-for-field so the
+// JSON wire shape is byte-identical. The mirror exists because Dropshot
+// requires `JsonSchema` for response types and `mantad-client` types
+// don't carry `JsonSchema` derives (they're built against schemars
+// 1.x in the manta-storage workspace, while this workspace pins
+// schemars 0.8 to match Dropshot 0.16). Conversion happens once on
+// each side via `From` impls living in `services/tritond/src/lib.rs`.
+
+/// Mirror of `mantad_client::types::ClusterSummary`. Returned by
+/// `GET /v2/storage/clusters/{id}/cluster`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageClusterSummary {
+    pub version: String,
+    pub primary: u32,
+    pub this_node: u32,
+    pub replication_factor: usize,
+    pub nodes_total: usize,
+    pub nodes_alive: usize,
+    pub buckets: usize,
+    pub total_blobs: u64,
+    pub total_bytes: u64,
+    pub racks: Vec<String>,
+    pub query_ms: u64,
+}
+
+/// Mirror of `mantad_client::types::Node`. Returned by
+/// `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageNode {
+    pub id: u32,
+    pub rack: String,
+    pub internal_url: String,
+    pub alive: bool,
+    pub is_primary: bool,
+    pub blobs: u64,
+    pub bytes: u64,
+    pub buckets: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Mirror of `mantad_client::types::PeerEntry`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StoragePeerEntry {
+    pub id: u32,
+    pub rack: String,
+    pub internal_url: String,
+}
+
+/// Mirror of `mantad_client::types::Membership`. Returned by
+/// `GET /v2/storage/clusters/{id}/membership` and by every
+/// node-mutation endpoint (drain / undrain / reweight / add /
+/// remove) that mantad answers with the refreshed view.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageMembership {
+    pub version: u64,
+    pub peers: Vec<StoragePeerEntry>,
+    pub auto_membership: bool,
+}
+
+/// Body for `POST /v2/storage/clusters/{id}/nodes`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageAddNodeRequest {
+    pub id: u32,
+    pub rack: String,
+    pub internal_url: String,
+}
+
+/// Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageReweightRequest {
+    /// New reweight factor; 1.0 = normal, 0.0 = drained.
+    pub factor: f64,
+}
+
+/// Mirror of `mantad_client::types::Bucket`. Returned by
+/// `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageBucket {
+    pub name: String,
+    pub owner: String,
+    pub created_at: DateTime<Utc>,
+    /// Object count, present only when `?stats=1` was forwarded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_count: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+}
+
+/// Body for `POST /v2/storage/clusters/{id}/buckets`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageCreateBucketRequest {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// Raw JSON `Durability` (mantad's type lives in mantas3-meta;
+    /// kept opaque to avoid a dep cycle).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub durability: Option<serde_json::Value>,
+}
+
+/// Mirror of `mantad_client::types::ObjectsPage`. Paged
+/// `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageObjectsPage {
+    pub objects: Vec<StorageObjectSummary>,
+    pub common_prefixes: Vec<String>,
+    pub is_truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_continuation_token: Option<String>,
+}
+
+/// Mirror of `mantad_client::types::ObjectSummary`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageObjectSummary {
+    pub key: String,
+    pub size: u64,
+    pub etag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    pub last_modified: DateTime<Utc>,
+}
+
+/// Query for the object-listing forwarder. Mirrors
+/// `mantad_client::types::ObjectsQuery`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct StorageObjectsQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delimiter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub continuation_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_keys: Option<u32>,
+}
+
+/// Bucket-list query — the only filter mantad exposes is `?stats=1`,
+/// which expands the response with object_count + total_bytes per
+/// bucket (a more expensive scan).
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+pub struct StorageBucketListQuery {
+    #[serde(default)]
+    pub stats: Option<bool>,
+}
+
+/// Mirror of `mantad_client::types::User`. Returned by IAM list +
+/// per-user GET.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageUser {
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Body for `POST /v2/storage/clusters/{id}/users`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageCreateUserRequest {
+    pub name: String,
+}
+
+/// Mirror of `mantad_client::types::AccessKey`. `secret_access_key`
+/// is `Some(_)` only on the `POST .../access-keys` create response —
+/// mantad does not retain the cleartext after that one return.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct StorageAccessKey {
+    pub access_key_id: String,
+    pub user: String,
+    pub created_at: DateTime<Utc>,
+    /// `"Active"` or `"Revoked"` (free-form on the wire today).
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_access_key: Option<String>,
 }
 
 /// Per-CN summary returned by `GET /v2/admin/legacy/cns`.
@@ -2324,10 +2545,317 @@ pub trait TritondApi {
         path: Path<StorageClusterPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    // Note: `POST /v2/storage/clusters/{id}/health` ships in Stage
-    // 3.5 alongside the typed forwarder endpoints — it requires the
-    // `mantad-client` dep so the handler can call the cluster's
-    // `/admin/v1/cluster` summary and persist the observed status.
-    // The `Action::StorageClusterHealthProbe` Cedar variant exists
-    // already so the policy + audit shape don't churn when 3.5 lands.
+    /// Trigger an out-of-band health probe against the cluster's
+    /// `/admin/v1/cluster` summary, persist the observed status to
+    /// `last_observed_at`, and return the refreshed view. POST
+    /// because it actively mutates state.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/health",
+        tags = ["storage-clusters"],
+    }]
+    async fn probe_storage_cluster_health(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageClusterView>, HttpError>;
+
+    // ----- Storage cluster forwarders (mantad /admin/v1/* proxy) -----
+    //
+    // Every forwarder below looks up the StorageCluster by id, builds
+    // a `mantad_client::MantadClient` with the stored bearer token,
+    // calls the typed method, and returns the response converted via
+    // `From` impls into the mirror types defined above. admin-backend
+    // and tcadm reach mantad's admin surface only through these
+    // endpoints; they never see the raw bearer token.
+
+    /// `GET /admin/v1/cluster` — cluster summary.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/cluster",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster_summary(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageClusterSummary>, HttpError>;
+
+    /// `GET /admin/v1/nodes` — list all nodes.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/nodes",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_cluster_nodes(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageNode>>, HttpError>;
+
+    /// `GET /admin/v1/nodes/{node_id}` — single-node detail.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/nodes/{node_id}",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageNode>, HttpError>;
+
+    /// `POST /admin/v1/nodes` — register a peer.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/nodes",
+        tags = ["storage-clusters"],
+    }]
+    async fn add_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<StorageAddNodeRequest>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError>;
+
+    /// `DELETE /admin/v1/nodes/{node_id}` — drop a peer.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/storage/clusters/{id}/nodes/{node_id}",
+        tags = ["storage-clusters"],
+    }]
+    async fn remove_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError>;
+
+    /// `POST /admin/v1/nodes/{node_id}/drain`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/nodes/{node_id}/drain",
+        tags = ["storage-clusters"],
+    }]
+    async fn drain_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError>;
+
+    /// `POST /admin/v1/nodes/{node_id}/undrain`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/nodes/{node_id}/undrain",
+        tags = ["storage-clusters"],
+    }]
+    async fn undrain_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError>;
+
+    /// `POST /admin/v1/nodes/{node_id}/reweight`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/nodes/{node_id}/reweight",
+        tags = ["storage-clusters"],
+    }]
+    async fn reweight_storage_cluster_node(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterNodePath>,
+        body: TypedBody<StorageReweightRequest>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError>;
+
+    /// `GET /admin/v1/membership` — current membership view.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/membership",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster_membership(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageMembership>, HttpError>;
+
+    /// `GET /admin/v1/buckets` — all buckets in the cluster.
+    /// `?stats=true` forwards `?stats=1` to mantad and includes
+    /// per-bucket object counts + total bytes (a more expensive scan).
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/buckets",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_cluster_buckets(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        query: Query<StorageBucketListQuery>,
+    ) -> Result<HttpResponseOk<Vec<StorageBucket>>, HttpError>;
+
+    /// `GET /admin/v1/buckets/{bucket}` — bucket detail.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/buckets/{bucket}",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterBucketPath>,
+    ) -> Result<HttpResponseOk<StorageBucket>, HttpError>;
+
+    /// `POST /admin/v1/buckets` — create a bucket.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/buckets",
+        tags = ["storage-clusters"],
+    }]
+    async fn create_storage_cluster_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<StorageCreateBucketRequest>,
+    ) -> Result<HttpResponseCreated<StorageBucket>, HttpError>;
+
+    /// `DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/storage/clusters/{id}/buckets/{bucket}",
+        tags = ["storage-clusters"],
+    }]
+    async fn delete_storage_cluster_bucket(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterBucketPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// `GET /admin/v1/buckets/{bucket}/objects` — paged object listing.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/buckets/{bucket}/objects",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_cluster_objects(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterBucketPath>,
+        query: Query<StorageObjectsQuery>,
+    ) -> Result<HttpResponseOk<StorageObjectsPage>, HttpError>;
+
+    /// `GET /admin/v1/users`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/users",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_cluster_users(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageUser>>, HttpError>;
+
+    /// `POST /admin/v1/users`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/users",
+        tags = ["storage-clusters"],
+    }]
+    async fn create_storage_cluster_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+        body: TypedBody<StorageCreateUserRequest>,
+    ) -> Result<HttpResponseCreated<StorageUser>, HttpError>;
+
+    /// `GET /admin/v1/users/{user}`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/users/{user}",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseOk<StorageUser>, HttpError>;
+
+    /// `DELETE /admin/v1/users/{user}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/storage/clusters/{id}/users/{user}",
+        tags = ["storage-clusters"],
+    }]
+    async fn delete_storage_cluster_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// `GET /admin/v1/users/{user}/access-keys`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/users/{user}/access-keys",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_cluster_access_keys(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseOk<Vec<StorageAccessKey>>, HttpError>;
+
+    /// `POST /admin/v1/users/{user}/access-keys` — secret returned
+    /// once on the response. Caller must capture it; mantad does not
+    /// retain the cleartext.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters/{id}/users/{user}/access-keys",
+        tags = ["storage-clusters"],
+    }]
+    async fn create_storage_cluster_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseCreated<StorageAccessKey>, HttpError>;
+
+    /// `DELETE /admin/v1/access-keys/{access_key_id}`. Note that the
+    /// AKID alone identifies the key — there's no per-user nesting
+    /// here, mirroring mantad's surface.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/storage/clusters/{id}/access-keys/{access_key_id}",
+        tags = ["storage-clusters"],
+    }]
+    async fn delete_storage_cluster_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterAccessKeyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// `GET /admin/v1/users/{user}/policies` — list attached policy
+    /// names. Returns a Vec<String> verbatim from mantad.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/users/{user}/policies",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_cluster_user_policies(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPath>,
+    ) -> Result<HttpResponseOk<Vec<String>>, HttpError>;
+
+    /// `GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}/users/{user}/policies/{policy}",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPolicyPath>,
+    ) -> Result<HttpResponseOk<serde_json::Value>, HttpError>;
+
+    /// `PUT /admin/v1/users/{user}/policies/{policy}` — upsert a JSON
+    /// policy doc. Body is the raw policy document; mantad does not
+    /// validate schema beyond "is JSON".
+    #[endpoint {
+        method = PUT,
+        path = "/v2/storage/clusters/{id}/users/{user}/policies/{policy}",
+        tags = ["storage-clusters"],
+    }]
+    async fn put_storage_cluster_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPolicyPath>,
+        body: TypedBody<serde_json::Value>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError>;
+
+    /// `DELETE /admin/v1/users/{user}/policies/{policy}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/storage/clusters/{id}/users/{user}/policies/{policy}",
+        tags = ["storage-clusters"],
+    }]
+    async fn delete_storage_cluster_user_policy(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterUserPolicyPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
 }

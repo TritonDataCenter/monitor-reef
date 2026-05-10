@@ -553,6 +553,38 @@ pub enum Action {
     /// `last_observed_at` on the StorageCluster record, so it's
     /// classified as a write for ReadOnly-scope purposes.
     StorageClusterHealthProbe,
+    // ----- Storage cluster forwarders (mantad /admin/v1/* proxy) -----
+    //
+    // Each forwarder gets its own Action so the audit log can answer
+    // "who created bucket X / deleted access key Y" without parsing
+    // request bodies. All gated by the existing root-allows-all
+    // Cedar rule — see the doc-comment on `POLICY_BUNDLE` for why
+    // these never get a per-silo or fleet-admin variant.
+    StorageClusterSummary,
+    StorageNodeList,
+    StorageNodeGet,
+    StorageNodeAdd,
+    StorageNodeRemove,
+    StorageNodeDrain,
+    StorageNodeUndrain,
+    StorageNodeReweight,
+    StorageMembershipGet,
+    StorageBucketList,
+    StorageBucketGet,
+    StorageBucketCreate,
+    StorageBucketDelete,
+    StorageObjectList,
+    StorageUserList,
+    StorageUserGet,
+    StorageUserCreate,
+    StorageUserDelete,
+    StorageAccessKeyList,
+    StorageAccessKeyCreate,
+    StorageAccessKeyDelete,
+    StorageUserPolicyList,
+    StorageUserPolicyGet,
+    StorageUserPolicyPut,
+    StorageUserPolicyDelete,
 }
 
 impl Action {
@@ -674,6 +706,31 @@ impl Action {
             Action::StorageClusterGet => "storage_cluster_get",
             Action::StorageClusterDelete => "storage_cluster_delete",
             Action::StorageClusterHealthProbe => "storage_cluster_health_probe",
+            Action::StorageClusterSummary => "storage_cluster_summary",
+            Action::StorageNodeList => "storage_node_list",
+            Action::StorageNodeGet => "storage_node_get",
+            Action::StorageNodeAdd => "storage_node_add",
+            Action::StorageNodeRemove => "storage_node_remove",
+            Action::StorageNodeDrain => "storage_node_drain",
+            Action::StorageNodeUndrain => "storage_node_undrain",
+            Action::StorageNodeReweight => "storage_node_reweight",
+            Action::StorageMembershipGet => "storage_membership_get",
+            Action::StorageBucketList => "storage_bucket_list",
+            Action::StorageBucketGet => "storage_bucket_get",
+            Action::StorageBucketCreate => "storage_bucket_create",
+            Action::StorageBucketDelete => "storage_bucket_delete",
+            Action::StorageObjectList => "storage_object_list",
+            Action::StorageUserList => "storage_user_list",
+            Action::StorageUserGet => "storage_user_get",
+            Action::StorageUserCreate => "storage_user_create",
+            Action::StorageUserDelete => "storage_user_delete",
+            Action::StorageAccessKeyList => "storage_access_key_list",
+            Action::StorageAccessKeyCreate => "storage_access_key_create",
+            Action::StorageAccessKeyDelete => "storage_access_key_delete",
+            Action::StorageUserPolicyList => "storage_user_policy_list",
+            Action::StorageUserPolicyGet => "storage_user_policy_get",
+            Action::StorageUserPolicyPut => "storage_user_policy_put",
+            Action::StorageUserPolicyDelete => "storage_user_policy_delete",
         }
     }
 
@@ -1264,7 +1321,25 @@ fn is_read_action(action: Action) -> bool {
         // and the health probe (which writes status + last_observed_at).
         | Action::StorageClusterCreate
         | Action::StorageClusterDelete
-        | Action::StorageClusterHealthProbe => false,
+        | Action::StorageClusterHealthProbe
+        // Storage forwarders that mutate cluster-side state. The
+        // forwarders proxy to mantad's /admin/v1/* but the *intent*
+        // is a write, so a ReadOnly tritond key cannot reach them
+        // even though tritond itself only mutates its registry on
+        // the health probe.
+        | Action::StorageNodeAdd
+        | Action::StorageNodeRemove
+        | Action::StorageNodeDrain
+        | Action::StorageNodeUndrain
+        | Action::StorageNodeReweight
+        | Action::StorageBucketCreate
+        | Action::StorageBucketDelete
+        | Action::StorageUserCreate
+        | Action::StorageUserDelete
+        | Action::StorageAccessKeyCreate
+        | Action::StorageAccessKeyDelete
+        | Action::StorageUserPolicyPut
+        | Action::StorageUserPolicyDelete => false,
         // CN reads.
         Action::CnList | Action::CnGet | Action::AutoApproveGet => true,
         // Legacy admin reads.
@@ -1273,8 +1348,21 @@ fn is_read_action(action: Action) -> bool {
         | Action::LegacyVmList
         | Action::LegacyVmGet
         | Action::LegacyAlarmList => true,
-        // Storage cluster reads.
-        Action::StorageClusterList | Action::StorageClusterGet => true,
+        // Storage cluster registry + read-only forwarders.
+        Action::StorageClusterList
+        | Action::StorageClusterGet
+        | Action::StorageClusterSummary
+        | Action::StorageNodeList
+        | Action::StorageNodeGet
+        | Action::StorageMembershipGet
+        | Action::StorageBucketList
+        | Action::StorageBucketGet
+        | Action::StorageObjectList
+        | Action::StorageUserList
+        | Action::StorageUserGet
+        | Action::StorageAccessKeyList
+        | Action::StorageUserPolicyList
+        | Action::StorageUserPolicyGet => true,
     }
 }
 
@@ -1630,6 +1718,44 @@ mod tests {
         }
     }
 
+    /// Every Action variant in the StorageCluster surface — the
+    /// registry CRUD + health probe (Stage 3.2/3.3/3.4) plus the
+    /// mantad-forwarder family (Stage 3.5). Used by the three
+    /// scope-coverage tests below so adding a new forwarder
+    /// variant is checked end-to-end without rewriting each test.
+    const ALL_STORAGE_CLUSTER_ACTIONS: &[Action] = &[
+        Action::StorageClusterList,
+        Action::StorageClusterCreate,
+        Action::StorageClusterGet,
+        Action::StorageClusterDelete,
+        Action::StorageClusterHealthProbe,
+        Action::StorageClusterSummary,
+        Action::StorageNodeList,
+        Action::StorageNodeGet,
+        Action::StorageNodeAdd,
+        Action::StorageNodeRemove,
+        Action::StorageNodeDrain,
+        Action::StorageNodeUndrain,
+        Action::StorageNodeReweight,
+        Action::StorageMembershipGet,
+        Action::StorageBucketList,
+        Action::StorageBucketGet,
+        Action::StorageBucketCreate,
+        Action::StorageBucketDelete,
+        Action::StorageObjectList,
+        Action::StorageUserList,
+        Action::StorageUserGet,
+        Action::StorageUserCreate,
+        Action::StorageUserDelete,
+        Action::StorageAccessKeyList,
+        Action::StorageAccessKeyCreate,
+        Action::StorageAccessKeyDelete,
+        Action::StorageUserPolicyList,
+        Action::StorageUserPolicyGet,
+        Action::StorageUserPolicyPut,
+        Action::StorageUserPolicyDelete,
+    ];
+
     #[tokio::test]
     async fn root_can_perform_all_storage_cluster_actions() {
         // Cedar root-allows-all covers the entire StorageCluster
@@ -1644,23 +1770,18 @@ mod tests {
             scope: None,
             bound_cn: None,
         };
-        for action in [
-            Action::StorageClusterList,
-            Action::StorageClusterCreate,
-            Action::StorageClusterGet,
-            Action::StorageClusterDelete,
-            Action::StorageClusterHealthProbe,
-        ] {
-            assert!(auth.authorize(&p, action).is_ok(), "denied {action:?}");
+        for action in ALL_STORAGE_CLUSTER_ACTIONS {
+            assert!(auth.authorize(&p, *action).is_ok(), "denied {action:?}");
         }
     }
 
     #[tokio::test]
     async fn fleet_admin_is_denied_storage_cluster_actions() {
         // Fleet-admin grants legacy-discovery reads; it must NOT
-        // bleed into storage-cluster registration. Letting a
-        // non-root operator register a mantad endpoint would let
-        // them point tritond at a malicious admin API.
+        // bleed into the storage surface. Letting a non-root
+        // operator register a mantad endpoint or proxy admin
+        // calls would point tritond at a potentially malicious
+        // admin API and leak its trust boundary.
         let auth = fresh_service();
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
@@ -1671,15 +1792,9 @@ mod tests {
             scope: None,
             bound_cn: None,
         };
-        for action in [
-            Action::StorageClusterList,
-            Action::StorageClusterCreate,
-            Action::StorageClusterGet,
-            Action::StorageClusterDelete,
-            Action::StorageClusterHealthProbe,
-        ] {
+        for action in ALL_STORAGE_CLUSTER_ACTIONS {
             let err = auth
-                .authorize(&p, action)
+                .authorize(&p, *action)
                 .expect_err("fleet-admin should not reach storage-cluster surface");
             assert_eq!(err.status_code.as_status().as_u16(), 403);
         }
@@ -1687,9 +1802,13 @@ mod tests {
 
     #[tokio::test]
     async fn read_only_scope_blocks_storage_cluster_writes() {
-        // ReadOnly key on a root user: the list/get reads should
-        // pass, but create/delete/health-probe must be rejected by
-        // the scope check ahead of Cedar.
+        // ReadOnly key on a root user: every list/get/summary read
+        // passes, but every mutating forwarder is rejected by the
+        // scope check ahead of Cedar. The split mirrors the
+        // is_read_action() classification, so adding a new
+        // Storage* Action variant without updating that classifier
+        // turns into a compile-time exhaustiveness failure first
+        // and a test failure here second.
         let auth = fresh_service();
         let p = Principal::Operator {
             user_id: Uuid::new_v4(),
@@ -1700,18 +1819,18 @@ mod tests {
             scope: Some(ApiKeyScope::ReadOnly),
             bound_cn: None,
         };
-        for action in [Action::StorageClusterList, Action::StorageClusterGet] {
-            assert!(auth.authorize(&p, action).is_ok(), "denied {action:?}");
-        }
-        for action in [
-            Action::StorageClusterCreate,
-            Action::StorageClusterDelete,
-            Action::StorageClusterHealthProbe,
-        ] {
-            let err = auth
-                .authorize(&p, action)
-                .expect_err("read-only scope must deny {action:?}");
-            assert_eq!(err.status_code.as_status().as_u16(), 403);
+        for action in ALL_STORAGE_CLUSTER_ACTIONS {
+            let result = auth.authorize(&p, *action);
+            if is_read_action(*action) {
+                assert!(result.is_ok(), "read action {action:?} was denied");
+            } else {
+                let err = result.expect_err("write action must be denied for ReadOnly scope");
+                assert_eq!(
+                    err.status_code.as_status().as_u16(),
+                    403,
+                    "write action {action:?} returned non-403"
+                );
+            }
         }
     }
 

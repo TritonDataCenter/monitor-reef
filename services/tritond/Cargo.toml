@@ -36,6 +36,7 @@ edge-manifest = { workspace = true }
 futures-util = { workspace = true }
 governor = { workspace = true }
 http = { workspace = true }
+mantad-client = { path = "../../../manta-storage/crates/mantad-client" }
 postcard = { workspace = true }
 proteus-api = { path = "../../../proteus/crates/proteus-api", features = ["std"] }
 reqwest = { workspace = true }
