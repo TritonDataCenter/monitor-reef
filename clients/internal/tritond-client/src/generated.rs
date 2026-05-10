@@ -5919,6 +5919,149 @@ pub mod types {
         ServerError { message: ::std::string::String },
     }
 
+    #[doc = "Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"bucket\","]
+    #[doc = "    \"expires_secs\","]
+    #[doc = "    \"key\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"bucket\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"expires_secs\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct PresignGetRequest {
+        pub bucket: ::std::string::String,
+        pub expires_secs: u32,
+        pub key: ::std::string::String,
+    }
+
+    impl PresignGetRequest {
+        pub fn builder() -> builder::PresignGetRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body of `POST /v2/storage/clusters/{id}/s3/presign/put`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters/{id}/s3/presign/put`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"bucket\","]
+    #[doc = "    \"expires_secs\","]
+    #[doc = "    \"key\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"bucket\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"expires_secs\": {"]
+    #[doc = "      \"description\": \"Validity window in seconds; 1..=604_800 (AWS 7-day cap).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct PresignPutRequest {
+        pub bucket: ::std::string::String,
+        #[doc = "Validity window in seconds; 1..=604_800 (AWS 7-day cap)."]
+        pub expires_secs: u32,
+        pub key: ::std::string::String,
+    }
+
+    impl PresignPutRequest {
+        pub fn builder() -> builder::PresignPutRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response shared by `presign/put` and `presign/get`. The browser uses these fields verbatim — the URL is fully signed; `method` tells the client which verb to issue; `headers` is reserved for future use when we sign headers beyond `host` (today empty)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response shared by `presign/put` and `presign/get`. The browser uses these fields verbatim — the URL is fully signed; `method` tells the client which verb to issue; `headers` is reserved for future use when we sign headers beyond `host` (today empty).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"method\","]
+    #[doc = "    \"url\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"headers\": {"]
+    #[doc = "      \"description\": \"Headers the client must send verbatim. Empty in the current signer scope; reserved for future Content-Type / x-amz-* signing.\","]
+    #[doc = "      \"default\": {},"]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"method\": {"]
+    #[doc = "      \"description\": \"HTTP verb the URL is signed for (`\\\"PUT\\\"` or `\\\"GET\\\"`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct PresignResponse {
+        #[doc = "Headers the client must send verbatim. Empty in the current signer scope; reserved for future Content-Type / x-amz-* signing."]
+        #[serde(
+            default,
+            skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
+        )]
+        pub headers: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        #[doc = "HTTP verb the URL is signed for (`\"PUT\"` or `\"GET\"`)."]
+        pub method: ::std::string::String,
+        pub url: ::std::string::String,
+    }
+
+    impl PresignResponse {
+        pub fn builder() -> builder::PresignResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "Sub-tenancy boundary inside a tenant. Workload resources (instances, volumes, networks) nest under projects.\n\nE-3 re-parented projects from `silo_id` to `tenant_id`: the silo brand-level container owns one or more tenants; tenants own projects; projects own workloads. The owning silo, if needed, is derivable via [`Tenant::silo_id`]."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7094,6 +7237,51 @@ pub mod types {
         }
     }
 
+    #[doc = "Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \\\"unset\\\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"access_key_id\","]
+    #[doc = "    \"secret_access_key\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"access_key_id\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"s3_endpoint\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"secret_access_key\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct SetPresignerRequest {
+        pub access_key_id: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub s3_endpoint: ::std::option::Option<::std::string::String>,
+        pub secret_access_key: ::std::string::String,
+    }
+
+    impl SetPresignerRequest {
+        pub fn builder() -> builder::SetPresignerRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "A tenancy boundary. Every Triton Cloud resource ultimately rolls up to a silo; in production each silo is bound to its own identity provider. Phase 0 carries only the bare-minimum identifying fields."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7836,13 +8024,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Wire-side projection of [`StorageCluster`] that **redacts the bearer token**. This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return."]
+    #[doc = "Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Wire-side projection of [`StorageCluster`] that **redacts the bearer token**. This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.\","]
+    #[doc = "  \"description\": \"Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
@@ -7884,6 +8072,20 @@ pub mod types {
     #[doc = "    \"name\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
+    #[doc = "    \"presigner_access_key_id\": {"]
+    #[doc = "      \"description\": \"True when the cluster has a presigner identity configured. The frontend can hide upload UI when this is false. The AKID itself is non-sensitive (stable + auditable) and is surfaced so operators can confirm which identity is signing.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"s3_endpoint\": {"]
+    #[doc = "      \"description\": \"S3 data-plane endpoint, surfaced to the UI so it can render \\\"presigned uploads target X\\\". `None` when no presigner is configured.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/StorageClusterStatus\""]
     #[doc = "    },"]
@@ -7907,6 +8109,12 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub last_observed_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         pub name: ::std::string::String,
+        #[doc = "True when the cluster has a presigner identity configured. The frontend can hide upload UI when this is false. The AKID itself is non-sensitive (stable + auditable) and is surfaced so operators can confirm which identity is signing."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub presigner_access_key_id: ::std::option::Option<::std::string::String>,
+        #[doc = "S3 data-plane endpoint, surfaced to the UI so it can render \"presigned uploads target X\". `None` when no presigner is configured."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub s3_endpoint: ::std::option::Option<::std::string::String>,
         pub status: StorageClusterStatus,
         pub surface: StorageClusterSurface,
     }
@@ -15327,6 +15535,230 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct PresignGetRequest {
+            bucket: ::std::result::Result<::std::string::String, ::std::string::String>,
+            expires_secs: ::std::result::Result<u32, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for PresignGetRequest {
+            fn default() -> Self {
+                Self {
+                    bucket: Err("no value supplied for bucket".to_string()),
+                    expires_secs: Err("no value supplied for expires_secs".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                }
+            }
+        }
+
+        impl PresignGetRequest {
+            pub fn bucket<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bucket = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bucket: {e}"));
+                self
+            }
+            pub fn expires_secs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expires_secs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expires_secs: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<PresignGetRequest> for super::PresignGetRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PresignGetRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    bucket: value.bucket?,
+                    expires_secs: value.expires_secs?,
+                    key: value.key?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::PresignGetRequest> for PresignGetRequest {
+            fn from(value: super::PresignGetRequest) -> Self {
+                Self {
+                    bucket: Ok(value.bucket),
+                    expires_secs: Ok(value.expires_secs),
+                    key: Ok(value.key),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct PresignPutRequest {
+            bucket: ::std::result::Result<::std::string::String, ::std::string::String>,
+            expires_secs: ::std::result::Result<u32, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for PresignPutRequest {
+            fn default() -> Self {
+                Self {
+                    bucket: Err("no value supplied for bucket".to_string()),
+                    expires_secs: Err("no value supplied for expires_secs".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                }
+            }
+        }
+
+        impl PresignPutRequest {
+            pub fn bucket<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bucket = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bucket: {e}"));
+                self
+            }
+            pub fn expires_secs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expires_secs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expires_secs: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<PresignPutRequest> for super::PresignPutRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PresignPutRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    bucket: value.bucket?,
+                    expires_secs: value.expires_secs?,
+                    key: value.key?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::PresignPutRequest> for PresignPutRequest {
+            fn from(value: super::PresignPutRequest) -> Self {
+                Self {
+                    bucket: Ok(value.bucket),
+                    expires_secs: Ok(value.expires_secs),
+                    key: Ok(value.key),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct PresignResponse {
+            headers: ::std::result::Result<
+                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                ::std::string::String,
+            >,
+            method: ::std::result::Result<::std::string::String, ::std::string::String>,
+            url: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for PresignResponse {
+            fn default() -> Self {
+                Self {
+                    headers: Ok(Default::default()),
+                    method: Err("no value supplied for method".to_string()),
+                    url: Err("no value supplied for url".to_string()),
+                }
+            }
+        }
+
+        impl PresignResponse {
+            pub fn headers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.headers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for headers: {e}"));
+                self
+            }
+            pub fn method<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.method = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for method: {e}"));
+                self
+            }
+            pub fn url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for url: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<PresignResponse> for super::PresignResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PresignResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    headers: value.headers?,
+                    method: value.method?,
+                    url: value.url?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::PresignResponse> for PresignResponse {
+            fn from(value: super::PresignResponse) -> Self {
+                Self {
+                    headers: Ok(value.headers),
+                    method: Ok(value.method),
+                    url: Ok(value.url),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Project {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -16755,6 +17187,82 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct SetPresignerRequest {
+            access_key_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            s3_endpoint: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            secret_access_key: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for SetPresignerRequest {
+            fn default() -> Self {
+                Self {
+                    access_key_id: Err("no value supplied for access_key_id".to_string()),
+                    s3_endpoint: Ok(Default::default()),
+                    secret_access_key: Err("no value supplied for secret_access_key".to_string()),
+                }
+            }
+        }
+
+        impl SetPresignerRequest {
+            pub fn access_key_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.access_key_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for access_key_id: {e}"));
+                self
+            }
+            pub fn s3_endpoint<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.s3_endpoint = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for s3_endpoint: {e}"));
+                self
+            }
+            pub fn secret_access_key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.secret_access_key = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for secret_access_key: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<SetPresignerRequest> for super::SetPresignerRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetPresignerRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    access_key_id: value.access_key_id?,
+                    s3_endpoint: value.s3_endpoint?,
+                    secret_access_key: value.secret_access_key?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::SetPresignerRequest> for SetPresignerRequest {
+            fn from(value: super::SetPresignerRequest) -> Self {
+                Self {
+                    access_key_id: Ok(value.access_key_id),
+                    s3_endpoint: Ok(value.s3_endpoint),
+                    secret_access_key: Ok(value.secret_access_key),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Silo {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -17478,6 +17986,14 @@ pub mod types {
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            presigner_access_key_id: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            s3_endpoint: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             status: ::std::result::Result<super::StorageClusterStatus, ::std::string::String>,
             surface: ::std::result::Result<super::StorageClusterSurface, ::std::string::String>,
         }
@@ -17492,6 +18008,8 @@ pub mod types {
                     id: Err("no value supplied for id".to_string()),
                     last_observed_at: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
+                    presigner_access_key_id: Ok(Default::default()),
+                    s3_endpoint: Ok(Default::default()),
                     status: Err("no value supplied for status".to_string()),
                     surface: Err("no value supplied for surface".to_string()),
                 }
@@ -17571,6 +18089,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
                 self
             }
+            pub fn presigner_access_key_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.presigner_access_key_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for presigner_access_key_id: {e}")
+                });
+                self
+            }
+            pub fn s3_endpoint<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.s3_endpoint = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for s3_endpoint: {e}"));
+                self
+            }
             pub fn status<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::StorageClusterStatus>,
@@ -17606,6 +18144,8 @@ pub mod types {
                     id: value.id?,
                     last_observed_at: value.last_observed_at?,
                     name: value.name?,
+                    presigner_access_key_id: value.presigner_access_key_id?,
+                    s3_endpoint: value.s3_endpoint?,
                     status: value.status?,
                     surface: value.surface?,
                 })
@@ -17622,6 +18162,8 @@ pub mod types {
                     id: Ok(value.id),
                     last_observed_at: Ok(value.last_observed_at),
                     name: Ok(value.name),
+                    presigner_access_key_id: Ok(value.presigner_access_key_id),
+                    s3_endpoint: Ok(value.s3_endpoint),
                     status: Ok(value.status),
                     surface: Ok(value.surface),
                 }
@@ -19366,6 +19908,25 @@ impl Client {
     #[doc = "`POST /admin/v1/nodes/{node_id}/undrain`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/undrain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.undrain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
     pub fn undrain_storage_cluster_node(&self) -> builder::UndrainStorageClusterNode<'_> {
         builder::UndrainStorageClusterNode::new(self)
+    }
+
+    #[doc = "Configure (or rotate) the per-cluster presigner identity\n\n`s3_endpoint` updates the cluster's data-plane URL; pass `None` to leave it unchanged. Empty `access_key_id` + `secret_access_key` clear the presigner. Mismatched (one empty, one set) → 409.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/presigner`\n\n```ignore\nlet response = client.set_storage_cluster_presigner()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_storage_cluster_presigner(&self) -> builder::SetStorageClusterPresigner<'_> {
+        builder::SetStorageClusterPresigner::new(self)
+    }
+
+    #[doc = "Mint a single-shot presigned GET URL (downloads or shareable\n\nlinks).\n\nSends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/get`\n\n```ignore\nlet response = client.presign_storage_cluster_object_get()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn presign_storage_cluster_object_get(
+        &self,
+    ) -> builder::PresignStorageClusterObjectGet<'_> {
+        builder::PresignStorageClusterObjectGet::new(self)
+    }
+
+    #[doc = "Mint a single-shot presigned PUT URL (uploads < 5 MB)\n\nReturns 409 when the cluster has no presigner configured.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/put`\n\n```ignore\nlet response = client.presign_storage_cluster_object_put()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn presign_storage_cluster_object_put(
+        &self,
+    ) -> builder::PresignStorageClusterObjectPut<'_> {
+        builder::PresignStorageClusterObjectPut::new(self)
     }
 
     #[doc = "`GET /admin/v1/users`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.list_storage_cluster_users()\n    .id(id)\n    .send()\n    .await;\n```"]
@@ -25391,6 +25952,303 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "undrain_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::set_storage_cluster_presigner`]\n\n[`Client::set_storage_cluster_presigner`]: super::Client::set_storage_cluster_presigner"]
+    #[derive(Debug, Clone)]
+    pub struct SetStorageClusterPresigner<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::SetPresignerRequest, String>,
+    }
+
+    impl<'a> SetStorageClusterPresigner<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetPresignerRequest>,
+            <V as std::convert::TryInto<types::SetPresignerRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetPresignerRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SetPresignerRequest,
+                ) -> types::builder::SetPresignerRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/presigner`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetPresignerRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/presigner",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_storage_cluster_presigner",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::presign_storage_cluster_object_get`]\n\n[`Client::presign_storage_cluster_object_get`]: super::Client::presign_storage_cluster_object_get"]
+    #[derive(Debug, Clone)]
+    pub struct PresignStorageClusterObjectGet<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::PresignGetRequest, String>,
+    }
+
+    impl<'a> PresignStorageClusterObjectGet<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PresignGetRequest>,
+            <V as std::convert::TryInto<types::PresignGetRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `PresignGetRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::PresignGetRequest,
+                ) -> types::builder::PresignGetRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/get`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::PresignResponse>, Error<types::Error>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::PresignGetRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/s3/presign/get",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "presign_storage_cluster_object_get",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::presign_storage_cluster_object_put`]\n\n[`Client::presign_storage_cluster_object_put`]: super::Client::presign_storage_cluster_object_put"]
+    #[derive(Debug, Clone)]
+    pub struct PresignStorageClusterObjectPut<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::PresignPutRequest, String>,
+    }
+
+    impl<'a> PresignStorageClusterObjectPut<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::PresignPutRequest>,
+            <V as std::convert::TryInto<types::PresignPutRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `PresignPutRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::PresignPutRequest,
+                ) -> types::builder::PresignPutRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/s3/presign/put`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::PresignResponse>, Error<types::Error>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::PresignPutRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/s3/presign/put",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "presign_storage_cluster_object_put",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

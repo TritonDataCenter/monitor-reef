@@ -2925,6 +2925,153 @@
         }
       }
     },
+    "/v2/storage/clusters/{id}/presigner": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Configure (or rotate) the per-cluster presigner identity.",
+        "description": "`s3_endpoint` updates the cluster's data-plane URL; pass `None` to leave it unchanged. Empty `access_key_id` + `secret_access_key` clear the presigner. Mismatched (one empty, one set) → 409.",
+        "operationId": "set_storage_cluster_presigner",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPresignerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageClusterView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/s3/presign/get": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Mint a single-shot presigned GET URL (downloads or shareable",
+        "description": "links).",
+        "operationId": "presign_storage_cluster_object_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignGetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/s3/presign/put": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Mint a single-shot presigned PUT URL (uploads < 5 MB).",
+        "description": "Returns 409 when the cluster has no presigner configured.",
+        "operationId": "presign_storage_cluster_object_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/storage/clusters/{id}/users": {
       "get": {
         "tags": [
@@ -10354,6 +10501,76 @@
           }
         ]
       },
+      "PresignGetRequest": {
+        "description": "Body of `POST /v2/storage/clusters/{id}/s3/presign/get`. Same shape as the PUT request — kept as a distinct type for audit and API-doc clarity.",
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "expires_secs": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket",
+          "expires_secs",
+          "key"
+        ]
+      },
+      "PresignPutRequest": {
+        "description": "Body of `POST /v2/storage/clusters/{id}/s3/presign/put`.",
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "expires_secs": {
+            "description": "Validity window in seconds; 1..=604_800 (AWS 7-day cap).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bucket",
+          "expires_secs",
+          "key"
+        ]
+      },
+      "PresignResponse": {
+        "description": "Response shared by `presign/put` and `presign/get`. The browser uses these fields verbatim — the URL is fully signed; `method` tells the client which verb to issue; `headers` is reserved for future use when we sign headers beyond `host` (today empty).",
+        "type": "object",
+        "properties": {
+          "headers": {
+            "description": "Headers the client must send verbatim. Empty in the current signer scope; reserved for future Content-Type / x-amz-* signing.",
+            "default": {},
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "method": {
+            "description": "HTTP verb the URL is signed for (`\"PUT\"` or `\"GET\"`).",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "url"
+        ]
+      },
       "Project": {
         "description": "Sub-tenancy boundary inside a tenant. Workload resources (instances, volumes, networks) nest under projects.\n\nE-3 re-parented projects from `silo_id` to `tenant_id`: the silo brand-level container owns one or more tenants; tenants own projects; projects own workloads. The owning silo, if needed, is derivable via [`Tenant::silo_id`].",
         "type": "object",
@@ -11015,6 +11232,26 @@
           "role"
         ]
       },
+      "SetPresignerRequest": {
+        "description": "Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.",
+        "type": "object",
+        "properties": {
+          "access_key_id": {
+            "type": "string"
+          },
+          "s3_endpoint": {
+            "nullable": true,
+            "type": "string"
+          },
+          "secret_access_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_key_id",
+          "secret_access_key"
+        ]
+      },
       "Silo": {
         "description": "A tenancy boundary. Every Triton Cloud resource ultimately rolls up to a silo; in production each silo is bound to its own identity provider. Phase 0 carries only the bare-minimum identifying fields.",
         "type": "object",
@@ -11406,7 +11643,7 @@
         ]
       },
       "StorageClusterView": {
-        "description": "Wire-side projection of [`StorageCluster`] that **redacts the bearer token**. This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.",
+        "description": "Wire-side projection of [`StorageCluster`] that **redacts every secret field** (admin token, presigner secret access key). This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.",
         "type": "object",
         "properties": {
           "created_at": {
@@ -11433,6 +11670,16 @@
             "format": "date-time"
           },
           "name": {
+            "type": "string"
+          },
+          "presigner_access_key_id": {
+            "nullable": true,
+            "description": "True when the cluster has a presigner identity configured. The frontend can hide upload UI when this is false. The AKID itself is non-sensitive (stable + auditable) and is surfaced so operators can confirm which identity is signing.",
+            "type": "string"
+          },
+          "s3_endpoint": {
+            "nullable": true,
+            "description": "S3 data-plane endpoint, surfaced to the UI so it can render \"presigned uploads target X\". `None` when no presigner is configured.",
             "type": "string"
           },
           "status": {
