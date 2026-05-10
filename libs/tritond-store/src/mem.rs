@@ -3169,6 +3169,18 @@ impl Store for MemStore {
         let smartos_uuid = legacy_vm.smartos_uuid;
         let new_host = legacy_vm.host_cn_uuid;
 
+        // UUID-uniqueness invariant: a SmartOS zone uuid can be
+        // EITHER a tritond-managed Instance OR a LegacyVm, never
+        // both. The classifier prevents this at the upstream
+        // (Managed-fallback path), but we enforce here too as
+        // defense-in-depth -- a future caller (e.g. an admin
+        // import script) can't accidentally create a duplicate.
+        if guard.instances_by_id.contains_key(&smartos_uuid) {
+            return Err(StoreError::Conflict(format!(
+                "smartos_uuid {smartos_uuid} already exists as a managed Instance",
+            )));
+        }
+
         // Maintain the per-CN reverse index. If the zone moved
         // between CNs (e.g. external `vmadm send|recv`), drop the
         // old mapping before installing the new one.

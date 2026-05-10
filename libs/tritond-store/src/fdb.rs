@@ -148,6 +148,7 @@ use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use foundationdb::options::StreamingMode;
 use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
 use ipnetwork::IpNetwork;
 use rand::Rng;
@@ -6150,20 +6151,41 @@ impl Store for FdbStore {
         let smartos_uuid = legacy_vm.smartos_uuid;
         let new_host = legacy_vm.host_cn_uuid;
         let by_id_key = Self::legacy_vm_by_id_key(smartos_uuid);
+        let instance_key = Self::instance_by_id_key(smartos_uuid);
         let new_membership_key = Self::legacy_vm_in_host_cn_key(new_host, smartos_uuid);
         let value = serde_json::to_vec(&legacy_vm)
             .map_err(|e| StoreError::Backend(format!("serialize legacy_vm: {e}")))?;
 
-        let result: Result<(), FdbBindingError> = self
+        // Sentinel for the UUID-uniqueness check; outer match
+        // converts to a typed StoreError without leaking FDB.
+        enum Outcome {
+            Ok,
+            ConflictWithInstance,
+        }
+
+        let result: Result<Outcome, FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
+                let instance_key = instance_key.clone();
                 let new_membership_key = new_membership_key.clone();
                 let value = value.clone();
                 async move {
-                    // If a record already exists with a different host,
-                    // drop the old membership-index entry inside the
-                    // same txn so the move is atomic.
+                    // UUID-uniqueness invariant: a SmartOS zone uuid
+                    // can be EITHER a tritond-managed Instance OR a
+                    // LegacyVm, never both. The classifier prevents
+                    // this at the upstream (Managed-fallback path),
+                    // but we enforce here too as defense-in-depth so
+                    // an admin import script -- or a future Phase D
+                    // adoption flow racing the discovery loop --
+                    // can't create a duplicate inside the same txn
+                    // that would otherwise succeed.
+                    if tr.get(&instance_key, false).await?.is_some() {
+                        return Ok(Outcome::ConflictWithInstance);
+                    }
+                    // If a LegacyVm record already exists with a
+                    // different host, drop the old membership-index
+                    // entry inside the same txn so the move is atomic.
                     if let Some(existing_bytes) = tr.get(&by_id_key, false).await? {
                         let existing: LegacyVm =
                             serde_json::from_slice(&existing_bytes).map_err(|e| {
@@ -6179,11 +6201,17 @@ impl Store for FdbStore {
                     }
                     tr.set(&by_id_key, &value);
                     tr.set(&new_membership_key, b"");
-                    Ok(())
+                    Ok(Outcome::Ok)
                 }
             })
             .await;
-        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+        match result {
+            Ok(Outcome::Ok) => Ok(()),
+            Ok(Outcome::ConflictWithInstance) => Err(StoreError::Conflict(format!(
+                "smartos_uuid {smartos_uuid} already exists as a managed Instance",
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 
     async fn get_legacy_vm(&self, smartos_uuid: Uuid) -> Result<LegacyVm, StoreError> {
@@ -6202,9 +6230,16 @@ impl Store for FdbStore {
                 let begin = begin.clone();
                 let end = end.clone();
                 async move {
+                    // `WantAll` returns the full range in one shot
+                    // (subject to FDB's 5MB transaction size cap).
+                    // The default `Iterator` mode returns only the
+                    // first chunk (~80KB / ~100 rows) on a single
+                    // get_range call, which truncated discovery
+                    // results once the fleet had >25 legacy zones.
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(begin),
                         end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -6242,9 +6277,11 @@ impl Store for FdbStore {
                 let begin = begin.clone();
                 let end = end.clone();
                 async move {
+                    // See list_legacy_vms note on StreamingMode.
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(begin),
                         end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
