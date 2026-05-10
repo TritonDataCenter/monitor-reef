@@ -138,6 +138,9 @@
 //! dhcp_lease/by_vpc/<vpc>/<mac>     -> JSON-encoded DhcpLease (same shape;
 //!                                      `list_all_dhcp_leases` range-scans
 //!                                      `dhcp_lease/by_vpc/`)
+//! storage_cluster/by_id/<uuid>      -> JSON-encoded StorageCluster
+//! storage_cluster/by_name/<name>    -> uuid hyphenated bytes
+//! storage_cluster/all/<uuid>        -> empty (membership index)
 //! ```
 //!
 //! Each multi-key write happens in a single transaction so name
@@ -163,9 +166,10 @@ use crate::{
     JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId,
     NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage,
     NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
-    Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo,
+    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
+    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 
@@ -457,6 +461,22 @@ impl FdbStore {
             resource.id()
         )
         .into_bytes()
+    }
+
+    fn storage_cluster_by_id_key(id: Uuid) -> Vec<u8> {
+        format!("storage_cluster/by_id/{id}").into_bytes()
+    }
+
+    fn storage_cluster_by_name_key(name: &str) -> Vec<u8> {
+        format!("storage_cluster/by_name/{name}").into_bytes()
+    }
+
+    fn storage_cluster_all_key(id: Uuid) -> Vec<u8> {
+        format!("storage_cluster/all/{id}").into_bytes()
+    }
+
+    fn storage_cluster_all_prefix() -> &'static [u8] {
+        b"storage_cluster/all/"
     }
 
     fn ssh_key_by_id_key(id: Uuid) -> Vec<u8> {
@@ -6916,6 +6936,233 @@ impl Store for FdbStore {
             });
             v
         })
+    }
+
+    // ------------------------------------------------------------------
+    // Storage clusters (operator-only)
+    // ------------------------------------------------------------------
+
+    async fn create_storage_cluster(
+        &self,
+        req: NewStorageCluster,
+    ) -> Result<StorageCluster, StoreError> {
+        let id = Uuid::new_v4();
+        let by_id_key = Self::storage_cluster_by_id_key(id);
+        let by_name_key = Self::storage_cluster_by_name_key(&req.name);
+        let all_key = Self::storage_cluster_all_key(id);
+        let id_bytes = id.to_string().into_bytes();
+
+        enum Outcome {
+            Created(Box<StorageCluster>),
+            NameTaken,
+            SerializeFailed(String),
+        }
+
+        let req_for_txn = req.clone();
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_name_key = by_name_key.clone();
+                let all_key = all_key.clone();
+                let id_bytes = id_bytes.clone();
+                let req = req_for_txn.clone();
+                async move {
+                    if tr.get(&by_name_key, false).await?.is_some() {
+                        return Ok(Outcome::NameTaken);
+                    }
+
+                    let cluster = StorageCluster {
+                        id,
+                        name: req.name.clone(),
+                        surface: req.surface,
+                        endpoint: req.endpoint.clone(),
+                        admin_token: req.admin_token.clone(),
+                        default_region: req.default_region.clone(),
+                        display_name: req.display_name.clone(),
+                        status: StorageClusterStatus::Unknown,
+                        created_at: Utc::now(),
+                        last_observed_at: None,
+                    };
+                    let value = match serde_json::to_vec(&cluster) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Outcome::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_name_key, &id_bytes);
+                    tr.set(&all_key, b"");
+                    Ok(Outcome::Created(Box::new(cluster)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Created(c)) => Ok(*c),
+            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
+                "storage cluster with name {:?} already exists",
+                req.name
+            ))),
+            Ok(Outcome::SerializeFailed(e)) => Err(StoreError::Backend(format!(
+                "serialize storage cluster: {e}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_storage_cluster(&self, id: Uuid) -> Result<StorageCluster, StoreError> {
+        let key = Self::storage_cluster_by_id_key(id);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize storage cluster: {e}")))
+    }
+
+    async fn get_storage_cluster_by_name(&self, name: &str) -> Result<StorageCluster, StoreError> {
+        let by_name_key = Self::storage_cluster_by_name_key(name);
+        let id_bytes = self
+            .read_bytes(&by_name_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&id_bytes)
+            .map_err(|e| StoreError::Backend(format!("storage cluster name index utf8: {e}")))?;
+        let id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("storage cluster name index uuid: {e}")))?;
+        self.get_storage_cluster(id).await
+    }
+
+    async fn list_storage_clusters(&self) -> Result<Vec<StorageCluster>, StoreError> {
+        let prefix = Self::storage_cluster_all_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("storage cluster index uuid: {e}")))?;
+            match self.get_storage_cluster(id).await {
+                Ok(cluster) => out.push(cluster),
+                Err(StoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn delete_storage_cluster(&self, id: Uuid) -> Result<(), StoreError> {
+        let by_id_key = Self::storage_cluster_by_id_key(id);
+
+        enum Out {
+            Deleted,
+            Vanished,
+            Corrupt(String),
+        }
+
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let cluster: StorageCluster = match serde_json::from_slice(&bytes) {
+                        Ok(c) => c,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    tr.clear(&by_id_key);
+                    tr.clear(&Self::storage_cluster_by_name_key(&cluster.name));
+                    tr.clear(&Self::storage_cluster_all_key(cluster.id));
+                    Ok(Out::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Deleted) | Ok(Out::Vanished) => Ok(()),
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
+                "deserialize storage cluster: {e}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn update_storage_cluster_status(
+        &self,
+        id: Uuid,
+        status: StorageClusterStatus,
+        observed_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<StorageCluster, StoreError> {
+        let by_id_key = Self::storage_cluster_by_id_key(id);
+
+        enum Out {
+            Updated(Box<StorageCluster>),
+            Vanished,
+            Corrupt(String),
+            SerializeFailed(String),
+        }
+
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let mut cluster: StorageCluster = match serde_json::from_slice(&bytes) {
+                        Ok(c) => c,
+                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
+                    };
+                    cluster.status = status;
+                    cluster.last_observed_at = Some(observed_at);
+                    let value = match serde_json::to_vec(&cluster) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(Out::SerializeFailed(e.to_string())),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Updated(Box::new(cluster)))
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Out::Updated(c)) => Ok(*c),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!(
+                "deserialize storage cluster: {e}"
+            ))),
+            Ok(Out::SerializeFailed(e)) => Err(StoreError::Backend(format!(
+                "serialize storage cluster: {e}"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
     }
 }
 

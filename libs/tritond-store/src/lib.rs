@@ -1325,4 +1325,62 @@ pub trait Store: Send + Sync + 'static {
     /// instance's own lifecycle (sticky-by-MAC keeps the lease
     /// across instance delete).
     async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Storage clusters (operator-only)
+    // ------------------------------------------------------------------
+    //
+    // Registers an external manta-storage daemon (mantad / mantafs /
+    // manta-block) so tritond can broker admin calls without leaking
+    // the bearer token to admin-backend. See [`StorageCluster`] in
+    // `tritond-store/src/types.rs` for the type design + Phase-0
+    // plaintext-token caveat.
+
+    /// Register a storage cluster.
+    ///
+    /// Invariants:
+    ///
+    /// * `name` is unique cluster-wide. Collision → [`StoreError::Conflict`].
+    /// * `endpoint` is not validated for reachability here; that is
+    ///   the health-probe endpoint's job.
+    ///
+    /// The returned record has a freshly minted `id`,
+    /// [`StorageClusterStatus::Unknown`], `created_at = now()`,
+    /// `last_observed_at = None`.
+    async fn create_storage_cluster(
+        &self,
+        req: NewStorageCluster,
+    ) -> Result<StorageCluster, StoreError>;
+
+    /// Look up a storage cluster by id.
+    ///
+    /// Returns [`StoreError::NotFound`] if no cluster with that id
+    /// is registered.
+    async fn get_storage_cluster(&self, id: Uuid) -> Result<StorageCluster, StoreError>;
+
+    /// Look up a storage cluster by operator-chosen name.
+    ///
+    /// Used by `tcadm storage cluster {get,delete} <name>` so the
+    /// operator can avoid carrying UUIDs around. Returns
+    /// [`StoreError::NotFound`] if no cluster with that name exists.
+    async fn get_storage_cluster_by_name(&self, name: &str) -> Result<StorageCluster, StoreError>;
+
+    /// List every registered storage cluster, ordered by `name` for
+    /// deterministic UI rendering.
+    async fn list_storage_clusters(&self) -> Result<Vec<StorageCluster>, StoreError>;
+
+    /// Drop a storage cluster registration. Idempotent — succeeds
+    /// when the id is unknown.
+    async fn delete_storage_cluster(&self, id: Uuid) -> Result<(), StoreError>;
+
+    /// Refresh the operator-observed health of a cluster after a probe.
+    /// Updates both `status` and `last_observed_at` atomically and
+    /// returns the new record. [`StoreError::NotFound`] when the id
+    /// is unknown.
+    async fn update_storage_cluster_status(
+        &self,
+        id: Uuid,
+        status: StorageClusterStatus,
+        observed_at: DateTime<Utc>,
+    ) -> Result<StorageCluster, StoreError>;
 }

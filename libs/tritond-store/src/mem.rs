@@ -28,14 +28,17 @@ use crate::{
     JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway,
     NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule,
     NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
-    NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo,
-    SshKey, SshKeyScope, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
-    generate_poll_token,
+    NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
+    Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable,
+    RouteTarget, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
+    StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
-use crate::{ApiKeyScope, BHYVE_M1_MIN_BOOT_DISK_BYTES, ImageCompatibility, NewInstanceNic};
+use crate::{
+    ApiKeyScope, BHYVE_M1_MIN_BOOT_DISK_BYTES, ImageCompatibility, NewInstanceNic,
+    StorageClusterSurface,
+};
 
 /// Maximum attempts to draw a fresh VNI before giving up. With ~16.7M
 /// candidates and any realistic VPC count, collisions are vanishingly
@@ -249,6 +252,11 @@ struct Inner {
     /// keyspace. Written by [`Store::record_network_realization`];
     /// read back by [`Store::list_network_realizations`].
     network_realizations: HashMap<(NetworkResourceId, RealizerId), Realization>,
+    /// Registered storage clusters, keyed by id.
+    storage_clusters_by_id: HashMap<Uuid, StorageCluster>,
+    /// `name` → cluster id reverse index for the cluster-wide
+    /// uniqueness check.
+    storage_cluster_id_by_name: HashMap<String, Uuid>,
 }
 
 /// In-process [`Store`] implementation.
@@ -3622,6 +3630,93 @@ impl Store for MemStore {
             }
         }
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Storage clusters (operator-only)
+    // ------------------------------------------------------------------
+
+    async fn create_storage_cluster(
+        &self,
+        req: NewStorageCluster,
+    ) -> Result<StorageCluster, StoreError> {
+        let mut guard = self.inner.write().await;
+        if guard.storage_cluster_id_by_name.contains_key(&req.name) {
+            return Err(StoreError::Conflict(format!(
+                "storage cluster name already in use: {}",
+                req.name
+            )));
+        }
+        let id = Uuid::new_v4();
+        let cluster = StorageCluster {
+            id,
+            name: req.name.clone(),
+            surface: req.surface,
+            endpoint: req.endpoint,
+            admin_token: req.admin_token,
+            default_region: req.default_region,
+            display_name: req.display_name,
+            status: StorageClusterStatus::Unknown,
+            created_at: Utc::now(),
+            last_observed_at: None,
+        };
+        guard.storage_cluster_id_by_name.insert(req.name, id);
+        guard.storage_clusters_by_id.insert(id, cluster.clone());
+        Ok(cluster)
+    }
+
+    async fn get_storage_cluster(&self, id: Uuid) -> Result<StorageCluster, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .storage_clusters_by_id
+            .get(&id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn get_storage_cluster_by_name(&self, name: &str) -> Result<StorageCluster, StoreError> {
+        let guard = self.inner.read().await;
+        let id = guard
+            .storage_cluster_id_by_name
+            .get(name)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .storage_clusters_by_id
+            .get(&id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_storage_clusters(&self) -> Result<Vec<StorageCluster>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut out: Vec<StorageCluster> = guard.storage_clusters_by_id.values().cloned().collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
+    async fn delete_storage_cluster(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        if let Some(cluster) = guard.storage_clusters_by_id.remove(&id) {
+            guard.storage_cluster_id_by_name.remove(&cluster.name);
+        }
+        Ok(())
+    }
+
+    async fn update_storage_cluster_status(
+        &self,
+        id: Uuid,
+        status: StorageClusterStatus,
+        observed_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<StorageCluster, StoreError> {
+        let mut guard = self.inner.write().await;
+        let cluster = guard
+            .storage_clusters_by_id
+            .get_mut(&id)
+            .ok_or(StoreError::NotFound)?;
+        cluster.status = status;
+        cluster.last_observed_at = Some(observed_at);
+        Ok(cluster.clone())
     }
 }
 
@@ -8331,6 +8426,130 @@ mod tests {
     async fn legacy_vm_get_unknown_is_not_found() {
         let store = MemStore::new();
         let err = store.get_legacy_vm(Uuid::new_v4()).await.unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    fn new_storage_cluster_fixture(name: &str) -> NewStorageCluster {
+        NewStorageCluster {
+            name: name.to_string(),
+            surface: StorageClusterSurface::S3,
+            endpoint: format!("http://{name}.example:7101"),
+            admin_token: "secret-token".to_string(),
+            default_region: "us-east-1".to_string(),
+            display_name: Some(format!("{name} display")),
+        }
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_create_then_get_round_trips() {
+        let store = MemStore::new();
+        let created = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        assert_eq!(created.name, "primary");
+        assert_eq!(created.surface, StorageClusterSurface::S3);
+        assert_eq!(created.status, StorageClusterStatus::Unknown);
+        assert!(created.last_observed_at.is_none());
+
+        let fetched = store.get_storage_cluster(created.id).await.unwrap();
+        assert_eq!(fetched, created);
+
+        let by_name = store.get_storage_cluster_by_name("primary").await.unwrap();
+        assert_eq!(by_name, created);
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_duplicate_name_conflicts() {
+        let store = MemStore::new();
+        store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        let err = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_list_sorted_by_name() {
+        let store = MemStore::new();
+        for n in ["zulu", "alpha", "mike"] {
+            store
+                .create_storage_cluster(new_storage_cluster_fixture(n))
+                .await
+                .unwrap();
+        }
+        let names: Vec<String> = store
+            .list_storage_clusters()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(names, vec!["alpha", "mike", "zulu"]);
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_delete_removes_indexes() {
+        let store = MemStore::new();
+        let cluster = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        store.delete_storage_cluster(cluster.id).await.unwrap();
+
+        let err = store.get_storage_cluster(cluster.id).await.unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+        let err = store
+            .get_storage_cluster_by_name("primary")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+
+        // Name slot is freed — re-creating with the same name succeeds.
+        store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+
+        // Idempotent: deleting a non-existent id is not an error.
+        store.delete_storage_cluster(Uuid::new_v4()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_update_status_persists() {
+        let store = MemStore::new();
+        let cluster = store
+            .create_storage_cluster(new_storage_cluster_fixture("primary"))
+            .await
+            .unwrap();
+        let observed = Utc::now();
+        let updated = store
+            .update_storage_cluster_status(cluster.id, StorageClusterStatus::Healthy, observed)
+            .await
+            .unwrap();
+        assert_eq!(updated.status, StorageClusterStatus::Healthy);
+        assert_eq!(updated.last_observed_at, Some(observed));
+
+        let fetched = store.get_storage_cluster(cluster.id).await.unwrap();
+        assert_eq!(fetched.status, StorageClusterStatus::Healthy);
+        assert_eq!(fetched.last_observed_at, Some(observed));
+    }
+
+    #[tokio::test]
+    async fn storage_cluster_update_status_unknown_id_is_not_found() {
+        let store = MemStore::new();
+        let err = store
+            .update_storage_cluster_status(
+                Uuid::new_v4(),
+                StorageClusterStatus::Healthy,
+                Utc::now(),
+            )
+            .await
+            .unwrap_err();
         assert!(matches!(err, StoreError::NotFound));
     }
 }
