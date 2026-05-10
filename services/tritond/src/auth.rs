@@ -79,6 +79,14 @@ use crate::audit::AuditService;
 ///   read-only fleet visibility without picking up cluster-wide
 ///   write authority.
 ///
+/// `Action::StorageCluster*` (registration of external manta-storage
+/// daemons under `/v2/storage/clusters`) are intentionally absent
+/// from every per-scope rule below — operator-only by design, gated
+/// solely by the root-allows-all rule. Demoting them to a per-silo
+/// or fleet-admin scope would let a tenant-scoped operator hand
+/// tritond a malicious mantad endpoint, which would in turn proxy
+/// arbitrary admin calls back into our trust boundary.
+///
 /// Every other access falls through to Cedar's default deny.
 const POLICY_BUNDLE: &str = r#"
 @id("anonymous-public-actions")
@@ -530,6 +538,21 @@ pub enum Action {
     LegacyVmList,
     LegacyVmGet,
     LegacyAlarmList,
+    /// Operator-only storage-cluster registration surface
+    /// (`/v2/storage/clusters`). Gated by the root-allows-all rule —
+    /// see the `POLICY_BUNDLE` doc-comment for why these never get
+    /// a per-silo or fleet-admin variant. Per-forwarder action
+    /// variants (StorageClusterSummary, StorageNodes, etc.) ship
+    /// in Stage 3.5 once the proxy endpoints land.
+    StorageClusterList,
+    StorageClusterCreate,
+    StorageClusterGet,
+    StorageClusterDelete,
+    /// Trigger an out-of-band health probe against a registered
+    /// cluster's `/admin/v1/cluster` summary. Mutates `status` and
+    /// `last_observed_at` on the StorageCluster record, so it's
+    /// classified as a write for ReadOnly-scope purposes.
+    StorageClusterHealthProbe,
 }
 
 impl Action {
@@ -646,6 +669,11 @@ impl Action {
             Action::LegacyVmList => "legacy_vm_list",
             Action::LegacyVmGet => "legacy_vm_get",
             Action::LegacyAlarmList => "legacy_alarm_list",
+            Action::StorageClusterList => "storage_cluster_list",
+            Action::StorageClusterCreate => "storage_cluster_create",
+            Action::StorageClusterGet => "storage_cluster_get",
+            Action::StorageClusterDelete => "storage_cluster_delete",
+            Action::StorageClusterHealthProbe => "storage_cluster_health_probe",
         }
     }
 
@@ -1231,7 +1259,12 @@ fn is_read_action(action: Action) -> bool {
         | Action::CnDisable
         | Action::CnSetRole
         | Action::AutoApproveSet
-        | Action::AutoApproveClear => false,
+        | Action::AutoApproveClear
+        // Storage cluster mutations: registration writes, deletion,
+        // and the health probe (which writes status + last_observed_at).
+        | Action::StorageClusterCreate
+        | Action::StorageClusterDelete
+        | Action::StorageClusterHealthProbe => false,
         // CN reads.
         Action::CnList | Action::CnGet | Action::AutoApproveGet => true,
         // Legacy admin reads.
@@ -1240,6 +1273,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::LegacyVmList
         | Action::LegacyVmGet
         | Action::LegacyAlarmList => true,
+        // Storage cluster reads.
+        Action::StorageClusterList | Action::StorageClusterGet => true,
     }
 }
 
@@ -1591,6 +1626,91 @@ mod tests {
             let err = auth
                 .authorize(&p, action)
                 .expect_err("non-fleet-admin should be denied");
+            assert_eq!(err.status_code.as_status().as_u16(), 403);
+        }
+    }
+
+    #[tokio::test]
+    async fn root_can_perform_all_storage_cluster_actions() {
+        // Cedar root-allows-all covers the entire StorageCluster
+        // surface; no per-silo or fleet-admin variant exists.
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: true,
+            fleet_admin: true,
+            tenant_id: None,
+            silo_id: None,
+            scope: None,
+            bound_cn: None,
+        };
+        for action in [
+            Action::StorageClusterList,
+            Action::StorageClusterCreate,
+            Action::StorageClusterGet,
+            Action::StorageClusterDelete,
+            Action::StorageClusterHealthProbe,
+        ] {
+            assert!(auth.authorize(&p, action).is_ok(), "denied {action:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn fleet_admin_is_denied_storage_cluster_actions() {
+        // Fleet-admin grants legacy-discovery reads; it must NOT
+        // bleed into storage-cluster registration. Letting a
+        // non-root operator register a mantad endpoint would let
+        // them point tritond at a malicious admin API.
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: false,
+            fleet_admin: true,
+            tenant_id: None,
+            silo_id: None,
+            scope: None,
+            bound_cn: None,
+        };
+        for action in [
+            Action::StorageClusterList,
+            Action::StorageClusterCreate,
+            Action::StorageClusterGet,
+            Action::StorageClusterDelete,
+            Action::StorageClusterHealthProbe,
+        ] {
+            let err = auth
+                .authorize(&p, action)
+                .expect_err("fleet-admin should not reach storage-cluster surface");
+            assert_eq!(err.status_code.as_status().as_u16(), 403);
+        }
+    }
+
+    #[tokio::test]
+    async fn read_only_scope_blocks_storage_cluster_writes() {
+        // ReadOnly key on a root user: the list/get reads should
+        // pass, but create/delete/health-probe must be rejected by
+        // the scope check ahead of Cedar.
+        let auth = fresh_service();
+        let p = Principal::Operator {
+            user_id: Uuid::new_v4(),
+            is_root: true,
+            fleet_admin: true,
+            tenant_id: None,
+            silo_id: None,
+            scope: Some(ApiKeyScope::ReadOnly),
+            bound_cn: None,
+        };
+        for action in [Action::StorageClusterList, Action::StorageClusterGet] {
+            assert!(auth.authorize(&p, action).is_ok(), "denied {action:?}");
+        }
+        for action in [
+            Action::StorageClusterCreate,
+            Action::StorageClusterDelete,
+            Action::StorageClusterHealthProbe,
+        ] {
+            let err = auth
+                .authorize(&p, action)
+                .expect_err("read-only scope must deny {action:?}");
             assert_eq!(err.status_code.as_status().as_u16(), 403);
         }
     }
