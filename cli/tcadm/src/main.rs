@@ -188,9 +188,11 @@ enum StorageClusterCommand {
         #[arg(long)]
         name: String,
         /// HTTP base URL of the cluster's admin API
-        /// (e.g. http://10.199.199.250:7101).
-        #[arg(long)]
-        endpoint: String,
+        /// (e.g. http://10.199.199.250:7101). Distinct from the
+        /// global `--endpoint` flag, which controls the *tritond*
+        /// URL tcadm itself talks to.
+        #[arg(long = "cluster-endpoint")]
+        cluster_endpoint: String,
         /// Bearer token tritond will present on /admin/v1/* calls.
         /// Read from `--admin-token-stdin` (one line, trimmed) when
         /// not passed inline so the secret doesn't end up in shell
@@ -2709,7 +2711,7 @@ async fn main() -> Result<()> {
                 }
                 StorageClusterCommand::Add {
                     name,
-                    endpoint,
+                    cluster_endpoint,
                     admin_token,
                     admin_token_stdin,
                     surface,
@@ -2721,7 +2723,7 @@ async fn main() -> Result<()> {
                         cli.endpoint,
                         cli.api_key,
                         name,
-                        endpoint,
+                        cluster_endpoint,
                         admin_token,
                         admin_token_stdin,
                         surface.into(),
