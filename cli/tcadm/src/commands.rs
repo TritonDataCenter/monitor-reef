@@ -3558,3 +3558,247 @@ async fn exchange_password(endpoint: &str, username: &str, password: &str) -> Re
         refresh_expires_at: response.refresh_expires_at,
     })
 }
+
+// ── Storage cluster registry ─────────────────────────────────────────
+
+/// Resolve `ident` to a UUID. Tries to parse as a Uuid first; on
+/// failure, calls `list_storage_clusters` and finds the cluster with
+/// a matching `name` field. The fallback is one extra round trip but
+/// keeps `tcadm storage cluster show <name>` working without making
+/// the operator carry UUIDs around.
+async fn resolve_storage_cluster_ident(
+    client: &tritond_client::Client,
+    ident: &str,
+) -> Result<Uuid> {
+    if let Ok(id) = Uuid::parse_str(ident) {
+        return Ok(id);
+    }
+    let clusters = client
+        .list_storage_clusters()
+        .send()
+        .await
+        .context("list storage clusters")?
+        .into_inner();
+    clusters
+        .into_iter()
+        .find(|c| c.name == ident)
+        .map(|c| c.id)
+        .ok_or_else(|| anyhow::anyhow!("no storage cluster registered with name {ident:?}"))
+}
+
+fn storage_surface_label(s: &tritond_client::types::StorageClusterSurface) -> &'static str {
+    use tritond_client::types::StorageClusterSurface;
+    match s {
+        StorageClusterSurface::S3 => "s3",
+        StorageClusterSurface::Fs => "fs",
+        StorageClusterSurface::Block => "block",
+    }
+}
+
+fn storage_status_label(s: &tritond_client::types::StorageClusterStatus) -> &'static str {
+    use tritond_client::types::StorageClusterStatus;
+    match s {
+        StorageClusterStatus::Healthy => "healthy",
+        StorageClusterStatus::Degraded => "degraded",
+        StorageClusterStatus::Unreachable => "unreachable",
+        StorageClusterStatus::Unknown => "unknown",
+    }
+}
+
+pub async fn storage_cluster_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let clusters = client
+        .list_storage_clusters()
+        .send()
+        .await
+        .context("list storage clusters")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&clusters)?);
+        return Ok(());
+    }
+    if clusters.is_empty() {
+        println!("(no storage clusters registered)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<7}  {:<11}  ENDPOINT",
+        "CLUSTER_ID", "NAME", "SURFACE", "STATUS"
+    );
+    for c in clusters {
+        println!(
+            "{:<36}  {:<24}  {:<7}  {:<11}  {}",
+            c.id,
+            c.name,
+            storage_surface_label(&c.surface),
+            storage_status_label(&c.status),
+            c.endpoint,
+        );
+    }
+    Ok(())
+}
+
+pub async fn storage_cluster_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    ident: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let id = resolve_storage_cluster_ident(&client, &ident).await?;
+    let cluster = client
+        .get_storage_cluster()
+        .id(id)
+        .send()
+        .await
+        .context("get storage cluster")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cluster)?);
+        return Ok(());
+    }
+    println!("StorageCluster {}", cluster.id);
+    println!("  name:             {}", cluster.name);
+    println!(
+        "  surface:          {}",
+        storage_surface_label(&cluster.surface)
+    );
+    println!("  endpoint:         {}", cluster.endpoint);
+    println!("  default_region:   {}", cluster.default_region);
+    if let Some(label) = &cluster.display_name {
+        println!("  display_name:     {label}");
+    }
+    println!(
+        "  status:           {}",
+        storage_status_label(&cluster.status)
+    );
+    println!("  created_at:       {}", cluster.created_at.to_rfc3339());
+    println!(
+        "  last_observed_at: {}",
+        cluster
+            .last_observed_at
+            .as_ref()
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_else(|| "(never)".to_string())
+    );
+    Ok(())
+}
+
+pub async fn storage_cluster_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    name: String,
+    endpoint: String,
+    admin_token: Option<String>,
+    admin_token_stdin: bool,
+    surface: tritond_client::types::StorageClusterSurface,
+    default_region: String,
+    display_name: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let admin_token = match (admin_token, admin_token_stdin) {
+        (Some(t), false) => t,
+        (None, true) => read_admin_token_from_stdin()?,
+        (Some(_), true) => unreachable!("clap conflicts_with prevents this"),
+        (None, false) => {
+            anyhow::bail!("admin token required: pass --admin-token or --admin-token-stdin")
+        }
+    };
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let req = tritond_client::types::NewStorageCluster {
+        name,
+        endpoint,
+        admin_token,
+        surface,
+        default_region,
+        display_name,
+    };
+    let cluster = client
+        .create_storage_cluster()
+        .body(req)
+        .send()
+        .await
+        .context("register storage cluster")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cluster)?);
+        return Ok(());
+    }
+    println!(
+        "Registered storage cluster {} (id {}) at {}",
+        cluster.name, cluster.id, cluster.endpoint
+    );
+    Ok(())
+}
+
+pub async fn storage_cluster_delete(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    cluster_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_storage_cluster()
+        .id(cluster_id)
+        .send()
+        .await
+        .context("delete storage cluster")?;
+    println!("Deregistered storage cluster {cluster_id}");
+    Ok(())
+}
+
+pub async fn storage_cluster_health(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    ident: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let id = resolve_storage_cluster_ident(&client, &ident).await?;
+    let cluster = client
+        .probe_storage_cluster_health()
+        .id(id)
+        .send()
+        .await
+        .context("probe storage cluster health")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cluster)?);
+        return Ok(());
+    }
+    println!(
+        "Probe complete: {} → {} (observed {})",
+        cluster.name,
+        storage_status_label(&cluster.status),
+        cluster
+            .last_observed_at
+            .as_ref()
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_else(|| "(no timestamp)".to_string())
+    );
+    Ok(())
+}
+
+fn read_admin_token_from_stdin() -> Result<String> {
+    use std::io::BufRead;
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    stdin
+        .lock()
+        .read_line(&mut line)
+        .context("read admin token from stdin")?;
+    let trimmed = line.trim().to_string();
+    if trimmed.is_empty() {
+        anyhow::bail!("admin token from stdin was empty");
+    }
+    Ok(trimmed)
+}

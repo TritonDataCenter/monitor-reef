@@ -147,6 +147,91 @@ enum Commands {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// Manage registered manta-storage clusters (operator-only).
+    /// Forwarder endpoints (buckets / users / policies) are exposed
+    /// through admin-backend; tcadm stays at the registry level for now.
+    Storage {
+        #[command(subcommand)]
+        command: StorageCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum StorageCommand {
+    /// Manage cluster registrations.
+    Cluster {
+        #[command(subcommand)]
+        command: StorageClusterCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum StorageClusterCommand {
+    /// List every registered storage cluster, sorted by name.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single cluster by id or by name.
+    Show {
+        /// UUID or operator-chosen name.
+        ident: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Register a new cluster. Surface defaults to `s3` because
+    /// that's the only forwarder family wired up today (mantafs /
+    /// manta-block registrations succeed but their forwarder
+    /// endpoints return 409).
+    Add {
+        /// Operator-chosen short name. Unique cluster-wide.
+        #[arg(long)]
+        name: String,
+        /// HTTP base URL of the cluster's admin API
+        /// (e.g. http://10.199.199.250:7101).
+        #[arg(long)]
+        endpoint: String,
+        /// Bearer token tritond will present on /admin/v1/* calls.
+        /// Read from `--admin-token-stdin` (one line, trimmed) when
+        /// not passed inline so the secret doesn't end up in shell
+        /// history.
+        #[arg(long, conflicts_with = "admin_token_stdin")]
+        admin_token: Option<String>,
+        #[arg(long, conflicts_with = "admin_token")]
+        admin_token_stdin: bool,
+        /// Surface served by this cluster.
+        #[arg(long, value_enum, default_value_t = StorageSurfaceArg::S3)]
+        surface: StorageSurfaceArg,
+        /// Default region echoed back to clients (informational).
+        #[arg(long, default_value = "us-east-1")]
+        default_region: String,
+        /// Optional human-friendly label.
+        #[arg(long)]
+        display_name: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Deregister a cluster. Idempotent; succeeds when the id is
+    /// already gone.
+    Delete {
+        /// Cluster UUID.
+        cluster_id: Uuid,
+    },
+    /// Trigger an out-of-band health probe and persist the result.
+    Health {
+        /// UUID or operator-chosen name.
+        ident: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// CLI-side surface enum. Maps to `tritond_client::types::StorageClusterSurface`.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum StorageSurfaceArg {
+    S3,
+    Fs,
+    Block,
 }
 
 #[derive(Subcommand)]
@@ -2614,5 +2699,55 @@ async fn main() -> Result<()> {
                 }
             },
         },
+        Commands::Storage { command } => match command {
+            StorageCommand::Cluster { command } => match command {
+                StorageClusterCommand::List { json } => {
+                    commands::storage_cluster_list(cli.endpoint, cli.api_key, json).await
+                }
+                StorageClusterCommand::Show { ident, json } => {
+                    commands::storage_cluster_show(cli.endpoint, cli.api_key, ident, json).await
+                }
+                StorageClusterCommand::Add {
+                    name,
+                    endpoint,
+                    admin_token,
+                    admin_token_stdin,
+                    surface,
+                    default_region,
+                    display_name,
+                    json,
+                } => {
+                    commands::storage_cluster_add(
+                        cli.endpoint,
+                        cli.api_key,
+                        name,
+                        endpoint,
+                        admin_token,
+                        admin_token_stdin,
+                        surface.into(),
+                        default_region,
+                        display_name,
+                        json,
+                    )
+                    .await
+                }
+                StorageClusterCommand::Delete { cluster_id } => {
+                    commands::storage_cluster_delete(cli.endpoint, cli.api_key, cluster_id).await
+                }
+                StorageClusterCommand::Health { ident, json } => {
+                    commands::storage_cluster_health(cli.endpoint, cli.api_key, ident, json).await
+                }
+            },
+        },
+    }
+}
+
+impl From<StorageSurfaceArg> for tritond_client::types::StorageClusterSurface {
+    fn from(s: StorageSurfaceArg) -> Self {
+        match s {
+            StorageSurfaceArg::S3 => Self::S3,
+            StorageSurfaceArg::Fs => Self::Fs,
+            StorageSurfaceArg::Block => Self::Block,
+        }
     }
 }
