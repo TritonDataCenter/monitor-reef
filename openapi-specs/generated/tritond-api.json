@@ -2034,6 +2034,1365 @@
         }
       }
     },
+    "/v2/storage/clusters": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "List every registered manta-storage cluster, sorted by name.",
+        "description": "Operator surface (root-only via Cedar root-allows-all).",
+        "operationId": "list_storage_clusters",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_StorageClusterView",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageClusterView"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Register a new storage cluster (mantad / mantafs / manta-block).",
+        "description": "The bearer token submitted in the body is held server-side and never returned by any GET — see [`StorageClusterView`] for the redacted wire shape.",
+        "operationId": "create_storage_cluster",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewStorageCluster"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageClusterView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Read a single registered storage cluster by id.",
+        "operationId": "get_storage_cluster",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageClusterView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Drop a storage cluster registration. Idempotent.",
+        "operationId": "delete_storage_cluster",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/access-keys/{access_key_id}": {
+      "delete": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`DELETE /admin/v1/access-keys/{access_key_id}`. Note that the",
+        "description": "AKID alone identifies the key — there's no per-user nesting here, mirroring mantad's surface.",
+        "operationId": "delete_storage_cluster_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "access_key_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/buckets": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/buckets` — all buckets in the cluster.",
+        "description": "`?stats=true` forwards `?stats=1` to mantad and includes per-bucket object counts + total bytes (a more expensive scan).",
+        "operationId": "list_storage_cluster_buckets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stats",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_StorageBucket",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageBucket"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/buckets` — create a bucket.",
+        "operationId": "create_storage_cluster_bucket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageCreateBucketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageBucket"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/buckets/{bucket}": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/buckets/{bucket}` — bucket detail.",
+        "operationId": "get_storage_cluster_bucket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bucket",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageBucket"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket.",
+        "operationId": "delete_storage_cluster_bucket",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bucket",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/buckets/{bucket}/objects": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/buckets/{bucket}/objects` — paged object listing.",
+        "operationId": "list_storage_cluster_objects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "bucket",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "continuation_token",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "delimiter",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_keys",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "prefix",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageObjectsPage"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/cluster": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/cluster` — cluster summary.",
+        "operationId": "get_storage_cluster_summary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageClusterSummary"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/health": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "Trigger an out-of-band health probe against the cluster's",
+        "description": "`/admin/v1/cluster` summary, persist the observed status to `last_observed_at`, and return the refreshed view. POST because it actively mutates state.",
+        "operationId": "probe_storage_cluster_health",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageClusterView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/membership": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/membership` — current membership view.",
+        "operationId": "get_storage_cluster_membership",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMembership"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/nodes": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/nodes` — list all nodes.",
+        "operationId": "list_storage_cluster_nodes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_StorageNode",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageNode"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/nodes` — register a peer.",
+        "operationId": "add_storage_cluster_node",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageAddNodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMembership"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/nodes/{node_id}": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/nodes/{node_id}` — single-node detail.",
+        "operationId": "get_storage_cluster_node",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "description": "Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageNode"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`DELETE /admin/v1/nodes/{node_id}` — drop a peer.",
+        "operationId": "remove_storage_cluster_node",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "description": "Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMembership"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/nodes/{node_id}/drain": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/nodes/{node_id}/drain`.",
+        "operationId": "drain_storage_cluster_node",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "description": "Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMembership"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/nodes/{node_id}/reweight": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/nodes/{node_id}/reweight`.",
+        "operationId": "reweight_storage_cluster_node",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "description": "Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageReweightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMembership"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/nodes/{node_id}/undrain": {
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/nodes/{node_id}/undrain`.",
+        "operationId": "undrain_storage_cluster_node",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "description": "Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageMembership"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/users": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/users`.",
+        "operationId": "list_storage_cluster_users",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_StorageUser",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageUser"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/users`.",
+        "operationId": "create_storage_cluster_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageCreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUser"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/users/{user}": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/users/{user}`.",
+        "operationId": "get_storage_cluster_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageUser"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`DELETE /admin/v1/users/{user}`.",
+        "operationId": "delete_storage_cluster_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/users/{user}/access-keys": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/users/{user}/access-keys`.",
+        "operationId": "list_storage_cluster_access_keys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_StorageAccessKey",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageAccessKey"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`POST /admin/v1/users/{user}/access-keys` — secret returned",
+        "description": "once on the response. Caller must capture it; mantad does not retain the cleartext.",
+        "operationId": "create_storage_cluster_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageAccessKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/users/{user}/policies": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/users/{user}/policies` — list attached policy",
+        "description": "names. Returns a Vec<String> verbatim from mantad.",
+        "operationId": "list_storage_cluster_user_policies",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_String",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/storage/clusters/{id}/users/{user}/policies/{policy}": {
+      "get": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON.",
+        "operationId": "get_storage_cluster_user_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "policy",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`PUT /admin/v1/users/{user}/policies/{policy}` — upsert a JSON",
+        "description": "policy doc. Body is the raw policy document; mantad does not validate schema beyond \"is JSON\".",
+        "operationId": "put_storage_cluster_user_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "policy",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "storage-clusters"
+        ],
+        "summary": "`DELETE /admin/v1/users/{user}/policies/{policy}`.",
+        "operationId": "delete_storage_cluster_user_policy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "policy",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/idp": {
       "get": {
         "tags": [
@@ -7654,6 +9013,12 @@
               }
             ]
           },
+          "alias": {
+            "nullable": true,
+            "description": "Operator-assigned zone alias (the human-readable name shown by `vmadm list`). Used as the row name in the admin UI.",
+            "default": null,
+            "type": "string"
+          },
           "brand": {
             "nullable": true,
             "default": null,
@@ -8696,6 +10061,38 @@
         "required": [
           "name",
           "public_key"
+        ]
+      },
+      "NewStorageCluster": {
+        "description": "Body of `POST /v2/storage/clusters`.",
+        "type": "object",
+        "properties": {
+          "admin_token": {
+            "type": "string"
+          },
+          "default_region": {
+            "default": "us-east-1",
+            "type": "string"
+          },
+          "display_name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "surface": {
+            "$ref": "#/components/schemas/StorageClusterSurface"
+          }
+        },
+        "required": [
+          "admin_token",
+          "endpoint",
+          "name",
+          "surface"
         ]
       },
       "NewSubnet": {
@@ -9790,6 +11187,494 @@
           }
         ]
       },
+      "StorageAccessKey": {
+        "description": "Mirror of `mantad_client::types::AccessKey`. `secret_access_key` is `Some(_)` only on the `POST .../access-keys` create response — mantad does not retain the cleartext after that one return.",
+        "type": "object",
+        "properties": {
+          "access_key_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "secret_access_key": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "description": "`\"Active\"` or `\"Revoked\"` (free-form on the wire today).",
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_key_id",
+          "created_at",
+          "status",
+          "user"
+        ]
+      },
+      "StorageAddNodeRequest": {
+        "description": "Body for `POST /v2/storage/clusters/{id}/nodes`.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "internal_url": {
+            "type": "string"
+          },
+          "rack": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "internal_url",
+          "rack"
+        ]
+      },
+      "StorageBucket": {
+        "description": "Mirror of `mantad_client::types::Bucket`. Returned by `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get).",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "object_count": {
+            "nullable": true,
+            "description": "Object count, present only when `?stats=1` was forwarded.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "owner": {
+            "type": "string"
+          },
+          "total_bytes": {
+            "nullable": true,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "created_at",
+          "name",
+          "owner"
+        ]
+      },
+      "StorageClusterStatus": {
+        "description": "Operator-observed health of a registered storage cluster.\n\nPopulated by the `/v2/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary.",
+        "oneOf": [
+          {
+            "description": "Last probe succeeded and all nodes were alive.",
+            "type": "string",
+            "enum": [
+              "healthy"
+            ]
+          },
+          {
+            "description": "Last probe succeeded but at least one node was missing.",
+            "type": "string",
+            "enum": [
+              "degraded"
+            ]
+          },
+          {
+            "description": "Last probe failed (connection refused, timeout, 5xx).",
+            "type": "string",
+            "enum": [
+              "unreachable"
+            ]
+          },
+          {
+            "description": "No probe has run yet, or the last probe was too long ago to trust.",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "StorageClusterSummary": {
+        "description": "Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v2/storage/clusters/{id}/cluster`.",
+        "type": "object",
+        "properties": {
+          "buckets": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "nodes_alive": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "nodes_total": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "primary": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "query_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "racks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replication_factor": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "this_node": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "total_blobs": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "buckets",
+          "nodes_alive",
+          "nodes_total",
+          "primary",
+          "query_ms",
+          "racks",
+          "replication_factor",
+          "this_node",
+          "total_blobs",
+          "total_bytes",
+          "version"
+        ]
+      },
+      "StorageClusterSurface": {
+        "description": "Discriminator for the storage surface a registered cluster serves.\n\nEach surface has its own forwarder endpoint family (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`.",
+        "oneOf": [
+          {
+            "description": "S3-compatible object surface (mantad / mantas3-cluster `/admin/v1/*`).",
+            "type": "string",
+            "enum": [
+              "s3"
+            ]
+          },
+          {
+            "description": "Filesystem surface (mantafs / tritonfs). Registration is accepted; forwarder endpoints are not yet implemented.",
+            "type": "string",
+            "enum": [
+              "fs"
+            ]
+          },
+          {
+            "description": "Block-volume surface (manta-block). Registration is accepted; forwarder endpoints are not yet implemented.",
+            "type": "string",
+            "enum": [
+              "block"
+            ]
+          }
+        ]
+      },
+      "StorageClusterView": {
+        "description": "Wire-side projection of [`StorageCluster`] that **redacts the bearer token**. This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "default_region": {
+            "type": "string"
+          },
+          "display_name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_observed_at": {
+            "nullable": true,
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StorageClusterStatus"
+          },
+          "surface": {
+            "$ref": "#/components/schemas/StorageClusterSurface"
+          }
+        },
+        "required": [
+          "created_at",
+          "default_region",
+          "endpoint",
+          "id",
+          "name",
+          "status",
+          "surface"
+        ]
+      },
+      "StorageCreateBucketRequest": {
+        "description": "Body for `POST /v2/storage/clusters/{id}/buckets`.",
+        "type": "object",
+        "properties": {
+          "durability": {
+            "nullable": true,
+            "description": "Raw JSON `Durability` (mantad's type lives in mantas3-meta; kept opaque to avoid a dep cycle)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "StorageCreateUserRequest": {
+        "description": "Body for `POST /v2/storage/clusters/{id}/users`.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "StorageMembership": {
+        "description": "Mirror of `mantad_client::types::Membership`. Returned by `GET /v2/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view.",
+        "type": "object",
+        "properties": {
+          "auto_membership": {
+            "type": "boolean"
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoragePeerEntry"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "auto_membership",
+          "peers",
+          "version"
+        ]
+      },
+      "StorageNode": {
+        "description": "Mirror of `mantad_client::types::Node`. Returned by `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup).",
+        "type": "object",
+        "properties": {
+          "alive": {
+            "type": "boolean"
+          },
+          "blobs": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "buckets": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "internal_url": {
+            "type": "string"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "rack": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alive",
+          "blobs",
+          "buckets",
+          "bytes",
+          "id",
+          "internal_url",
+          "is_primary",
+          "rack"
+        ]
+      },
+      "StorageObjectSummary": {
+        "description": "Mirror of `mantad_client::types::ObjectSummary`.",
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "nullable": true,
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "size": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "etag",
+          "key",
+          "last_modified",
+          "size"
+        ]
+      },
+      "StorageObjectsPage": {
+        "description": "Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response.",
+        "type": "object",
+        "properties": {
+          "common_prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_truncated": {
+            "type": "boolean"
+          },
+          "next_continuation_token": {
+            "nullable": true,
+            "type": "string"
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StorageObjectSummary"
+            }
+          }
+        },
+        "required": [
+          "common_prefixes",
+          "is_truncated",
+          "objects"
+        ]
+      },
+      "StoragePeerEntry": {
+        "description": "Mirror of `mantad_client::types::PeerEntry`.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "internal_url": {
+            "type": "string"
+          },
+          "rack": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "internal_url",
+          "rack"
+        ]
+      },
+      "StorageReweightRequest": {
+        "description": "Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`.",
+        "type": "object",
+        "properties": {
+          "factor": {
+            "description": "New reweight factor; 1.0 = normal, 0.0 = drained.",
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "required": [
+          "factor"
+        ]
+      },
+      "StorageUser": {
+        "description": "Mirror of `mantad_client::types::User`. Returned by IAM list + per-user GET.",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "created_at",
+          "name"
+        ]
+      },
       "Subnet": {
         "description": "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`, `ipv6_block ⊆ vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet).",
         "type": "object",
@@ -10122,6 +12007,9 @@
     },
     {
       "name": "ssh-keys"
+    },
+    {
+      "name": "storage-clusters"
     },
     {
       "name": "subnets"

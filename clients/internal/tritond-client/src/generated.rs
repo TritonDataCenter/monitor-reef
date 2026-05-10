@@ -3672,6 +3672,13 @@ pub mod types {
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"alias\": {"]
+    #[doc = "      \"description\": \"Operator-assigned zone alias (the human-readable name shown by `vmadm list`). Used as the row name in the admin UI.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"brand\": {"]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -3771,6 +3778,9 @@ pub mod types {
     pub struct LegacyVm {
         #[serde(default = "defaults::legacy_vm_adoptable")]
         pub adoptable: AdoptableState,
+        #[doc = "Operator-assigned zone alias (the human-readable name shown by `vmadm list`). Used as the row name in the admin UI."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub alias: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub brand: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -5405,6 +5415,67 @@ pub mod types {
 
     impl NewSshKey {
         pub fn builder() -> builder::NewSshKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body of `POST /v2/storage/clusters`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v2/storage/clusters`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"admin_token\","]
+    #[doc = "    \"endpoint\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"surface\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"admin_token\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"default_region\": {"]
+    #[doc = "      \"default\": \"us-east-1\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"display_name\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"endpoint\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"surface\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/StorageClusterSurface\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewStorageCluster {
+        pub admin_token: ::std::string::String,
+        #[serde(default = "defaults::new_storage_cluster_default_region")]
+        pub default_region: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub display_name: ::std::option::Option<::std::string::String>,
+        pub endpoint: ::std::string::String,
+        pub name: ::std::string::String,
+        pub surface: StorageClusterSurface,
+    }
+
+    impl NewStorageCluster {
+        pub fn builder() -> builder::NewStorageCluster {
             Default::default()
         }
     }
@@ -7271,6 +7342,1017 @@ pub mod types {
         Project { project_id: ::uuid::Uuid },
         #[serde(rename = "user")]
         User { user_id: ::uuid::Uuid },
+    }
+
+    #[doc = "Mirror of `mantad_client::types::AccessKey`. `secret_access_key` is `Some(_)` only on the `POST .../access-keys` create response — mantad does not retain the cleartext after that one return."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::AccessKey`. `secret_access_key` is `Some(_)` only on the `POST .../access-keys` create response — mantad does not retain the cleartext after that one return.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"access_key_id\","]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"user\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"access_key_id\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"secret_access_key\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"description\": \"`\\\"Active\\\"` or `\\\"Revoked\\\"` (free-form on the wire today).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"user\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageAccessKey {
+        pub access_key_id: ::std::string::String,
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub secret_access_key: ::std::option::Option<::std::string::String>,
+        #[doc = "`\"Active\"` or `\"Revoked\"` (free-form on the wire today)."]
+        pub status: ::std::string::String,
+        pub user: ::std::string::String,
+    }
+
+    impl StorageAccessKey {
+        pub fn builder() -> builder::StorageAccessKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body for `POST /v2/storage/clusters/{id}/nodes`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/nodes`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"internal_url\","]
+    #[doc = "    \"rack\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"internal_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"rack\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageAddNodeRequest {
+        pub id: u32,
+        pub internal_url: ::std::string::String,
+        pub rack: ::std::string::String,
+    }
+
+    impl StorageAddNodeRequest {
+        pub fn builder() -> builder::StorageAddNodeRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::Bucket`. Returned by `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Bucket`. Returned by `GET /v2/storage/clusters/{id}/buckets` (and per-bucket get).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"owner\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"object_count\": {"]
+    #[doc = "      \"description\": \"Object count, present only when `?stats=1` was forwarded.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"owner\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"total_bytes\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageBucket {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub name: ::std::string::String,
+        #[doc = "Object count, present only when `?stats=1` was forwarded."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub object_count: ::std::option::Option<u64>,
+        pub owner: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub total_bytes: ::std::option::Option<u64>,
+    }
+
+    impl StorageBucket {
+        pub fn builder() -> builder::StorageBucket {
+            Default::default()
+        }
+    }
+
+    #[doc = "Operator-observed health of a registered storage cluster.\n\nPopulated by the `/v2/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Operator-observed health of a registered storage cluster.\\n\\nPopulated by the `/v2/storage/clusters/{id}/health` endpoint, which runs a probe against the cluster's `/admin/v1/cluster` summary.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Last probe succeeded and all nodes were alive.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"healthy\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Last probe succeeded but at least one node was missing.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"degraded\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Last probe failed (connection refused, timeout, 5xx).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unreachable\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"No probe has run yet, or the last probe was too long ago to trust.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum StorageClusterStatus {
+        #[doc = "Last probe succeeded and all nodes were alive."]
+        #[serde(rename = "healthy")]
+        Healthy,
+        #[doc = "Last probe succeeded but at least one node was missing."]
+        #[serde(rename = "degraded")]
+        Degraded,
+        #[doc = "Last probe failed (connection refused, timeout, 5xx)."]
+        #[serde(rename = "unreachable")]
+        Unreachable,
+        #[doc = "No probe has run yet, or the last probe was too long ago to trust."]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for StorageClusterStatus {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Healthy => f.write_str("healthy"),
+                Self::Degraded => f.write_str("degraded"),
+                Self::Unreachable => f.write_str("unreachable"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for StorageClusterStatus {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "healthy" => Ok(Self::Healthy),
+                "degraded" => Ok(Self::Degraded),
+                "unreachable" => Ok(Self::Unreachable),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for StorageClusterStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for StorageClusterStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for StorageClusterStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v2/storage/clusters/{id}/cluster`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ClusterSummary`. Returned by `GET /v2/storage/clusters/{id}/cluster`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"buckets\","]
+    #[doc = "    \"nodes_alive\","]
+    #[doc = "    \"nodes_total\","]
+    #[doc = "    \"primary\","]
+    #[doc = "    \"query_ms\","]
+    #[doc = "    \"racks\","]
+    #[doc = "    \"replication_factor\","]
+    #[doc = "    \"this_node\","]
+    #[doc = "    \"total_blobs\","]
+    #[doc = "    \"total_bytes\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"buckets\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"nodes_alive\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"nodes_total\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"primary\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"query_ms\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"racks\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"replication_factor\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"this_node\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"total_blobs\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"total_bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageClusterSummary {
+        pub buckets: u32,
+        pub nodes_alive: u32,
+        pub nodes_total: u32,
+        pub primary: u32,
+        pub query_ms: u64,
+        pub racks: ::std::vec::Vec<::std::string::String>,
+        pub replication_factor: u32,
+        pub this_node: u32,
+        pub total_blobs: u64,
+        pub total_bytes: u64,
+        pub version: ::std::string::String,
+    }
+
+    impl StorageClusterSummary {
+        pub fn builder() -> builder::StorageClusterSummary {
+            Default::default()
+        }
+    }
+
+    #[doc = "Discriminator for the storage surface a registered cluster serves.\n\nEach surface has its own forwarder endpoint family (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Discriminator for the storage surface a registered cluster serves.\\n\\nEach surface has its own forwarder endpoint family (`/v2/storage/clusters/{id}/s3/*` etc.); attempting to call a surface's endpoint family on a cluster registered under a different surface returns a `409 Conflict`.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"S3-compatible object surface (mantad / mantas3-cluster `/admin/v1/*`).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"s3\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Filesystem surface (mantafs / tritonfs). Registration is accepted; forwarder endpoints are not yet implemented.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"fs\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Block-volume surface (manta-block). Registration is accepted; forwarder endpoints are not yet implemented.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"block\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum StorageClusterSurface {
+        #[doc = "S3-compatible object surface (mantad / mantas3-cluster `/admin/v1/*`)."]
+        #[serde(rename = "s3")]
+        S3,
+        #[doc = "Filesystem surface (mantafs / tritonfs). Registration is accepted; forwarder endpoints are not yet implemented."]
+        #[serde(rename = "fs")]
+        Fs,
+        #[doc = "Block-volume surface (manta-block). Registration is accepted; forwarder endpoints are not yet implemented."]
+        #[serde(rename = "block")]
+        Block,
+    }
+
+    impl ::std::fmt::Display for StorageClusterSurface {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::S3 => f.write_str("s3"),
+                Self::Fs => f.write_str("fs"),
+                Self::Block => f.write_str("block"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for StorageClusterSurface {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "s3" => Ok(Self::S3),
+                "fs" => Ok(Self::Fs),
+                "block" => Ok(Self::Block),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for StorageClusterSurface {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for StorageClusterSurface {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for StorageClusterSurface {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Wire-side projection of [`StorageCluster`] that **redacts the bearer token**. This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Wire-side projection of [`StorageCluster`] that **redacts the bearer token**. This is what `GET /v2/storage/clusters` and `GET /v2/storage/clusters/{id}` return.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"default_region\","]
+    #[doc = "    \"endpoint\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"surface\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"default_region\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"display_name\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"endpoint\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_observed_at\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/StorageClusterStatus\""]
+    #[doc = "    },"]
+    #[doc = "    \"surface\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/StorageClusterSurface\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageClusterView {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub default_region: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub display_name: ::std::option::Option<::std::string::String>,
+        pub endpoint: ::std::string::String,
+        pub id: ::uuid::Uuid,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub last_observed_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        pub name: ::std::string::String,
+        pub status: StorageClusterStatus,
+        pub surface: StorageClusterSurface,
+    }
+
+    impl StorageClusterView {
+        pub fn builder() -> builder::StorageClusterView {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body for `POST /v2/storage/clusters/{id}/buckets`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/buckets`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"durability\": {"]
+    #[doc = "      \"description\": \"Raw JSON `Durability` (mantad's type lives in mantas3-meta; kept opaque to avoid a dep cycle).\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"owner\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageCreateBucketRequest {
+        #[doc = "Raw JSON `Durability` (mantad's type lives in mantas3-meta; kept opaque to avoid a dep cycle)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub durability: ::std::option::Option<::serde_json::Value>,
+        pub name: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub owner: ::std::option::Option<::std::string::String>,
+    }
+
+    impl StorageCreateBucketRequest {
+        pub fn builder() -> builder::StorageCreateBucketRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body for `POST /v2/storage/clusters/{id}/users`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/users`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageCreateUserRequest {
+        pub name: ::std::string::String,
+    }
+
+    impl StorageCreateUserRequest {
+        pub fn builder() -> builder::StorageCreateUserRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::Membership`. Returned by `GET /v2/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Membership`. Returned by `GET /v2/storage/clusters/{id}/membership` and by every node-mutation endpoint (drain / undrain / reweight / add / remove) that mantad answers with the refreshed view.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"auto_membership\","]
+    #[doc = "    \"peers\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"auto_membership\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"peers\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/StoragePeerEntry\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageMembership {
+        pub auto_membership: bool,
+        pub peers: ::std::vec::Vec<StoragePeerEntry>,
+        pub version: u64,
+    }
+
+    impl StorageMembership {
+        pub fn builder() -> builder::StorageMembership {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::Node`. Returned by `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::Node`. Returned by `GET /v2/storage/clusters/{id}/nodes` (and the per-node lookup).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"alive\","]
+    #[doc = "    \"blobs\","]
+    #[doc = "    \"buckets\","]
+    #[doc = "    \"bytes\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"internal_url\","]
+    #[doc = "    \"is_primary\","]
+    #[doc = "    \"rack\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"alive\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"blobs\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"buckets\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"bytes\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"error\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"internal_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"is_primary\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"rack\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageNode {
+        pub alive: bool,
+        pub blobs: u64,
+        pub buckets: u32,
+        pub bytes: u64,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub error: ::std::option::Option<::std::string::String>,
+        pub id: u32,
+        pub internal_url: ::std::string::String,
+        pub is_primary: bool,
+        pub rack: ::std::string::String,
+    }
+
+    impl StorageNode {
+        pub fn builder() -> builder::StorageNode {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::ObjectSummary`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ObjectSummary`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"etag\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"last_modified\","]
+    #[doc = "    \"size\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"content_type\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"etag\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"last_modified\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"size\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageObjectSummary {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub content_type: ::std::option::Option<::std::string::String>,
+        pub etag: ::std::string::String,
+        pub key: ::std::string::String,
+        pub last_modified: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub size: u64,
+    }
+
+    impl StorageObjectSummary {
+        pub fn builder() -> builder::StorageObjectSummary {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::ObjectsPage`. Paged `GET /v2/storage/clusters/{id}/buckets/{bucket}/objects` response.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"common_prefixes\","]
+    #[doc = "    \"is_truncated\","]
+    #[doc = "    \"objects\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"common_prefixes\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"is_truncated\": {"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"next_continuation_token\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"objects\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/StorageObjectSummary\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageObjectsPage {
+        pub common_prefixes: ::std::vec::Vec<::std::string::String>,
+        pub is_truncated: bool,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub next_continuation_token: ::std::option::Option<::std::string::String>,
+        pub objects: ::std::vec::Vec<StorageObjectSummary>,
+    }
+
+    impl StorageObjectsPage {
+        pub fn builder() -> builder::StorageObjectsPage {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::PeerEntry`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::PeerEntry`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"internal_url\","]
+    #[doc = "    \"rack\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"internal_url\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"rack\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StoragePeerEntry {
+        pub id: u32,
+        pub internal_url: ::std::string::String,
+        pub rack: ::std::string::String,
+    }
+
+    impl StoragePeerEntry {
+        pub fn builder() -> builder::StoragePeerEntry {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body for `POST /v2/storage/clusters/{id}/nodes/{node_id}/reweight`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"factor\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"factor\": {"]
+    #[doc = "      \"description\": \"New reweight factor; 1.0 = normal, 0.0 = drained.\","]
+    #[doc = "      \"type\": \"number\","]
+    #[doc = "      \"format\": \"double\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageReweightRequest {
+        pub factor: f64,
+    }
+
+    impl StorageReweightRequest {
+        pub fn builder() -> builder::StorageReweightRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Mirror of `mantad_client::types::User`. Returned by IAM list + per-user GET."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Mirror of `mantad_client::types::User`. Returned by IAM list + per-user GET.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StorageUser {
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        pub name: ::std::string::String,
+    }
+
+    impl StorageUser {
+        pub fn builder() -> builder::StorageUser {
+            Default::default()
+        }
     }
 
     #[doc = "Layer-3 subnet inside a VPC. Each subnet carves a CIDR out of its parent VPC's IPv4 and/or IPv6 block. Multiple subnets may exist per VPC; their CIDRs must not overlap. NIC attach points to a specific subnet at instance-launch time.\n\nInvariants enforced at create time: * Every present subnet CIDR must be a strict subnet of the parent VPC's same-family CIDR (`ipv4_block ⊆ vpc.ipv4_block`, `ipv6_block ⊆ vpc.ipv6_block`). * No subnet CIDR (in either family) may overlap an existing subnet CIDR in the same VPC. * At least one of `ipv4_block` / `ipv6_block` must be `Some`, and each present family must also be present on the parent VPC (an IPv4-only VPC cannot host an IPv6 subnet)."]
@@ -11343,6 +12425,10 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct LegacyVm {
             adoptable: ::std::result::Result<super::AdoptableState, ::std::string::String>,
+            alias: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             brand: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -11379,6 +12465,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     adoptable: Ok(super::defaults::legacy_vm_adoptable()),
+                    alias: Ok(Default::default()),
                     brand: Ok(Default::default()),
                     cpu_cap: Ok(Default::default()),
                     first_seen_at: Err("no value supplied for first_seen_at".to_string()),
@@ -11405,6 +12492,16 @@ pub mod types {
                 self.adoptable = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for adoptable: {e}"));
+                self
+            }
+            pub fn alias<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.alias = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for alias: {e}"));
                 self
             }
             pub fn brand<T>(mut self, value: T) -> Self
@@ -11546,6 +12643,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     adoptable: value.adoptable?,
+                    alias: value.alias?,
                     brand: value.brand?,
                     cpu_cap: value.cpu_cap?,
                     first_seen_at: value.first_seen_at?,
@@ -11567,6 +12665,7 @@ pub mod types {
             fn from(value: super::LegacyVm) -> Self {
                 Self {
                     adoptable: Ok(value.adoptable),
+                    alias: Ok(value.alias),
                     brand: Ok(value.brand),
                     cpu_cap: Ok(value.cpu_cap),
                     first_seen_at: Ok(value.first_seen_at),
@@ -13600,6 +14699,124 @@ pub mod types {
                     description: Ok(value.description),
                     name: Ok(value.name),
                     public_key: Ok(value.public_key),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewStorageCluster {
+            admin_token: ::std::result::Result<::std::string::String, ::std::string::String>,
+            default_region: ::std::result::Result<::std::string::String, ::std::string::String>,
+            display_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            endpoint: ::std::result::Result<::std::string::String, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            surface: ::std::result::Result<super::StorageClusterSurface, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewStorageCluster {
+            fn default() -> Self {
+                Self {
+                    admin_token: Err("no value supplied for admin_token".to_string()),
+                    default_region: Ok(super::defaults::new_storage_cluster_default_region()),
+                    display_name: Ok(Default::default()),
+                    endpoint: Err("no value supplied for endpoint".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    surface: Err("no value supplied for surface".to_string()),
+                }
+            }
+        }
+
+        impl NewStorageCluster {
+            pub fn admin_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.admin_token = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for admin_token: {e}"));
+                self
+            }
+            pub fn default_region<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default_region = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for default_region: {e}")
+                });
+                self
+            }
+            pub fn display_name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.display_name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for display_name: {e}"));
+                self
+            }
+            pub fn endpoint<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.endpoint = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for endpoint: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn surface<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::StorageClusterSurface>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.surface = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for surface: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewStorageCluster> for super::NewStorageCluster {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewStorageCluster,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    admin_token: value.admin_token?,
+                    default_region: value.default_region?,
+                    display_name: value.display_name?,
+                    endpoint: value.endpoint?,
+                    name: value.name?,
+                    surface: value.surface?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewStorageCluster> for NewStorageCluster {
+            fn from(value: super::NewStorageCluster) -> Self {
+                Self {
+                    admin_token: Ok(value.admin_token),
+                    default_region: Ok(value.default_region),
+                    display_name: Ok(value.display_name),
+                    endpoint: Ok(value.endpoint),
+                    name: Ok(value.name),
+                    surface: Ok(value.surface),
                 }
             }
         }
@@ -15772,6 +16989,1387 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct StorageAccessKey {
+            access_key_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            secret_access_key: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            status: ::std::result::Result<::std::string::String, ::std::string::String>,
+            user: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageAccessKey {
+            fn default() -> Self {
+                Self {
+                    access_key_id: Err("no value supplied for access_key_id".to_string()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    secret_access_key: Ok(Default::default()),
+                    status: Err("no value supplied for status".to_string()),
+                    user: Err("no value supplied for user".to_string()),
+                }
+            }
+        }
+
+        impl StorageAccessKey {
+            pub fn access_key_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.access_key_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for access_key_id: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn secret_access_key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.secret_access_key = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for secret_access_key: {e}")
+                });
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn user<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.user = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for user: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageAccessKey> for super::StorageAccessKey {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageAccessKey,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    access_key_id: value.access_key_id?,
+                    created_at: value.created_at?,
+                    secret_access_key: value.secret_access_key?,
+                    status: value.status?,
+                    user: value.user?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageAccessKey> for StorageAccessKey {
+            fn from(value: super::StorageAccessKey) -> Self {
+                Self {
+                    access_key_id: Ok(value.access_key_id),
+                    created_at: Ok(value.created_at),
+                    secret_access_key: Ok(value.secret_access_key),
+                    status: Ok(value.status),
+                    user: Ok(value.user),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageAddNodeRequest {
+            id: ::std::result::Result<u32, ::std::string::String>,
+            internal_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            rack: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageAddNodeRequest {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    internal_url: Err("no value supplied for internal_url".to_string()),
+                    rack: Err("no value supplied for rack".to_string()),
+                }
+            }
+        }
+
+        impl StorageAddNodeRequest {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn internal_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.internal_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for internal_url: {e}"));
+                self
+            }
+            pub fn rack<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rack = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rack: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageAddNodeRequest> for super::StorageAddNodeRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageAddNodeRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    internal_url: value.internal_url?,
+                    rack: value.rack?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageAddNodeRequest> for StorageAddNodeRequest {
+            fn from(value: super::StorageAddNodeRequest) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    internal_url: Ok(value.internal_url),
+                    rack: Ok(value.rack),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageBucket {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            object_count: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            owner: ::std::result::Result<::std::string::String, ::std::string::String>,
+            total_bytes: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageBucket {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    object_count: Ok(Default::default()),
+                    owner: Err("no value supplied for owner".to_string()),
+                    total_bytes: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl StorageBucket {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn object_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.object_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for object_count: {e}"));
+                self
+            }
+            pub fn owner<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.owner = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for owner: {e}"));
+                self
+            }
+            pub fn total_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total_bytes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageBucket> for super::StorageBucket {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageBucket,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    name: value.name?,
+                    object_count: value.object_count?,
+                    owner: value.owner?,
+                    total_bytes: value.total_bytes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageBucket> for StorageBucket {
+            fn from(value: super::StorageBucket) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    name: Ok(value.name),
+                    object_count: Ok(value.object_count),
+                    owner: Ok(value.owner),
+                    total_bytes: Ok(value.total_bytes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageClusterSummary {
+            buckets: ::std::result::Result<u32, ::std::string::String>,
+            nodes_alive: ::std::result::Result<u32, ::std::string::String>,
+            nodes_total: ::std::result::Result<u32, ::std::string::String>,
+            primary: ::std::result::Result<u32, ::std::string::String>,
+            query_ms: ::std::result::Result<u64, ::std::string::String>,
+            racks: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            replication_factor: ::std::result::Result<u32, ::std::string::String>,
+            this_node: ::std::result::Result<u32, ::std::string::String>,
+            total_blobs: ::std::result::Result<u64, ::std::string::String>,
+            total_bytes: ::std::result::Result<u64, ::std::string::String>,
+            version: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageClusterSummary {
+            fn default() -> Self {
+                Self {
+                    buckets: Err("no value supplied for buckets".to_string()),
+                    nodes_alive: Err("no value supplied for nodes_alive".to_string()),
+                    nodes_total: Err("no value supplied for nodes_total".to_string()),
+                    primary: Err("no value supplied for primary".to_string()),
+                    query_ms: Err("no value supplied for query_ms".to_string()),
+                    racks: Err("no value supplied for racks".to_string()),
+                    replication_factor: Err("no value supplied for replication_factor".to_string()),
+                    this_node: Err("no value supplied for this_node".to_string()),
+                    total_blobs: Err("no value supplied for total_blobs".to_string()),
+                    total_bytes: Err("no value supplied for total_bytes".to_string()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl StorageClusterSummary {
+            pub fn buckets<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.buckets = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for buckets: {e}"));
+                self
+            }
+            pub fn nodes_alive<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nodes_alive = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nodes_alive: {e}"));
+                self
+            }
+            pub fn nodes_total<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nodes_total = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nodes_total: {e}"));
+                self
+            }
+            pub fn primary<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.primary = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for primary: {e}"));
+                self
+            }
+            pub fn query_ms<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.query_ms = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for query_ms: {e}"));
+                self
+            }
+            pub fn racks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.racks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for racks: {e}"));
+                self
+            }
+            pub fn replication_factor<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.replication_factor = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for replication_factor: {e}")
+                });
+                self
+            }
+            pub fn this_node<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.this_node = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for this_node: {e}"));
+                self
+            }
+            pub fn total_blobs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_blobs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total_blobs: {e}"));
+                self
+            }
+            pub fn total_bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total_bytes: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageClusterSummary> for super::StorageClusterSummary {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageClusterSummary,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    buckets: value.buckets?,
+                    nodes_alive: value.nodes_alive?,
+                    nodes_total: value.nodes_total?,
+                    primary: value.primary?,
+                    query_ms: value.query_ms?,
+                    racks: value.racks?,
+                    replication_factor: value.replication_factor?,
+                    this_node: value.this_node?,
+                    total_blobs: value.total_blobs?,
+                    total_bytes: value.total_bytes?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageClusterSummary> for StorageClusterSummary {
+            fn from(value: super::StorageClusterSummary) -> Self {
+                Self {
+                    buckets: Ok(value.buckets),
+                    nodes_alive: Ok(value.nodes_alive),
+                    nodes_total: Ok(value.nodes_total),
+                    primary: Ok(value.primary),
+                    query_ms: Ok(value.query_ms),
+                    racks: Ok(value.racks),
+                    replication_factor: Ok(value.replication_factor),
+                    this_node: Ok(value.this_node),
+                    total_blobs: Ok(value.total_blobs),
+                    total_bytes: Ok(value.total_bytes),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageClusterView {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            default_region: ::std::result::Result<::std::string::String, ::std::string::String>,
+            display_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            endpoint: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            last_observed_at: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            status: ::std::result::Result<super::StorageClusterStatus, ::std::string::String>,
+            surface: ::std::result::Result<super::StorageClusterSurface, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageClusterView {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    default_region: Err("no value supplied for default_region".to_string()),
+                    display_name: Ok(Default::default()),
+                    endpoint: Err("no value supplied for endpoint".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    last_observed_at: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    status: Err("no value supplied for status".to_string()),
+                    surface: Err("no value supplied for surface".to_string()),
+                }
+            }
+        }
+
+        impl StorageClusterView {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn default_region<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default_region = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for default_region: {e}")
+                });
+                self
+            }
+            pub fn display_name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.display_name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for display_name: {e}"));
+                self
+            }
+            pub fn endpoint<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.endpoint = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for endpoint: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn last_observed_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_observed_at = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for last_observed_at: {e}")
+                });
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::StorageClusterStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn surface<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::StorageClusterSurface>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.surface = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for surface: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageClusterView> for super::StorageClusterView {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageClusterView,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    default_region: value.default_region?,
+                    display_name: value.display_name?,
+                    endpoint: value.endpoint?,
+                    id: value.id?,
+                    last_observed_at: value.last_observed_at?,
+                    name: value.name?,
+                    status: value.status?,
+                    surface: value.surface?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageClusterView> for StorageClusterView {
+            fn from(value: super::StorageClusterView) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    default_region: Ok(value.default_region),
+                    display_name: Ok(value.display_name),
+                    endpoint: Ok(value.endpoint),
+                    id: Ok(value.id),
+                    last_observed_at: Ok(value.last_observed_at),
+                    name: Ok(value.name),
+                    status: Ok(value.status),
+                    surface: Ok(value.surface),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageCreateBucketRequest {
+            durability: ::std::result::Result<
+                ::std::option::Option<::serde_json::Value>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            owner: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StorageCreateBucketRequest {
+            fn default() -> Self {
+                Self {
+                    durability: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    owner: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl StorageCreateBucketRequest {
+            pub fn durability<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::serde_json::Value>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.durability = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for durability: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn owner<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.owner = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for owner: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageCreateBucketRequest> for super::StorageCreateBucketRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageCreateBucketRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    durability: value.durability?,
+                    name: value.name?,
+                    owner: value.owner?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageCreateBucketRequest> for StorageCreateBucketRequest {
+            fn from(value: super::StorageCreateBucketRequest) -> Self {
+                Self {
+                    durability: Ok(value.durability),
+                    name: Ok(value.name),
+                    owner: Ok(value.owner),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageCreateUserRequest {
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageCreateUserRequest {
+            fn default() -> Self {
+                Self {
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl StorageCreateUserRequest {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageCreateUserRequest> for super::StorageCreateUserRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageCreateUserRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { name: value.name? })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageCreateUserRequest> for StorageCreateUserRequest {
+            fn from(value: super::StorageCreateUserRequest) -> Self {
+                Self {
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageMembership {
+            auto_membership: ::std::result::Result<bool, ::std::string::String>,
+            peers: ::std::result::Result<
+                ::std::vec::Vec<super::StoragePeerEntry>,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageMembership {
+            fn default() -> Self {
+                Self {
+                    auto_membership: Err("no value supplied for auto_membership".to_string()),
+                    peers: Err("no value supplied for peers".to_string()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl StorageMembership {
+            pub fn auto_membership<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.auto_membership = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for auto_membership: {e}")
+                });
+                self
+            }
+            pub fn peers<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::StoragePeerEntry>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.peers = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for peers: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageMembership> for super::StorageMembership {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageMembership,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    auto_membership: value.auto_membership?,
+                    peers: value.peers?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageMembership> for StorageMembership {
+            fn from(value: super::StorageMembership) -> Self {
+                Self {
+                    auto_membership: Ok(value.auto_membership),
+                    peers: Ok(value.peers),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageNode {
+            alive: ::std::result::Result<bool, ::std::string::String>,
+            blobs: ::std::result::Result<u64, ::std::string::String>,
+            buckets: ::std::result::Result<u32, ::std::string::String>,
+            bytes: ::std::result::Result<u64, ::std::string::String>,
+            error: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<u32, ::std::string::String>,
+            internal_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            is_primary: ::std::result::Result<bool, ::std::string::String>,
+            rack: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageNode {
+            fn default() -> Self {
+                Self {
+                    alive: Err("no value supplied for alive".to_string()),
+                    blobs: Err("no value supplied for blobs".to_string()),
+                    buckets: Err("no value supplied for buckets".to_string()),
+                    bytes: Err("no value supplied for bytes".to_string()),
+                    error: Ok(Default::default()),
+                    id: Err("no value supplied for id".to_string()),
+                    internal_url: Err("no value supplied for internal_url".to_string()),
+                    is_primary: Err("no value supplied for is_primary".to_string()),
+                    rack: Err("no value supplied for rack".to_string()),
+                }
+            }
+        }
+
+        impl StorageNode {
+            pub fn alive<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.alive = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for alive: {e}"));
+                self
+            }
+            pub fn blobs<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.blobs = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for blobs: {e}"));
+                self
+            }
+            pub fn buckets<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.buckets = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for buckets: {e}"));
+                self
+            }
+            pub fn bytes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.bytes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for bytes: {e}"));
+                self
+            }
+            pub fn error<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.error = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for error: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn internal_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.internal_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for internal_url: {e}"));
+                self
+            }
+            pub fn is_primary<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_primary = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_primary: {e}"));
+                self
+            }
+            pub fn rack<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rack = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rack: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageNode> for super::StorageNode {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageNode,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    alive: value.alive?,
+                    blobs: value.blobs?,
+                    buckets: value.buckets?,
+                    bytes: value.bytes?,
+                    error: value.error?,
+                    id: value.id?,
+                    internal_url: value.internal_url?,
+                    is_primary: value.is_primary?,
+                    rack: value.rack?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageNode> for StorageNode {
+            fn from(value: super::StorageNode) -> Self {
+                Self {
+                    alive: Ok(value.alive),
+                    blobs: Ok(value.blobs),
+                    buckets: Ok(value.buckets),
+                    bytes: Ok(value.bytes),
+                    error: Ok(value.error),
+                    id: Ok(value.id),
+                    internal_url: Ok(value.internal_url),
+                    is_primary: Ok(value.is_primary),
+                    rack: Ok(value.rack),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageObjectSummary {
+            content_type: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            etag: ::std::result::Result<::std::string::String, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+            last_modified: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            size: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageObjectSummary {
+            fn default() -> Self {
+                Self {
+                    content_type: Ok(Default::default()),
+                    etag: Err("no value supplied for etag".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                    last_modified: Err("no value supplied for last_modified".to_string()),
+                    size: Err("no value supplied for size".to_string()),
+                }
+            }
+        }
+
+        impl StorageObjectSummary {
+            pub fn content_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.content_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for content_type: {e}"));
+                self
+            }
+            pub fn etag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.etag = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for etag: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn last_modified<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.last_modified = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for last_modified: {e}"));
+                self
+            }
+            pub fn size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageObjectSummary> for super::StorageObjectSummary {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageObjectSummary,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    content_type: value.content_type?,
+                    etag: value.etag?,
+                    key: value.key?,
+                    last_modified: value.last_modified?,
+                    size: value.size?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageObjectSummary> for StorageObjectSummary {
+            fn from(value: super::StorageObjectSummary) -> Self {
+                Self {
+                    content_type: Ok(value.content_type),
+                    etag: Ok(value.etag),
+                    key: Ok(value.key),
+                    last_modified: Ok(value.last_modified),
+                    size: Ok(value.size),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageObjectsPage {
+            common_prefixes: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            is_truncated: ::std::result::Result<bool, ::std::string::String>,
+            next_continuation_token: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            objects: ::std::result::Result<
+                ::std::vec::Vec<super::StorageObjectSummary>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StorageObjectsPage {
+            fn default() -> Self {
+                Self {
+                    common_prefixes: Err("no value supplied for common_prefixes".to_string()),
+                    is_truncated: Err("no value supplied for is_truncated".to_string()),
+                    next_continuation_token: Ok(Default::default()),
+                    objects: Err("no value supplied for objects".to_string()),
+                }
+            }
+        }
+
+        impl StorageObjectsPage {
+            pub fn common_prefixes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.common_prefixes = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for common_prefixes: {e}")
+                });
+                self
+            }
+            pub fn is_truncated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.is_truncated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for is_truncated: {e}"));
+                self
+            }
+            pub fn next_continuation_token<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.next_continuation_token = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for next_continuation_token: {e}")
+                });
+                self
+            }
+            pub fn objects<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::StorageObjectSummary>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.objects = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for objects: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageObjectsPage> for super::StorageObjectsPage {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageObjectsPage,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    common_prefixes: value.common_prefixes?,
+                    is_truncated: value.is_truncated?,
+                    next_continuation_token: value.next_continuation_token?,
+                    objects: value.objects?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageObjectsPage> for StorageObjectsPage {
+            fn from(value: super::StorageObjectsPage) -> Self {
+                Self {
+                    common_prefixes: Ok(value.common_prefixes),
+                    is_truncated: Ok(value.is_truncated),
+                    next_continuation_token: Ok(value.next_continuation_token),
+                    objects: Ok(value.objects),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StoragePeerEntry {
+            id: ::std::result::Result<u32, ::std::string::String>,
+            internal_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            rack: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StoragePeerEntry {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    internal_url: Err("no value supplied for internal_url".to_string()),
+                    rack: Err("no value supplied for rack".to_string()),
+                }
+            }
+        }
+
+        impl StoragePeerEntry {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn internal_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.internal_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for internal_url: {e}"));
+                self
+            }
+            pub fn rack<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.rack = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for rack: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StoragePeerEntry> for super::StoragePeerEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StoragePeerEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    internal_url: value.internal_url?,
+                    rack: value.rack?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StoragePeerEntry> for StoragePeerEntry {
+            fn from(value: super::StoragePeerEntry) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    internal_url: Ok(value.internal_url),
+                    rack: Ok(value.rack),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageReweightRequest {
+            factor: ::std::result::Result<f64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageReweightRequest {
+            fn default() -> Self {
+                Self {
+                    factor: Err("no value supplied for factor".to_string()),
+                }
+            }
+        }
+
+        impl StorageReweightRequest {
+            pub fn factor<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<f64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.factor = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for factor: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageReweightRequest> for super::StorageReweightRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageReweightRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    factor: value.factor?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageReweightRequest> for StorageReweightRequest {
+            fn from(value: super::StorageReweightRequest) -> Self {
+                Self {
+                    factor: Ok(value.factor),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StorageUser {
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for StorageUser {
+            fn default() -> Self {
+                Self {
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl StorageUser {
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StorageUser> for super::StorageUser {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StorageUser,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    created_at: value.created_at?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StorageUser> for StorageUser {
+            fn from(value: super::StorageUser) -> Self {
+                Self {
+                    created_at: Ok(value.created_at),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Subnet {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -16338,6 +18936,10 @@ pub mod types {
         pub(super) fn new_api_key_scope() -> super::ApiKeyScope {
             super::ApiKeyScope::Full
         }
+
+        pub(super) fn new_storage_cluster_default_region() -> ::std::string::String {
+            "us-east-1".to_string()
+        }
     }
 }
 
@@ -16664,6 +19266,160 @@ impl Client {
     #[doc = "Delete an SSH key by id. Returns 404 when the key does\n\nnot exist OR the principal lacks ownership for the key's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/ssh-keys/{key_id}`\n\n```ignore\nlet response = client.delete_ssh_key()\n    .key_id(key_id)\n    .send()\n    .await;\n```"]
     pub fn delete_ssh_key(&self) -> builder::DeleteSshKey<'_> {
         builder::DeleteSshKey::new(self)
+    }
+
+    #[doc = "List every registered manta-storage cluster, sorted by name\n\nOperator surface (root-only via Cedar root-allows-all).\n\nSends a `GET` request to `/v2/storage/clusters`\n\n```ignore\nlet response = client.list_storage_clusters()\n    .send()\n    .await;\n```"]
+    pub fn list_storage_clusters(&self) -> builder::ListStorageClusters<'_> {
+        builder::ListStorageClusters::new(self)
+    }
+
+    #[doc = "Register a new storage cluster (mantad / mantafs / manta-block)\n\nThe bearer token submitted in the body is held server-side and never returned by any GET — see [`StorageClusterView`] for the redacted wire shape.\n\nSends a `POST` request to `/v2/storage/clusters`\n\n```ignore\nlet response = client.create_storage_cluster()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_storage_cluster(&self) -> builder::CreateStorageCluster<'_> {
+        builder::CreateStorageCluster::new(self)
+    }
+
+    #[doc = "Read a single registered storage cluster by id\n\nSends a `GET` request to `/v2/storage/clusters/{id}`\n\n```ignore\nlet response = client.get_storage_cluster()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster(&self) -> builder::GetStorageCluster<'_> {
+        builder::GetStorageCluster::new(self)
+    }
+
+    #[doc = "Drop a storage cluster registration. Idempotent\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}`\n\n```ignore\nlet response = client.delete_storage_cluster()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn delete_storage_cluster(&self) -> builder::DeleteStorageCluster<'_> {
+        builder::DeleteStorageCluster::new(self)
+    }
+
+    #[doc = "`DELETE /admin/v1/access-keys/{access_key_id}`. Note that the\n\nAKID alone identifies the key — there's no per-user nesting here, mirroring mantad's surface.\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/access-keys/{access_key_id}`\n\n```ignore\nlet response = client.delete_storage_cluster_access_key()\n    .id(id)\n    .access_key_id(access_key_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_storage_cluster_access_key(&self) -> builder::DeleteStorageClusterAccessKey<'_> {
+        builder::DeleteStorageClusterAccessKey::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/buckets` — all buckets in the cluster\n\n`?stats=true` forwards `?stats=1` to mantad and includes per-bucket object counts + total bytes (a more expensive scan).\n\nSends a `GET` request to `/v2/storage/clusters/{id}/buckets`\n\n```ignore\nlet response = client.list_storage_cluster_buckets()\n    .id(id)\n    .stats(stats)\n    .send()\n    .await;\n```"]
+    pub fn list_storage_cluster_buckets(&self) -> builder::ListStorageClusterBuckets<'_> {
+        builder::ListStorageClusterBuckets::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/buckets` — create a bucket\n\nSends a `POST` request to `/v2/storage/clusters/{id}/buckets`\n\n```ignore\nlet response = client.create_storage_cluster_bucket()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_storage_cluster_bucket(&self) -> builder::CreateStorageClusterBucket<'_> {
+        builder::CreateStorageClusterBucket::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/buckets/{bucket}` — bucket detail\n\nSends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}`\n\n```ignore\nlet response = client.get_storage_cluster_bucket()\n    .id(id)\n    .bucket(bucket)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster_bucket(&self) -> builder::GetStorageClusterBucket<'_> {
+        builder::GetStorageClusterBucket::new(self)
+    }
+
+    #[doc = "`DELETE /admin/v1/buckets/{bucket}` — delete an empty bucket\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/buckets/{bucket}`\n\n```ignore\nlet response = client.delete_storage_cluster_bucket()\n    .id(id)\n    .bucket(bucket)\n    .send()\n    .await;\n```"]
+    pub fn delete_storage_cluster_bucket(&self) -> builder::DeleteStorageClusterBucket<'_> {
+        builder::DeleteStorageClusterBucket::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/buckets/{bucket}/objects` — paged object listing\n\nSends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}/objects`\n\n```ignore\nlet response = client.list_storage_cluster_objects()\n    .id(id)\n    .bucket(bucket)\n    .continuation_token(continuation_token)\n    .delimiter(delimiter)\n    .max_keys(max_keys)\n    .prefix(prefix)\n    .send()\n    .await;\n```"]
+    pub fn list_storage_cluster_objects(&self) -> builder::ListStorageClusterObjects<'_> {
+        builder::ListStorageClusterObjects::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/cluster` — cluster summary\n\nSends a `GET` request to `/v2/storage/clusters/{id}/cluster`\n\n```ignore\nlet response = client.get_storage_cluster_summary()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster_summary(&self) -> builder::GetStorageClusterSummary<'_> {
+        builder::GetStorageClusterSummary::new(self)
+    }
+
+    #[doc = "Trigger an out-of-band health probe against the cluster's\n\n`/admin/v1/cluster` summary, persist the observed status to `last_observed_at`, and return the refreshed view. POST because it actively mutates state.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/health`\n\n```ignore\nlet response = client.probe_storage_cluster_health()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn probe_storage_cluster_health(&self) -> builder::ProbeStorageClusterHealth<'_> {
+        builder::ProbeStorageClusterHealth::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/membership` — current membership view\n\nSends a `GET` request to `/v2/storage/clusters/{id}/membership`\n\n```ignore\nlet response = client.get_storage_cluster_membership()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster_membership(&self) -> builder::GetStorageClusterMembership<'_> {
+        builder::GetStorageClusterMembership::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/nodes` — list all nodes\n\nSends a `GET` request to `/v2/storage/clusters/{id}/nodes`\n\n```ignore\nlet response = client.list_storage_cluster_nodes()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn list_storage_cluster_nodes(&self) -> builder::ListStorageClusterNodes<'_> {
+        builder::ListStorageClusterNodes::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/nodes` — register a peer\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes`\n\n```ignore\nlet response = client.add_storage_cluster_node()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn add_storage_cluster_node(&self) -> builder::AddStorageClusterNode<'_> {
+        builder::AddStorageClusterNode::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/nodes/{node_id}` — single-node detail\n\nSends a `GET` request to `/v2/storage/clusters/{id}/nodes/{node_id}`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.get_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster_node(&self) -> builder::GetStorageClusterNode<'_> {
+        builder::GetStorageClusterNode::new(self)
+    }
+
+    #[doc = "`DELETE /admin/v1/nodes/{node_id}` — drop a peer\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/nodes/{node_id}`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.remove_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    pub fn remove_storage_cluster_node(&self) -> builder::RemoveStorageClusterNode<'_> {
+        builder::RemoveStorageClusterNode::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/nodes/{node_id}/drain`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/drain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.drain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    pub fn drain_storage_cluster_node(&self) -> builder::DrainStorageClusterNode<'_> {
+        builder::DrainStorageClusterNode::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/nodes/{node_id}/reweight`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/reweight`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n- `body`\n```ignore\nlet response = client.reweight_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn reweight_storage_cluster_node(&self) -> builder::ReweightStorageClusterNode<'_> {
+        builder::ReweightStorageClusterNode::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/nodes/{node_id}/undrain`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/undrain`\n\nArguments:\n- `id`\n- `node_id`: Numeric storage-node identifier (mirrors `manta_place::NodeId`, which is a `u32`). Re-serialised verbatim to mantad.\n```ignore\nlet response = client.undrain_storage_cluster_node()\n    .id(id)\n    .node_id(node_id)\n    .send()\n    .await;\n```"]
+    pub fn undrain_storage_cluster_node(&self) -> builder::UndrainStorageClusterNode<'_> {
+        builder::UndrainStorageClusterNode::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/users`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.list_storage_cluster_users()\n    .id(id)\n    .send()\n    .await;\n```"]
+    pub fn list_storage_cluster_users(&self) -> builder::ListStorageClusterUsers<'_> {
+        builder::ListStorageClusterUsers::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/users`\n\nSends a `POST` request to `/v2/storage/clusters/{id}/users`\n\n```ignore\nlet response = client.create_storage_cluster_user()\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_storage_cluster_user(&self) -> builder::CreateStorageClusterUser<'_> {
+        builder::CreateStorageClusterUser::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/users/{user}`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}`\n\n```ignore\nlet response = client.get_storage_cluster_user()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster_user(&self) -> builder::GetStorageClusterUser<'_> {
+        builder::GetStorageClusterUser::new(self)
+    }
+
+    #[doc = "`DELETE /admin/v1/users/{user}`\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}`\n\n```ignore\nlet response = client.delete_storage_cluster_user()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn delete_storage_cluster_user(&self) -> builder::DeleteStorageClusterUser<'_> {
+        builder::DeleteStorageClusterUser::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/users/{user}/access-keys`\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`\n\n```ignore\nlet response = client.list_storage_cluster_access_keys()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn list_storage_cluster_access_keys(&self) -> builder::ListStorageClusterAccessKeys<'_> {
+        builder::ListStorageClusterAccessKeys::new(self)
+    }
+
+    #[doc = "`POST /admin/v1/users/{user}/access-keys` — secret returned\n\nonce on the response. Caller must capture it; mantad does not retain the cleartext.\n\nSends a `POST` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`\n\n```ignore\nlet response = client.create_storage_cluster_access_key()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn create_storage_cluster_access_key(&self) -> builder::CreateStorageClusterAccessKey<'_> {
+        builder::CreateStorageClusterAccessKey::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/users/{user}/policies` — list attached policy\n\nnames. Returns a Vec<String> verbatim from mantad.\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies`\n\n```ignore\nlet response = client.list_storage_cluster_user_policies()\n    .id(id)\n    .user(user)\n    .send()\n    .await;\n```"]
+    pub fn list_storage_cluster_user_policies(
+        &self,
+    ) -> builder::ListStorageClusterUserPolicies<'_> {
+        builder::ListStorageClusterUserPolicies::new(self)
+    }
+
+    #[doc = "`GET /admin/v1/users/{user}/policies/{policy}` — raw policy JSON\n\nSends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.get_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
+    pub fn get_storage_cluster_user_policy(&self) -> builder::GetStorageClusterUserPolicy<'_> {
+        builder::GetStorageClusterUserPolicy::new(self)
+    }
+
+    #[doc = "`PUT /admin/v1/users/{user}/policies/{policy}` — upsert a JSON\n\npolicy doc. Body is the raw policy document; mantad does not validate schema beyond \"is JSON\".\n\nSends a `PUT` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.put_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn put_storage_cluster_user_policy(&self) -> builder::PutStorageClusterUserPolicy<'_> {
+        builder::PutStorageClusterUserPolicy::new(self)
+    }
+
+    #[doc = "`DELETE /admin/v1/users/{user}/policies/{policy}`\n\nSends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`\n\n```ignore\nlet response = client.delete_storage_cluster_user_policy()\n    .id(id)\n    .user(user)\n    .policy(policy)\n    .send()\n    .await;\n```"]
+    pub fn delete_storage_cluster_user_policy(
+        &self,
+    ) -> builder::DeleteStorageClusterUserPolicy<'_> {
+        builder::DeleteStorageClusterUserPolicy::new(self)
     }
 
     #[doc = "Read the OIDC IdP config for a tenant. The client secret is\n\nnever returned. 404 when no IdP is configured.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/idp`\n\n```ignore\nlet response = client.get_tenant_idp()\n    .tenant_id(tenant_id)\n    .send()\n    .await;\n```"]
@@ -20900,6 +23656,2658 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_ssh_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_clusters`]\n\n[`Client::list_storage_clusters`]: super::Client::list_storage_clusters"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusters<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListStorageClusters<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageClusterView>>, Error<types::Error>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v2/storage/clusters", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_clusters",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_storage_cluster`]\n\n[`Client::create_storage_cluster`]: super::Client::create_storage_cluster"]
+    #[derive(Debug, Clone)]
+    pub struct CreateStorageCluster<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::NewStorageCluster, String>,
+    }
+
+    impl<'a> CreateStorageCluster<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewStorageCluster>,
+            <V as std::convert::TryInto<types::NewStorageCluster>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewStorageCluster` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NewStorageCluster,
+                ) -> types::builder::NewStorageCluster,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::NewStorageCluster::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/storage/clusters", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_storage_cluster",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster`]\n\n[`Client::get_storage_cluster`]: super::Client::get_storage_cluster"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageCluster<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetStorageCluster<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_storage_cluster`]\n\n[`Client::delete_storage_cluster`]: super::Client::delete_storage_cluster"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteStorageCluster<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteStorageCluster<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_storage_cluster",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_storage_cluster_access_key`]\n\n[`Client::delete_storage_cluster_access_key`]: super::Client::delete_storage_cluster_access_key"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteStorageClusterAccessKey<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        access_key_id: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteStorageClusterAccessKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                access_key_id: Err("access_key_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn access_key_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.access_key_id = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for access_key_id failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/access-keys/{access_key_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                access_key_id,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let access_key_id = access_key_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/access-keys/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&access_key_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_storage_cluster_access_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_cluster_buckets`]\n\n[`Client::list_storage_cluster_buckets`]: super::Client::list_storage_cluster_buckets"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusterBuckets<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        stats: Result<Option<bool>, String>,
+    }
+
+    impl<'a> ListStorageClusterBuckets<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                stats: Ok(None),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn stats<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.stats = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for stats failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/buckets`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageBucket>>, Error<types::Error>>
+        {
+            let Self { client, id, stats } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let stats = stats.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/buckets",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("stats", &stats))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_cluster_buckets",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_storage_cluster_bucket`]\n\n[`Client::create_storage_cluster_bucket`]: super::Client::create_storage_cluster_bucket"]
+    #[derive(Debug, Clone)]
+    pub struct CreateStorageClusterBucket<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::StorageCreateBucketRequest, String>,
+    }
+
+    impl<'a> CreateStorageClusterBucket<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::StorageCreateBucketRequest>,
+            <V as std::convert::TryInto<types::StorageCreateBucketRequest>>::Error:
+                std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `StorageCreateBucketRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::StorageCreateBucketRequest,
+                ) -> types::builder::StorageCreateBucketRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/buckets`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageBucket>, Error<types::Error>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::StorageCreateBucketRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/buckets",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_storage_cluster_bucket",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster_bucket`]\n\n[`Client::get_storage_cluster_bucket`]: super::Client::get_storage_cluster_bucket"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageClusterBucket<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        bucket: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetStorageClusterBucket<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                bucket: Err("bucket was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn bucket<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.bucket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for bucket failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageBucket>, Error<types::Error>> {
+            let Self { client, id, bucket } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let bucket = bucket.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/buckets/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&bucket.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster_bucket",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_storage_cluster_bucket`]\n\n[`Client::delete_storage_cluster_bucket`]: super::Client::delete_storage_cluster_bucket"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteStorageClusterBucket<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        bucket: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteStorageClusterBucket<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                bucket: Err("bucket was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn bucket<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.bucket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for bucket failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/buckets/{bucket}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, id, bucket } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let bucket = bucket.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/buckets/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&bucket.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_storage_cluster_bucket",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_cluster_objects`]\n\n[`Client::list_storage_cluster_objects`]: super::Client::list_storage_cluster_objects"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusterObjects<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        bucket: Result<::std::string::String, String>,
+        continuation_token: Result<Option<::std::string::String>, String>,
+        delimiter: Result<Option<::std::string::String>, String>,
+        max_keys: Result<Option<u32>, String>,
+        prefix: Result<Option<::std::string::String>, String>,
+    }
+
+    impl<'a> ListStorageClusterObjects<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                bucket: Err("bucket was not initialized".to_string()),
+                continuation_token: Ok(None),
+                delimiter: Ok(None),
+                max_keys: Ok(None),
+                prefix: Ok(None),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn bucket<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.bucket = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for bucket failed".to_string()
+            });
+            self
+        }
+
+        pub fn continuation_token<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.continuation_token = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for continuation_token failed"
+                    .to_string()
+            });
+            self
+        }
+
+        pub fn delimiter<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.delimiter = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for delimiter failed".to_string()
+            });
+            self
+        }
+
+        pub fn max_keys<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.max_keys = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for max_keys failed".to_string());
+            self
+        }
+
+        pub fn prefix<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.prefix = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for prefix failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/buckets/{bucket}/objects`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageObjectsPage>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                bucket,
+                continuation_token,
+                delimiter,
+                max_keys,
+                prefix,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let bucket = bucket.map_err(Error::InvalidRequest)?;
+            let continuation_token = continuation_token.map_err(Error::InvalidRequest)?;
+            let delimiter = delimiter.map_err(Error::InvalidRequest)?;
+            let max_keys = max_keys.map_err(Error::InvalidRequest)?;
+            let prefix = prefix.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/buckets/{}/objects",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&bucket.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new(
+                    "continuation_token",
+                    &continuation_token,
+                ))
+                .query(&progenitor_client::QueryParam::new("delimiter", &delimiter))
+                .query(&progenitor_client::QueryParam::new("max_keys", &max_keys))
+                .query(&progenitor_client::QueryParam::new("prefix", &prefix))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_cluster_objects",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster_summary`]\n\n[`Client::get_storage_cluster_summary`]: super::Client::get_storage_cluster_summary"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageClusterSummary<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetStorageClusterSummary<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/cluster`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageClusterSummary>, Error<types::Error>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/cluster",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster_summary",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::probe_storage_cluster_health`]\n\n[`Client::probe_storage_cluster_health`]: super::Client::probe_storage_cluster_health"]
+    #[derive(Debug, Clone)]
+    pub struct ProbeStorageClusterHealth<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ProbeStorageClusterHealth<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/health`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageClusterView>, Error<types::Error>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/health",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "probe_storage_cluster_health",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster_membership`]\n\n[`Client::get_storage_cluster_membership`]: super::Client::get_storage_cluster_membership"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageClusterMembership<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetStorageClusterMembership<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/membership`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/membership",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster_membership",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_cluster_nodes`]\n\n[`Client::list_storage_cluster_nodes`]: super::Client::list_storage_cluster_nodes"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusterNodes<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListStorageClusterNodes<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/nodes`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageNode>>, Error<types::Error>>
+        {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_cluster_nodes",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::add_storage_cluster_node`]\n\n[`Client::add_storage_cluster_node`]: super::Client::add_storage_cluster_node"]
+    #[derive(Debug, Clone)]
+    pub struct AddStorageClusterNode<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::StorageAddNodeRequest, String>,
+    }
+
+    impl<'a> AddStorageClusterNode<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::StorageAddNodeRequest>,
+            <V as std::convert::TryInto<types::StorageAddNodeRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `StorageAddNodeRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::StorageAddNodeRequest,
+                ) -> types::builder::StorageAddNodeRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::StorageAddNodeRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "add_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster_node`]\n\n[`Client::get_storage_cluster_node`]: super::Client::get_storage_cluster_node"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageClusterNode<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        node_id: Result<u32, String>,
+    }
+
+    impl<'a> GetStorageClusterNode<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                node_id: Err("node_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn node_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.node_id = value
+                .try_into()
+                .map_err(|_| "conversion to `u32` for node_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/nodes/{node_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::StorageNode>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                node_id,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let node_id = node_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&node_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::remove_storage_cluster_node`]\n\n[`Client::remove_storage_cluster_node`]: super::Client::remove_storage_cluster_node"]
+    #[derive(Debug, Clone)]
+    pub struct RemoveStorageClusterNode<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        node_id: Result<u32, String>,
+    }
+
+    impl<'a> RemoveStorageClusterNode<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                node_id: Err("node_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn node_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.node_id = value
+                .try_into()
+                .map_err(|_| "conversion to `u32` for node_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/nodes/{node_id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                node_id,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let node_id = node_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&node_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "remove_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::drain_storage_cluster_node`]\n\n[`Client::drain_storage_cluster_node`]: super::Client::drain_storage_cluster_node"]
+    #[derive(Debug, Clone)]
+    pub struct DrainStorageClusterNode<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        node_id: Result<u32, String>,
+    }
+
+    impl<'a> DrainStorageClusterNode<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                node_id: Err("node_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn node_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.node_id = value
+                .try_into()
+                .map_err(|_| "conversion to `u32` for node_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/drain`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                node_id,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let node_id = node_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes/{}/drain",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&node_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "drain_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::reweight_storage_cluster_node`]\n\n[`Client::reweight_storage_cluster_node`]: super::Client::reweight_storage_cluster_node"]
+    #[derive(Debug, Clone)]
+    pub struct ReweightStorageClusterNode<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        node_id: Result<u32, String>,
+        body: Result<types::builder::StorageReweightRequest, String>,
+    }
+
+    impl<'a> ReweightStorageClusterNode<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                node_id: Err("node_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn node_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.node_id = value
+                .try_into()
+                .map_err(|_| "conversion to `u32` for node_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::StorageReweightRequest>,
+            <V as std::convert::TryInto<types::StorageReweightRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `StorageReweightRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::StorageReweightRequest,
+                ) -> types::builder::StorageReweightRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/reweight`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                node_id,
+                body,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let node_id = node_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::StorageReweightRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes/{}/reweight",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&node_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "reweight_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::undrain_storage_cluster_node`]\n\n[`Client::undrain_storage_cluster_node`]: super::Client::undrain_storage_cluster_node"]
+    #[derive(Debug, Clone)]
+    pub struct UndrainStorageClusterNode<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        node_id: Result<u32, String>,
+    }
+
+    impl<'a> UndrainStorageClusterNode<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                node_id: Err("node_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn node_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.node_id = value
+                .try_into()
+                .map_err(|_| "conversion to `u32` for node_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/nodes/{node_id}/undrain`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageMembership>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                node_id,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let node_id = node_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/nodes/{}/undrain",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&node_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "undrain_storage_cluster_node",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_cluster_users`]\n\n[`Client::list_storage_cluster_users`]: super::Client::list_storage_cluster_users"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusterUsers<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListStorageClusterUsers<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageUser>>, Error<types::Error>>
+        {
+            let Self { client, id } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_cluster_users",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_storage_cluster_user`]\n\n[`Client::create_storage_cluster_user`]: super::Client::create_storage_cluster_user"]
+    #[derive(Debug, Clone)]
+    pub struct CreateStorageClusterUser<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::StorageCreateUserRequest, String>,
+    }
+
+    impl<'a> CreateStorageClusterUser<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::StorageCreateUserRequest>,
+            <V as std::convert::TryInto<types::StorageCreateUserRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `StorageCreateUserRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::StorageCreateUserRequest,
+                ) -> types::builder::StorageCreateUserRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/users`"]
+        pub async fn send(self) -> Result<ResponseValue<types::StorageUser>, Error<types::Error>> {
+            let Self { client, id, body } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::StorageCreateUserRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users",
+                client.baseurl,
+                encode_path(&id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_storage_cluster_user",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster_user`]\n\n[`Client::get_storage_cluster_user`]: super::Client::get_storage_cluster_user"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageClusterUser<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetStorageClusterUser<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::StorageUser>, Error<types::Error>> {
+            let Self { client, id, user } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster_user",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_storage_cluster_user`]\n\n[`Client::delete_storage_cluster_user`]: super::Client::delete_storage_cluster_user"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteStorageClusterUser<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteStorageClusterUser<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, id, user } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_storage_cluster_user",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_cluster_access_keys`]\n\n[`Client::list_storage_cluster_access_keys`]: super::Client::list_storage_cluster_access_keys"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusterAccessKeys<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> ListStorageClusterAccessKeys<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::StorageAccessKey>>, Error<types::Error>>
+        {
+            let Self { client, id, user } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}/access-keys",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_cluster_access_keys",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_storage_cluster_access_key`]\n\n[`Client::create_storage_cluster_access_key`]: super::Client::create_storage_cluster_access_key"]
+    #[derive(Debug, Clone)]
+    pub struct CreateStorageClusterAccessKey<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> CreateStorageClusterAccessKey<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/storage/clusters/{id}/users/{user}/access-keys`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::StorageAccessKey>, Error<types::Error>> {
+            let Self { client, id, user } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}/access-keys",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_storage_cluster_access_key",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_storage_cluster_user_policies`]\n\n[`Client::list_storage_cluster_user_policies`]: super::Client::list_storage_cluster_user_policies"]
+    #[derive(Debug, Clone)]
+    pub struct ListStorageClusterUserPolicies<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+    }
+
+    impl<'a> ListStorageClusterUserPolicies<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<::std::string::String>>, Error<types::Error>>
+        {
+            let Self { client, id, user } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}/policies",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_storage_cluster_user_policies",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_storage_cluster_user_policy`]\n\n[`Client::get_storage_cluster_user_policy`]: super::Client::get_storage_cluster_user_policy"]
+    #[derive(Debug, Clone)]
+    pub struct GetStorageClusterUserPolicy<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+        policy: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetStorageClusterUserPolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+                policy: Err("policy was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        pub fn policy<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.policy = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for policy failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`"]
+        pub async fn send(self) -> Result<ResponseValue<::serde_json::Value>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                user,
+                policy,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let policy = policy.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}/policies/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+                encode_path(&policy.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_storage_cluster_user_policy",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::put_storage_cluster_user_policy`]\n\n[`Client::put_storage_cluster_user_policy`]: super::Client::put_storage_cluster_user_policy"]
+    #[derive(Debug, Clone)]
+    pub struct PutStorageClusterUserPolicy<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+        policy: Result<::std::string::String, String>,
+        body: Result<::serde_json::Value, String>,
+    }
+
+    impl<'a> PutStorageClusterUserPolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+                policy: Err("policy was not initialized".to_string()),
+                body: Err("body was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        pub fn policy<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.policy = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for policy failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::serde_json::Value>,
+        {
+            self.body = value
+                .try_into()
+                .map_err(|_| "conversion to `:: serde_json :: Value` for body failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                user,
+                policy,
+                body,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let policy = policy.map_err(Error::InvalidRequest)?;
+            let body = body.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}/policies/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+                encode_path(&policy.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "put_storage_cluster_user_policy",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_storage_cluster_user_policy`]\n\n[`Client::delete_storage_cluster_user_policy`]: super::Client::delete_storage_cluster_user_policy"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteStorageClusterUserPolicy<'a> {
+        client: &'a super::Client,
+        id: Result<::uuid::Uuid, String>,
+        user: Result<::std::string::String, String>,
+        policy: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteStorageClusterUserPolicy<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                id: Err("id was not initialized".to_string()),
+                user: Err("user was not initialized".to_string()),
+                policy: Err("policy was not initialized".to_string()),
+            }
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn user<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.user = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for user failed".to_string()
+            });
+            self
+        }
+
+        pub fn policy<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.policy = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for policy failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/storage/clusters/{id}/users/{user}/policies/{policy}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                id,
+                user,
+                policy,
+            } = self;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let user = user.map_err(Error::InvalidRequest)?;
+            let policy = policy.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/storage/clusters/{}/users/{}/policies/{}",
+                client.baseurl,
+                encode_path(&id.to_string()),
+                encode_path(&user.to_string()),
+                encode_path(&policy.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_storage_cluster_user_policy",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
