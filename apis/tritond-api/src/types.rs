@@ -26,8 +26,9 @@ pub use tritond_store::{
     LifecycleStateKind, ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool,
     NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
     NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizationStatus,
-    RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, Subnet,
+    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
+    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
+    StorageClusterStatus, StorageClusterSurface, StorageClusterView, Subnet,
     TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID,
     TRITOND_METADATA_TENANT_ID, Tenant, UserView, VmNicReport, VmReport, VmState, Vpc,
 };

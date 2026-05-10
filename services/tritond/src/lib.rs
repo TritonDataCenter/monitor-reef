@@ -60,21 +60,21 @@ use tritond_api::{
     LegacyCnSummary, LegacyVmListQuery, LegacyVmPath, LoginRequest, NetworkRealizationRequest,
     NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnRoleRequest, SiloPath, SiloTenantPath, SshKeyPath, TenantIdpPath,
-    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
-    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
-    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
-    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    RegisterStatusResponse, SetCnRoleRequest, SiloPath, SiloTenantPath, SshKeyPath,
+    StorageClusterPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
+    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
+    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageCompatibility, ImageScope,
         Instance, JobKind, JobOutcome, JobStatus, LegacyVm, LifecycleState, LifecycleStateKind,
         ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
         NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
-        NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewSubnet, NewTenant, NewVpc, Nic,
-        Project, ProvisioningJob, Quota, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey,
-        SshKeyScope, Subnet, Tenant, Vpc,
+        NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet,
+        NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizerId, Route, RouteTable,
+        RouteTarget, Silo, SshKey, SshKeyScope, StorageClusterView, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
@@ -5818,6 +5818,157 @@ impl TritondApi for TritondServiceImpl {
             .await
             .map_err(store_error_to_http)?;
         Ok(HttpResponseOk(vm))
+    }
+
+    // ----- Storage clusters (operator-only) -----
+
+    async fn list_storage_clusters(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<StorageClusterView>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterList,
+        )
+        .await?;
+        let clusters = ctx
+            .store
+            .list_storage_clusters()
+            .await
+            .map_err(store_error_to_http)?;
+        let views: Vec<StorageClusterView> = clusters.into_iter().map(Into::into).collect();
+        Ok(HttpResponseOk(views))
+    }
+
+    async fn create_storage_cluster(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewStorageCluster>,
+    ) -> Result<HttpResponseCreated<StorageClusterView>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterCreate,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let req = body.into_inner();
+        // Audit payload deliberately captures only non-secret
+        // identification fields. The bearer token is *never*
+        // written to the audit chain — the storage layer holds
+        // it in plaintext but the audit log must remain freely
+        // readable by anyone with AuditOnly scope.
+        let audit_payload = serde_json::json!({
+            "name": req.name,
+            "surface": req.surface,
+            "endpoint": req.endpoint,
+            "default_region": req.default_region,
+        });
+        match ctx.store.create_storage_cluster(req).await {
+            Ok(cluster) => {
+                let view: StorageClusterView = cluster.into();
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageClusterCreate,
+                        request_id,
+                        Some(format!("StorageCluster::\"{}\"", view.id)),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageCluster::\"{}\"", view.id)),
+                        },
+                        audit_payload,
+                    )
+                    .await;
+                Ok(HttpResponseCreated(view))
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageClusterCreate,
+                        request_id,
+                        None,
+                        store_error_to_audit_outcome(&e),
+                        audit_payload,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
+    }
+
+    async fn get_storage_cluster(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageClusterView>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterGet,
+        )
+        .await?;
+        let id = path.into_inner().id;
+        let cluster = ctx
+            .store
+            .get_storage_cluster(id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(cluster.into()))
+    }
+
+    async fn delete_storage_cluster(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::StorageClusterDelete,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let id = path.into_inner().id;
+        match ctx.store.delete_storage_cluster(id).await {
+            Ok(()) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageClusterDelete,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        AuditOutcome::Success {
+                            resource: Some(format!("StorageCluster::\"{id}\"")),
+                        },
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Ok(HttpResponseDeleted())
+            }
+            Err(e) => {
+                ctx.audit
+                    .record_mutation(
+                        &principal,
+                        Action::StorageClusterDelete,
+                        request_id,
+                        Some(format!("StorageCluster::\"{id}\"")),
+                        store_error_to_audit_outcome(&e),
+                        serde_json::Value::Null,
+                    )
+                    .await;
+                Err(store_error_to_http(e))
+            }
+        }
     }
 }
 

@@ -33,8 +33,9 @@ use crate::types::{
     IdpConfigView, Image, Instance, JobKind, JobOutcome, LegacyVm, ManagedIdentity, NatGateway,
     NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage,
     NewInstance, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, RealizationStatus,
-    RealizerId, Route, RouteTable, Silo, SshKey, Subnet, Tenant, Vpc,
+    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
+    RealizationStatus, RealizerId, Route, RouteTable, Silo, SshKey, StorageClusterView, Subnet,
+    Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -399,6 +400,13 @@ pub struct LegacyVmListQuery {
     /// Restrict to legacy VMs hosted on the given CN.
     #[serde(default)]
     pub host_cn: Option<Uuid>,
+}
+
+/// Path parameter for endpoints that operate on a single registered
+/// storage cluster (`/v2/storage/clusters/{id}`).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StorageClusterPath {
+    pub id: Uuid,
 }
 
 /// Per-CN summary returned by `GET /v2/admin/legacy/cns`.
@@ -2266,4 +2274,60 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<LegacyVmPath>,
     ) -> Result<HttpResponseOk<LegacyVm>, HttpError>;
+
+    // ----- Storage clusters (operator-only) -----
+
+    /// List every registered manta-storage cluster, sorted by name.
+    /// Operator surface (root-only via Cedar root-allows-all).
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters",
+        tags = ["storage-clusters"],
+    }]
+    async fn list_storage_clusters(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<StorageClusterView>>, HttpError>;
+
+    /// Register a new storage cluster (mantad / mantafs / manta-block).
+    /// The bearer token submitted in the body is held server-side
+    /// and never returned by any GET — see [`StorageClusterView`]
+    /// for the redacted wire shape.
+    #[endpoint {
+        method = POST,
+        path = "/v2/storage/clusters",
+        tags = ["storage-clusters"],
+    }]
+    async fn create_storage_cluster(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<NewStorageCluster>,
+    ) -> Result<HttpResponseCreated<StorageClusterView>, HttpError>;
+
+    /// Read a single registered storage cluster by id.
+    #[endpoint {
+        method = GET,
+        path = "/v2/storage/clusters/{id}",
+        tags = ["storage-clusters"],
+    }]
+    async fn get_storage_cluster(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseOk<StorageClusterView>, HttpError>;
+
+    /// Drop a storage cluster registration. Idempotent.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/storage/clusters/{id}",
+        tags = ["storage-clusters"],
+    }]
+    async fn delete_storage_cluster(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<StorageClusterPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    // Note: `POST /v2/storage/clusters/{id}/health` ships in Stage
+    // 3.5 alongside the typed forwarder endpoints — it requires the
+    // `mantad-client` dep so the handler can call the cluster's
+    // `/admin/v1/cluster` summary and persist the observed status.
+    // The `Action::StorageClusterHealthProbe` Cedar variant exists
+    // already so the policy + audit shape don't churn when 3.5 lands.
 }
