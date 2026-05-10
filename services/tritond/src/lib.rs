@@ -26,6 +26,7 @@ pub mod edge;
 pub mod legacy_classify;
 pub mod provisioner;
 pub mod rate_limit;
+pub mod sigv4;
 pub mod storage;
 pub mod sweeper;
 

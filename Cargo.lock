@@ -5866,6 +5866,7 @@ dependencies = [
  "edge-manifest",
  "futures-util",
  "governor",
+ "hmac",
  "http",
  "jsonwebtoken",
  "mantad-client",

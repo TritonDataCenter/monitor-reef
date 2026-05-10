@@ -35,6 +35,7 @@ dropshot = { workspace = true }
 edge-manifest = { workspace = true }
 futures-util = { workspace = true }
 governor = { workspace = true }
+hmac = { workspace = true }
 http = { workspace = true }
 mantad-client = { path = "../../../manta-storage/crates/mantad-client" }
 postcard = { workspace = true }
