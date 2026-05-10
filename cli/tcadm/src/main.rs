@@ -226,6 +226,38 @@ enum StorageClusterCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Configure (or rotate) the IAM presigner credential tritond
+    /// signs S3 presigned URLs with. Required before the bucket
+    /// browser can mint upload/download URLs.
+    SetPresigner {
+        /// UUID or operator-chosen name.
+        ident: String,
+        /// HTTP base URL of the cluster's S3 data plane
+        /// (e.g. https://10.199.199.250:7443). Distinct from
+        /// the admin URL on port 7101. Optional on rotations of
+        /// the credential alone.
+        #[arg(long)]
+        s3_endpoint: Option<String>,
+        /// IAM access key id (e.g. AKIA...).
+        #[arg(long)]
+        access_key_id: String,
+        /// Secret access key. Required, but please pass it via
+        /// `--secret-access-key-stdin` so the secret doesn't end
+        /// up in shell history.
+        #[arg(long, conflicts_with = "secret_access_key_stdin")]
+        secret_access_key: Option<String>,
+        #[arg(long, conflicts_with = "secret_access_key")]
+        secret_access_key_stdin: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Drop the presigner credential. The bucket browser will
+    /// stop being able to mint upload/download URLs against this
+    /// cluster until a new presigner is configured.
+    ClearPresigner {
+        /// UUID or operator-chosen name.
+        ident: String,
+    },
 }
 
 /// CLI-side surface enum. Maps to `tritond_client::types::StorageClusterSurface`.
@@ -2738,6 +2770,30 @@ async fn main() -> Result<()> {
                 }
                 StorageClusterCommand::Health { ident, json } => {
                     commands::storage_cluster_health(cli.endpoint, cli.api_key, ident, json).await
+                }
+                StorageClusterCommand::SetPresigner {
+                    ident,
+                    s3_endpoint,
+                    access_key_id,
+                    secret_access_key,
+                    secret_access_key_stdin,
+                    json,
+                } => {
+                    commands::storage_cluster_set_presigner(
+                        cli.endpoint,
+                        cli.api_key,
+                        ident,
+                        s3_endpoint,
+                        access_key_id,
+                        secret_access_key,
+                        secret_access_key_stdin,
+                        json,
+                    )
+                    .await
+                }
+                StorageClusterCommand::ClearPresigner { ident } => {
+                    commands::storage_cluster_clear_presigner(cli.endpoint, cli.api_key, ident)
+                        .await
                 }
             },
         },

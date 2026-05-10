@@ -3802,3 +3802,96 @@ fn read_admin_token_from_stdin() -> Result<String> {
     }
     Ok(trimmed)
 }
+
+fn read_secret_from_stdin() -> Result<String> {
+    use std::io::BufRead;
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    stdin
+        .lock()
+        .read_line(&mut line)
+        .context("read secret access key from stdin")?;
+    let trimmed = line.trim().to_string();
+    if trimmed.is_empty() {
+        anyhow::bail!("secret access key from stdin was empty");
+    }
+    Ok(trimmed)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn storage_cluster_set_presigner(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    ident: String,
+    s3_endpoint: Option<String>,
+    access_key_id: String,
+    secret_access_key: Option<String>,
+    secret_access_key_stdin: bool,
+    json_output: bool,
+) -> Result<()> {
+    let secret_access_key = match (secret_access_key, secret_access_key_stdin) {
+        (Some(s), false) => s,
+        (None, true) => read_secret_from_stdin()?,
+        (Some(_), true) => unreachable!("clap conflicts_with prevents this"),
+        (None, false) => anyhow::bail!(
+            "secret access key required: pass --secret-access-key or --secret-access-key-stdin"
+        ),
+    };
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let id = resolve_storage_cluster_ident(&client, &ident).await?;
+    let req = tritond_client::types::SetPresignerRequest {
+        s3_endpoint,
+        access_key_id,
+        secret_access_key,
+    };
+    let cluster = client
+        .set_storage_cluster_presigner()
+        .id(id)
+        .body(req)
+        .send()
+        .await
+        .context("set storage cluster presigner")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&cluster)?);
+        return Ok(());
+    }
+    println!(
+        "Presigner configured for {} (id {})",
+        cluster.name, cluster.id
+    );
+    if let Some(akid) = &cluster.presigner_access_key_id {
+        println!("  access_key_id:  {akid}");
+    }
+    if let Some(ep) = &cluster.s3_endpoint {
+        println!("  s3_endpoint:    {ep}");
+    }
+    Ok(())
+}
+
+pub async fn storage_cluster_clear_presigner(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    ident: String,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let id = resolve_storage_cluster_ident(&client, &ident).await?;
+    // Empty strings on the wire mean "clear the credentials" — the
+    // server-side handler maps empty → None.
+    let req = tritond_client::types::SetPresignerRequest {
+        s3_endpoint: None,
+        access_key_id: String::new(),
+        secret_access_key: String::new(),
+    };
+    client
+        .set_storage_cluster_presigner()
+        .id(id)
+        .body(req)
+        .send()
+        .await
+        .context("clear storage cluster presigner")?;
+    println!("Presigner cleared for storage cluster {id}");
+    Ok(())
+}
