@@ -42,6 +42,7 @@ use crate::smartos::{VmadmTool, ZfsTool};
 /// pre-existing legacy zones, and uses `nics` for adoption pre-flight
 /// (IP-collision check, network-rewrite preview).
 pub const VM_LOOKUP_FIELDS: &[&str] = &[
+    "alias",
     "brand",
     "cpu_cap",
     "disks",
@@ -62,10 +63,12 @@ pub const VM_LOOKUP_FIELDS: &[&str] = &[
 
 /// Subset of fields preserved in the vms map sent to the [`StatusSink`].
 /// Mirrors the `newSample.vms[uuid] = { ... }` object in the legacy
-/// heartbeater, plus `internal_metadata` (carries the `tritond:*`
-/// identity keys for managed zones) and `nics` (full per-NIC layout for
-/// adoption pre-flight + legacy NIC inventory).
+/// heartbeater, plus `alias` (operator-friendly zone name, used as the
+/// admin UI row name), `internal_metadata` (carries the `tritond:*`
+/// identity keys for managed zones), and `nics` (full per-NIC layout
+/// for adoption pre-flight + legacy NIC inventory).
 pub const VM_POSTED_FIELDS: &[&str] = &[
+    "alias",
     "brand",
     "cpu_cap",
     "internal_metadata",

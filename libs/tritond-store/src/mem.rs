@@ -8204,6 +8204,7 @@ mod tests {
             smartos_uuid,
             host_cn_uuid: host_cn,
             legacy_owner_uuid: Some(Uuid::nil()),
+            alias: None,
             brand: Some("joyent-minimal".to_string()),
             state: Some(crate::VmState::Running),
             zone_state: Some("running".to_string()),

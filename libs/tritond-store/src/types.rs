@@ -2784,6 +2784,11 @@ pub struct VmNicReport {
 pub struct VmReport {
     /// SmartOS zone uuid (== tritond `Instance::id` for managed zones).
     pub uuid: Uuid,
+    /// Operator-assigned zone alias (the human-readable name shown by
+    /// `vmadm list`). Surfaced in the admin UI as the row name for
+    /// legacy zones; managed zones use `Instance::name` instead.
+    #[serde(default)]
+    pub alias: Option<String>,
     #[serde(default)]
     pub brand: Option<String>,
     #[serde(default)]
@@ -3029,6 +3034,10 @@ pub struct LegacyVm {
     /// system zones.
     #[serde(default)]
     pub legacy_owner_uuid: Option<Uuid>,
+    /// Operator-assigned zone alias (the human-readable name shown by
+    /// `vmadm list`). Used as the row name in the admin UI.
+    #[serde(default)]
+    pub alias: Option<String>,
     #[serde(default)]
     pub brand: Option<String>,
     #[serde(default)]
@@ -3070,6 +3079,7 @@ mod vm_report_tests {
     fn report_with_metadata(metadata: BTreeMap<String, String>) -> VmReport {
         VmReport {
             uuid: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+            alias: None,
             brand: Some("joyent-minimal".to_string()),
             state: Some(VmState::Running),
             zone_state: Some("running".to_string()),

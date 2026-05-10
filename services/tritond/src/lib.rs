@@ -5946,6 +5946,85 @@ fn enforce_job_belongs_to_bound_cn(job: &ProvisioningJob, bound_cn: Uuid) -> Res
 /// the heartbeat. The data we produce here (LegacyVm rows, drift
 /// alarms) is operationally important but not load-bearing for the
 /// CN's own ability to claim jobs.
+/// Map a `VmState` reported by `vmadm` to the corresponding tritond
+/// `LifecycleState`. Returns `None` for states that aren't safe to
+/// project onto the tritond lifecycle machine (`Receiving`, `Sending`,
+/// in-flight `Configured`/`Incomplete`, `Destroyed`, and `Unknown` --
+/// the classifier's deliberate hands-off list).
+fn vm_state_to_lifecycle(state: Option<tritond_store::VmState>) -> Option<LifecycleState> {
+    use tritond_store::VmState;
+    match state? {
+        VmState::Running => Some(LifecycleState::Running),
+        // `installed` zones are configured but not booted; treat as
+        // Stopped from tritond's perspective.
+        VmState::Stopped | VmState::Installed => Some(LifecycleState::Stopped),
+        VmState::Provisioning => Some(LifecycleState::Provisioning),
+        VmState::Failed => Some(LifecycleState::Failed {
+            reason: "agent reports vmadm state=failed".to_string(),
+        }),
+        VmState::Receiving
+        | VmState::Sending
+        | VmState::Configured
+        | VmState::Incomplete
+        | VmState::Destroyed
+        | VmState::Unknown => None,
+        // VmState is `#[non_exhaustive]`; future agent versions can
+        // add states. Treat anything we don't recognize as
+        // unmappable so the classifier doesn't write a stale or
+        // wrong lifecycle from a state we haven't reasoned about.
+        _ => None,
+    }
+}
+
+/// Compare an existing `LifecycleState` against an observed one.
+/// Returns true when they refer to the same logical state; the
+/// `Failed.reason` string is intentionally ignored so a re-report
+/// of the same Failed state with a slightly different reason
+/// doesn't churn the record.
+fn lifecycle_eq(a: &LifecycleState, b: &LifecycleState) -> bool {
+    a.kind() == b.kind()
+}
+
+/// Reconcile the lifecycle field on a managed Instance from a CN
+/// status report. Agent-wins: the CN is the source of truth, so we
+/// CAS from any current state to the observed state. No-ops when
+/// the reported state is unmappable, the instance has vanished, or
+/// the lifecycle already matches.
+async fn reconcile_managed_lifecycle(
+    store: &dyn Store,
+    instance_id: Uuid,
+    reported_state: Option<tritond_store::VmState>,
+) -> Result<(), StoreError> {
+    let Some(observed) = vm_state_to_lifecycle(reported_state) else {
+        return Ok(());
+    };
+    let inst = match store.get_instance(instance_id).await {
+        Ok(i) => i,
+        // Instance vanished between the per-CN list and now (rare).
+        // Nothing to update.
+        Err(StoreError::NotFound) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if lifecycle_eq(&inst.lifecycle, &observed) {
+        return Ok(());
+    }
+    // CAS from any current state to the observed state. Listing
+    // every kind here is the "force" path: agent-wins reconciliation
+    // doesn't care what tritond thought the state was.
+    let any_state = &[
+        LifecycleStateKind::Pending,
+        LifecycleStateKind::Provisioning,
+        LifecycleStateKind::Running,
+        LifecycleStateKind::Stopping,
+        LifecycleStateKind::Stopped,
+        LifecycleStateKind::Failed,
+    ];
+    store
+        .transition_instance_lifecycle(instance_id, any_state, observed)
+        .await?;
+    Ok(())
+}
+
 async fn run_classifier_pass(
     ctx: &ApiContext,
     reporting_cn: Uuid,
@@ -5984,13 +6063,42 @@ async fn run_classifier_pass(
 
     for (report, outcome) in reports.iter().zip(outcomes.into_iter()) {
         match outcome {
-            Classification::Managed { .. } => {
-                // Slice-1 of Phase B records membership only. Folding
-                // operator-driven runtime mutations (memory, quota,
-                // lifecycle) back into the Instance record is a
-                // follow-up commit that wires the existing CAS on
-                // `transition_instance_lifecycle` plus a new
-                // mutate-on-observation op.
+            Classification::Managed { instance_id }
+            | Classification::MidProvision { instance_id } => {
+                // Clean up any stale `LegacyVm` row for this zone --
+                // happens when a zone was previously classified
+                // Unmanaged (e.g. tritond didn't yet know about it,
+                // OR the agent was on older code that didn't stamp
+                // identity, OR the metadata was cleared in-zone).
+                // Deletion is idempotent; no-ops if no row exists.
+                if let Err(e) = ctx.store.delete_legacy_vm(report.uuid).await {
+                    tracing::warn!(
+                        smartos_uuid = %report.uuid,
+                        error = %e,
+                        "failed to clear stale legacy_vm row for managed zone",
+                    );
+                }
+
+                // Agent-wins reconciliation for the lifecycle field.
+                // The CN is the source of truth: when an operator
+                // runs `vmadm stop` directly on the GZ, that change
+                // must propagate back to the Instance record. We
+                // skip MidProvision (the agent's vmadm-create is in
+                // flight; tritond should stay Provisioning until
+                // the next tick classifies Managed).
+                if matches!(outcome, Classification::Managed { .. }) {
+                    if let Err(e) =
+                        reconcile_managed_lifecycle(ctx.store.as_ref(), instance_id, report.state)
+                            .await
+                    {
+                        tracing::warn!(
+                            instance_id = %instance_id,
+                            smartos_uuid = %report.uuid,
+                            error = %e,
+                            "failed to reconcile lifecycle from CN report",
+                        );
+                    }
+                }
             }
             Classification::Orphan {
                 instance_id,
@@ -6012,11 +6120,6 @@ async fn run_classifier_pass(
                     "tritond identity tag failed verification",
                 );
             }
-            Classification::MidProvision { .. } => {
-                // No-op: provisioning is in flight; the agent will
-                // stamp the identity tags on `vmadm create` exit
-                // and the next status report will classify Managed.
-            }
             Classification::Unmanaged => {
                 // Preserve the original first_seen_at across upserts.
                 let existing = ctx.store.get_legacy_vm(report.uuid).await.ok();
@@ -6030,6 +6133,7 @@ async fn run_classifier_pass(
                     smartos_uuid: report.uuid,
                     host_cn_uuid: reporting_cn,
                     legacy_owner_uuid: report.owner_uuid,
+                    alias: report.alias.clone(),
                     brand: report.brand.clone(),
                     state: report.state,
                     zone_state: report.zone_state.clone(),

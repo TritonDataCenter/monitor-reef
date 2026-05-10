@@ -101,15 +101,32 @@ pub struct ClassifierContext<'a> {
 pub fn classify_vm(report: &VmReport, ctx: &ClassifierContext) -> Classification {
     match report.extract_managed_identity() {
         None => {
-            // No `tritond:*` metadata. Check for the mid-provision
-            // race window: a known instance on this CN whose lifecycle
-            // is `Provisioning` may not yet have its identity tags
-            // visible to the collector.
+            // No `tritond:*` metadata. Two cases where we should
+            // *not* treat this as a brand-new legacy zone:
+            //
+            // 1. Mid-provision race: known instance on this CN with
+            //    lifecycle Provisioning, identity tags not yet
+            //    visible to the collector. Suppress the LegacyVm
+            //    upsert; the next status report will classify it
+            //    Managed once the metadata lands.
+            //
+            // 2. Pre-existing managed zone: the smartos_uuid matches
+            //    an Instance whose host_cn matches the reporter, but
+            //    the zone was provisioned before identity stamping
+            //    shipped (or operator cleared the metadata in-zone
+            //    via `mdata-put`). Treat as Managed -- the
+            //    Instance.id == zone uuid invariant is enough.
+            //    Without this branch, every existing managed VM
+            //    duplicates as a LegacyVm row.
             if let Some(inst) = (ctx.instance_lookup)(report.uuid)
                 && inst.host_cn_uuid == Some(ctx.reporting_cn_uuid)
-                && matches!(inst.lifecycle, LifecycleState::Provisioning)
             {
-                return Classification::MidProvision {
+                if matches!(inst.lifecycle, LifecycleState::Provisioning) {
+                    return Classification::MidProvision {
+                        instance_id: inst.id,
+                    };
+                }
+                return Classification::Managed {
                     instance_id: inst.id,
                 };
             }
@@ -184,6 +201,7 @@ mod tests {
     fn report_for(uuid: Uuid, metadata: BTreeMap<String, String>) -> VmReport {
         VmReport {
             uuid,
+            alias: None,
             brand: Some("joyent-minimal".to_string()),
             state: Some(VmState::Running),
             zone_state: Some("running".to_string()),
@@ -352,18 +370,22 @@ mod tests {
     }
 
     #[test]
-    fn missing_metadata_with_known_instance_in_running_state_is_unmanaged_not_mid_provision() {
-        // Defensive: an instance not in Provisioning lifecycle (e.g.
-        // already Running) with a missing tag means the operator
-        // cleared the metadata in-zone. Don't suppress the legacy
-        // upsert.
+    fn missing_metadata_with_known_instance_in_running_state_classifies_as_managed() {
+        // A Running instance whose smartos_uuid matches a known
+        // Instance on this CN, but is missing the tritond:* metadata
+        // (provisioned before identity stamping shipped, OR operator
+        // cleared the tags in-zone via `mdata-put`), classifies
+        // Managed -- the Instance.id == zone uuid invariant is
+        // enough to claim ownership without the metadata. Without
+        // this branch every pre-existing managed VM would duplicate
+        // as a LegacyVm row.
         let key = fixed_key();
         let cn = Uuid::new_v4();
         let inst = fresh_instance(Some(cn), LifecycleState::Running);
         let report = report_for(inst.id, BTreeMap::new());
         assert_eq!(
             classify_with(&report, cn, Some(&inst), &key),
-            Classification::Unmanaged,
+            Classification::Managed { instance_id: inst.id },
         );
     }
 
