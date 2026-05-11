@@ -32,7 +32,16 @@ pub mod sigv4;
 pub mod storage;
 pub mod sweeper;
 
+mod bundle;
 mod context;
+mod error;
+mod principal;
+mod validate;
+
+use crate::bundle::*;
+use crate::error::*;
+use crate::principal::*;
+use crate::validate::*;
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
@@ -78,7 +87,7 @@ use tritond_api::{
     TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
-        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageCompatibility, ImageScope,
+        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope,
         Instance, JobKind, JobOutcome, JobStatus, LegacyVm, LifecycleState, LifecycleStateKind,
         ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
         NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
@@ -90,25 +99,23 @@ use tritond_api::{
         Subnet, Tenant, Vpc,
     },
 };
-use tritond_audit::{Actor as AuditActor, MemChain, Outcome as AuditOutcome};
+use tritond_audit::{Actor as AuditActor, Outcome as AuditOutcome};
 use tritond_auth::OidcConfig;
 use tritond_auth::{
-    JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
+    TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{
     AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnRole, CnState, ConfigError, ConfigKey,
     EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
-    EdgeClusterResource, EdgeNicCoord, IdpConfig, MemStore, NewEdgeCluster, Store, StoreError,
+    EdgeClusterResource, EdgeNicCoord, IdpConfig, NewEdgeCluster, Store, StoreError,
     normalize_claim_code,
 };
 use uuid::Uuid;
 
-use crate::audit::AuditService;
 use crate::auth::{
     Action, AuthService, Principal, authenticate_and_authorize, authenticate_and_authorize_in_silo,
     authenticate_and_authorize_in_tenant, require_authenticated,
 };
-use crate::rate_limit::{IpRateLimiter, LoginRateLimiter};
 
 /// Service version, populated from Cargo at build time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -7327,14 +7334,6 @@ impl TritondApi for TritondServiceImpl {
     }
 }
 
-fn logs_error_to_http(e: tritond_logs::LogStoreError) -> HttpError {
-    use tritond_logs::LogStoreError as E;
-    match e {
-        E::InvalidQuery(msg) => HttpError::for_bad_request(None, msg),
-        E::Unavailable(msg) => HttpError::for_unavail(None, msg),
-        _ => HttpError::for_internal_error(format!("logs: {e}")),
-    }
-}
 
 /// Convert a short range identifier (`5m`, `1h`, `30d`) into the
 /// corresponding `(since, until, step)` triple. Step values are sized
@@ -7371,18 +7370,6 @@ fn resolve_metrics_range(
     Ok((until - window, until, step))
 }
 
-fn metrics_error_to_http(e: tritond_metrics::MetricsStoreError) -> HttpError {
-    use tritond_metrics::MetricsStoreError as E;
-    match e {
-        E::InvalidQuery(msg) => HttpError::for_bad_request(None, msg),
-        E::UnknownSchema(s) => HttpError::for_bad_request(None, format!("unknown schema: {s}")),
-        E::Unavailable(msg) => HttpError::for_unavail(None, msg),
-        // `MetricsStoreError` is `#[non_exhaustive]`; future-proof
-        // the match so adding a new variant doesn't break this
-        // crate at the same time.
-        _ => HttpError::for_internal_error(format!("metrics: {e}")),
-    }
-}
 
 /// Shared body for the parameter-less, mantad-side mutation endpoints
 /// that take only a node id (drain / undrain). Centralises the auth
@@ -7518,19 +7505,6 @@ async fn mint_and_attach_cn_credential(
     Ok(updated)
 }
 
-/// 403 if the request didn't come from a bound API key. Used
-/// by handlers that *only* make sense for a per-CN agent (the
-/// heartbeat / status endpoints), since there's no other way
-/// to know which CN to attribute the call to.
-fn require_bound_cn(principal: &crate::auth::Principal) -> Result<Uuid, HttpError> {
-    crate::auth::principal_bound_cn(principal).ok_or_else(|| {
-        HttpError::for_client_error(
-            Some("Forbidden".to_string()),
-            ClientErrorStatusCode::FORBIDDEN,
-            "this endpoint requires a CN-bound api key (the per-CN keys minted by /v2/cn-approvals)".to_string(),
-        )
-    })
-}
 
 /// 403 if the job's `claimed_by` (which the agent set when
 /// it claimed) doesn't match the bound key's CN. Used by
@@ -7810,15 +7784,6 @@ async fn ensure_realization_resource_exists(
     .map_err(store_error_to_http)
 }
 
-/// Stable label for a principal in audit/window-tracking JSON.
-/// Compact form so the audit blob stays single-line.
-fn principal_label(principal: &crate::auth::Principal) -> String {
-    use crate::auth::Principal;
-    match principal {
-        Principal::Operator { user_id, .. } => user_id.to_string(),
-        Principal::Anonymous => "anonymous".to_string(),
-    }
-}
 
 /// Token-only enum used by `instance_lifecycle_transition` to pick
 /// the matching `JobKind` after the CAS lands. We don't pass a
@@ -7973,14 +7938,6 @@ async fn reject_audit(
     HttpError::for_bad_request(Some("BadRequest".to_string()), message.to_string())
 }
 
-/// Parse an inbound openssh public-key string and return its
-/// canonical SHA-256 fingerprint. Returns `Err` with a user-facing
-/// message on parse failure (mapped to 400 by callers).
-fn parse_ssh_public_key(public_key: &str) -> Result<String, String> {
-    let parsed = ssh_key::PublicKey::from_openssh(public_key.trim())
-        .map_err(|e| format!("invalid openssh public key: {e}"))?;
-    Ok(parsed.fingerprint(ssh_key::HashAlg::Sha256).to_string())
-}
 
 /// Single source of truth for cross-scope image visibility.
 ///
@@ -8231,26 +8188,8 @@ async fn audit_ssh_key_create_failure(
         .await;
 }
 
-fn principal_silo_id(p: &Principal) -> Option<Uuid> {
-    match p {
-        Principal::Operator { silo_id, .. } => *silo_id,
-        Principal::Anonymous => None,
-    }
-}
 
-fn principal_tenant_id(p: &Principal) -> Option<Uuid> {
-    match p {
-        Principal::Operator { tenant_id, .. } => *tenant_id,
-        Principal::Anonymous => None,
-    }
-}
 
-fn principal_user_id(p: &Principal) -> Option<Uuid> {
-    match p {
-        Principal::Operator { user_id, .. } => Some(*user_id),
-        Principal::Anonymous => None,
-    }
-}
 
 /// Shared sha256 / size_bytes API-edge validation used by every
 /// per-scope `create_image_*` handler. On a validation failure,
@@ -8349,92 +8288,12 @@ async fn audit_image_create_failure(
         .await;
 }
 
-/// Validate an image's `sha256` field — must be exactly 64 lowercase
-/// hex characters.
-fn validate_sha256(s: &str) -> Result<(), String> {
-    if s.len() != 64 {
-        return Err(format!("sha256 must be 64 hex chars (got {})", s.len()));
-    }
-    if !s
-        .chars()
-        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-    {
-        return Err("sha256 must be lowercase hex (0-9, a-f)".to_string());
-    }
-    Ok(())
-}
 
-/// Generic 404 "not found" used by the defence-in-depth path checks.
-/// Same shape as `store_error_to_http` for `StoreError::NotFound`,
-/// just inlined so handlers don't have to roll a synthetic StoreError.
-fn not_found() -> HttpError {
-    HttpError::for_client_error(
-        Some("NotFound".to_string()),
-        ClientErrorStatusCode::NOT_FOUND,
-        "not found".to_string(),
-    )
-}
 
-/// Verify that `vpc_id` exists and that its `tenant_id`+`project_id`
-/// match the URL path. Used by the DHCP endpoints (and any future
-/// VPC-scoped resource) to surface cross-tenant probes as 404 rather
-/// than leak existence via a 403/409.
-async fn check_vpc_parentage(
-    store: &dyn Store,
-    vpc_id: Uuid,
-    tenant_id: Uuid,
-    project_id: Uuid,
-) -> Result<(), HttpError> {
-    let vpc = store.get_vpc(vpc_id).await.map_err(store_error_to_http)?;
-    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
-        return Err(not_found());
-    }
-    Ok(())
-}
 
-fn bad_request(message: impl Into<String>) -> HttpError {
-    HttpError::for_bad_request(Some("BadRequest".to_string()), message.into())
-}
 
-fn parse_request_id<T>(rqctx: &RequestContext<T>) -> Option<Uuid>
-where
-    T: dropshot::ServerContext,
-{
-    Uuid::parse_str(&rqctx.request_id).ok()
-}
 
-fn store_error_to_audit_outcome(err: &StoreError) -> AuditOutcome {
-    match err {
-        StoreError::NotFound => AuditOutcome::ClientError {
-            code: 404,
-            message: "not found".to_string(),
-        },
-        StoreError::Conflict(msg) => AuditOutcome::ClientError {
-            code: 409,
-            message: msg.clone(),
-        },
-        StoreError::Backend(msg) => AuditOutcome::ServerError {
-            message: msg.clone(),
-        },
-    }
-}
 
-fn audit_error_to_http(err: tritond_audit::AuditError) -> HttpError {
-    use tritond_audit::AuditError;
-    let display = err.to_string();
-    match err {
-        AuditError::PastHead { .. } => HttpError::for_client_error(
-            Some("NotFound".to_string()),
-            ClientErrorStatusCode::NOT_FOUND,
-            display,
-        ),
-        AuditError::Backend(msg) | AuditError::Serialise(msg) => HttpError::for_internal_error(msg),
-        // ChainBroken or any future variant: surface as 500 with the
-        // generic display impl so audit-runtime errors don't leak
-        // structure-of-the-chain detail to the caller.
-        _ => HttpError::for_internal_error(display),
-    }
-}
 
 fn mint_token_pair(auth: &AuthService, user_id: Uuid) -> Result<TokenResponse, HttpError> {
     let (access_token, access_expires_at) = mint_access(auth.jwt_key(), user_id)
@@ -8449,33 +8308,7 @@ fn mint_token_pair(auth: &AuthService, user_id: Uuid) -> Result<TokenResponse, H
     })
 }
 
-fn invalid_credentials() -> HttpError {
-    HttpError::for_client_error(
-        Some("Unauthenticated".to_string()),
-        ClientErrorStatusCode::UNAUTHORIZED,
-        "invalid credentials".to_string(),
-    )
-}
 
-/// 429 Too Many Requests with a `Retry-After` header carrying the
-/// number of seconds the client should wait before its next attempt.
-/// Used by the login rate limiter — see [`crate::rate_limit`].
-fn too_many_requests(retry_after: std::time::Duration) -> HttpError {
-    // Always at least one second so a client that obeys the header
-    // doesn't spin in a tight retry loop.
-    let secs = retry_after.as_secs().max(1);
-    let mut err = HttpError::for_client_error(
-        Some("TooManyRequests".to_string()),
-        ClientErrorStatusCode::TOO_MANY_REQUESTS,
-        "rate limited; slow down and retry shortly".to_string(),
-    );
-    let mut headers = http::HeaderMap::new();
-    if let Ok(value) = http::HeaderValue::from_str(&secs.to_string()) {
-        headers.insert(http::header::RETRY_AFTER, value);
-    }
-    err.headers = Some(Box::new(headers));
-    err
-}
 
 async fn select_tenant_cn_for_instance(
     store: &dyn Store,
@@ -8600,118 +8433,6 @@ pub(crate) async fn drive_lifecycle_for_complete(
     }
 }
 
-/// Fetch a tritond image bundle from `bundle_url`, parse the
-/// manifest, re-hash the content against the manifest's claimed
-/// sha256, and return a [`NewImage`] populated from the
-/// manifest. The bundle URL is recorded as the resulting Image's
-/// `source_url` so the per-CN agent can fetch the same bundle
-/// at provision time.
-///
-/// All manifest fields ride into the Image record verbatim
-/// (name, version, sha256, size, compatibility, os_family).
-/// `description` falls back to empty when the manifest doesn't
-/// carry one.
-///
-/// The downloaded bundle is extracted to a `tempfile::TempDir`
-/// that drops at function exit — tritond doesn't cache the
-/// content, the agent re-downloads on first provision per CN.
-async fn ingest_bundle(bundle_url: &str) -> anyhow::Result<NewImage> {
-    use sha2::{Digest, Sha256};
-
-    // Pre-configured TLS using webpki-roots. Same reason as the
-    // agent: cold SmartOS GZ has no platform CA store.
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-    let client = reqwest::Client::builder()
-        .use_preconfigured_tls(tls)
-        .build()
-        .context("build bundle-fetch reqwest client")?;
-
-    let work = tempfile::tempdir().context("create temp dir for bundle ingest")?;
-    let bundle_path = work.path().join("bundle.tar");
-
-    // Stream the bundle to disk so very large bundles don't
-    // need to fit in memory.
-    let bytes = client
-        .get(bundle_url)
-        .send()
-        .await
-        .with_context(|| format!("GET {bundle_url}"))?
-        .error_for_status()
-        .with_context(|| format!("HTTP error from {bundle_url}"))?
-        .bytes()
-        .await
-        .with_context(|| format!("read bundle body from {bundle_url}"))?;
-    // Phase 0 reads the entire bundle into memory before
-    // writing — bundles for OS images are typically tens of MB
-    // gzipped, well within tritond's RAM budget. A future slice
-    // adds streaming when bundles routinely exceed ~1 GB.
-    tokio::fs::write(&bundle_path, &bytes)
-        .await
-        .context("persist bundle to temp file")?;
-
-    let extracted = tritond_image_manifest::extract_bundle(&bundle_path, work.path())
-        .context("extract bundle tar")?;
-
-    // Re-hash the content. The manifest's sha256 is operator-
-    // provided (via the build CLI); we don't trust it without
-    // verification, otherwise an attacker who controls the
-    // bundle URL could substitute arbitrary content under any
-    // claimed hash.
-    let mut hasher = Sha256::new();
-    let mut content_file = tokio::fs::File::open(&extracted.content_path)
-        .await
-        .context("open extracted content for hashing")?;
-    use tokio::io::AsyncReadExt as _;
-    let mut buf = vec![0u8; 1024 * 1024];
-    let mut total: u64 = 0;
-    loop {
-        let n = content_file
-            .read(&mut buf)
-            .await
-            .context("read extracted content")?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        total += n as u64;
-    }
-    let actual_sha256 = format!("{:x}", hasher.finalize());
-    if actual_sha256 != extracted.manifest.content.sha256.to_ascii_lowercase() {
-        anyhow::bail!(
-            "bundle content sha256 mismatch: manifest claims {}, actual {actual_sha256}",
-            extracted.manifest.content.sha256,
-        );
-    }
-    if total != extracted.manifest.content.size {
-        // Defensive — a length mismatch on a hash-matching
-        // payload is impossible barring a sha256 collision,
-        // but we surface it for diagnosability.
-        anyhow::bail!(
-            "bundle content size mismatch: manifest claims {}, actual {total}",
-            extracted.manifest.content.size,
-        );
-    }
-
-    Ok(NewImage {
-        name: extracted.manifest.name,
-        description: extracted.manifest.description,
-        os: extracted.manifest.guest.os_family,
-        version: extracted.manifest.version,
-        size_bytes: extracted.manifest.content.size,
-        sha256: extracted.manifest.content.sha256,
-        source_url: Some(bundle_url.to_string()),
-        id: None,
-        compatibility: Some(ImageCompatibility {
-            brand: extracted.manifest.compatibility.brand,
-            arch: extracted.manifest.compatibility.arch,
-            min_smartos_platform: extracted.manifest.compatibility.min_smartos_platform,
-        }),
-    })
-}
 
 /// Materialise the agent-side blueprint for a job. Resolves
 /// instance + image + nics + disks + ssh public keys for a
@@ -9701,22 +9422,6 @@ fn invalid_stored_mac(value: &str) -> HttpError {
     HttpError::for_internal_error(format!("stored NIC has invalid MAC address {value:?}"))
 }
 
-/// Map a [`StoreError`] to the appropriate HTTP response.
-fn store_error_to_http(err: StoreError) -> HttpError {
-    match err {
-        StoreError::NotFound => HttpError::for_client_error(
-            Some("NotFound".to_string()),
-            ClientErrorStatusCode::NOT_FOUND,
-            "not found".to_string(),
-        ),
-        StoreError::Conflict(msg) => HttpError::for_client_error(
-            Some("Conflict".to_string()),
-            ClientErrorStatusCode::CONFLICT,
-            msg,
-        ),
-        StoreError::Backend(msg) => HttpError::for_internal_error(msg),
-    }
-}
 
 /// Parse a `/v2/config/{key}` path segment into a [`ConfigKey`], or
 /// `404` for an unrecognised name.
