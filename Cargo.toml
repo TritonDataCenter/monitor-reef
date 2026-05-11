@@ -19,6 +19,7 @@ members = [
     "clients/internal/jira-client",
     "clients/internal/tritond-client",
     "clients/internal/vmapi-client",
+    "libs/identity-store",
     "libs/triton-auth",
     "libs/tritond-audit",
     "libs/tritond-auth",
@@ -208,6 +209,7 @@ jira-api = { path = "apis/jira-api" }
 jira-client = { path = "clients/internal/jira-client" }
 jira-stub-server = { path = "services/jira-stub-server" }
 edge-manifest = { path = "libs/edge-manifest" }
+identity-store = { path = "libs/identity-store" }
 triton-auth = { path = "libs/triton-auth" }
 tritond = { path = "services/tritond" }
 tritond-api = { path = "apis/tritond-api" }
