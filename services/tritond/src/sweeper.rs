@@ -132,7 +132,7 @@ async fn sweep_one(
     // Drive instance lifecycle the same way the HTTP handler
     // does on a Failed outcome — keeps the operator-visible
     // state consistent.
-    crate::drive_lifecycle_for_complete(store.as_ref(), &updated, &outcome).await;
+    crate::lifecycle::drive_lifecycle_for_complete(store.as_ref(), &updated, &outcome).await;
     // Emit an audit event so an operator reading the chain sees
     // the sweeper's action (distinct from a real agent's
     // Failed report).
