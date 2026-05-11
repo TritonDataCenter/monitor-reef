@@ -1414,6 +1414,76 @@ pub mod types {
         }
     }
 
+    #[doc = "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"default\","]
+    #[doc = "    \"description\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"restart_required\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"default\": {"]
+    #[doc = "      \"description\": \"Built-in default for this key.\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"One-line human description.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"env_override\": {"]
+    #[doc = "      \"description\": \"Environment variable currently shadowing this key at boot (`env > FDB > default`), if any.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"description\": \"Dotted key name, e.g. `sweeper.interval_secs`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"restart_required\": {"]
+    #[doc = "      \"description\": \"Whether changing this key requires a `tritond` restart to take effect. Currently `true` for every key.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"Value as stored in FoundationDB (the built-in default when no value has been written). If `env_override` is set, the daemon is actually running with the environment variable's value, not this one.\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ConfigEntry {
+        #[doc = "Built-in default for this key."]
+        pub default: ::serde_json::Value,
+        #[doc = "One-line human description."]
+        pub description: ::std::string::String,
+        #[doc = "Environment variable currently shadowing this key at boot (`env > FDB > default`), if any."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub env_override: ::std::option::Option<::std::string::String>,
+        #[doc = "Dotted key name, e.g. `sweeper.interval_secs`."]
+        pub key: ::std::string::String,
+        #[doc = "Whether changing this key requires a `tritond` restart to take effect. Currently `true` for every key."]
+        pub restart_required: bool,
+        #[doc = "Value as stored in FoundationDB (the built-in default when no value has been written). If `env_override` is set, the daemon is actually running with the environment variable's value, not this one."]
+        pub value: ::serde_json::Value,
+    }
+
+    impl ConfigEntry {
+        pub fn builder() -> builder::ConfigEntry {
+            Default::default()
+        }
+    }
+
     #[doc = "Cedar decision recorded with the event."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7237,6 +7307,39 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `PUT /v2/config/{key}`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `PUT /v2/config/{key}`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"New value for the key. Must match the key's type; an ill-typed value is rejected with `400`.\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct SetConfigRequest {
+        #[doc = "New value for the key. Must match the key's type; an ill-typed value is rejected with `400`."]
+        pub value: ::serde_json::Value,
+    }
+
+    impl SetConfigRequest {
+        pub fn builder() -> builder::SetConfigRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -10382,6 +10485,124 @@ pub mod types {
             fn from(value: super::CompleteJobRequest) -> Self {
                 Self {
                     outcome: Ok(value.outcome),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ConfigEntry {
+            default: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+            description: ::std::result::Result<::std::string::String, ::std::string::String>,
+            env_override: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+            restart_required: ::std::result::Result<bool, ::std::string::String>,
+            value: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ConfigEntry {
+            fn default() -> Self {
+                Self {
+                    default: Err("no value supplied for default".to_string()),
+                    description: Err("no value supplied for description".to_string()),
+                    env_override: Ok(Default::default()),
+                    key: Err("no value supplied for key".to_string()),
+                    restart_required: Err("no value supplied for restart_required".to_string()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl ConfigEntry {
+            pub fn default<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for default: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn env_override<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.env_override = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for env_override: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn restart_required<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.restart_required = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for restart_required: {e}")
+                });
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ConfigEntry> for super::ConfigEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ConfigEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    default: value.default?,
+                    description: value.description?,
+                    env_override: value.env_override?,
+                    key: value.key?,
+                    restart_required: value.restart_required?,
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ConfigEntry> for ConfigEntry {
+            fn from(value: super::ConfigEntry) -> Self {
+                Self {
+                    default: Ok(value.default),
+                    description: Ok(value.description),
+                    env_override: Ok(value.env_override),
+                    key: Ok(value.key),
+                    restart_required: Ok(value.restart_required),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -17187,6 +17408,51 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct SetConfigRequest {
+            value: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for SetConfigRequest {
+            fn default() -> Self {
+                Self {
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl SetConfigRequest {
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<SetConfigRequest> for super::SetConfigRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetConfigRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::SetConfigRequest> for SetConfigRequest {
+            fn from(value: super::SetConfigRequest) -> Self {
+                Self {
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct SetPresignerRequest {
             access_key_id: ::std::result::Result<::std::string::String, ::std::string::String>,
             s3_endpoint: ::std::result::Result<
@@ -19585,6 +19851,16 @@ impl Client {
         builder::AgentCompleteJob::new(self)
     }
 
+    #[doc = "Ingest a batch of log lines from a registered agent\n\nAuth: requires an API key with [`tritond_store::ApiKeyScope::Agent`]. Batches larger than [`tritond_logs::LogBatch::MAX_LINES`] are rejected with `413 Payload Too Large`.\n\nSends a `POST` request to `/v2/agent/logs`\n\n```ignore\nlet response = client.agent_logs_ingest()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_logs_ingest(&self) -> builder::AgentLogsIngest<'_> {
+        builder::AgentLogsIngest::new(self)
+    }
+
+    #[doc = "Ingest a batch of metric samples from a registered agent\n\nAuth: requires an API key with [`tritond_store::ApiKeyScope::Agent`]. Batches larger than [`tritond_metrics::SampleBatch::MAX_SAMPLES`] are rejected with `413 Payload Too Large`.\n\nSends a `POST` request to `/v2/agent/metrics`\n\n```ignore\nlet response = client.agent_metrics_ingest()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_metrics_ingest(&self) -> builder::AgentMetricsIngest<'_> {
+        builder::AgentMetricsIngest::new(self)
+    }
+
     #[doc = "Report realized network state for a single resource. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. Backward generation reports for the same `(resource, realizer)` are rejected with `409 Conflict`.\n\nSends a `POST` request to `/v2/agent/network-realization`\n\n```ignore\nlet response = client.agent_report_network_realization()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_report_network_realization(&self) -> builder::AgentReportNetworkRealization<'_> {
         builder::AgentReportNetworkRealization::new(self)
@@ -19700,9 +19976,34 @@ impl Client {
         builder::DisableCn::new(self)
     }
 
+    #[doc = "Range query for the per-CN metrics dashboard (NodeDetail\n\npage's Metrics tab). Returns one series per CPU mode for the requested CN's global zone -- host services + kernel time not charged to a tenant zone. Mirrors the legacy cmon `/v1/discover` -> per-CN scrape pattern, just typed.\n\nAuth: requires fleet-read access to the CN (same scope as `get_cn`). No tenant filter -- per-CN samples are operator surface.\n\nSends a `GET` request to `/v2/cns/{server_uuid}/metrics`\n\nArguments:\n- `server_uuid`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.cn_metrics_range()\n    .server_uuid(server_uuid)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
+    pub fn cn_metrics_range(&self) -> builder::CnMetricsRange<'_> {
+        builder::CnMetricsRange::new(self)
+    }
+
     #[doc = "Set the placement role for a compute node. Operator-only\n\nSends a `POST` request to `/v2/cns/{server_uuid}/role`\n\n```ignore\nlet response = client.set_cn_role()\n    .server_uuid(server_uuid)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn set_cn_role(&self) -> builder::SetCnRole<'_> {
         builder::SetCnRole::new(self)
+    }
+
+    #[doc = "List every cluster-wide configuration key with its current\n\nvalue, built-in default, description, restart requirement, and whether an environment variable is currently overriding it at boot. Fleet-admin only.\n\nSends a `GET` request to `/v2/config`\n\n```ignore\nlet response = client.list_config()\n    .send()\n    .await;\n```"]
+    pub fn list_config(&self) -> builder::ListConfig<'_> {
+        builder::ListConfig::new(self)
+    }
+
+    #[doc = "Read one configuration key. Returns `404` for an unknown key\n\nFleet-admin only.\n\nSends a `GET` request to `/v2/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n```ignore\nlet response = client.get_config()\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn get_config(&self) -> builder::GetConfig<'_> {
+        builder::GetConfig::new(self)
+    }
+
+    #[doc = "Set one configuration key. Returns `404` for an unknown key\n\n`400` for an ill-typed value, the updated entry otherwise. The new value is persisted to FoundationDB and takes effect on the next `tritond` restart. Fleet-admin only; the change is recorded in the audit log.\n\nSends a `PUT` request to `/v2/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n- `body`\n```ignore\nlet response = client.set_config()\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_config(&self) -> builder::SetConfig<'_> {
+        builder::SetConfig::new(self)
+    }
+
+    #[doc = "Reset one configuration key to its built-in default. Returns\n\n`404` for an unknown key, the (default-valued) entry otherwise. Persisted to FoundationDB; takes effect on the next restart. Fleet-admin only; recorded in the audit log.\n\nSends a `DELETE` request to `/v2/config/{key}`\n\nArguments:\n- `key`: Dotted key name, e.g. `sweeper.interval_secs`.\n```ignore\nlet response = client.reset_config()\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn reset_config(&self) -> builder::ResetConfig<'_> {
+        builder::ResetConfig::new(self)
     }
 
     #[doc = "Liveness check. Returns service status and version string\n\nSends a `GET` request to `/v2/health`\n\n```ignore\nlet response = client.health()\n    .send()\n    .await;\n```"]
@@ -20096,6 +20397,16 @@ impl Client {
     #[doc = "Read a single Disk. Returns 404 if the Disk does not exist\n\nor belongs to a different tenant, project, or instance.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}`\n\n```ignore\nlet response = client.get_instance_disk()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .disk_id(disk_id)\n    .send()\n    .await;\n```"]
     pub fn get_instance_disk(&self) -> builder::GetInstanceDisk<'_> {
         builder::GetInstanceDisk::new(self)
+    }
+
+    #[doc = "Tail the most recent log lines for one source on one VM\n\nPagination via `before_seq` -- pass the smallest `seq` from the previous response to fetch older lines.\n\nAuth: requires a tenant-scoped credential with read access to the named instance (same envelope as `get_project_instance`).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `source`: URL-safe source name. `console` or `platform`.\n- `before_seq`\n- `lines`\n```ignore\nlet response = client.instance_logs_tail()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .source(source)\n    .before_seq(before_seq)\n    .lines(lines)\n    .send()\n    .await;\n```"]
+    pub fn instance_logs_tail(&self) -> builder::InstanceLogsTail<'_> {
+        builder::InstanceLogsTail::new(self)
+    }
+
+    #[doc = "Range query for the per-instance metrics chart on the VM\n\ndetail view. Returns one numeric series per distinct `series` identity field encountered in the requested window. Counter datums are emitted as per-bucket deltas; gauges as last-value per bucket.\n\nAuth: requires a tenant-scoped credential with read access to the named instance.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.instance_metrics_range()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
+    pub fn instance_metrics_range(&self) -> builder::InstanceMetricsRange<'_> {
+        builder::InstanceMetricsRange::new(self)
     }
 
     #[doc = "List the NICs attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"primary\"`); a future slice adds NIC attach/detach.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics`\n\n```ignore\nlet response = client.list_instance_nics()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
@@ -20891,6 +21202,138 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_logs_ingest`]\n\n[`Client::agent_logs_ingest`]: super::Client::agent_logs_ingest"]
+    #[derive(Debug, Clone)]
+    pub struct AgentLogsIngest<'a> {
+        client: &'a super::Client,
+        body: Result<tritond_logs::LogBatch, String>,
+    }
+
+    impl<'a> AgentLogsIngest<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Err("body was not initialized".to_string()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<tritond_logs::LogBatch>,
+        {
+            self.body = value.try_into().map_err(|_| {
+                "conversion to `tritond_logs :: LogBatch` for body failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/logs`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/logs", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_logs_ingest",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_metrics_ingest`]\n\n[`Client::agent_metrics_ingest`]: super::Client::agent_metrics_ingest"]
+    #[derive(Debug, Clone)]
+    pub struct AgentMetricsIngest<'a> {
+        client: &'a super::Client,
+        body: Result<tritond_metrics::SampleBatch, String>,
+    }
+
+    impl<'a> AgentMetricsIngest<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Err("body was not initialized".to_string()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<tritond_metrics::SampleBatch>,
+        {
+            self.body = value.try_into().map_err(|_| {
+                "conversion to `tritond_metrics :: SampleBatch` for body failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/metrics`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/metrics", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_metrics_ingest",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -22562,6 +23005,110 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::cn_metrics_range`]\n\n[`Client::cn_metrics_range`]: super::Client::cn_metrics_range"]
+    #[derive(Debug, Clone)]
+    pub struct CnMetricsRange<'a> {
+        client: &'a super::Client,
+        server_uuid: Result<::uuid::Uuid, String>,
+        range: Result<Option<::std::string::String>, String>,
+        schema: Result<Option<::std::string::String>, String>,
+    }
+
+    impl<'a> CnMetricsRange<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                server_uuid: Err("server_uuid was not initialized".to_string()),
+                range: Ok(None),
+                schema: Ok(None),
+            }
+        }
+
+        pub fn server_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.server_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for server_uuid failed".to_string());
+            self
+        }
+
+        pub fn range<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.range = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for range failed".to_string()
+            });
+            self
+        }
+
+        pub fn schema<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.schema = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for schema failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/cns/{server_uuid}/metrics`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<tritond_metrics::RangeResult>, Error<types::Error>> {
+            let Self {
+                client,
+                server_uuid,
+                range,
+                schema,
+            } = self;
+            let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
+            let range = range.map_err(Error::InvalidRequest)?;
+            let schema = schema.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/cns/{}/metrics",
+                client.baseurl,
+                encode_path(&server_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("range", &range))
+                .query(&progenitor_client::QueryParam::new("schema", &schema))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "cn_metrics_range",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::set_cn_role`]\n\n[`Client::set_cn_role`]: super::Client::set_cn_role"]
     #[derive(Debug, Clone)]
     pub struct SetCnRole<'a> {
@@ -22645,6 +23192,294 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "set_cn_role",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_config`]\n\n[`Client::list_config`]: super::Client::list_config"]
+    #[derive(Debug, Clone)]
+    pub struct ListConfig<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> ListConfig<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/config`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::ConfigEntry>>, Error<types::Error>>
+        {
+            let Self { client } = self;
+            let url = format!("{}/v2/config", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_config",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_config`]\n\n[`Client::get_config`]: super::Client::get_config"]
+    #[derive(Debug, Clone)]
+    pub struct GetConfig<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetConfig<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/config/{key}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::ConfigEntry>, Error<types::Error>> {
+            let Self { client, key } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/config/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_config",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::set_config`]\n\n[`Client::set_config`]: super::Client::set_config"]
+    #[derive(Debug, Clone)]
+    pub struct SetConfig<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+        body: Result<types::builder::SetConfigRequest, String>,
+    }
+
+    impl<'a> SetConfig<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetConfigRequest>,
+            <V as std::convert::TryInto<types::SetConfigRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetConfigRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SetConfigRequest,
+                ) -> types::builder::SetConfigRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/config/{key}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::ConfigEntry>, Error<types::Error>> {
+            let Self { client, key, body } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetConfigRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/config/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_config",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::reset_config`]\n\n[`Client::reset_config`]: super::Client::reset_config"]
+    #[derive(Debug, Clone)]
+    pub struct ResetConfig<'a> {
+        client: &'a super::Client,
+        key: Result<::std::string::String, String>,
+    }
+
+    impl<'a> ResetConfig<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/config/{key}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::ConfigEntry>, Error<types::Error>> {
+            let Self { client, key } = self;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/config/{}",
+                client.baseurl,
+                encode_path(&key.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "reset_config",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
@@ -29413,6 +30248,294 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "get_instance_disk",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::instance_logs_tail`]\n\n[`Client::instance_logs_tail`]: super::Client::instance_logs_tail"]
+    #[derive(Debug, Clone)]
+    pub struct InstanceLogsTail<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        source: Result<::std::string::String, String>,
+        before_seq: Result<Option<u64>, String>,
+        lines: Result<Option<u32>, String>,
+    }
+
+    impl<'a> InstanceLogsTail<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                source: Err("source was not initialized".to_string()),
+                before_seq: Ok(None),
+                lines: Ok(None),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn source<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.source = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for source failed".to_string()
+            });
+            self
+        }
+
+        pub fn before_seq<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.before_seq = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for before_seq failed".to_string());
+            self
+        }
+
+        pub fn lines<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.lines = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for lines failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<tritond_logs::LogTailResult>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+                source,
+                before_seq,
+                lines,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let source = source.map_err(Error::InvalidRequest)?;
+            let before_seq = before_seq.map_err(Error::InvalidRequest)?;
+            let lines = lines.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/logs/{}",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+                encode_path(&source.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new(
+                    "before_seq",
+                    &before_seq,
+                ))
+                .query(&progenitor_client::QueryParam::new("lines", &lines))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "instance_logs_tail",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::instance_metrics_range`]\n\n[`Client::instance_metrics_range`]: super::Client::instance_metrics_range"]
+    #[derive(Debug, Clone)]
+    pub struct InstanceMetricsRange<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        range: Result<Option<::std::string::String>, String>,
+        schema: Result<Option<::std::string::String>, String>,
+    }
+
+    impl<'a> InstanceMetricsRange<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                range: Ok(None),
+                schema: Ok(None),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn range<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.range = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for range failed".to_string()
+            });
+            self
+        }
+
+        pub fn schema<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.schema = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for schema failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<tritond_metrics::RangeResult>, Error<types::Error>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+                range,
+                schema,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let range = range.map_err(Error::InvalidRequest)?;
+            let schema = schema.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/metrics",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("range", &range))
+                .query(&progenitor_client::QueryParam::new("schema", &schema))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "instance_metrics_range",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

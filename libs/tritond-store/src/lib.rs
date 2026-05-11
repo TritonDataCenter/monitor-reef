@@ -33,25 +33,28 @@ pub use mem::MemStore;
 pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, ApiKey, ApiKeyScope, ApiKeyView,
     AutoApproveWindow, BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN,
-    CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, DhcpLease, DhcpOptionRaw, DhcpPool,
-    DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState,
-    EdgeClusterKind, EdgeClusterResource, EdgeNicCoord, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL,
-    Federation, FirewallAction, FirewallDirection, FirewallIcmpFilter, FirewallPortRange,
-    FirewallProtocol, FirewallRule, FloatingIp, FloatingIpAttachment, IdpConfig, IdpConfigView,
-    Image, ImageCompatibility, ImageScope, Instance, InstanceCreateResult, IpCidr, JobKind,
-    JobOutcome, JobStatus, JobStatusKind, LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind,
-    ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
-    NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob,
-    NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-    Realization, RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable,
-    RouteTarget, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus,
-    StorageClusterSurface, StorageClusterView, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE,
-    TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID,
-    TRITOND_METADATA_TENANT_ID, TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc, default_boot_disk_size_bytes,
-    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
-    generate_poll_token, normalize_claim_code, parse_vm_reports,
+    CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, ConfigError, ConfigKey,
+    DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS, DEFAULT_DHCP_RECONCILE_INTERVAL_SECS,
+    DEFAULT_STALE_CLAIM_THRESHOLD_SECS, DEFAULT_SWEEPER_INTERVAL_SECS, DhcpLease, DhcpOptionRaw,
+    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterInstance,
+    EdgeClusterInstanceState, EdgeClusterKind, EdgeClusterResource, EdgeNicCoord,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FirewallAction, FirewallDirection,
+    FirewallIcmpFilter, FirewallPortRange, FirewallProtocol, FirewallRule, FloatingIp,
+    FloatingIpAttachment, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
+    Instance, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus, JobStatusKind,
+    LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind, ManagedIdentity, MetricsBackend,
+    NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
+    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway,
+    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
+    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    RealizationStatus, RealizedNetworkState, RealizerId, Route, RouteTable, RouteTarget, Settings,
+    Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, StorageClusterSurface,
+    StorageClusterView, Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
+    TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID,
+    TRITOND_SSH_KEY_NAMESPACE, Tenant, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING,
+    VmNicReport, VmReport, VmState, Vpc, default_boot_disk_size_bytes, derive_image_id,
+    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
+    normalize_claim_code, parse_vm_reports,
 };
 
 use async_trait::async_trait;
@@ -151,6 +154,18 @@ pub trait Store: Send + Sync + 'static {
     /// Delete an API key by id. Returns [`StoreError::NotFound`] if
     /// the id does not belong to `user_id`'s set.
     async fn delete_api_key(&self, user_id: Uuid, key_id: Uuid) -> Result<(), StoreError>;
+
+    // ------------------------------------------------------------------
+    // Cluster settings (singleton)
+    // ------------------------------------------------------------------
+
+    /// Load the cluster-wide [`Settings`] blob. Returns
+    /// [`Settings::default`] when nothing has been written yet (first
+    /// run) so callers never special-case the empty store.
+    async fn get_settings(&self) -> Result<Settings, StoreError>;
+
+    /// Replace the cluster-wide [`Settings`] blob.
+    async fn put_settings(&self, settings: Settings) -> Result<(), StoreError>;
 
     // ------------------------------------------------------------------
     // System keys

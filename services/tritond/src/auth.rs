@@ -231,7 +231,11 @@ permit(
         Action::"legacy_cn_get",
         Action::"legacy_vm_list",
         Action::"legacy_vm_get",
-        Action::"legacy_alarm_list"
+        Action::"legacy_alarm_list",
+        Action::"config_list",
+        Action::"config_get",
+        Action::"config_set",
+        Action::"config_reset"
     ],
     resource
 ) when {
@@ -531,6 +535,14 @@ pub enum Action {
     AutoApproveSet,
     /// Close the auto-approve window early.
     AutoApproveClear,
+    /// Cluster-wide configuration surface (`/v2/config`). Gated by
+    /// the fleet-admin Cedar rule (and root-allows-all). `*List`/
+    /// `*Get` are reads; `*Set`/`*Reset` are writes (so a ReadOnly
+    /// API key can inspect but not change cluster settings).
+    ConfigList,
+    ConfigGet,
+    ConfigSet,
+    ConfigReset,
     /// Fleet-scoped legacy-discovery surface
     /// (`/v2/admin/legacy/*`). Gated by the fleet-admin Cedar rule.
     LegacyCnList,
@@ -721,6 +733,10 @@ impl Action {
             Action::AutoApproveGet => "auto_approve_get",
             Action::AutoApproveSet => "auto_approve_set",
             Action::AutoApproveClear => "auto_approve_clear",
+            Action::ConfigList => "config_list",
+            Action::ConfigGet => "config_get",
+            Action::ConfigSet => "config_set",
+            Action::ConfigReset => "config_reset",
             Action::LegacyCnList => "legacy_cn_list",
             Action::LegacyCnGet => "legacy_cn_get",
             Action::LegacyVmList => "legacy_vm_list",
@@ -1349,6 +1365,9 @@ fn is_read_action(action: Action) -> bool {
         | Action::CnSetRole
         | Action::AutoApproveSet
         | Action::AutoApproveClear
+        // Cluster config mutations.
+        | Action::ConfigSet
+        | Action::ConfigReset
         // Storage cluster mutations: registration writes, deletion,
         // and the health probe (which writes status + last_observed_at).
         | Action::StorageClusterCreate
@@ -1384,6 +1403,8 @@ fn is_read_action(action: Action) -> bool {
         | Action::StorageObjectMultipartAbort => false,
         // CN reads.
         Action::CnList | Action::CnGet | Action::AutoApproveGet => true,
+        // Cluster config reads.
+        Action::ConfigList | Action::ConfigGet => true,
         // Legacy admin reads.
         Action::LegacyCnList
         | Action::LegacyCnGet

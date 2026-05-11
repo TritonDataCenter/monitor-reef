@@ -21,11 +21,13 @@
 pub mod audit;
 pub mod auth;
 pub mod bootstrap;
+pub mod bootstrap_config;
 pub mod dhcp_reconciler;
 pub mod edge;
 pub mod legacy_classify;
 pub mod provisioner;
 pub mod rate_limit;
+pub mod settings;
 pub mod sigv4;
 pub mod storage;
 pub mod sweeper;
@@ -59,12 +61,13 @@ use tritond_api::{
     AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
-    CnListQuery, CnPath, CompleteJobRequest, HealthResponse, ImagePath, InstanceDeleteQuery,
-    LegacyCnSummary, LegacyVmListQuery, LegacyVmPath, LoginRequest, NetworkRealizationRequest,
-    NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
+    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
+    InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
+    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
+    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
     RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnRoleRequest, SiloPath, SiloTenantPath, SshKeyPath,
-    StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
+    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
+    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
     StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
     TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
     TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
@@ -91,9 +94,10 @@ use tritond_auth::{
     JwtKey, TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{
-    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnRole, CnState, EdgeCluster,
-    EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind, EdgeClusterResource,
-    EdgeNicCoord, IdpConfig, MemStore, NewEdgeCluster, Store, StoreError, normalize_claim_code,
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, ApiKeyScope, Cn, CnRole, CnState, ConfigError, ConfigKey,
+    EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
+    EdgeClusterResource, EdgeNicCoord, IdpConfig, MemStore, NewEdgeCluster, Store, StoreError,
+    normalize_claim_code,
 };
 use uuid::Uuid;
 
@@ -150,6 +154,20 @@ pub struct ApiContext {
     /// signatures; `main` overrides via `with_identity_hmac_key` to
     /// install the bootstrap-loaded, persisted key.
     pub identity_hmac_key: Arc<tritond_auth::IdentityHmacKey>,
+    /// Timeseries metrics sink. Defaults to an in-memory ring
+    /// buffer; production deploys swap in a ClickHouse-backed
+    /// implementation via [`ApiContext::with_metrics`]. The store
+    /// is consumed by the agent metrics-ingest endpoint and the
+    /// per-instance range query, and is intentionally separate
+    /// from `store` (control-plane state) so the metrics path
+    /// can fail-open without taking the API surface offline.
+    pub metrics: Arc<dyn tritond_metrics::MetricsStore>,
+    /// Per-VM log line sink. Defaults to an in-memory ring buffer
+    /// (last ~10k lines per `(instance, source)`); production deploys
+    /// swap in a ClickHouse-backed store via
+    /// [`ApiContext::with_logs`]. Same fail-open behaviour as
+    /// `metrics` -- a storage hiccup never 5xx's the agent.
+    pub logs: Arc<dyn tritond_logs::LogStore>,
 }
 
 /// Cadence and staleness threshold for the
@@ -172,7 +190,26 @@ impl ApiContext {
             sweeper: None,
             dhcp_reconciler: None,
             identity_hmac_key: Arc::new(tritond_auth::IdentityHmacKey::generate()),
+            metrics: Arc::new(tritond_metrics::store::RingBufferStore::new()),
+            logs: Arc::new(tritond_logs::RingBufferLogStore::new()),
         }
+    }
+
+    /// Install a real metrics store (e.g. ClickHouse). Tests and dev
+    /// runs can leave the default ring buffer in place; production
+    /// startup overrides via this builder once the ClickHouse client
+    /// is healthy.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn tritond_metrics::MetricsStore>) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    /// Install a real log store. Parallels `with_metrics`.
+    #[must_use]
+    pub fn with_logs(mut self, logs: Arc<dyn tritond_logs::LogStore>) -> Self {
+        self.logs = logs;
+        self
     }
 
     /// Install a specific identity HMAC key (typically the
@@ -5743,6 +5780,150 @@ impl TritondApi for TritondServiceImpl {
         Ok(HttpResponseDeleted())
     }
 
+    async fn list_config(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<ConfigEntry>>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ConfigList,
+        )
+        .await?;
+        let settings = ctx
+            .store
+            .get_settings()
+            .await
+            .map_err(store_error_to_http)?;
+        let entries = ConfigKey::ALL
+            .into_iter()
+            .map(|k| build_config_entry(k, &settings))
+            .collect();
+        Ok(HttpResponseOk(entries))
+    }
+
+    async fn get_config(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ConfigKeyPath>,
+    ) -> Result<HttpResponseOk<ConfigEntry>, HttpError> {
+        let ctx = rqctx.context();
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::ConfigGet)
+            .await?;
+        let key = config_key_or_404(&path.into_inner().key)?;
+        let settings = ctx
+            .store
+            .get_settings()
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(build_config_entry(key, &settings)))
+    }
+
+    async fn set_config(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ConfigKeyPath>,
+        body: TypedBody<SetConfigRequest>,
+    ) -> Result<HttpResponseOk<ConfigEntry>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ConfigSet,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let key = config_key_or_404(&path.into_inner().key)?;
+        let new_value = body.into_inner().value;
+
+        let mut settings = ctx
+            .store
+            .get_settings()
+            .await
+            .map_err(store_error_to_http)?;
+        let previous = settings.get(key);
+        settings.set(key, new_value).map_err(|e| match e {
+            ConfigError::InvalidValue { key, message } => HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                format!("invalid value for {key}: {message}"),
+            ),
+            ConfigError::UnknownKey(k) => HttpError::for_client_error(
+                Some("NotFound".to_string()),
+                ClientErrorStatusCode::NOT_FOUND,
+                format!("unknown config key: {k}"),
+            ),
+        })?;
+        ctx.store
+            .put_settings(settings.clone())
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::ConfigSet,
+                request_id,
+                Some(format!("Config::\"{}\"", key.as_str())),
+                AuditOutcome::Success {
+                    resource: Some(format!("Config::\"{}\"", key.as_str())),
+                },
+                serde_json::json!({
+                    "key": key.as_str(),
+                    "previous": previous,
+                    "value": settings.get(key),
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(build_config_entry(key, &settings)))
+    }
+
+    async fn reset_config(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ConfigKeyPath>,
+    ) -> Result<HttpResponseOk<ConfigEntry>, HttpError> {
+        let ctx = rqctx.context();
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::ConfigReset,
+        )
+        .await?;
+        let request_id = parse_request_id(&rqctx);
+        let key = config_key_or_404(&path.into_inner().key)?;
+
+        let mut settings = ctx
+            .store
+            .get_settings()
+            .await
+            .map_err(store_error_to_http)?;
+        let previous = settings.get(key);
+        settings.reset(key);
+        ctx.store
+            .put_settings(settings.clone())
+            .await
+            .map_err(store_error_to_http)?;
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::ConfigReset,
+                request_id,
+                Some(format!("Config::\"{}\"", key.as_str())),
+                AuditOutcome::Success {
+                    resource: Some(format!("Config::\"{}\"", key.as_str())),
+                },
+                serde_json::json!({
+                    "key": key.as_str(),
+                    "previous": previous,
+                    "value": settings.get(key),
+                }),
+            )
+            .await;
+        Ok(HttpResponseOk(build_config_entry(key, &settings)))
+    }
+
     async fn list_legacy_cns(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<Vec<LegacyCnSummary>>, HttpError> {
@@ -7066,6 +7247,303 @@ impl TritondApi for TritondServiceImpl {
         )
         .await?;
         Ok(HttpResponseOk(resp))
+    }
+
+    // ----- Metrics -----
+
+    async fn agent_metrics_ingest(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_metrics::SampleBatch>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError> {
+        let ctx = rqctx.context();
+        // Piggyback on AgentStatus's authz envelope: same scope
+        // (Agent), same auditing characteristics (high-frequency
+        // sample stream, no per-call audit). When per-action
+        // granularity is needed for forensics we'll add a dedicated
+        // AgentMetricsIngest variant.
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentStatus,
+        )
+        .await?;
+        let _server_uuid = require_bound_cn(&principal)?;
+
+        let batch = body.into_inner();
+        if batch.samples.len() > tritond_metrics::SampleBatch::MAX_SAMPLES {
+            return Err(HttpError::for_client_error(
+                None,
+                dropshot::ClientErrorStatusCode::PAYLOAD_TOO_LARGE,
+                format!(
+                    "metrics batch of {} samples exceeds limit of {}",
+                    batch.samples.len(),
+                    tritond_metrics::SampleBatch::MAX_SAMPLES,
+                ),
+            ));
+        }
+
+        // Best-effort: a metrics-store hiccup must not 5xx the agent
+        // and put it into backoff. Log and ack.
+        if let Err(e) = ctx.metrics.insert(&batch.samples).await {
+            tracing::warn!(error = %e, count = batch.samples.len(), "metrics insert failed");
+        }
+        Ok(HttpResponseUpdatedNoContent())
+    }
+
+    async fn instance_metrics_range(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectInstancePath>,
+        query: Query<MetricsRangeQuery>,
+    ) -> Result<HttpResponseOk<tritond_metrics::RangeResult>, HttpError> {
+        let ctx = rqctx.context();
+        let TenantProjectInstancePath {
+            tenant_id,
+            project_id,
+            instance_id,
+        } = path.into_inner();
+        // Reuse InstanceGet authz: read access to the named
+        // instance is the same trust envelope as the metrics view.
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceGet,
+            tenant_id,
+        )
+        .await?;
+
+        // Verify the instance actually belongs to this tenant +
+        // project. Mirrors `get_project_instance` -- we never want
+        // to leak metrics across the tenant boundary even if the
+        // metrics store happens to hold matching samples.
+        let instance = ctx
+            .store
+            .get_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if instance.tenant_id != tenant_id || instance.project_id != project_id {
+            return Err(not_found());
+        }
+
+        let q = query.into_inner();
+        let (since, until, step) = resolve_metrics_range(q.range.as_deref())?;
+        let schema = q
+            .schema
+            .unwrap_or_else(|| tritond_metrics::schema::schemas::CPU_PER_ZONE.to_string());
+
+        let range_query = tritond_metrics::RangeQuery {
+            schema,
+            // Filter on instance_id only: it's globally unique, and
+            // the agent's per-zone samples don't carry tenant_id in
+            // their identity (the agent doesn't know it). The
+            // tenant/project ownership check above already gates
+            // access to this instance's data.
+            instance_id: Some(instance_id),
+            tenant_id: None,
+            cn_id: None,
+            since,
+            until,
+            step,
+        };
+        let result = ctx
+            .metrics
+            .query_range(&range_query)
+            .await
+            .map_err(metrics_error_to_http)?;
+        Ok(HttpResponseOk(result))
+    }
+
+    async fn cn_metrics_range(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+        query: Query<MetricsRangeQuery>,
+    ) -> Result<HttpResponseOk<tritond_metrics::RangeResult>, HttpError> {
+        let ctx = rqctx.context();
+        let server_uuid = path.into_inner().server_uuid;
+        // Same authz envelope as `get_cn` -- fleet-read access to
+        // CN inventory implies read access to per-CN metrics.
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnGet)
+            .await?;
+        // Verify the CN actually exists. Without this, a stale UUID
+        // returns an empty series with no signal that the CN is
+        // unknown to the control plane.
+        ctx.store
+            .get_cn(server_uuid)
+            .await
+            .map_err(store_error_to_http)?;
+
+        let q = query.into_inner();
+        let (since, until, step) = resolve_metrics_range(q.range.as_deref())?;
+        let schema = q
+            .schema
+            .unwrap_or_else(|| tritond_metrics::schema::schemas::CPU_PER_CN.to_string());
+
+        let range_query = tritond_metrics::RangeQuery {
+            schema,
+            instance_id: None,
+            tenant_id: None,
+            cn_id: Some(server_uuid),
+            since,
+            until,
+            step,
+        };
+        let result = ctx
+            .metrics
+            .query_range(&range_query)
+            .await
+            .map_err(metrics_error_to_http)?;
+        Ok(HttpResponseOk(result))
+    }
+
+    // ----- Logs -----
+
+    async fn agent_logs_ingest(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_logs::LogBatch>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError> {
+        let ctx = rqctx.context();
+        // Same authz envelope as metrics ingest: Agent scope, bound
+        // CN. We don't dedicate a Cedar action for now -- log batches
+        // and status reports are the same trust shape.
+        let principal = authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::AgentStatus,
+        )
+        .await?;
+        let _server_uuid = require_bound_cn(&principal)?;
+
+        let batch = body.into_inner();
+        if batch.lines.len() > tritond_logs::LogBatch::MAX_LINES {
+            return Err(HttpError::for_client_error(
+                None,
+                dropshot::ClientErrorStatusCode::PAYLOAD_TOO_LARGE,
+                format!(
+                    "log batch of {} lines exceeds limit of {}",
+                    batch.lines.len(),
+                    tritond_logs::LogBatch::MAX_LINES,
+                ),
+            ));
+        }
+
+        // Fail-open: a log-store hiccup must not put the agent into
+        // backoff. Log + ack.
+        if let Err(e) = ctx.logs.insert(batch).await {
+            tracing::warn!(error = %e, "log batch insert failed");
+        }
+        Ok(HttpResponseUpdatedNoContent())
+    }
+
+    async fn instance_logs_tail(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<InstanceLogsPath>,
+        query: Query<LogTailQuery>,
+    ) -> Result<HttpResponseOk<tritond_logs::LogTailResult>, HttpError> {
+        let ctx = rqctx.context();
+        let InstanceLogsPath {
+            tenant_id,
+            project_id,
+            instance_id,
+            source,
+        } = path.into_inner();
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceGet,
+            tenant_id,
+        )
+        .await?;
+
+        let instance = ctx
+            .store
+            .get_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if instance.tenant_id != tenant_id || instance.project_id != project_id {
+            return Err(not_found());
+        }
+
+        let parsed_source: tritond_logs::LogSource =
+            source
+                .parse()
+                .map_err(|e: tritond_logs::types::UnknownLogSource| {
+                    HttpError::for_bad_request(None, e.to_string())
+                })?;
+
+        let q = query.into_inner();
+        let lines_req = q.lines.unwrap_or(500);
+        let tq = tritond_logs::LogTailQuery {
+            instance_id,
+            source: parsed_source,
+            lines: lines_req,
+            before_seq: q.before_seq,
+        };
+        let result = ctx.logs.tail(&tq).await.map_err(logs_error_to_http)?;
+        Ok(HttpResponseOk(result))
+    }
+}
+
+fn logs_error_to_http(e: tritond_logs::LogStoreError) -> HttpError {
+    use tritond_logs::LogStoreError as E;
+    match e {
+        E::InvalidQuery(msg) => HttpError::for_bad_request(None, msg),
+        E::Unavailable(msg) => HttpError::for_unavail(None, msg),
+        _ => HttpError::for_internal_error(format!("logs: {e}")),
+    }
+}
+
+/// Convert a short range identifier (`5m`, `1h`, `30d`) into the
+/// corresponding `(since, until, step)` triple. Step values are sized
+/// so each range yields ~60-100 buckets, which matches the SVG width
+/// of the V5 dashboard's chart panels.
+fn resolve_metrics_range(
+    range: Option<&str>,
+) -> Result<
+    (
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        chrono::Duration,
+    ),
+    HttpError,
+> {
+    let until = chrono::Utc::now();
+    let (window, step) = match range.unwrap_or("1h") {
+        "5m" => (chrono::Duration::minutes(5), chrono::Duration::seconds(5)),
+        "15m" => (chrono::Duration::minutes(15), chrono::Duration::seconds(15)),
+        "1h" => (chrono::Duration::hours(1), chrono::Duration::seconds(60)),
+        "6h" => (chrono::Duration::hours(6), chrono::Duration::minutes(5)),
+        "24h" => (chrono::Duration::hours(24), chrono::Duration::minutes(15)),
+        "7d" => (chrono::Duration::days(7), chrono::Duration::hours(1)),
+        "30d" => (chrono::Duration::days(30), chrono::Duration::hours(6)),
+        other => {
+            return Err(HttpError::for_bad_request(
+                None,
+                format!(
+                    "unsupported range '{other}'; expected one of 5m, 15m, 1h, 6h, 24h, 7d, 30d"
+                ),
+            ));
+        }
+    };
+    Ok((until - window, until, step))
+}
+
+fn metrics_error_to_http(e: tritond_metrics::MetricsStoreError) -> HttpError {
+    use tritond_metrics::MetricsStoreError as E;
+    match e {
+        E::InvalidQuery(msg) => HttpError::for_bad_request(None, msg),
+        E::UnknownSchema(s) => HttpError::for_bad_request(None, format!("unknown schema: {s}")),
+        E::Unavailable(msg) => HttpError::for_unavail(None, msg),
+        // `MetricsStoreError` is `#[non_exhaustive]`; future-proof
+        // the match so adding a new variant doesn't break this
+        // crate at the same time.
+        _ => HttpError::for_internal_error(format!("metrics: {e}")),
     }
 }
 
@@ -9400,6 +9878,31 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             msg,
         ),
         StoreError::Backend(msg) => HttpError::for_internal_error(msg),
+    }
+}
+
+/// Parse a `/v2/config/{key}` path segment into a [`ConfigKey`], or
+/// `404` for an unrecognised name.
+fn config_key_or_404(raw: &str) -> Result<ConfigKey, HttpError> {
+    ConfigKey::from_wire(raw).ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("NotFound".to_string()),
+            ClientErrorStatusCode::NOT_FOUND,
+            format!("unknown config key: {raw}"),
+        )
+    })
+}
+
+/// Build the wire view of one config key against a `Settings` snapshot,
+/// flagging any legacy env var currently shadowing it at boot.
+fn build_config_entry(key: ConfigKey, settings: &tritond_store::Settings) -> ConfigEntry {
+    ConfigEntry {
+        key: key.as_str().to_string(),
+        value: settings.get(key),
+        default: tritond_store::Settings::default().get(key),
+        env_override: crate::settings::env_override_for(key).map(str::to_string),
+        restart_required: key.restart_required(),
+        description: key.description().to_string(),
     }
 }
 

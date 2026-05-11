@@ -154,6 +154,47 @@ enum Commands {
         #[command(subcommand)]
         command: StorageCommand,
     },
+    /// View and change cluster-wide tritond settings (fleet-admin
+    /// only). The minimum tritond needs to start lives in its
+    /// bootstrap config file; everything here lives in FoundationDB
+    /// and takes effect on the next tritond restart.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCommand {
+    /// List every configuration key with its value, default,
+    /// description, and any environment variable overriding it.
+    List {
+        /// Emit JSON instead of a table.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show one configuration key.
+    Get {
+        /// Dotted key name, e.g. `sweeper.interval_secs`.
+        key: String,
+        /// Emit JSON instead of the human-readable form.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set one configuration key. The value is parsed as JSON when it
+    /// looks like JSON (`30`, `true`, `null`); otherwise it is taken
+    /// as a string (`clickhouse`, `http://ch:8123`).
+    Set {
+        /// Dotted key name, e.g. `metrics.backend`.
+        key: String,
+        /// New value.
+        value: String,
+    },
+    /// Reset one configuration key to its built-in default.
+    Reset {
+        /// Dotted key name.
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2796,6 +2837,20 @@ async fn main() -> Result<()> {
                         .await
                 }
             },
+        },
+        Commands::Config { command } => match command {
+            ConfigCommand::List { json } => {
+                commands::config_list(cli.endpoint, cli.api_key, json).await
+            }
+            ConfigCommand::Get { key, json } => {
+                commands::config_get(cli.endpoint, cli.api_key, key, json).await
+            }
+            ConfigCommand::Set { key, value } => {
+                commands::config_set(cli.endpoint, cli.api_key, key, value).await
+            }
+            ConfigCommand::Reset { key } => {
+                commands::config_reset(cli.endpoint, cli.api_key, key).await
+            }
         },
     }
 }

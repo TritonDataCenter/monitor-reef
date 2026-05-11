@@ -20,5 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tritond-audit = { workspace = true }
 tritond-auth = { workspace = true }
+tritond-logs = { workspace = true }
+tritond-metrics = { workspace = true }
 tritond-store = { workspace = true }
 uuid = { workspace = true }

@@ -252,6 +252,10 @@ following, the canonical orientation lives one directory up:
    distillation of the manta-storage planning workspace. Names the two
    in-flight implementations (`tritonfs`, `mantad`) and the v1 target.
 
+Operational reference: **[`docs/vnext/operating-tritond.md`](docs/vnext/operating-tritond.md)**
+covers `tritond`'s bootstrap config file and the FDB-backed cluster
+settings (`tcadm config` / admin-console **Settings** page).
+
 The active branch is `nick-tritond-phase0` (13+ commits ahead of
 `main`, **local only** as of writing — not pushed). Each commit's
 message is substantive and self-describing; `git log --oneline

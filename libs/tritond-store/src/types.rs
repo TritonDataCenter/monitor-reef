@@ -2559,6 +2559,348 @@ impl SystemKey {
 }
 
 // ---------------------------------------------------------------------
+// Cluster settings (`Settings`)
+// ---------------------------------------------------------------------
+
+/// Default cadence of the stale-claim sweeper, in seconds.
+pub const DEFAULT_SWEEPER_INTERVAL_SECS: u64 = 60;
+/// Default age (seconds) a job claim must reach before the sweeper reaps it.
+pub const DEFAULT_STALE_CLAIM_THRESHOLD_SECS: u64 = 600;
+/// Default cadence of the DHCP lease reconciler, in seconds.
+pub const DEFAULT_DHCP_RECONCILE_INTERVAL_SECS: u64 = 300;
+/// Default `now - last_activity` (seconds) before a DHCP lease is GC-eligible.
+pub const DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS: u64 = 7 * 24 * 60 * 60;
+
+/// Which metrics backend `tritond` stores timeseries in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum MetricsBackend {
+    /// In-memory ring buffer (default). Metrics do not survive a restart.
+    Memory,
+    /// ClickHouse over HTTP. Requires [`Settings::metrics_clickhouse_url`].
+    Clickhouse,
+}
+
+/// Cluster-wide tunables that live in FoundationDB rather than in the
+/// bootstrap config file. `tritond` reads these once at startup; the
+/// `tcadm config` subcommand and the admin console read and write them.
+///
+/// Every field is serialized under its dotted wire name (see
+/// [`ConfigKey`]) and the struct is `#[serde(default)]`, so a blob
+/// written by an older binary still deserializes under a newer one
+/// (missing fields take their default) and a blob written by a newer
+/// binary still deserializes under an older one (unknown fields are
+/// ignored).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Settings {
+    /// When `true`, `tritond` does not spawn the in-process stub
+    /// provisioner; an external `tritonagent` is expected to drain the
+    /// job queue. Replaces `TRITOND_DISABLE_INPROCESS_PROVISIONER`.
+    #[serde(rename = "provisioner.inprocess_disabled")]
+    pub provisioner_inprocess_disabled: bool,
+    /// Cadence, in seconds, of the stale-claim sweeper.
+    #[serde(rename = "sweeper.interval_secs")]
+    pub sweeper_interval_secs: u64,
+    /// How old (seconds) a job claim must be before the sweeper reaps it.
+    #[serde(rename = "sweeper.stale_claim_threshold_secs")]
+    pub stale_claim_threshold_secs: u64,
+    /// Cadence, in seconds, of the DHCP lease reconciler.
+    #[serde(rename = "dhcp.reconcile_interval_secs")]
+    pub dhcp_reconcile_interval_secs: u64,
+    /// Minimum `now - last_activity` (seconds) before a DHCP lease is
+    /// garbage-collection eligible.
+    #[serde(rename = "dhcp.lease_gc_threshold_secs")]
+    pub dhcp_lease_gc_threshold_secs: u64,
+    /// Which metrics backend `tritond` uses.
+    #[serde(rename = "metrics.backend")]
+    pub metrics_backend: MetricsBackend,
+    /// Base URL of the ClickHouse HTTP endpoint (e.g.
+    /// `http://10.0.0.5:8123`). Only consulted when `metrics.backend`
+    /// is `clickhouse`.
+    #[serde(rename = "metrics.clickhouse_url")]
+    pub metrics_clickhouse_url: Option<String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            provisioner_inprocess_disabled: false,
+            sweeper_interval_secs: DEFAULT_SWEEPER_INTERVAL_SECS,
+            stale_claim_threshold_secs: DEFAULT_STALE_CLAIM_THRESHOLD_SECS,
+            dhcp_reconcile_interval_secs: DEFAULT_DHCP_RECONCILE_INTERVAL_SECS,
+            dhcp_lease_gc_threshold_secs: DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
+            metrics_backend: MetricsBackend::Memory,
+            metrics_clickhouse_url: None,
+        }
+    }
+}
+
+impl Settings {
+    /// Current value of one key, as JSON. Always `Some`-equivalent —
+    /// every field is serialized, so the returned `Value` is never a
+    /// missing entry.
+    pub fn get(&self, key: ConfigKey) -> serde_json::Value {
+        let obj = serde_json::to_value(self).expect("Settings always serializes to a JSON object");
+        obj.get(key.as_str())
+            .cloned()
+            .expect("every ConfigKey maps to a serialized field")
+    }
+
+    /// Overwrite one key from a JSON value, then re-validate the whole
+    /// struct. A wrong-typed value (e.g. a string where a `u64` is
+    /// expected) is rejected with [`ConfigError::InvalidValue`] and
+    /// `self` is left unchanged.
+    pub fn set(&mut self, key: ConfigKey, value: serde_json::Value) -> Result<(), ConfigError> {
+        let mut obj = match serde_json::to_value(&*self) {
+            Ok(serde_json::Value::Object(m)) => m,
+            _ => unreachable!("Settings always serializes to a JSON object"),
+        };
+        obj.insert(key.as_str().to_string(), value);
+        let next: Settings =
+            serde_json::from_value(serde_json::Value::Object(obj)).map_err(|e| {
+                ConfigError::InvalidValue {
+                    key: key.as_str().to_string(),
+                    message: e.to_string(),
+                }
+            })?;
+        *self = next;
+        Ok(())
+    }
+
+    /// Reset one key to its built-in default.
+    pub fn reset(&mut self, key: ConfigKey) {
+        let default_value = Settings::default().get(key);
+        self.set(key, default_value)
+            .expect("a default value always round-trips");
+    }
+}
+
+/// Stable identifier for one [`Settings`] field. Used as the path
+/// segment in `/v2/config/{key}`, the key argument to `tcadm config`,
+/// and the JSON field name in the stored blob. Centralising the
+/// string⇆field mapping here keeps the rest of the codebase off
+/// hardcoded config-key strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ConfigKey {
+    /// [`Settings::provisioner_inprocess_disabled`]
+    ProvisionerInprocessDisabled,
+    /// [`Settings::sweeper_interval_secs`]
+    SweeperIntervalSecs,
+    /// [`Settings::stale_claim_threshold_secs`]
+    StaleClaimThresholdSecs,
+    /// [`Settings::dhcp_reconcile_interval_secs`]
+    DhcpReconcileIntervalSecs,
+    /// [`Settings::dhcp_lease_gc_threshold_secs`]
+    DhcpLeaseGcThresholdSecs,
+    /// [`Settings::metrics_backend`]
+    MetricsBackend,
+    /// [`Settings::metrics_clickhouse_url`]
+    MetricsClickhouseUrl,
+}
+
+impl ConfigKey {
+    /// Every key, in the order `tcadm config list` displays them.
+    pub const ALL: [ConfigKey; 7] = [
+        ConfigKey::ProvisionerInprocessDisabled,
+        ConfigKey::SweeperIntervalSecs,
+        ConfigKey::StaleClaimThresholdSecs,
+        ConfigKey::DhcpReconcileIntervalSecs,
+        ConfigKey::DhcpLeaseGcThresholdSecs,
+        ConfigKey::MetricsBackend,
+        ConfigKey::MetricsClickhouseUrl,
+    ];
+
+    /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
+    /// on the matching [`Settings`] field.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ConfigKey::ProvisionerInprocessDisabled => "provisioner.inprocess_disabled",
+            ConfigKey::SweeperIntervalSecs => "sweeper.interval_secs",
+            ConfigKey::StaleClaimThresholdSecs => "sweeper.stale_claim_threshold_secs",
+            ConfigKey::DhcpReconcileIntervalSecs => "dhcp.reconcile_interval_secs",
+            ConfigKey::DhcpLeaseGcThresholdSecs => "dhcp.lease_gc_threshold_secs",
+            ConfigKey::MetricsBackend => "metrics.backend",
+            ConfigKey::MetricsClickhouseUrl => "metrics.clickhouse_url",
+        }
+    }
+
+    /// Parse a dotted wire name back to a key. Returns `None` for an
+    /// unrecognised string.
+    pub fn from_wire(s: &str) -> Option<Self> {
+        ConfigKey::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// One-line human description, surfaced by `tcadm config list` and
+    /// the admin console.
+    pub fn description(self) -> &'static str {
+        match self {
+            ConfigKey::ProvisionerInprocessDisabled => {
+                "skip the in-process stub provisioner (an external tritonagent drains the queue)"
+            }
+            ConfigKey::SweeperIntervalSecs => "stale-claim sweeper cadence, in seconds",
+            ConfigKey::StaleClaimThresholdSecs => {
+                "age in seconds a job claim must reach before the sweeper reaps it"
+            }
+            ConfigKey::DhcpReconcileIntervalSecs => "DHCP lease reconciler cadence, in seconds",
+            ConfigKey::DhcpLeaseGcThresholdSecs => {
+                "idle seconds before a DHCP lease becomes garbage-collection eligible"
+            }
+            ConfigKey::MetricsBackend => "metrics backend: \"memory\" or \"clickhouse\"",
+            ConfigKey::MetricsClickhouseUrl => {
+                "ClickHouse HTTP base URL (used only when metrics.backend is clickhouse)"
+            }
+        }
+    }
+
+    /// Whether changing this key requires a `tritond` restart. In the
+    /// current release all settings are read once at startup, so this
+    /// is `true` for every key; it stays a method so callers and the
+    /// wire surface don't have to change when live-reload lands.
+    pub fn restart_required(self) -> bool {
+        true
+    }
+
+    /// Name of the legacy environment variable that, when set,
+    /// overrides this key at boot (env > FDB > default). `None` when no
+    /// env override exists.
+    pub fn env_var(self) -> Option<&'static str> {
+        Some(match self {
+            ConfigKey::ProvisionerInprocessDisabled => "TRITOND_DISABLE_INPROCESS_PROVISIONER",
+            ConfigKey::SweeperIntervalSecs => "TRITOND_SWEEPER_INTERVAL_SECS",
+            ConfigKey::StaleClaimThresholdSecs => "TRITOND_STALE_CLAIM_THRESHOLD_SECS",
+            ConfigKey::DhcpReconcileIntervalSecs => "TRITOND_DHCP_RECONCILE_INTERVAL_SECS",
+            ConfigKey::DhcpLeaseGcThresholdSecs => "TRITOND_DHCP_LEASE_GC_THRESHOLD_SECS",
+            ConfigKey::MetricsBackend => "TRITOND_METRICS_STORE",
+            ConfigKey::MetricsClickhouseUrl => "TRITOND_METRICS_CLICKHOUSE_URL",
+        })
+    }
+}
+
+/// Errors from validating a config-key update.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// The supplied key string does not name a known [`ConfigKey`].
+    #[error("unknown config key: {0}")]
+    UnknownKey(String),
+    /// The supplied value is the wrong shape for the target key.
+    #[error("invalid value for {key}: {message}")]
+    InvalidValue {
+        /// The key that was being set.
+        key: String,
+        /// Deserialiser error detail.
+        message: String,
+    },
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    #[test]
+    fn default_values_match_constants() {
+        let s = Settings::default();
+        assert!(!s.provisioner_inprocess_disabled);
+        assert_eq!(s.sweeper_interval_secs, DEFAULT_SWEEPER_INTERVAL_SECS);
+        assert_eq!(
+            s.stale_claim_threshold_secs,
+            DEFAULT_STALE_CLAIM_THRESHOLD_SECS
+        );
+        assert_eq!(
+            s.dhcp_reconcile_interval_secs,
+            DEFAULT_DHCP_RECONCILE_INTERVAL_SECS
+        );
+        assert_eq!(
+            s.dhcp_lease_gc_threshold_secs,
+            DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS
+        );
+        assert_eq!(s.metrics_backend, MetricsBackend::Memory);
+        assert_eq!(s.metrics_clickhouse_url, None);
+    }
+
+    #[test]
+    fn serde_round_trip() {
+        let mut s = Settings::default();
+        s.sweeper_interval_secs = 42;
+        s.metrics_backend = MetricsBackend::Clickhouse;
+        s.metrics_clickhouse_url = Some("http://ch:8123".to_string());
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(s, back);
+    }
+
+    #[test]
+    fn forward_compat_missing_and_unknown_fields() {
+        // Empty object -> all defaults.
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s, Settings::default());
+        // Unknown keys are ignored, known ones still apply.
+        let s: Settings =
+            serde_json::from_str(r#"{"sweeper.interval_secs": 7, "future.knob": true}"#).unwrap();
+        assert_eq!(s.sweeper_interval_secs, 7);
+    }
+
+    #[test]
+    fn config_key_wire_round_trips() {
+        for key in ConfigKey::ALL {
+            assert_eq!(ConfigKey::from_wire(key.as_str()), Some(key));
+        }
+        assert_eq!(ConfigKey::from_wire("nope.not.real"), None);
+    }
+
+    #[test]
+    fn every_key_serializes_a_field() {
+        // get() must not panic for any key — guards as_str() drift from
+        // the serde rename attributes.
+        let s = Settings::default();
+        for key in ConfigKey::ALL {
+            let _ = s.get(key);
+        }
+    }
+
+    #[test]
+    fn get_set_reset() {
+        let mut s = Settings::default();
+        s.set(ConfigKey::SweeperIntervalSecs, serde_json::json!(30))
+            .unwrap();
+        assert_eq!(s.sweeper_interval_secs, 30);
+        assert_eq!(s.get(ConfigKey::SweeperIntervalSecs), serde_json::json!(30));
+        s.reset(ConfigKey::SweeperIntervalSecs);
+        assert_eq!(s.sweeper_interval_secs, DEFAULT_SWEEPER_INTERVAL_SECS);
+    }
+
+    #[test]
+    fn set_rejects_wrong_type() {
+        let mut s = Settings::default();
+        let err = s
+            .set(ConfigKey::SweeperIntervalSecs, serde_json::json!("lots"))
+            .expect_err("string is not a u64");
+        assert!(matches!(err, ConfigError::InvalidValue { .. }));
+        // Unchanged.
+        assert_eq!(s.sweeper_interval_secs, DEFAULT_SWEEPER_INTERVAL_SECS);
+    }
+
+    #[test]
+    fn set_accepts_enum_and_option() {
+        let mut s = Settings::default();
+        s.set(ConfigKey::MetricsBackend, serde_json::json!("clickhouse"))
+            .unwrap();
+        assert_eq!(s.metrics_backend, MetricsBackend::Clickhouse);
+        s.set(
+            ConfigKey::MetricsClickhouseUrl,
+            serde_json::json!("http://ch:8123"),
+        )
+        .unwrap();
+        assert_eq!(s.metrics_clickhouse_url.as_deref(), Some("http://ch:8123"));
+        s.set(ConfigKey::MetricsClickhouseUrl, serde_json::Value::Null)
+            .unwrap();
+        assert_eq!(s.metrics_clickhouse_url, None);
+    }
+}
+
+// ---------------------------------------------------------------------
 // Compute nodes (`Cn`)
 // ---------------------------------------------------------------------
 

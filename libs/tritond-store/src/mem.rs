@@ -30,7 +30,7 @@ use crate::{
     NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
     NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
     Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable,
-    RouteTarget, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
+    RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
     StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
@@ -118,6 +118,8 @@ struct Inner {
     user_id_by_federation: HashMap<(Uuid, String, String), Uuid>,
     api_keys_by_id: HashMap<Uuid, ApiKey>,
     api_key_id_by_lookup_id: HashMap<String, Uuid>,
+    /// Cluster-wide tunables. Defaults until something writes them.
+    settings: Settings,
     system_keys: HashMap<SystemKey, Vec<u8>>,
     idp_configs_by_tenant: HashMap<Uuid, IdpConfig>,
     /// `issuer_url` → tenant_id reverse index. Maintained in
@@ -516,6 +518,15 @@ impl Store for MemStore {
         };
         guard.api_keys_by_id.remove(&key_id);
         guard.api_key_id_by_lookup_id.remove(&lookup_id);
+        Ok(())
+    }
+
+    async fn get_settings(&self) -> Result<Settings, StoreError> {
+        Ok(self.inner.read().await.settings.clone())
+    }
+
+    async fn put_settings(&self, settings: Settings) -> Result<(), StoreError> {
+        self.inner.write().await.settings = settings;
         Ok(())
     }
 
@@ -7871,6 +7882,19 @@ mod tests {
         assert_eq!(listed[0].seq, 4);
         assert_eq!(listed[1].seq, 3);
         assert_eq!(listed[2].seq, 2);
+    }
+
+    #[tokio::test]
+    async fn settings_round_trip() {
+        let store = MemStore::new();
+        // Empty store → defaults.
+        assert_eq!(store.get_settings().await.unwrap(), Settings::default());
+
+        let mut s = Settings::default();
+        s.set(crate::ConfigKey::SweeperIntervalSecs, serde_json::json!(15))
+            .unwrap();
+        store.put_settings(s.clone()).await.unwrap();
+        assert_eq!(store.get_settings().await.unwrap(), s);
     }
 
     #[tokio::test]

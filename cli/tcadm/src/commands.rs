@@ -3895,3 +3895,150 @@ pub async fn storage_cluster_clear_presigner(
     println!("Presigner cleared for storage cluster {id}");
     Ok(())
 }
+
+// ---------------------------------------------------------------------
+// Cluster configuration (`tcadm config ...`)
+// ---------------------------------------------------------------------
+
+/// Render the `value` / `default` JSON for the `config` table compactly
+/// (strings unquoted, everything else as JSON).
+fn config_scalar(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => "(unset)".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Parse a CLI `<value>` argument: a bare token that parses as JSON
+/// (e.g. `30`, `true`, `null`) is used as-is; anything else (e.g.
+/// `clickhouse`, `http://ch:8123`) is treated as a JSON string.
+fn parse_config_value(raw: &str) -> serde_json::Value {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .unwrap_or_else(|_| serde_json::Value::String(raw.to_string()))
+}
+
+fn print_config_restart_hint(restart_required: bool) {
+    if restart_required {
+        println!("saved; restart tritond to apply");
+    } else {
+        println!("saved");
+    }
+}
+
+pub async fn config_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let entries = client
+        .list_config()
+        .send()
+        .await
+        .context("list config")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+        return Ok(());
+    }
+    if entries.is_empty() {
+        println!("(no configuration keys)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<20}  {:<20}  {:<8}  {:<24}  DESCRIPTION",
+        "KEY", "VALUE", "DEFAULT", "RESTART", "ENV OVERRIDE"
+    );
+    for e in entries {
+        println!(
+            "{:<36}  {:<20}  {:<20}  {:<8}  {:<24}  {}",
+            e.key,
+            config_scalar(&e.value),
+            config_scalar(&e.default),
+            if e.restart_required { "yes" } else { "no" },
+            e.env_override.as_deref().unwrap_or("-"),
+            e.description,
+        );
+    }
+    Ok(())
+}
+
+pub async fn config_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    key: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let entry = client
+        .get_config()
+        .key(&key)
+        .send()
+        .await
+        .context("get config key")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&entry)?);
+        return Ok(());
+    }
+    println!("{} = {}", entry.key, config_scalar(&entry.value));
+    println!("  default:     {}", config_scalar(&entry.default));
+    println!(
+        "  restart:     {}",
+        if entry.restart_required { "yes" } else { "no" }
+    );
+    if let Some(env) = &entry.env_override {
+        println!("  env override: {env} (this is shadowing the stored value at boot)");
+    }
+    println!("  {}", entry.description);
+    Ok(())
+}
+
+pub async fn config_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    key: String,
+    value: String,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let req = tritond_client::types::SetConfigRequest {
+        value: parse_config_value(&value),
+    };
+    let entry = client
+        .set_config()
+        .key(&key)
+        .body(req)
+        .send()
+        .await
+        .context("set config key")?
+        .into_inner();
+    println!("{} = {}", entry.key, config_scalar(&entry.value));
+    print_config_restart_hint(entry.restart_required);
+    if let Some(env) = &entry.env_override {
+        println!("note: {env} is set in tritond's environment and will shadow this value at boot");
+    }
+    Ok(())
+}
+
+pub async fn config_reset(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    key: String,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let entry = client
+        .reset_config()
+        .key(&key)
+        .send()
+        .await
+        .context("reset config key")?
+        .into_inner();
+    println!("{} = {} (default)", entry.key, config_scalar(&entry.value));
+    print_config_restart_hint(entry.restart_required);
+    Ok(())
+}

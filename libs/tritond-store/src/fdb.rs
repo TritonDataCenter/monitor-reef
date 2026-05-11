@@ -118,6 +118,8 @@
 //! cn/by_poll/<poll_token>           -> server_uuid hyphenated bytes
 //! cn/by_state/<state>/<server_uuid> -> empty (membership index)
 //! auto_approve/window               -> JSON-encoded AutoApproveWindow (singleton)
+//! config/settings                   -> JSON-encoded Settings (singleton; absent
+//!                                      key means "all defaults")
 //! system/<tag>                      -> raw bytes (e.g. JWT signing key)
 //! network_realization/<kind>/<resource_id>/<realizer_kind>/<realizer_id>
 //!                                   -> JSON-encoded Realization
@@ -167,8 +169,8 @@ use crate::{
     NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage,
     NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
     NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo,
-    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
+    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings,
+    Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
     SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
@@ -774,6 +776,10 @@ impl FdbStore {
         b"auto_approve/window"
     }
 
+    fn settings_key() -> &'static [u8] {
+        b"config/settings"
+    }
+
     fn legacy_vm_by_id_key(smartos_uuid: Uuid) -> Vec<u8> {
         format!("legacy_vm/by_id/{smartos_uuid}").into_bytes()
     }
@@ -1328,6 +1334,33 @@ impl Store for FdbStore {
             Ok(DeleteOutcome::NotFound) => Err(StoreError::NotFound),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
+    }
+
+    async fn get_settings(&self) -> Result<Settings, StoreError> {
+        let key = Self::settings_key().to_vec();
+        match self.read_bytes(&key).await? {
+            Some(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize settings: {e}"))),
+            None => Ok(Settings::default()),
+        }
+    }
+
+    async fn put_settings(&self, settings: Settings) -> Result<(), StoreError> {
+        let value = serde_json::to_vec(&settings)
+            .map_err(|e| StoreError::Backend(format!("serialize settings: {e}")))?;
+        let key = Self::settings_key().to_vec();
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&key, &value);
+                    Ok(())
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
     }
 
     async fn get_system_key(&self, key: SystemKey) -> Result<Vec<u8>, StoreError> {
@@ -7808,6 +7841,39 @@ mod cn_tests {
     /// test so leftover state from a previous run doesn't leak in.
     async fn purge_window(store: &FdbStore) {
         let _ = store.close_auto_approve_window().await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn settings_round_trip() {
+        let store = fdb_test_store();
+        // Reset to a known baseline first; another run may have left a
+        // blob behind. (We never clear the keyspace wholesale.)
+        store
+            .put_settings(Settings::default())
+            .await
+            .expect("seed default settings");
+        assert_eq!(
+            store.get_settings().await.expect("get"),
+            Settings::default()
+        );
+
+        let mut s = Settings::default();
+        s.set(crate::ConfigKey::SweeperIntervalSecs, serde_json::json!(99))
+            .unwrap();
+        s.set(
+            crate::ConfigKey::MetricsBackend,
+            serde_json::json!("clickhouse"),
+        )
+        .unwrap();
+        store.put_settings(s.clone()).await.expect("put");
+        assert_eq!(store.get_settings().await.expect("get"), s);
+
+        // Leave the singleton at defaults for the next run.
+        store
+            .put_settings(Settings::default())
+            .await
+            .expect("restore defaults");
     }
 
     #[tokio::test]

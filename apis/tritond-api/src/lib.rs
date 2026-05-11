@@ -823,6 +823,51 @@ pub struct OpenAutoApproveRequest {
     pub count: Option<u64>,
 }
 
+// ---------------------------------------------------------------------
+// Cluster configuration (`/v2/config`)
+// ---------------------------------------------------------------------
+
+/// One cluster-wide configuration key with its current value,
+/// default, description, and operational metadata. Returned by the
+/// `/v2/config` endpoints; consumed by `tcadm config` and the admin
+/// console.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ConfigEntry {
+    /// Dotted key name, e.g. `sweeper.interval_secs`.
+    pub key: String,
+    /// Value as stored in FoundationDB (the built-in default when no
+    /// value has been written). If `env_override` is set, the daemon
+    /// is actually running with the environment variable's value, not
+    /// this one.
+    pub value: serde_json::Value,
+    /// Built-in default for this key.
+    pub default: serde_json::Value,
+    /// Environment variable currently shadowing this key at boot
+    /// (`env > FDB > default`), if any.
+    pub env_override: Option<String>,
+    /// Whether changing this key requires a `tritond` restart to take
+    /// effect. Currently `true` for every key.
+    pub restart_required: bool,
+    /// One-line human description.
+    pub description: String,
+}
+
+/// Path parameter for endpoints addressing one configuration key by
+/// its dotted name.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ConfigKeyPath {
+    /// Dotted key name, e.g. `sweeper.interval_secs`.
+    pub key: String,
+}
+
+/// Request body for `PUT /v2/config/{key}`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SetConfigRequest {
+    /// New value for the key. Must match the key's type; an ill-typed
+    /// value is rejected with `400`.
+    pub value: serde_json::Value,
+}
+
 /// Path parameters for endpoints that operate on a single tenant.
 /// Used by the project-list / project-create endpoints rooted at
 /// `/v2/tenants/{tenant_id}/projects`.
@@ -975,6 +1020,60 @@ pub struct TenantProjectFloatingIpPath {
     pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub floating_ip_id: Uuid,
+}
+
+/// Query parameters for metrics range endpoints
+/// (`.../instances/{instance_id}/metrics`, `.../cns/{cn_id}/metrics`).
+///
+/// `range` is a short suffix-encoded duration (`5m`, `15m`, `1h`,
+/// `6h`, `24h`, `7d`, `30d`) — these mirror the buttons in the V5
+/// dashboard and decouple the wire format from a future re-skin.
+/// `schema` selects which timeseries schema to plot; defaults to
+/// `triton.cpu_per_zone` (VM detail) or `triton.cpu_per_cn` (node
+/// detail), inferred server-side from the URL.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct MetricsRangeQuery {
+    /// Short range identifier (e.g. `1h`).
+    #[serde(default)]
+    pub range: Option<String>,
+    /// Schema name. Defaults to `triton.cpu_per_zone`.
+    #[serde(default)]
+    pub schema: Option<String>,
+}
+
+/// Path parameters for `GET /v2/tenants/{tenant_id}/metrics`. Reused
+/// for the per-tenant Prometheus exposition; the existing
+/// `TenantPath` lives in `types.rs` and is used by `/v2/tenants/{}/...`
+/// CRUD endpoints, but the metrics endpoint adds new auth semantics
+/// so it gets its own path type for clarity.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TenantMetricsPath {
+    pub tenant_id: Uuid,
+}
+
+/// Path parameters for the per-VM log tail endpoint.
+/// `source` is `"console"` or `"platform"` (see
+/// [`tritond_logs::LogSource`]).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InstanceLogsPath {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub instance_id: Uuid,
+    /// URL-safe source name. `console` or `platform`.
+    pub source: String,
+}
+
+/// Query parameters for the per-VM log tail endpoint.
+///
+/// `lines` defaults to 500 and is clamped at 5000 server-side.
+/// `before_seq` is the pagination cursor returned in the previous
+/// response's oldest line; absent on the first call.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct LogTailQuery {
+    #[serde(default)]
+    pub lines: Option<usize>,
+    #[serde(default)]
+    pub before_seq: Option<u64>,
 }
 
 /// Body for `POST /attach`. Names the target NIC the FloatingIp
@@ -1442,6 +1541,61 @@ pub trait TritondApi {
     async fn close_auto_approve_window(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// List every cluster-wide configuration key with its current
+    /// value, built-in default, description, restart requirement, and
+    /// whether an environment variable is currently overriding it at
+    /// boot. Fleet-admin only.
+    #[endpoint {
+        method = GET,
+        path = "/v2/config",
+        tags = ["config"],
+    }]
+    async fn list_config(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<ConfigEntry>>, HttpError>;
+
+    /// Read one configuration key. Returns `404` for an unknown key.
+    /// Fleet-admin only.
+    #[endpoint {
+        method = GET,
+        path = "/v2/config/{key}",
+        tags = ["config"],
+    }]
+    async fn get_config(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ConfigKeyPath>,
+    ) -> Result<HttpResponseOk<ConfigEntry>, HttpError>;
+
+    /// Set one configuration key. Returns `404` for an unknown key,
+    /// `400` for an ill-typed value, the updated entry otherwise. The
+    /// new value is persisted to FoundationDB and takes effect on the
+    /// next `tritond` restart. Fleet-admin only; the change is recorded
+    /// in the audit log.
+    #[endpoint {
+        method = PUT,
+        path = "/v2/config/{key}",
+        tags = ["config"],
+    }]
+    async fn set_config(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ConfigKeyPath>,
+        body: TypedBody<SetConfigRequest>,
+    ) -> Result<HttpResponseOk<ConfigEntry>, HttpError>;
+
+    /// Reset one configuration key to its built-in default. Returns
+    /// `404` for an unknown key, the (default-valued) entry otherwise.
+    /// Persisted to FoundationDB; takes effect on the next restart.
+    /// Fleet-admin only; recorded in the audit log.
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/config/{key}",
+        tags = ["config"],
+    }]
+    async fn reset_config(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ConfigKeyPath>,
+    ) -> Result<HttpResponseOk<ConfigEntry>, HttpError>;
 
     /// Configure the OIDC identity provider for a tenant. Returns
     /// 502 if the discovery document cannot be fetched, 404 if the
@@ -3058,4 +3212,116 @@ pub trait TritondApi {
     // v1. The `Action::StorageObjectMultipart*` Cedar variants and
     // the `Multipart*` wire types are kept in place so the policy +
     // contract don't churn when the follow-up lands.
+
+    // ----- Metrics (Slice 1: per-zone CPU) -----
+    //
+    // The V5 dashboard renders six multi-series charts; the data
+    // pipeline fans out into:
+    //   * tritonagent reads kstats and POSTs Samples here.
+    //   * tritond writes Samples to a `MetricsStore` (in-memory ring
+    //     buffer in dev, ClickHouse in production).
+    //   * The admin UI calls `instance_metrics_range` for a typed
+    //     `RangeResult` shaped for SVG line charts.
+    //
+    // Per-tenant + admin Prometheus text exposition lives on a
+    // separate metrics-only HTTP listener in tritond's main process
+    // (different port, no JWT) and is intentionally NOT part of this
+    // OpenAPI surface — Prometheus scrapers don't consume OpenAPI
+    // schemas, and the text exposition's content-type would force a
+    // raw-body return type that doesn't round-trip cleanly through
+    // Progenitor.
+
+    /// Ingest a batch of metric samples from a registered agent.
+    /// Auth: requires an API key with
+    /// [`tritond_store::ApiKeyScope::Agent`]. Batches larger than
+    /// [`tritond_metrics::SampleBatch::MAX_SAMPLES`] are rejected
+    /// with `413 Payload Too Large`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/metrics",
+        tags = ["agent"],
+    }]
+    async fn agent_metrics_ingest(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_metrics::SampleBatch>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError>;
+
+    /// Range query for the per-instance metrics chart on the VM
+    /// detail view. Returns one numeric series per distinct `series`
+    /// identity field encountered in the requested window. Counter
+    /// datums are emitted as per-bucket deltas; gauges as last-value
+    /// per bucket.
+    ///
+    /// Auth: requires a tenant-scoped credential with read access
+    /// to the named instance.
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/metrics",
+        tags = ["instances"],
+    }]
+    async fn instance_metrics_range(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectInstancePath>,
+        query: Query<MetricsRangeQuery>,
+    ) -> Result<HttpResponseOk<tritond_metrics::RangeResult>, HttpError>;
+
+    /// Range query for the per-CN metrics dashboard (NodeDetail
+    /// page's Metrics tab). Returns one series per CPU mode for the
+    /// requested CN's global zone -- host services + kernel time
+    /// not charged to a tenant zone. Mirrors the legacy cmon
+    /// `/v1/discover` -> per-CN scrape pattern, just typed.
+    ///
+    /// Auth: requires fleet-read access to the CN (same scope as
+    /// `get_cn`). No tenant filter -- per-CN samples are operator
+    /// surface.
+    #[endpoint {
+        method = GET,
+        path = "/v2/cns/{server_uuid}/metrics",
+        tags = ["cns"],
+    }]
+    async fn cn_metrics_range(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+        query: Query<MetricsRangeQuery>,
+    ) -> Result<HttpResponseOk<tritond_metrics::RangeResult>, HttpError>;
+
+    // ----- Logs (zone console.log + platform.log) -----
+    //
+    // Same control-plane shape as metrics: agent posts batches; the
+    // tail endpoint serves the most recent N lines from a per-stream
+    // ring buffer. Console + platform are kept as distinct sources
+    // because the line semantics differ (raw text vs structured
+    // bunyan) and operators reason about them separately.
+
+    /// Ingest a batch of log lines from a registered agent.
+    /// Auth: requires an API key with
+    /// [`tritond_store::ApiKeyScope::Agent`]. Batches larger than
+    /// [`tritond_logs::LogBatch::MAX_LINES`] are rejected with
+    /// `413 Payload Too Large`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/logs",
+        tags = ["agent"],
+    }]
+    async fn agent_logs_ingest(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_logs::LogBatch>,
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError>;
+
+    /// Tail the most recent log lines for one source on one VM.
+    /// Pagination via `before_seq` -- pass the smallest `seq` from
+    /// the previous response to fetch older lines.
+    ///
+    /// Auth: requires a tenant-scoped credential with read access
+    /// to the named instance (same envelope as `get_project_instance`).
+    #[endpoint {
+        method = GET,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/logs/{source}",
+        tags = ["instances"],
+    }]
+    async fn instance_logs_tail(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<InstanceLogsPath>,
+        query: Query<LogTailQuery>,
+    ) -> Result<HttpResponseOk<tritond_logs::LogTailResult>, HttpError>;
 }
