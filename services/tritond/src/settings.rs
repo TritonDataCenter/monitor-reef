@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    fn env_from(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + '_ {
+    fn env_from<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         let map: HashMap<&str, &str> = pairs.iter().copied().collect();
         move |name| map.get(name).map(|v| v.to_string())
     }
