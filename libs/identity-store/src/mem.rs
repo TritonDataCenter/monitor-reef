@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::types::*;
@@ -830,7 +830,10 @@ impl IdentityStore for MemStore {
             .filter(|((rid, _), _)| *rid == realm_id)
             .map(|(_, k)| k.clone())
             .collect();
-        keys.sort_by_key(|k| k.created_at);
+        // Lexicographic kid order — matches the FDB `key/in_realm/<realm>/<kid>`
+        // index's natural iteration order, and is deterministic regardless of
+        // sub-millisecond timestamp ties on `created_at`.
+        keys.sort_by(|a, b| a.kid.cmp(&b.kid));
         Ok(keys)
     }
 
@@ -860,10 +863,10 @@ impl IdentityStore for MemStore {
     async fn try_acquire_rotation_lock(
         &self,
         holder: &str,
-        ttl_secs: u32,
+        now: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         let mut inner = self.lock();
-        let now = now();
         let held_by_other = inner
             .rotation_lock
             .as_ref()
@@ -873,7 +876,7 @@ impl IdentityStore for MemStore {
         }
         inner.rotation_lock = Some(RotationLock {
             holder: holder.to_string(),
-            expires_at: now + Duration::seconds(i64::from(ttl_secs)),
+            expires_at,
         });
         Ok(true)
     }

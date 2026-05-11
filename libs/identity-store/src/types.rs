@@ -692,3 +692,204 @@ pub struct BrokerState {
     pub downstream_state: Option<String>,
     pub expires_at: DateTime<Utc>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use serde::de::DeserializeOwned;
+
+    // ---------- RedactedString — the security-relevant newtype ----------
+
+    #[test]
+    fn redacted_debug_does_not_leak_plaintext() {
+        let secret = RedactedString::from("p@ssw0rd-very-distinctive");
+        let dbg = format!("{secret:?}");
+        assert!(!dbg.contains("p@ssw0rd-very-distinctive"));
+        assert!(dbg.contains("***"));
+
+        // Embedded in a struct: Debug derives must inherit the redaction.
+        let key = NewSigningKey {
+            kid: "k".into(),
+            alg: SigningAlg::Rs256,
+            private_pem: RedactedString::from("PRIVATE-KEY-MATERIAL-DO-NOT-LEAK"),
+            public_jwk: serde_json::json!({}),
+            status: KeyStatus::Active,
+            not_before: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+            not_after: Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap(),
+        };
+        let dbg = format!("{key:?}");
+        assert!(
+            !dbg.contains("PRIVATE-KEY-MATERIAL"),
+            "RedactedString leaked through a derived Debug: {dbg}"
+        );
+    }
+
+    #[test]
+    fn redacted_serde_is_transparent() {
+        let secret = RedactedString::from("hunter2");
+        // Serializes as a bare string (no wrapper object), same as the field
+        // would if it were a plain `String`.
+        let json = serde_json::to_string(&secret).unwrap();
+        assert_eq!(json, "\"hunter2\"");
+        let back: RedactedString = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.expose(), "hunter2");
+        assert_eq!(back, secret);
+    }
+
+    #[test]
+    fn redacted_equality_compares_plaintext() {
+        assert_eq!(RedactedString::from("same"), RedactedString::from("same"),);
+        assert_ne!(RedactedString::from("a"), RedactedString::from("b"),);
+    }
+
+    // ---------- Tagged-enum serde round-trips ----------
+    //
+    // FdbStore JSON-encodes these types. A `#[serde(tag = ...)]` mistake or a
+    // renamed variant must fail a test, not a production deserialize.
+
+    fn roundtrip<T: serde::Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(v: T) {
+        let json = serde_json::to_string(&v).unwrap();
+        let back: T = serde_json::from_str(&json)
+            .unwrap_or_else(|e| panic!("round-trip failed for {json}: {e}"));
+        assert_eq!(v, back);
+    }
+
+    #[test]
+    fn realm_scope_round_trips_every_variant() {
+        roundtrip(RealmScope::System);
+        roundtrip(RealmScope::Tenant {
+            tenant_id: Uuid::nil(),
+        });
+        roundtrip(RealmScope::Silo {
+            silo_id: Uuid::nil(),
+        });
+    }
+
+    #[test]
+    fn realm_scope_wire_shape_is_kind_tagged() {
+        // Pin the wire shape so a refactor that flips `#[serde(tag = "kind")]`
+        // off (or renames variants) fails here, not at the OpenAPI boundary.
+        assert_eq!(
+            serde_json::to_value(RealmScope::System).unwrap(),
+            serde_json::json!({"kind": "system"}),
+        );
+        assert_eq!(
+            serde_json::to_value(RealmScope::Tenant {
+                tenant_id: Uuid::nil()
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "tenant", "tenant_id": "00000000-0000-0000-0000-000000000000"}),
+        );
+    }
+
+    #[test]
+    fn assignment_subject_and_target_round_trip() {
+        roundtrip(AssignmentSubject::User {
+            user_id: Uuid::nil(),
+        });
+        roundtrip(AssignmentSubject::Group {
+            group_id: Uuid::nil(),
+        });
+        roundtrip(AssignmentTarget::Fleet);
+        roundtrip(AssignmentTarget::Tenant {
+            tenant_id: Uuid::nil(),
+        });
+        roundtrip(AssignmentTarget::Silo {
+            silo_id: Uuid::nil(),
+        });
+    }
+
+    #[test]
+    fn connection_kind_round_trips() {
+        roundtrip(ConnectionKind::Oidc {
+            issuer_url: "https://example".into(),
+            client_id: "c".into(),
+            client_secret: RedactedString::from("s"),
+            scopes: vec!["openid".into()],
+            audience: None,
+        });
+        roundtrip(ConnectionKind::Saml {
+            idp_metadata: "https://example/meta".into(),
+            sp_entity_id: "sp".into(),
+            sp_acs_url: "https://sp/acs".into(),
+            want_signed_assertions: true,
+        });
+    }
+
+    #[test]
+    fn small_enums_round_trip() {
+        for s in [UserStatus::Active, UserStatus::Disabled] {
+            roundtrip(s);
+        }
+        for s in [
+            KeyStatus::Active,
+            KeyStatus::Next,
+            KeyStatus::Retiring,
+            KeyStatus::Revoked,
+        ] {
+            roundtrip(s);
+        }
+        for g in [
+            GrantType::AuthorizationCode,
+            GrantType::RefreshToken,
+            GrantType::DeviceCode,
+            GrantType::ClientCredentials,
+        ] {
+            roundtrip(g);
+        }
+        for f in [
+            MappedField::Username,
+            MappedField::Email,
+            MappedField::DisplayName,
+            MappedField::Group,
+        ] {
+            roundtrip(f);
+        }
+        for r in [
+            Role::TenantAdmin,
+            Role::TenantMember,
+            Role::SiloAdmin,
+            Role::FleetAdmin,
+            Role::Operator,
+            Role::ReadOnly,
+        ] {
+            roundtrip(r);
+        }
+        roundtrip(SigningAlg::Rs256);
+        roundtrip(SigningAlg::Es256);
+    }
+
+    #[test]
+    fn realm_settings_round_trip_is_identity() {
+        // Realm::settings() should be a faithful snapshot of the mutable
+        // fields. Any field added to RealmSettings but missed in `settings()`
+        // surfaces here.
+        let realm = Realm {
+            id: Uuid::nil(),
+            scope: RealmScope::System,
+            name: "r".into(),
+            description: "d".into(),
+            issuer_url: "https://example".into(),
+            signing_alg: SigningAlg::Rs256,
+            access_token_ttl_secs: 100,
+            id_token_ttl_secs: 200,
+            refresh_token_ttl_secs: 300,
+            auth_code_ttl_secs: 30,
+            device_code_ttl_secs: 600,
+            login_policy: LoginPolicy {
+                mfa_required: true,
+                password_login_allowed: false,
+            },
+            created_at: Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
+        };
+        let s = realm.settings();
+        assert_eq!(s.access_token_ttl_secs, 100);
+        assert_eq!(s.id_token_ttl_secs, 200);
+        assert_eq!(s.refresh_token_ttl_secs, 300);
+        assert_eq!(s.auth_code_ttl_secs, 30);
+        assert_eq!(s.device_code_ttl_secs, 600);
+        assert!(s.login_policy.mfa_required);
+        assert!(!s.login_policy.password_login_allowed);
+    }
+}

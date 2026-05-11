@@ -288,8 +288,9 @@ pub trait IdentityStore: Send + Sync + 'static {
         key: types::NewSigningKey,
     ) -> Result<SigningKey, StoreError>;
     async fn get_signing_key(&self, realm_id: Uuid, kid: &str) -> Result<SigningKey, StoreError>;
-    /// List a realm's keys, oldest-first (the order the JWKS endpoint
-    /// publishes them in).
+    /// List a realm's keys in lexicographic `kid` order (the order the
+    /// JWKS endpoint publishes them in, and the natural order the FDB
+    /// `key/in_realm/<realm>/<kid>` index produces).
     async fn list_signing_keys(&self, realm_id: Uuid) -> Result<Vec<SigningKey>, StoreError>;
     async fn set_signing_key_status(
         &self,
@@ -299,13 +300,17 @@ pub trait IdentityStore: Send + Sync + 'static {
     ) -> Result<SigningKey, StoreError>;
     async fn delete_signing_key(&self, realm_id: Uuid, kid: &str) -> Result<(), StoreError>;
 
-    /// Try to acquire the rotation lock for `holder` for `ttl_secs`.
-    /// Returns `true` on success (lock free, expired, or already held by
-    /// `holder`); `false` if another holder's lock is still valid.
+    /// Try to acquire the rotation lock for `holder` until `expires_at`.
+    /// Returns `true` on success (lock free, expired-relative-to `now`, or
+    /// already held by `holder`); `false` if another holder's lock is
+    /// still valid at `now`. The store does not consult wall-clock time —
+    /// the caller passes `now` and the absolute `expires_at`, which makes
+    /// the lock contract deterministically testable.
     async fn try_acquire_rotation_lock(
         &self,
         holder: &str,
-        ttl_secs: u32,
+        now: chrono::DateTime<chrono::Utc>,
+        expires_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, StoreError>;
     /// Release the rotation lock if `holder` holds it (no-op otherwise).
     async fn release_rotation_lock(&self, holder: &str) -> Result<(), StoreError>;
