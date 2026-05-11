@@ -1,0 +1,283 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! `network::nat` HTTP handlers (delegated to from the `TritondApi` impl).
+
+#![allow(unused_imports)]
+
+use crate::blueprint::*;
+use crate::bundle::*;
+use crate::cn_credential::*;
+use crate::error::*;
+use crate::lifecycle::*;
+use crate::principal::*;
+use crate::validate::*;
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use dropshot::{
+    ApiDescription, ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel,
+    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
+    HttpResponseUpdatedNoContent, HttpServer, HttpServerStarter, Path, Query, RequestContext,
+    TypedBody,
+};
+use tritond_api::{
+    AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
+    ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
+    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
+    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
+    InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
+    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
+    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
+    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
+    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
+    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
+    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
+    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    types::{
+        ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
+        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope, Instance, JobKind,
+        JobOutcome, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway, NewDhcpPool,
+        NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob,
+        NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+        NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, PresignGetRequest, PresignPutRequest,
+        PresignResponse, Project, ProvisioningJob, Quota, Route, RouteTable, RouteTarget,
+        SetPresignerRequest, Silo, SshKey, SshKeyScope, StorageAccessKey, StorageBucket,
+        StorageClusterSummary, StorageClusterView, StorageMembership, StorageNode,
+        StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
+    },
+};
+use tritond_audit::{Actor as AuditActor, Outcome as AuditOutcome};
+use tritond_auth::OidcConfig;
+use tritond_auth::{
+    TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
+};
+use tritond_store::{
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, CnState, ConfigError, ConfigKey, IdpConfig, Store, StoreError,
+    normalize_claim_code,
+};
+use uuid::Uuid;
+
+use crate::auth::{
+    Action, AuthService, Principal, authenticate_and_authorize, authenticate_and_authorize_in_silo,
+    authenticate_and_authorize_in_tenant, require_authenticated,
+};
+
+use crate::VERSION;
+
+/// Concrete implementor of [`TritondApi`].
+use crate::context::ApiContext;
+
+pub(crate) async fn list_vpc_nat_gateways(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcPath>,
+) -> Result<HttpResponseOk<Vec<NatGateway>>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+    } = path.into_inner();
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayList,
+        tenant_id,
+    )
+    .await?;
+
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+        return Err(not_found());
+    }
+    let nat_gateways = ctx
+        .store
+        .list_nat_gateways_in_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(nat_gateways))
+}
+
+pub(crate) async fn create_vpc_nat_gateway(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcPath>,
+    body: TypedBody<NewNatGateway>,
+) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayCreate,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+
+    match ctx
+        .store
+        .create_nat_gateway(tenant_id, project_id, vpc_id, req)
+        .await
+    {
+        Ok(nat_gateway) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::NatGatewayCreate,
+                    request_id,
+                    Some(format!("NatGateway::\"{}\"", nat_gateway.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("NatGateway::\"{}\"", nat_gateway.id)),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                        "name": nat_gateway.name,
+                        "public_address": nat_gateway.public_address.to_string(),
+                        "desired_generation": nat_gateway.desired_generation,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(nat_gateway))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::NatGatewayCreate,
+                    request_id,
+                    None,
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+pub(crate) async fn get_vpc_nat_gateway(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcNatGatewayPath>,
+) -> Result<HttpResponseOk<NatGateway>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcNatGatewayPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+        nat_gateway_id,
+    } = path.into_inner();
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayGet,
+        tenant_id,
+    )
+    .await?;
+    let nat_gateway = ctx
+        .store
+        .get_nat_gateway(nat_gateway_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if nat_gateway.tenant_id != tenant_id
+        || nat_gateway.project_id != project_id
+        || nat_gateway.vpc_id != vpc_id
+    {
+        return Err(not_found());
+    }
+    Ok(HttpResponseOk(nat_gateway))
+}
+
+pub(crate) async fn delete_vpc_nat_gateway(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcNatGatewayPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcNatGatewayPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+        nat_gateway_id,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    let nat_gateway = ctx
+        .store
+        .get_nat_gateway(nat_gateway_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if nat_gateway.tenant_id != tenant_id
+        || nat_gateway.project_id != project_id
+        || nat_gateway.vpc_id != vpc_id
+    {
+        return Err(not_found());
+    }
+    match ctx.store.delete_nat_gateway(nat_gateway_id).await {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::NatGatewayDelete,
+                    request_id,
+                    Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::NatGatewayDelete,
+                    request_id,
+                    Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}

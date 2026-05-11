@@ -1,0 +1,516 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! `agents` HTTP handlers (delegated to from the `TritondApi` impl).
+
+#![allow(unused_imports)]
+
+use crate::blueprint::*;
+use crate::bundle::*;
+use crate::cn_credential::*;
+use crate::error::*;
+use crate::lifecycle::*;
+use crate::principal::*;
+use crate::validate::*;
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use dropshot::{
+    ApiDescription, ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel,
+    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
+    HttpResponseUpdatedNoContent, HttpServer, HttpServerStarter, Path, Query, RequestContext,
+    TypedBody,
+};
+use tritond_api::{
+    AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
+    ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
+    AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
+    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
+    InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
+    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
+    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
+    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
+    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
+    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
+    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
+    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
+    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
+    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
+    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
+    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    types::{
+        ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
+        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope, Instance, JobKind,
+        JobOutcome, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway, NewDhcpPool,
+        NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob,
+        NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+        NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, PresignGetRequest, PresignPutRequest,
+        PresignResponse, Project, ProvisioningJob, Quota, Route, RouteTable, RouteTarget,
+        SetPresignerRequest, Silo, SshKey, SshKeyScope, StorageAccessKey, StorageBucket,
+        StorageClusterSummary, StorageClusterView, StorageMembership, StorageNode,
+        StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
+    },
+};
+use tritond_audit::{Actor as AuditActor, Outcome as AuditOutcome};
+use tritond_auth::OidcConfig;
+use tritond_auth::{
+    TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
+};
+use tritond_store::{
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, CnState, ConfigError, ConfigKey, IdpConfig, Store, StoreError,
+    normalize_claim_code,
+};
+use uuid::Uuid;
+
+use crate::auth::{
+    Action, AuthService, Principal, authenticate_and_authorize, authenticate_and_authorize_in_silo,
+    authenticate_and_authorize_in_tenant, require_authenticated,
+};
+
+use crate::VERSION;
+
+/// Concrete implementor of [`TritondApi`].
+use crate::context::ApiContext;
+
+pub(crate) async fn agent_claim_job(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<ClaimJobRequest>,
+) -> Result<HttpResponseOk<ClaimJobResponse>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentClaim,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+    // Per-CN binding: a key minted for CN-A cannot claim as
+    // CN-B. The string `claimed_by` must parse as the bound
+    // server_uuid. Unbound keys (operator-minted) skip the
+    // check; their `claimed_by` stays free-text.
+    if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
+        let claimed_uuid = Uuid::parse_str(&req.claimed_by).map_err(|_| {
+            HttpError::for_client_error(
+                Some("Forbidden".to_string()),
+                ClientErrorStatusCode::FORBIDDEN,
+                "bound api key requires claimed_by to be a uuid".to_string(),
+            )
+        })?;
+        crate::auth::enforce_cn_binding(Some(bound), claimed_uuid)?;
+    }
+    // The store returns NotFound when the queue is empty; we
+    // turn that into the wire-level "no work" signal so the
+    // agent can poll on a timer without 404 noise.
+    // Pass the bound CN through as the claimer identity.
+    // Unbound claimers (the in-process stub or a legacy
+    // operator-minted Agent key) get only unrouted jobs.
+    let claimer_cn = crate::auth::principal_bound_cn(&principal);
+    let job = match ctx.store.claim_next_job(&req.claimed_by, claimer_cn).await {
+        Ok(job) => Some(job),
+        Err(StoreError::NotFound) => None,
+        Err(e) => return Err(store_error_to_http(e)),
+    };
+    // Audit only successful claims — empty-queue polls are noise.
+    if let Some(j) = &job {
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::AgentClaim,
+                request_id,
+                Some(format!("ProvisioningJob::\"{}\"", j.id)),
+                AuditOutcome::Success {
+                    resource: Some(format!("ProvisioningJob::\"{}\"", j.id)),
+                },
+                serde_json::json!({
+                    "job_id": j.id,
+                    "claimed_by": req.claimed_by,
+                    "kind": j.kind,
+                }),
+            )
+            .await;
+        // Drive the instance lifecycle forward. For a Provision
+        // job this advances Pending → Provisioning so operators
+        // see the in-flight state. Stop / Restart already moved
+        // the instance to Stopping in the operator-facing
+        // handler, so claim has nothing to advance there. CAS
+        // failures (instance gone, lifecycle drift) are logged
+        // but don't fail the claim — the agent has the job and
+        // will fail at vmadm time if the instance really is
+        // gone, surfacing a clean Failed back to the operator.
+        drive_lifecycle_for_claim(ctx.store.as_ref(), j).await;
+    }
+    Ok(HttpResponseOk(ClaimJobResponse { job }))
+}
+
+pub(crate) async fn agent_job_blueprint(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<AgentJobPath>,
+) -> Result<HttpResponseOk<ProvisioningBlueprint>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentBlueprint,
+    )
+    .await?;
+    let job_id = path.into_inner().job_id;
+    let job = ctx
+        .store
+        .get_job(job_id)
+        .await
+        .map_err(store_error_to_http)?;
+    // Per-CN binding: a bound key may only fetch blueprints
+    // for jobs it itself claimed. Unbound keys see anything.
+    if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
+        enforce_job_belongs_to_bound_cn(&job, bound)?;
+    }
+    let blueprint = build_blueprint(ctx.store.as_ref(), &ctx.identity_hmac_key, &job).await?;
+    Ok(HttpResponseOk(blueprint))
+}
+
+pub(crate) async fn agent_port_blueprint(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<AgentPortBlueprintPath>,
+) -> Result<HttpResponseOk<AgentPortBlueprint>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentBlueprint,
+    )
+    .await?;
+    let bound_cn = require_bound_cn(&principal)?;
+    let port_id = path.into_inner().port_id;
+    let blueprint = build_port_blueprint(ctx.store.as_ref(), port_id, bound_cn).await?;
+    Ok(HttpResponseOk(blueprint))
+}
+
+pub(crate) async fn agent_complete_job(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<AgentJobPath>,
+    body: TypedBody<CompleteJobRequest>,
+) -> Result<HttpResponseOk<ProvisioningJob>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentComplete,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let job_id = path.into_inner().job_id;
+    let req = body.into_inner();
+    // Per-CN binding: a bound key may only complete jobs it
+    // itself claimed. We look up the job, check the binding,
+    // and only then issue the terminal write.
+    if let Some(bound) = crate::auth::principal_bound_cn(&principal) {
+        let job = ctx
+            .store
+            .get_job(job_id)
+            .await
+            .map_err(store_error_to_http)?;
+        enforce_job_belongs_to_bound_cn(&job, bound)?;
+    }
+    let outcome_label = match &req.outcome {
+        JobOutcome::Completed => "completed",
+        JobOutcome::Failed { .. } => "failed",
+        _ => "unknown",
+    };
+    match ctx.store.complete_job(job_id, req.outcome.clone()).await {
+        Ok(updated) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::AgentComplete,
+                    request_id,
+                    Some(format!("ProvisioningJob::\"{job_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("ProvisioningJob::\"{job_id}\"")),
+                    },
+                    serde_json::json!({
+                        "job_id": job_id,
+                        "outcome": outcome_label,
+                    }),
+                )
+                .await;
+            // Drive the instance lifecycle to its terminal
+            // state for this job. Provisioning → Running on
+            // success; Stopping → Stopped (or Running for
+            // Restart); any → Failed{reason} on failure. The
+            // job is already terminal regardless of whether
+            // the lifecycle CAS succeeds, so a stale or
+            // missing instance just gets logged.
+            drive_lifecycle_for_complete(ctx.store.as_ref(), &updated, &req.outcome).await;
+            Ok(HttpResponseOk(updated))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::AgentComplete,
+                    request_id,
+                    None,
+                    store_error_to_audit_outcome(&e),
+                    serde_json::json!({
+                        "job_id": job_id,
+                        "outcome": outcome_label,
+                    }),
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+pub(crate) async fn agent_heartbeat(
+    rqctx: RequestContext<ApiContext>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentHeartbeat,
+    )
+    .await?;
+    // Heartbeat REQUIRES a bound key — there's no other way
+    // to know which CN to attribute the ping to. Unbound
+    // keys (legacy operator-minted) get 403.
+    let server_uuid = require_bound_cn(&principal)?;
+    ctx.store
+        .update_cn_last_seen(server_uuid, chrono::Utc::now())
+        .await
+        .map_err(store_error_to_http)?;
+    // Heartbeat is a hot path; we deliberately don't audit
+    // every ping. The Cn record's `last_seen` is the
+    // observable signal an operator cares about.
+    Ok(HttpResponseOk(()))
+}
+
+pub(crate) async fn agent_status(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<AgentStatusRequest>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentStatus,
+    )
+    .await?;
+    let server_uuid = require_bound_cn(&principal)?;
+    let req = body.into_inner();
+    let now = chrono::Utc::now();
+    let payload = req.payload;
+    ctx.store
+        .update_cn_status(server_uuid, payload.clone(), now)
+        .await
+        .map_err(store_error_to_http)?;
+    // Status updates are also hot (~once per minute or
+    // when zoneevent fires); no per-update audit. A future
+    // slice may sample at low frequency for forensics.
+    //
+    // Classifier pass is best-effort: parse the report, run the
+    // pure classifier, and fold per-VM outcomes (LegacyVm
+    // upsert, Orphan/StaleFingerprint warnings) into the store.
+    // Any failure is logged but does NOT fail the agent's
+    // status post -- the heartbeater retries on its own cadence
+    // and we'd rather drop one classifier pass than 503 an
+    // operational heartbeat.
+    if let Err(e) = run_classifier_pass(ctx, server_uuid, &payload, now).await {
+        tracing::warn!(
+            error = %e,
+            server_uuid = %server_uuid,
+            "classifier pass failed; status post still acked",
+        );
+    }
+    Ok(HttpResponseOk(()))
+}
+
+pub(crate) async fn agent_report_network_realization(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<NetworkRealizationRequest>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NetworkRealizationReport,
+    )
+    .await?;
+    let bound_cn = require_bound_cn(&principal)?;
+    let req = body.into_inner();
+    enforce_realizer_belongs_to_bound_cn(req.realizer, bound_cn)?;
+    ensure_realization_resource_exists(ctx.store.as_ref(), req.resource).await?;
+    ctx.store
+        .record_network_realization(
+            req.resource,
+            req.realizer,
+            req.generation,
+            req.status,
+            req.message,
+        )
+        .await
+        .map_err(store_error_to_http)?;
+    // Realization reports are state-sample traffic, not an
+    // operator mutation stream. The per-resource realization
+    // rows are the durable signal; auditing every periodic
+    // report would make the audit chain noisy.
+    Ok(HttpResponseOk(()))
+}
+
+pub(crate) async fn agent_register(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<RegisterCnRequest>,
+) -> Result<HttpResponseOk<RegisterCnResponse>, HttpError> {
+    let ctx = rqctx.context();
+    // Cedar gate (anonymous → public-actions list).
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentRegister,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+    let now = chrono::Utc::now();
+
+    let cn = ctx
+        .store
+        .register_cn(
+            req.server_uuid,
+            req.hostname.clone(),
+            req.admin_ip,
+            req.sysinfo.clone(),
+            now,
+        )
+        .await
+        .map_err(store_error_to_http)?;
+
+    // Auto-approve path: register_cn returned a fresh Approved
+    // record without a bound key. Mint the key + wire it in so
+    // the agent's first long-poll can retrieve it.
+    let mut effective = cn.clone();
+    if effective.state == CnState::Approved && effective.bound_api_key_id.is_none() {
+        match mint_and_attach_cn_credential(ctx, &principal, request_id, &effective).await {
+            Ok(updated) => effective = updated,
+            Err(http) => return Err(http),
+        }
+    }
+
+    ctx.audit
+        .record_mutation(
+            &principal,
+            Action::AgentRegister,
+            request_id,
+            Some(format!("Cn::\"{}\"", effective.server_uuid)),
+            AuditOutcome::Success {
+                resource: Some(format!("Cn::\"{}\"", effective.server_uuid)),
+            },
+            serde_json::json!({
+                "server_uuid": effective.server_uuid,
+                "hostname": req.hostname,
+                "admin_ip": req.admin_ip,
+                "state": effective.state,
+                "auto_approved": effective.state == CnState::Approved
+                    && effective.approved_at == Some(now),
+            }),
+        )
+        .await;
+
+    Ok(HttpResponseOk(RegisterCnResponse {
+        server_uuid: effective.server_uuid,
+        state: effective.state,
+        claim_code: effective
+            .claim_code
+            .as_deref()
+            .map(tritond_store::format_claim_code),
+        claim_code_expires_at: effective.claim_code_expires_at,
+        poll_token: effective.poll_token,
+    }))
+}
+
+pub(crate) async fn agent_register_status(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<RegisterStatusQuery>,
+) -> Result<HttpResponseOk<RegisterStatusResponse>, HttpError> {
+    let ctx = rqctx.context();
+    // Cedar gate (anonymous → public-actions list).
+    authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentRegisterStatus,
+    )
+    .await?;
+    let q = query.into_inner();
+
+    // Long-poll: spin until state flips, an Approved record has
+    // a credential to retrieve, or we hit the deadline. The
+    // 30s wall-clock cap matches typical operator-side approve
+    // latency and keeps idle connections from accumulating.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let poll_interval = std::time::Duration::from_millis(500);
+
+    loop {
+        let cn = match ctx.store.get_cn_by_poll_token(&q.poll_token).await {
+            Ok(c) => c,
+            Err(StoreError::NotFound) => {
+                return Err(HttpError::for_client_error(
+                    Some("NotFound".to_string()),
+                    ClientErrorStatusCode::NOT_FOUND,
+                    "unknown poll token".to_string(),
+                ));
+            }
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+
+        if cn.state == CnState::Approved {
+            let credential = ctx
+                .store
+                .consume_cn_pending_credential(&q.poll_token)
+                .await
+                .map_err(store_error_to_http)?;
+            return Ok(HttpResponseOk(RegisterStatusResponse {
+                state: cn.state,
+                api_key: credential,
+            }));
+        }
+        if cn.state == CnState::Disabled {
+            return Ok(HttpResponseOk(RegisterStatusResponse {
+                state: cn.state,
+                api_key: None,
+            }));
+        }
+
+        if std::time::Instant::now() >= deadline {
+            return Ok(HttpResponseOk(RegisterStatusResponse {
+                state: cn.state,
+                api_key: None,
+            }));
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
+}

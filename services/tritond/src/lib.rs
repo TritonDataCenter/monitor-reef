@@ -38,6 +38,7 @@ mod cn_credential;
 mod context;
 mod edge_cluster;
 mod error;
+mod handlers;
 mod lifecycle;
 mod principal;
 mod service_impl;
