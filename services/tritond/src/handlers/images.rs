@@ -74,11 +74,10 @@ use crate::auth::{
 
 use crate::VERSION;
 
-/// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
+use crate::scope::{image_deletable_by, image_visible_to};
 use crate::service_impl::{
-    audit_image_create_failure, audit_image_create_success, image_deletable_by, image_visible_to,
-    validate_image_request,
+    audit_image_create_failure, audit_image_create_success, validate_image_request,
 };
 
 pub(crate) async fn list_public_images(

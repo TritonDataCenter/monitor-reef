@@ -41,6 +41,7 @@ mod error;
 mod handlers;
 mod lifecycle;
 mod principal;
+mod scope;
 mod service_impl;
 mod validate;
 

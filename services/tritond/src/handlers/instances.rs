@@ -74,9 +74,8 @@ use crate::auth::{
 
 use crate::VERSION;
 
-/// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
-use crate::service_impl::{image_visible_to, ssh_key_visible_to};
+use crate::scope::{image_visible_to, ssh_key_visible_to};
 
 pub(crate) async fn list_project_instances(
     rqctx: RequestContext<ApiContext>,

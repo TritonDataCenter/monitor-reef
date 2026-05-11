@@ -74,11 +74,10 @@ use crate::auth::{
 
 use crate::VERSION;
 
-/// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
+use crate::scope::{ssh_key_deletable_by, ssh_key_visible_to};
 use crate::service_impl::{
     audit_ssh_key_create_failure, audit_ssh_key_create_success, parse_and_audit_ssh_key,
-    ssh_key_deletable_by, ssh_key_visible_to,
 };
 
 pub(crate) async fn list_public_ssh_keys(
