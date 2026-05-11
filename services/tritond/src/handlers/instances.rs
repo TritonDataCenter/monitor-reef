@@ -159,117 +159,30 @@ pub(crate) async fn create_project_instance(
         .await);
     }
 
-    // Cross-scope visibility check on the referenced image.
-    // The store no longer enforces silo membership on images
-    // (multi-scope as of slice F); the handler resolves
-    // visibility against the principal and surfaces a
-    // not-visible image as 404 to preserve the cross-tenant
-    // probe invariant.
-    match ctx.store.get_image(req.image_id).await {
-        Ok(image) => {
-            let visible = image_visible_to(&image, &principal, ctx.store.as_ref())
-                .await
-                .map_err(store_error_to_http)?;
-            if !visible {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::InstanceCreate,
-                        request_id,
-                        None,
-                        AuditOutcome::ClientError {
-                            code: 404,
-                            message: "image not visible".to_string(),
-                        },
-                        serde_json::json!({
-                            "tenant_id": tenant_id,
-                            "project_id": project_id,
-                            "image_id": req.image_id,
-                        }),
-                    )
-                    .await;
-                return Err(not_found());
-            }
-        }
-        Err(StoreError::NotFound) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::InstanceCreate,
-                    request_id,
-                    None,
-                    AuditOutcome::ClientError {
-                        code: 404,
-                        message: "image not found".to_string(),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                        "image_id": req.image_id,
-                    }),
-                )
-                .await;
-            return Err(not_found());
-        }
-        Err(e) => return Err(store_error_to_http(e)),
-    }
-
-    // Cross-scope visibility check on every referenced SSH
-    // key. The store no longer enforces silo membership on
-    // SSH keys (multi-scope as of slice G); the handler
-    // resolves visibility against the principal and surfaces
-    // a not-visible (or not-found) key as 404 to preserve
-    // the cross-tenant probe invariant.
-    for key_id in &req.ssh_key_ids {
-        match ctx.store.get_ssh_key(*key_id).await {
-            Ok(key) => {
-                let visible = ssh_key_visible_to(&key, &principal, ctx.store.as_ref())
-                    .await
-                    .map_err(store_error_to_http)?;
-                if !visible {
-                    ctx.audit
-                        .record_mutation(
-                            &principal,
-                            Action::InstanceCreate,
-                            request_id,
-                            None,
-                            AuditOutcome::ClientError {
-                                code: 404,
-                                message: "ssh key not visible".to_string(),
-                            },
-                            serde_json::json!({
-                                "tenant_id": tenant_id,
-                                "project_id": project_id,
-                                "ssh_key_id": *key_id,
-                            }),
-                        )
-                        .await;
-                    return Err(not_found());
-                }
-            }
-            Err(StoreError::NotFound) => {
-                ctx.audit
-                    .record_mutation(
-                        &principal,
-                        Action::InstanceCreate,
-                        request_id,
-                        None,
-                        AuditOutcome::ClientError {
-                            code: 404,
-                            message: "ssh key not found".to_string(),
-                        },
-                        serde_json::json!({
-                            "tenant_id": tenant_id,
-                            "project_id": project_id,
-                            "ssh_key_id": *key_id,
-                        }),
-                    )
-                    .await;
-                return Err(not_found());
-            }
-            Err(e) => return Err(store_error_to_http(e)),
-        }
-    }
+    // Cross-scope visibility on the referenced image and SSH
+    // keys. The store no longer enforces silo membership on
+    // images / SSH keys (multi-scope as of slices F & G); the
+    // handler resolves visibility against the principal and
+    // surfaces a not-visible (or not-found) resource as 404 to
+    // preserve the cross-tenant probe invariant.
+    require_image_visible_for_instance(
+        ctx,
+        &principal,
+        request_id,
+        tenant_id,
+        project_id,
+        req.image_id,
+    )
+    .await?;
+    require_ssh_keys_visible_for_instance(
+        ctx,
+        &principal,
+        request_id,
+        tenant_id,
+        project_id,
+        &req.ssh_key_ids,
+    )
+    .await?;
 
     let target_cn_uuid =
         match select_tenant_cn_for_instance(ctx.store.as_ref(), ctx.spawn_in_process_provisioner)
@@ -1018,4 +931,96 @@ pub(crate) async fn detach_project_floating_ip(
             Err(store_error_to_http(e))
         }
     }
+}
+
+/// Resolve cross-scope visibility for the image an instance-create
+/// references. Surfaces a not-found or not-visible image as 404 (and
+/// audits the deny) to preserve the cross-tenant probe invariant.
+async fn require_image_visible_for_instance(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    image_id: Uuid,
+) -> Result<(), HttpError> {
+    let message = match ctx.store.get_image(image_id).await {
+        Ok(image) => {
+            if image_visible_to(&image, principal, ctx.store.as_ref())
+                .await
+                .map_err(store_error_to_http)?
+            {
+                return Ok(());
+            }
+            "image not visible"
+        }
+        Err(StoreError::NotFound) => "image not found",
+        Err(e) => return Err(store_error_to_http(e)),
+    };
+    ctx.audit
+        .record_mutation(
+            principal,
+            Action::InstanceCreate,
+            request_id,
+            None,
+            AuditOutcome::ClientError {
+                code: 404,
+                message: message.to_string(),
+            },
+            serde_json::json!({
+                "tenant_id": tenant_id,
+                "project_id": project_id,
+                "image_id": image_id,
+            }),
+        )
+        .await;
+    Err(not_found())
+}
+
+/// Resolve cross-scope visibility for every SSH key an
+/// instance-create references. Surfaces the first not-found or
+/// not-visible key as 404 (and audits the deny) to preserve the
+/// cross-tenant probe invariant.
+async fn require_ssh_keys_visible_for_instance(
+    ctx: &ApiContext,
+    principal: &Principal,
+    request_id: Option<Uuid>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    key_ids: &[Uuid],
+) -> Result<(), HttpError> {
+    for key_id in key_ids {
+        let message = match ctx.store.get_ssh_key(*key_id).await {
+            Ok(key) => {
+                if ssh_key_visible_to(&key, principal, ctx.store.as_ref())
+                    .await
+                    .map_err(store_error_to_http)?
+                {
+                    continue;
+                }
+                "ssh key not visible"
+            }
+            Err(StoreError::NotFound) => "ssh key not found",
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+        ctx.audit
+            .record_mutation(
+                principal,
+                Action::InstanceCreate,
+                request_id,
+                None,
+                AuditOutcome::ClientError {
+                    code: 404,
+                    message: message.to_string(),
+                },
+                serde_json::json!({
+                    "tenant_id": tenant_id,
+                    "project_id": project_id,
+                    "ssh_key_id": *key_id,
+                }),
+            )
+            .await;
+        return Err(not_found());
+    }
+    Ok(())
 }
