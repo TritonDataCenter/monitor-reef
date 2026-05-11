@@ -149,7 +149,58 @@ fn configure_tritond(settings: &mut GenerationSettings) {
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
-        .with_derive("schemars::JsonSchema");
+        .with_derive("schemars::JsonSchema")
+        // Metrics types live in `tritond-metrics`; reuse them across
+        // the client/server boundary so producers + consumers share a
+        // single definition (no double-conversion through the
+        // progenitor-generated copy).
+        .with_replacement("Sample", "tritond_metrics::Sample", std::iter::empty())
+        .with_replacement(
+            "SampleBatch",
+            "tritond_metrics::SampleBatch",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "SampleIdentity",
+            "tritond_metrics::SampleIdentity",
+            std::iter::empty(),
+        )
+        .with_replacement("Datum", "tritond_metrics::Datum", std::iter::empty())
+        .with_replacement(
+            "SchemaName",
+            "tritond_metrics::SchemaName",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "RangeResult",
+            "tritond_metrics::RangeResult",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "SeriesPoints",
+            "tritond_metrics::SeriesPoints",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "SeriesPoint",
+            "tritond_metrics::SeriesPoint",
+            std::iter::empty(),
+        )
+        // Log types live in `tritond-logs`; reuse the same way as
+        // metrics so the agent + control plane share definitions.
+        .with_replacement("LogBatch", "tritond_logs::LogBatch", std::iter::empty())
+        .with_replacement("LogLine", "tritond_logs::LogLine", std::iter::empty())
+        .with_replacement("LogSource", "tritond_logs::LogSource", std::iter::empty())
+        .with_replacement(
+            "LogTailResult",
+            "tritond_logs::LogTailResult",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "StoredLogLine",
+            "tritond_logs::store::StoredLogLine",
+            std::iter::empty(),
+        );
 }
 
 /// Registry of all managed clients.

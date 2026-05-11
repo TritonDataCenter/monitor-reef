@@ -1,0 +1,36 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritond-metrics"
+version = "0.1.0"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Compile in the ClickHouse-backed MetricsStore. Pulls reqwest +
+# tokio + rustls; off by default so the agent + generated client keep
+# a lean dep tree. The `tritond` crate enables this.
+clickhouse = ["dep:reqwest", "dep:tokio", "dep:rustls"]
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

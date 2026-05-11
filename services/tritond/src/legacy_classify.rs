@@ -385,7 +385,9 @@ mod tests {
         let report = report_for(inst.id, BTreeMap::new());
         assert_eq!(
             classify_with(&report, cn, Some(&inst), &key),
-            Classification::Managed { instance_id: inst.id },
+            Classification::Managed {
+                instance_id: inst.id
+            },
         );
     }
 

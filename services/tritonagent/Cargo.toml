@@ -44,6 +44,8 @@ tracing-subscriber = { workspace = true }
 tritond-client = { workspace = true }
 tritond-cn-platform = { workspace = true }
 tritond-image-manifest = { workspace = true }
+tritond-logs = { workspace = true }
+tritond-metrics = { workspace = true }
 uuid = { workspace = true }
 webpki-roots = { workspace = true }
 

@@ -36,6 +36,8 @@
 pub mod credentials;
 pub mod edge;
 pub mod images;
+pub mod log_tailer;
+pub mod metrics;
 pub mod platform;
 pub mod proteus;
 pub mod registration;
@@ -172,8 +174,43 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
+    // Metrics ticker rides on the same `spawn_heartbeater` flag so
+    // integration tests that disable the heartbeater don't get
+    // metrics chatter either. The CN UUID is parsed from
+    // `agent_id`; main.rs builds AgentConfig with the SmartOS
+    // server_uuid as the agent_id, so this round-trips cleanly.
+    let (mut metrics_handle, mut log_handle) = if cfg.spawn_heartbeater {
+        match Uuid::parse_str(&cfg.agent_id) {
+            Ok(cn_uuid) => {
+                let m = metrics::spawn(
+                    Arc::clone(&client),
+                    cn_uuid,
+                    Arc::new(KstatTool::new()),
+                    metrics::DEFAULT_METRICS_INTERVAL,
+                );
+                let l = log_tailer::spawn(Arc::clone(&client), log_tailer::Config::new(cn_uuid));
+                (Some(m), Some(l))
+            }
+            Err(_) => {
+                warn!(
+                    agent_id = %cfg.agent_id,
+                    "agent_id is not a UUID; metrics + log emission disabled"
+                );
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
     let result = run_poll_loop(client.as_ref(), &cfg).await;
 
+    if let Some(h) = metrics_handle.take() {
+        h.shutdown().await;
+    }
+    if let Some(h) = log_handle.take() {
+        h.shutdown().await;
+    }
     if let Some(p) = publisher.take() {
         p.shutdown().await;
     }

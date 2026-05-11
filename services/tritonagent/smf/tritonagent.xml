@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+    Copyright 2026 Edgecast Cloud LLC.
+-->
+<service_bundle type="manifest" name="tritonagent">
+    <service name="site/tritonagent" type="service" version="1">
+
+        <create_default_instance enabled="false" />
+        <single_instance />
+
+        <dependency name="network" grouping="require_all" restart_on="error" type="service">
+            <service_fmri value="svc:/milestone/network:default" />
+        </dependency>
+        <dependency name="filesystem" grouping="require_all" restart_on="error" type="service">
+            <service_fmri value="svc:/system/filesystem/local" />
+        </dependency>
+
+        <exec_method
+            type="method"
+            name="start"
+            exec="/usr/bin/ctrun -l child -o noorphan /opt/tritonagent/bin/tritonagent &amp;"
+            timeout_seconds="60">
+            <method_context working_directory="/var/lib/tritonagent">
+                <method_credential user="root" group="root" />
+                <method_environment>
+                    <envvar name="PATH" value="/usr/bin:/usr/sbin:/sbin:/opt/local/bin" />
+                    <envvar name="RUST_LOG" value="info" />
+                    <envvar name="RUST_BACKTRACE" value="1" />
+                    <envvar name="TRITONAGENT_ENDPOINT" value="http://10.199.199.10:8080" />
+                    <envvar name="TRITONAGENT_CREDENTIAL_PATH" value="/var/lib/tritonagent/credentials" />
+                    <envvar name="TRITONAGENT_POLL_INTERVAL_SECS" value="5" />
+                </method_environment>
+            </method_context>
+        </exec_method>
+
+        <exec_method type="method" name="restart" exec=":kill" timeout_seconds="60" />
+        <exec_method type="method" name="stop" exec=":kill" timeout_seconds="60" />
+
+        <property_group name="startd" type="framework">
+            <propval name="duration" type="astring" value="contract" />
+            <propval name="ignore_error" type="astring" value="core,signal" />
+        </property_group>
+
+        <stability value="Unstable" />
+
+        <template>
+            <common_name><loctext xml:lang="C">Triton Cloud per-CN provisioning agent</loctext></common_name>
+            <description>
+                <loctext xml:lang="C">
+                    Polls tritond for provisioning jobs and drives them to completion
+                    via vmadm/zfs. On first boot, self-registers with tritond and
+                    waits for operator approval (claim code printed to stderr / SMF
+                    log and to /var/lib/tritonagent/claim-code).
+                </loctext>
+            </description>
+        </template>
+
+    </service>
+</service_bundle>

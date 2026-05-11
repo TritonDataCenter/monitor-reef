@@ -5848,6 +5848,8 @@ dependencies = [
  "tritond-client",
  "tritond-cn-platform",
  "tritond-image-manifest",
+ "tritond-logs",
+ "tritond-metrics",
  "tritond-store",
  "uuid",
  "webpki-roots 1.0.6",
@@ -5885,6 +5887,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
  "triton-vpc",
@@ -5893,6 +5896,8 @@ dependencies = [
  "tritond-auth",
  "tritond-client",
  "tritond-image-manifest",
+ "tritond-logs",
+ "tritond-metrics",
  "tritond-store",
  "uuid",
  "webpki-roots 1.0.6",
@@ -5909,6 +5914,8 @@ dependencies = [
  "serde_json",
  "tritond-audit",
  "tritond-auth",
+ "tritond-logs",
+ "tritond-metrics",
  "tritond-store",
  "uuid",
 ]
@@ -5963,6 +5970,8 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "tritond-logs",
+ "tritond-metrics",
  "uuid",
 ]
 
@@ -5995,6 +6004,38 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "tritond-logs"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "tritond-metrics"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "reqwest 0.13.2",
+ "rustls 0.23.38",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
