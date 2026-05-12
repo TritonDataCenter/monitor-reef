@@ -426,6 +426,13 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         "hostname": alias,
         "ram": memory_mib,
         "vcpus": instance.cpu,
+        // UEFI rather than the SmartOS default ("bios"). UEFI is the
+        // modern firmware (every guest M1 cares about supports it) and,
+        // crucially here, only the UEFI path makes vmadm add the `fbuf`
+        // framebuffer device + its VNC unix socket
+        // (`<zonepath>/root/tmp/vm.vnc`) -- without it the VNC console
+        // has nothing to attach to. The SmartOS property is `bootrom`.
+        "bootrom": "uefi",
         "flexible_disk_size": flexible_disk_size,
         "disks": [
             {
@@ -817,6 +824,7 @@ mod tests {
             "hostname": "smoke-zone",
             "ram": 512,
             "vcpus": 2,
+            "bootrom": "uefi",
             "flexible_disk_size": 20 * 1024,
             "disks": [
                 {
