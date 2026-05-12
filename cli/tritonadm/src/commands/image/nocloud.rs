@@ -82,7 +82,7 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
         let vendor = opts
             .vendor
             .ok_or_else(|| anyhow::anyhow!("--list-releases requires --vendor"))?;
-        let http = triton_tls::build_http_client(false)
+        let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
             .await
             .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
         let profile = vendor::lookup(vendor);
@@ -107,7 +107,7 @@ pub async fn run(mut opts: FetchOpts) -> Result<()> {
     // Vendor resolution is just HTTP, so it runs anywhere — doing it
     // before the SmartOS-specific preflights lets `--dry-run` exercise
     // release resolution + verifier wiring on a dev box.
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
 
@@ -335,7 +335,7 @@ async fn push_to_imgapi(opts: &FetchOpts, outputs: &pipeline::PipelineOutputs) -
         .as_ref()
         .map_err(|e| anyhow::anyhow!("{e}"))?
         .clone();
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
     let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());

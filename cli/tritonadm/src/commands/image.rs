@@ -804,7 +804,7 @@ impl ImageCommand {
         }
 
         let imgapi_url = imgapi_url?;
-        let http = triton_tls::build_http_client(false)
+        let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
             .await
             .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
         let client = imgapi_client::Client::new_with_client(&imgapi_url, http.clone());

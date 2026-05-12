@@ -53,7 +53,7 @@ pub async fn build_client(url: &str, insecure: bool) -> Result<Client, reqwest::
         reqwest::header::HeaderName::from_static("accept-version"),
         reqwest::header::HeaderValue::from_static(ACCEPT_VERSION),
     );
-    let http = triton_tls::build_http_client_with_headers(insecure, headers).await?;
+    let http = triton_tls::build_http_client_with_headers(insecure.into(), headers).await?;
     Ok(Client::new_with_client(url, http))
 }
 

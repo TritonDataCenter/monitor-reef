@@ -364,7 +364,7 @@ fn env_fallbacks(explicit_profile: bool, triton_var: &str, sdc_var: &str) -> Vec
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
 /// the default certificate store isn't found (e.g., SmartOS/illumos).
 async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
-    triton_tls::build_http_client(insecure)
+    triton_tls::build_http_client(insecure.into())
         .await
         .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
 }

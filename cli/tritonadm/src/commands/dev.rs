@@ -76,7 +76,7 @@ impl DevCommand {
 }
 
 async fn cmd_remove_external_nics(sapi_url: &str, vmapi_url: &str, napi_url: &str) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
 
@@ -143,7 +143,7 @@ async fn cmd_remove_external_nics(sapi_url: &str, vmapi_url: &str, napi_url: &st
 /// Used for core services (like CloudAPI) whose SAPI service definition is
 /// created by headnode setup and should not be deleted.
 async fn cmd_remove_instances_only(sapi_url: &str, vmapi_url: &str, svc_name: &str) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
 
@@ -187,7 +187,7 @@ async fn cmd_remove_instances_only(sapi_url: &str, vmapi_url: &str, svc_name: &s
 }
 
 async fn cmd_remove_service(sapi_url: &str, vmapi_url: &str, svc_name: &str) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
 

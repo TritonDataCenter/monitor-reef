@@ -444,7 +444,7 @@ async fn get_instance_counts(
 }
 
 async fn cmd_avail(sapi_url: &str, imgapi_url: &str, json: bool) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
     let sapi = sapi_client::build_client(sapi_url, false)
@@ -595,7 +595,7 @@ async fn cmd_services(sapi_url: &str, json: bool) -> Result<()> {
 }
 
 async fn cmd_instances(sapi_url: &str, vmapi_url: &str, json: bool) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .context("failed to build HTTP client")?;
     let sapi = sapi_client::build_client(sapi_url, false)

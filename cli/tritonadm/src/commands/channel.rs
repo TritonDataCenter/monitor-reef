@@ -54,7 +54,7 @@ impl ChannelCommand {
 /// before anyone's set up SAPI metadata.
 async fn updates_client(updates_url: Option<&str>) -> Result<imgapi_client::Client> {
     let url = updates_url.unwrap_or(DEFAULT_UPDATES_URL);
-    let http = triton_tls::build_http_client(false)
+    let http = triton_tls::build_http_client(triton_tls::TlsTrust::Verified)
         .await
         .map_err(|e| anyhow::anyhow!("build http client: {e}"))?;
     Ok(imgapi_client::Client::new_with_client(url, http))

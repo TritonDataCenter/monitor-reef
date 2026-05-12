@@ -200,7 +200,7 @@ enum ProbeResult {
 /// rustls-platform-verifier on illumos, which can accept certs the rest
 /// of our codebase rejects.
 async fn probe_cloudapi(url: &str) -> ProbeResult {
-    let client = match triton_tls::build_http_client(false).await {
+    let client = match triton_tls::build_http_client(triton_tls::TlsTrust::Verified).await {
         Ok(c) => c,
         Err(e) => return ProbeResult::Unreachable(format!("build http client: {e}")),
     };
