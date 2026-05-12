@@ -340,6 +340,7 @@ async fn managed_zone_with_valid_identity_does_not_become_legacy_vm() {
         name: "managed".to_string(),
         description: String::new(),
         image_id: Uuid::new_v4(),
+        brand: tritond_store::InstanceBrand::JoyentMinimal,
         primary_subnet_id: Uuid::new_v4(),
         ssh_key_ids: Vec::new(),
         cpu: 2,

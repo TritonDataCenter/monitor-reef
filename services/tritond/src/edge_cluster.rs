@@ -421,6 +421,9 @@ mod edge_underlay_tests {
             bound_api_key_id: None,
             pending_credential: None,
             last_status: None,
+            console_listen_port: None,
+            console_tls_spki_sha256: None,
+            console_ticket_key: None,
         }
     }
 
