@@ -4,16 +4,18 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! SmartOS host-tool adapters: thin wrappers around `vmadm`, `zfs`/`zpool`,
-//! `kstat`, and `/usr/bin/sysinfo`. Each wrapper carries the binary path so
-//! tests can swap in mock scripts.
+//! SmartOS host-tool adapters: thin wrappers around `vmadm`, `zoneadm`,
+//! `zfs`/`zpool`, `kstat`, and `/usr/bin/sysinfo`. Each wrapper carries
+//! the binary path so tests can swap in mock scripts.
 
 pub mod kstat;
 pub mod sysinfo;
 pub mod vmadm;
 pub mod zfs;
+pub mod zoneadm;
 
 pub use kstat::KstatTool;
 pub use sysinfo::Sysinfo;
 pub use vmadm::VmadmTool;
 pub use zfs::ZfsTool;
+pub use zoneadm::{ZoneInfo, ZoneadmTool};
