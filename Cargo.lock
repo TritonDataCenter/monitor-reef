@@ -5979,8 +5979,10 @@ dependencies = [
 name = "tritond-client"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "progenitor-client",
+ "rand 0.9.4",
  "reqwest 0.13.2",
  "schemars 0.8.22",
  "serde",

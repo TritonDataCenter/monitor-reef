@@ -17,12 +17,13 @@ pub use tritond_audit::{
     Actor as AuditActor, AuditEvent, ChainHead as AuditChainHead, Decision as AuditDecision,
     EventHash as AuditEventHash, Outcome as AuditOutcome, VerifyOutcome as AuditVerifyOutcome,
 };
+pub use tritond_auth::ConsoleKind;
 pub use tritond_store::{
     AddressFamily, AdoptableState, ApiKeyScope, ApiKeyView, AutoApproveWindow, CnRole, CnState,
     CnView, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind, FirewallAction,
     FirewallDirection, FirewallIcmpFilter, FirewallPortRange, FirewallProtocol, FirewallRule,
     FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, ImageScope,
-    Instance, JobKind, JobOutcome, JobStatus, LegacyNic, LegacyVm, LifecycleState,
+    Instance, InstanceBrand, JobKind, JobOutcome, JobStatus, LegacyNic, LegacyVm, LifecycleState,
     LifecycleStateKind, ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool,
     NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
     NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,

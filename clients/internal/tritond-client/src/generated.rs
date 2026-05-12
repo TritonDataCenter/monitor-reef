@@ -1484,6 +1484,99 @@ pub mod types {
         }
     }
 
+    #[doc = "Which console a ticket authorises. Serialises as `serial` / `vnc`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Which console a ticket authorises. Serialises as `serial` / `vnc`.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Text console: zoneadmd zone console (bhyve / native / lx) or the KVM serial UDS.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"serial\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Graphical framebuffer (RFB / VNC). Only valid for bhyve and KVM.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"vnc\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum ConsoleKind {
+        #[doc = "Text console: zoneadmd zone console (bhyve / native / lx) or the KVM serial UDS."]
+        #[serde(rename = "serial")]
+        Serial,
+        #[doc = "Graphical framebuffer (RFB / VNC). Only valid for bhyve and KVM."]
+        #[serde(rename = "vnc")]
+        Vnc,
+    }
+
+    impl ::std::fmt::Display for ConsoleKind {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Serial => f.write_str("serial"),
+                Self::Vnc => f.write_str("vnc"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for ConsoleKind {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "serial" => Ok(Self::Serial),
+                "vnc" => Ok(Self::Vnc),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for ConsoleKind {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for ConsoleKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for ConsoleKind {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Cedar decision recorded with the event."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3109,13 +3202,13 @@ pub mod types {
         User { user_id: ::uuid::Uuid },
     }
 
-    #[doc = "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host."]
+    #[doc = "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\\n\\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\\n\\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, brand (zone/hvm/lx/bhyve), affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host.\","]
+    #[doc = "  \"description\": \"Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\\n\\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\\n\\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"cpu\","]
@@ -3133,6 +3226,15 @@ pub mod types {
     #[doc = "    \"updated_at\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"brand\": {"]
+    #[doc = "      \"description\": \"SmartOS brand this instance's host-side VM runs as. Derived from the boot image's compatibility block at create time; `NotApplicable` for older records and explicit-fields images.\","]
+    #[doc = "      \"default\": \"not-applicable\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/InstanceBrand\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"cpu\": {"]
     #[doc = "      \"description\": \"Number of vCPUs.\","]
     #[doc = "      \"type\": \"integer\","]
@@ -3208,6 +3310,9 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Instance {
+        #[doc = "SmartOS brand this instance's host-side VM runs as. Derived from the boot image's compatibility block at create time; `NotApplicable` for older records and explicit-fields images."]
+        #[serde(default = "defaults::instance_brand")]
+        pub brand: InstanceBrand,
         #[doc = "Number of vCPUs."]
         pub cpu: u32,
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
@@ -3234,6 +3339,135 @@ pub mod types {
     impl Instance {
         pub fn builder() -> builder::Instance {
             Default::default()
+        }
+    }
+
+    #[doc = "SmartOS brand the instance's host-side VM runs as.\n\nDerived at create time from the boot [`Image`]'s [`ImageCompatibility::brand`] (the only place tritond currently learns it). `NotApplicable` is the default — it covers both records created before this field existed and images registered via the explicit-fields path that carries no compatibility block.\n\nUsed by the console surface (VNC framebuffer is only meaningful for `Bhyve` / `Kvm`) and by the UI to label instances. It is `#[serde(other)]` on `NotApplicable` so an unrecognised future brand string round-trips harmlessly rather than failing deserialization."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"SmartOS brand the instance's host-side VM runs as.\\n\\nDerived at create time from the boot [`Image`]'s [`ImageCompatibility::brand`] (the only place tritond currently learns it). `NotApplicable` is the default — it covers both records created before this field existed and images registered via the explicit-fields path that carries no compatibility block.\\n\\nUsed by the console surface (VNC framebuffer is only meaningful for `Bhyve` / `Kvm`) and by the UI to label instances. It is `#[serde(other)]` on `NotApplicable` so an unrecognised future brand string round-trips harmlessly rather than failing deserialization.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"`kvm` HVM zone (legacy hypervisor; serial + VNC consoles).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"kvm\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"`bhyve` HVM zone (serial via the zone console; VNC framebuffer).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"bhyve\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"`lx` Linux-syscall zone (serial via the zone console only).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"lx\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"`joyent-minimal` native SmartOS zone (serial via the zone console only).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"joyent-minimal\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Brand not recorded / not recognised. The console surface treats this as \\\"serial only\\\".\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"not-applicable\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum InstanceBrand {
+        #[doc = "`kvm` HVM zone (legacy hypervisor; serial + VNC consoles)."]
+        #[serde(rename = "kvm")]
+        Kvm,
+        #[doc = "`bhyve` HVM zone (serial via the zone console; VNC framebuffer)."]
+        #[serde(rename = "bhyve")]
+        Bhyve,
+        #[doc = "`lx` Linux-syscall zone (serial via the zone console only)."]
+        #[serde(rename = "lx")]
+        Lx,
+        #[doc = "`joyent-minimal` native SmartOS zone (serial via the zone console only)."]
+        #[serde(rename = "joyent-minimal")]
+        JoyentMinimal,
+        #[doc = "Brand not recorded / not recognised. The console surface treats this as \"serial only\"."]
+        #[serde(rename = "not-applicable")]
+        NotApplicable,
+    }
+
+    impl ::std::fmt::Display for InstanceBrand {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Kvm => f.write_str("kvm"),
+                Self::Bhyve => f.write_str("bhyve"),
+                Self::Lx => f.write_str("lx"),
+                Self::JoyentMinimal => f.write_str("joyent-minimal"),
+                Self::NotApplicable => f.write_str("not-applicable"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for InstanceBrand {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "kvm" => Ok(Self::Kvm),
+                "bhyve" => Ok(Self::Bhyve),
+                "lx" => Ok(Self::Lx),
+                "joyent-minimal" => Ok(Self::JoyentMinimal),
+                "not-applicable" => Ok(Self::NotApplicable),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for InstanceBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for InstanceBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for InstanceBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -6863,6 +7097,22 @@ pub mod types {
     #[doc = "      ],"]
     #[doc = "      \"format\": \"ipv4\""]
     #[doc = "    },"]
+    #[doc = "    \"console_listen_port\": {"]
+    #[doc = "      \"description\": \"TCP port the agent's on-CN console listener binds on the admin IP. Reported on every (re-)registration. `None` when the agent was started without a console listener — serial / VNC consoles are unavailable for the CN until a registration carries it.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint16\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"console_tls_spki_sha256_hex\": {"]
+    #[doc = "      \"description\": \"Lowercase-hex SHA-256 of the agent console listener's TLS SubjectPublicKeyInfo. tritond pins this when it dials the listener so a hijacked admin IP cannot MITM the console byte stream. `None` iff `console_listen_port` is `None`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"hostname\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
@@ -6885,6 +7135,12 @@ pub mod types {
         #[doc = "Admin-network IPv4 (best-effort; included for operator visibility, not used for authentication)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub admin_ip: ::std::option::Option<::std::net::Ipv4Addr>,
+        #[doc = "TCP port the agent's on-CN console listener binds on the admin IP. Reported on every (re-)registration. `None` when the agent was started without a console listener — serial / VNC consoles are unavailable for the CN until a registration carries it."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub console_listen_port: ::std::option::Option<u16>,
+        #[doc = "Lowercase-hex SHA-256 of the agent console listener's TLS SubjectPublicKeyInfo. tritond pins this when it dials the listener so a hijacked admin IP cannot MITM the console byte stream. `None` iff `console_listen_port` is `None`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub console_tls_spki_sha256_hex: ::std::option::Option<::std::string::String>,
         pub hostname: ::std::string::String,
         #[doc = "SmartOS server UUID, read from `/usr/bin/sysinfo`. Identity for the entire registration record."]
         pub server_uuid: ::uuid::Uuid,
@@ -6978,6 +7234,13 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"console_ticket_key_hex\": {"]
+    #[doc = "      \"description\": \"Per-CN HS256 console-ticket key, lowercase hex (32 bytes / 64 hex chars). Delivered exactly once, alongside `api_key`, on the first long-poll after the operator approves (or auto-approve fires). The agent persists it next to its credential file and uses it to verify the short-lived console tickets tritond mints when proxying a serial / VNC session. Secret — never logged. `None` on every subsequent poll and whenever `api_key` is `None`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
     #[doc = "    }"]
@@ -6991,6 +7254,9 @@ pub mod types {
     pub struct RegisterStatusResponse {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub api_key: ::std::option::Option<::std::string::String>,
+        #[doc = "Per-CN HS256 console-ticket key, lowercase hex (32 bytes / 64 hex chars). Delivered exactly once, alongside `api_key`, on the first long-poll after the operator approves (or auto-approve fires). The agent persists it next to its credential file and uses it to verify the short-lived console tickets tritond mints when proxying a serial / VNC session. Secret — never logged. `None` on every subsequent poll and whenever `api_key` is `None`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub console_ticket_key_hex: ::std::option::Option<::std::string::String>,
         pub state: CnState,
     }
 
@@ -12369,6 +12635,7 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Instance {
+            brand: ::std::result::Result<super::InstanceBrand, ::std::string::String>,
             cpu: ::std::result::Result<u32, ::std::string::String>,
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -12396,6 +12663,7 @@ pub mod types {
         impl ::std::default::Default for Instance {
             fn default() -> Self {
                 Self {
+                    brand: Ok(super::defaults::instance_brand()),
                     cpu: Err("no value supplied for cpu".to_string()),
                     created_at: Err("no value supplied for created_at".to_string()),
                     description: Err("no value supplied for description".to_string()),
@@ -12415,6 +12683,16 @@ pub mod types {
         }
 
         impl Instance {
+            pub fn brand<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::InstanceBrand>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.brand = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for brand: {e}"));
+                self
+            }
             pub fn cpu<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<u32>,
@@ -12563,6 +12841,7 @@ pub mod types {
                 value: Instance,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    brand: value.brand?,
                     cpu: value.cpu?,
                     created_at: value.created_at?,
                     description: value.description?,
@@ -12584,6 +12863,7 @@ pub mod types {
         impl ::std::convert::From<super::Instance> for Instance {
             fn from(value: super::Instance) -> Self {
                 Self {
+                    brand: Ok(value.brand),
                     cpu: Ok(value.cpu),
                     created_at: Ok(value.created_at),
                     description: Ok(value.description),
@@ -16789,6 +17069,12 @@ pub mod types {
                 ::std::option::Option<::std::net::Ipv4Addr>,
                 ::std::string::String,
             >,
+            console_listen_port:
+                ::std::result::Result<::std::option::Option<u16>, ::std::string::String>,
+            console_tls_spki_sha256_hex: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             hostname: ::std::result::Result<::std::string::String, ::std::string::String>,
             server_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             sysinfo: ::std::result::Result<::serde_json::Value, ::std::string::String>,
@@ -16798,6 +17084,8 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     admin_ip: Ok(Default::default()),
+                    console_listen_port: Ok(Default::default()),
+                    console_tls_spki_sha256_hex: Ok(Default::default()),
                     hostname: Err("no value supplied for hostname".to_string()),
                     server_uuid: Err("no value supplied for server_uuid".to_string()),
                     sysinfo: Err("no value supplied for sysinfo".to_string()),
@@ -16814,6 +17102,26 @@ pub mod types {
                 self.admin_ip = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for admin_ip: {e}"));
+                self
+            }
+            pub fn console_listen_port<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u16>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.console_listen_port = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for console_listen_port: {e}")
+                });
+                self
+            }
+            pub fn console_tls_spki_sha256_hex<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.console_tls_spki_sha256_hex = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for console_tls_spki_sha256_hex: {e}")
+                });
                 self
             }
             pub fn hostname<T>(mut self, value: T) -> Self
@@ -16855,6 +17163,8 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     admin_ip: value.admin_ip?,
+                    console_listen_port: value.console_listen_port?,
+                    console_tls_spki_sha256_hex: value.console_tls_spki_sha256_hex?,
                     hostname: value.hostname?,
                     server_uuid: value.server_uuid?,
                     sysinfo: value.sysinfo?,
@@ -16866,6 +17176,8 @@ pub mod types {
             fn from(value: super::RegisterCnRequest) -> Self {
                 Self {
                     admin_ip: Ok(value.admin_ip),
+                    console_listen_port: Ok(value.console_listen_port),
+                    console_tls_spki_sha256_hex: Ok(value.console_tls_spki_sha256_hex),
                     hostname: Ok(value.hostname),
                     server_uuid: Ok(value.server_uuid),
                     sysinfo: Ok(value.sysinfo),
@@ -16988,6 +17300,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            console_ticket_key_hex: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             state: ::std::result::Result<super::CnState, ::std::string::String>,
         }
 
@@ -16995,6 +17311,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     api_key: Ok(Default::default()),
+                    console_ticket_key_hex: Ok(Default::default()),
                     state: Err("no value supplied for state".to_string()),
                 }
             }
@@ -17009,6 +17326,16 @@ pub mod types {
                 self.api_key = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for api_key: {e}"));
+                self
+            }
+            pub fn console_ticket_key_hex<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.console_ticket_key_hex = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for console_ticket_key_hex: {e}")
+                });
                 self
             }
             pub fn state<T>(mut self, value: T) -> Self
@@ -17030,6 +17357,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     api_key: value.api_key?,
+                    console_ticket_key_hex: value.console_ticket_key_hex?,
                     state: value.state?,
                 })
             }
@@ -17039,6 +17367,7 @@ pub mod types {
             fn from(value: super::RegisterStatusResponse) -> Self {
                 Self {
                     api_key: Ok(value.api_key),
+                    console_ticket_key_hex: Ok(value.console_ticket_key_hex),
                     state: Ok(value.state),
                 }
             }
@@ -19737,6 +20066,10 @@ pub mod types {
 
     #[doc = r" Generation of default values for serde."]
     pub mod defaults {
+        pub(super) fn instance_brand() -> super::InstanceBrand {
+            super::InstanceBrand::NotApplicable
+        }
+
         pub(super) fn legacy_vm_adoptable() -> super::AdoptableState {
             super::AdoptableState::Unevaluated
         }
@@ -19824,6 +20157,11 @@ impl Client {
     #[doc = "Read a single legacy VM by SmartOS zone uuid, including full\n\nNIC inventory. Fleet-admin only.\n\nSends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}`\n\n```ignore\nlet response = client.get_legacy_vm()\n    .smartos_uuid(smartos_uuid)\n    .send()\n    .await;\n```"]
     pub fn get_legacy_vm(&self) -> builder::GetLegacyVm<'_> {
         builder::GetLegacyVm::new(self)
+    }
+
+    #[doc = "Operator console for a discovered (non-tritond-managed) zone\n\naddressed by SmartOS zone uuid. Fleet-admin only — no tenant scoping. Serial only in practice for native zones; `kind=vnc` is honoured for bhyve / kvm zones. Not covered by the generated client.\n\nSends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}/console`\n\nArguments:\n- `smartos_uuid`\n- `kind`: Which console to attach: `serial` or `vnc`.\n```ignore\nlet response = client.legacy_vm_console()\n    .smartos_uuid(smartos_uuid)\n    .kind(kind)\n    .send()\n    .await;\n```"]
+    pub fn legacy_vm_console(&self) -> builder::LegacyVmConsole<'_> {
+        builder::LegacyVmConsole::new(self)
     }
 
     #[doc = "Materialise the Proteus per-port blueprint for a NIC. Auth:\n\nrequires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. The bound CN must have an in-progress claim for the port's instance.\n\nSends a `GET` request to `/v2/agent/blueprints/{port_id}`\n\n```ignore\nlet response = client.agent_port_blueprint()\n    .port_id(port_id)\n    .send()\n    .await;\n```"]
@@ -20389,6 +20727,11 @@ impl Client {
         builder::DeleteProjectInstance::new(self)
     }
 
+    #[doc = "Browser-facing serial / VNC console for a managed instance\n\nAuthorises via the `instance_console` Cedar action; only valid while the instance is Running. `?kind=vnc` is refused for brands without a framebuffer (anything but `bhyve` / `kvm`). Not covered by the generated client (`#[channel]` endpoints are consumed by the hand-rolled admin-backend proxy).\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console`\n\nArguments:\n- `tenant_id`\n- `project_id`\n- `instance_id`\n- `kind`: Which console to attach: `serial` or `vnc`.\n```ignore\nlet response = client.instance_console()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .kind(kind)\n    .send()\n    .await;\n```"]
+    pub fn instance_console(&self) -> builder::InstanceConsole<'_> {
+        builder::InstanceConsole::new(self)
+    }
+
     #[doc = "List the Disks attached to an instance. Phase 0 produces\n\nexactly one (the auto-created `\"boot\"`); future multi-disk attach lands as a follow-on slice.\n\nSends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks`\n\n```ignore\nlet response = client.list_instance_disks()\n    .tenant_id(tenant_id)\n    .project_id(project_id)\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn list_instance_disks(&self) -> builder::ListInstanceDisks<'_> {
         builder::ListInstanceDisks::new(self)
@@ -20833,6 +21176,96 @@ pub mod builder {
                 500u16..=599u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::legacy_vm_console`]\n\n[`Client::legacy_vm_console`]: super::Client::legacy_vm_console"]
+    #[derive(Debug, Clone)]
+    pub struct LegacyVmConsole<'a> {
+        client: &'a super::Client,
+        smartos_uuid: Result<::uuid::Uuid, String>,
+        kind: Result<types::ConsoleKind, String>,
+    }
+
+    impl<'a> LegacyVmConsole<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                smartos_uuid: Err("smartos_uuid was not initialized".to_string()),
+                kind: Err("kind was not initialized".to_string()),
+            }
+        }
+
+        pub fn smartos_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.smartos_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for smartos_uuid failed".to_string());
+            self
+        }
+
+        pub fn kind<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ConsoleKind>,
+        {
+            self.kind = value
+                .try_into()
+                .map_err(|_| "conversion to `ConsoleKind` for kind failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/admin/legacy/vms/{smartos_uuid}/console`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<reqwest::Upgraded>, Error<reqwest::Upgraded>> {
+            let Self {
+                client,
+                smartos_uuid,
+                kind,
+            } = self;
+            let smartos_uuid = smartos_uuid.map_err(Error::InvalidRequest)?;
+            let kind = kind.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/admin/legacy/vms/{}/console",
+                client.baseurl,
+                encode_path(&smartos_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .query(&progenitor_client::QueryParam::new("kind", &kind))
+                .headers(header_map)
+                .header(::reqwest::header::CONNECTION, "Upgrade")
+                .header(::reqwest::header::UPGRADE, "websocket")
+                .header(::reqwest::header::SEC_WEBSOCKET_VERSION, "13")
+                .header(
+                    ::reqwest::header::SEC_WEBSOCKET_KEY,
+                    ::base64::Engine::encode(
+                        &::base64::engine::general_purpose::STANDARD,
+                        ::rand::random::<[u8; 16]>(),
+                    ),
+                )
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "legacy_vm_console",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                101u16 => ResponseValue::upgrade(response).await,
+                200..=299 => ResponseValue::upgrade(response).await,
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }
@@ -30040,6 +30473,126 @@ pub mod builder {
                 500u16..=599u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::instance_console`]\n\n[`Client::instance_console`]: super::Client::instance_console"]
+    #[derive(Debug, Clone)]
+    pub struct InstanceConsole<'a> {
+        client: &'a super::Client,
+        tenant_id: Result<::uuid::Uuid, String>,
+        project_id: Result<::uuid::Uuid, String>,
+        instance_id: Result<::uuid::Uuid, String>,
+        kind: Result<types::ConsoleKind, String>,
+    }
+
+    impl<'a> InstanceConsole<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                tenant_id: Err("tenant_id was not initialized".to_string()),
+                project_id: Err("project_id was not initialized".to_string()),
+                instance_id: Err("instance_id was not initialized".to_string()),
+                kind: Err("kind was not initialized".to_string()),
+            }
+        }
+
+        pub fn tenant_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant_id failed".to_string());
+            self
+        }
+
+        pub fn project_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project_id failed".to_string());
+            self
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn kind<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::ConsoleKind>,
+        {
+            self.kind = value
+                .try_into()
+                .map_err(|_| "conversion to `ConsoleKind` for kind failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<reqwest::Upgraded>, Error<reqwest::Upgraded>> {
+            let Self {
+                client,
+                tenant_id,
+                project_id,
+                instance_id,
+                kind,
+            } = self;
+            let tenant_id = tenant_id.map_err(Error::InvalidRequest)?;
+            let project_id = project_id.map_err(Error::InvalidRequest)?;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let kind = kind.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/tenants/{}/projects/{}/instances/{}/console",
+                client.baseurl,
+                encode_path(&tenant_id.to_string()),
+                encode_path(&project_id.to_string()),
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .query(&progenitor_client::QueryParam::new("kind", &kind))
+                .headers(header_map)
+                .header(::reqwest::header::CONNECTION, "Upgrade")
+                .header(::reqwest::header::UPGRADE, "websocket")
+                .header(::reqwest::header::SEC_WEBSOCKET_VERSION, "13")
+                .header(
+                    ::reqwest::header::SEC_WEBSOCKET_KEY,
+                    ::base64::Engine::encode(
+                        &::base64::engine::general_purpose::STANDARD,
+                        ::rand::random::<[u8; 16]>(),
+                    ),
+                )
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "instance_console",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                101u16 => ResponseValue::upgrade(response).await,
+                200..=299 => ResponseValue::upgrade(response).await,
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }

@@ -26,3 +26,7 @@ serde_json = { workspace = true }
 tritond-logs = { workspace = true }
 tritond-metrics = { workspace = true }
 uuid = { workspace = true }
+# Required for the WebSocket `#[channel]` endpoints: Progenitor-generated
+# upgrade-handshake code builds the `Sec-WebSocket-Key` nonce with these.
+base64 = { workspace = true }
+rand = { workspace = true }

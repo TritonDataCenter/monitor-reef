@@ -20,11 +20,12 @@ pub mod types;
 use chrono::{DateTime, Utc};
 use dropshot::{
     HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
-    HttpResponseUpdatedNoContent, Path, Query, RequestContext, TypedBody,
+    HttpResponseUpdatedNoContent, Path, Query, RequestContext, TypedBody, WebsocketChannelResult,
+    WebsocketConnection,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tritond_auth::RedactedString;
+use tritond_auth::{ConsoleKind, RedactedString};
 use uuid::Uuid;
 
 use crate::types::{
@@ -167,6 +168,19 @@ pub struct AgentPortBlueprintPath {
 pub struct InstanceDeleteQuery {
     #[serde(default)]
     pub force: bool,
+}
+
+/// Query string for the console `#[channel]` endpoints
+/// (`/v2/.../instances/{id}/console`, `/v2/admin/legacy/vms/{uuid}/console`).
+///
+/// `kind=serial` opens the text console (zone console for native /
+/// lx / bhyve, KVM serial UDS for kvm); `kind=vnc` opens the RFB
+/// framebuffer and is only valid for `bhyve` / `kvm` brands —
+/// requesting it for any other brand is a client error.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ConsoleQuery {
+    /// Which console to attach: `serial` or `vnc`.
+    pub kind: ConsoleKind,
 }
 
 /// Request body for `POST /v2/agent/jobs/claim`.
@@ -332,6 +346,18 @@ pub struct RegisterCnRequest {
     /// Raw `/usr/bin/sysinfo` JSON. Opaque to tritond; surfaced via
     /// `tcadm cn show` for operator inspection.
     pub sysinfo: serde_json::Value,
+    /// TCP port the agent's on-CN console listener binds on the admin
+    /// IP. Reported on every (re-)registration. `None` when the agent
+    /// was started without a console listener — serial / VNC consoles
+    /// are unavailable for the CN until a registration carries it.
+    #[serde(default)]
+    pub console_listen_port: Option<u16>,
+    /// Lowercase-hex SHA-256 of the agent console listener's TLS
+    /// SubjectPublicKeyInfo. tritond pins this when it dials the
+    /// listener so a hijacked admin IP cannot MITM the console byte
+    /// stream. `None` iff `console_listen_port` is `None`.
+    #[serde(default)]
+    pub console_tls_spki_sha256_hex: Option<String>,
 }
 
 /// Response body for `POST /v2/agent/register`.
@@ -372,6 +398,15 @@ pub struct RegisterStatusResponse {
     pub state: CnState,
     #[serde(default)]
     pub api_key: Option<String>,
+    /// Per-CN HS256 console-ticket key, lowercase hex (32 bytes / 64
+    /// hex chars). Delivered exactly once, alongside `api_key`, on the
+    /// first long-poll after the operator approves (or auto-approve
+    /// fires). The agent persists it next to its credential file and
+    /// uses it to verify the short-lived console tickets tritond mints
+    /// when proxying a serial / VNC session. Secret — never logged.
+    /// `None` on every subsequent poll and whenever `api_key` is `None`.
+    #[serde(default)]
+    pub console_ticket_key_hex: Option<String>,
 }
 
 /// Path parameter for endpoints that operate on a single CN.
@@ -2626,6 +2661,24 @@ pub trait TritondApi {
         path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
+    /// Browser-facing serial / VNC console for a managed instance.
+    /// Authorises via the `instance_console` Cedar action; only valid
+    /// while the instance is Running. `?kind=vnc` is refused for
+    /// brands without a framebuffer (anything but `bhyve` / `kvm`).
+    /// Not covered by the generated client (`#[channel]` endpoints are
+    /// consumed by the hand-rolled admin-backend proxy).
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/console",
+        tags = ["instances"],
+    }]
+    async fn instance_console(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectInstancePath>,
+        query: Query<ConsoleQuery>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
+
     /// List the NICs attached to an instance. Phase 0 produces
     /// exactly one (the auto-created `"primary"`); a future slice
     /// adds NIC attach/detach.
@@ -2792,6 +2845,23 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<LegacyVmPath>,
     ) -> Result<HttpResponseOk<LegacyVm>, HttpError>;
+
+    /// Operator console for a discovered (non-tritond-managed) zone,
+    /// addressed by SmartOS zone uuid. Fleet-admin only — no tenant
+    /// scoping. Serial only in practice for native zones; `kind=vnc`
+    /// is honoured for bhyve / kvm zones. Not covered by the
+    /// generated client.
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/v2/admin/legacy/vms/{smartos_uuid}/console",
+        tags = ["legacy-admin"],
+    }]
+    async fn legacy_vm_console(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<LegacyVmPath>,
+        query: Query<ConsoleQuery>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
 
     // ----- Storage clusters (operator-only) -----
 
