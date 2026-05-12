@@ -69,9 +69,16 @@ const ZLOGIN_HANDSHAKE: &[u8] = b"IDENT C 0\n";
 /// How long to wait for the `OK` ack after writing the handshake.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Idle-session cap: if neither side sends a byte for this long, close.
-/// Console sessions are interactive; a half-day silence is a leak.
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// Idle-session cap: if not a single byte flows in either direction for
+/// this long, tear the session down and release the underlying console
+/// socket. A live VNC session is never idle (noVNC keeps requesting
+/// framebuffer updates); a live serial session at a quiet prompt can
+/// be, so this is generous — but a session whose browser vanished
+/// without a clean close (half-open TCP) leaks the single-consumer
+/// zoneadmd console socket until this fires, so don't make it huge.
+/// (The proper fix is a keepalive ping that the proxy chain forwards
+/// end to end; until then this is the backstop.)
+const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 /// Read buffer size for the UDS→WS direction.
 const UDS_READ_BUF: usize = 8 * 1024;
@@ -289,7 +296,11 @@ async fn proxy(ws: WebSocket, socket: &Path, needs_handshake: bool) -> Result<()
     };
 
     if needs_handshake && let Err(e) = run_zlogin_handshake(&mut uds).await {
-        close_ws(ws, "console handshake with zoneadmd failed").await;
+        // Surface the real reason to the browser (e.g. "zone console
+        // in use by another session (pid N)") rather than a generic
+        // message. WS close reasons are bounded, so cap it.
+        let reason: String = e.to_string().chars().take(110).collect();
+        close_ws(ws, &reason).await;
         return Err(e).context("zlogin console handshake");
     }
 
@@ -336,8 +347,17 @@ async fn run_zlogin_handshake(uds: &mut UnixStream) -> Result<()> {
 
     let _ = line;
     let resp = String::from_utf8_lossy(&buf);
+    let resp = resp.trim();
     if resp.starts_with("OK") {
         Ok(())
+    } else if !resp.is_empty() && resp.bytes().all(|b| b.is_ascii_digit()) {
+        // zoneadmd answers `IDENT C 0` with the PID of the current
+        // console holder when one is already attached (it's a
+        // single-consumer socket — `zlogin -C` / `vmadm console` /
+        // another browser session).
+        Err(anyhow!(
+            "zone console in use by another session (pid {resp})"
+        ))
     } else {
         Err(anyhow!(
             "zoneadmd rejected the console handshake: {}",
