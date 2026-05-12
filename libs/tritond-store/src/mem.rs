@@ -2906,15 +2906,6 @@ impl Store for MemStore {
     ) -> Result<Cn, StoreError> {
         let mut guard = self.inner.write().await;
 
-        // Disabled records block re-registration.
-        if let Some(existing) = guard.cns_by_server_uuid.get(&server_uuid)
-            && existing.state == CnState::Disabled
-        {
-            return Err(StoreError::Conflict(format!(
-                "cn {server_uuid} is disabled; remove the record before re-registering"
-            )));
-        }
-
         // Already-Approved records: idempotent refresh.
         if let Some(existing) = guard.cns_by_server_uuid.get(&server_uuid).cloned()
             && existing.state == CnState::Approved
@@ -2930,7 +2921,14 @@ impl Store for MemStore {
             return Ok(updated);
         }
 
-        // Pending: rotate claim_code + poll_token, refresh sysinfo.
+        // Existing record that is *not* Approved (Pending or Disabled):
+        // re-arm registration. Drop back to Pending, mint a fresh
+        // claim_code + poll_token, clear any bound credential, and
+        // clear the console-listener coordinates (the agent re-reports
+        // them on this register call and gets a fresh console key at
+        // the next approval). Re-registering a Disabled CN is the
+        // supported "re-enable with fresh credentials" path -- the
+        // disable event stays in the audit chain.
         if let Some(existing) = guard.cns_by_server_uuid.get(&server_uuid).cloned() {
             // Drop old indexes.
             if let Some(old_code) = &existing.claim_code {

@@ -3061,10 +3061,11 @@ pub enum CnState {
     /// rest of the `/v2/agent/*` surface.
     Approved,
     /// Explicitly disabled by an operator. The bound API key is
-    /// revoked. The record stays for audit visibility; a fresh
-    /// registration from the same `server_uuid` is rejected until
-    /// the operator removes the disabled record (Phase 1 surface)
-    /// — for Phase 0, "disable" is the terminal state.
+    /// revoked and the record stays for audit visibility. A fresh
+    /// registration from the same `server_uuid` re-arms the record
+    /// back to `Pending` (awaiting approval) — i.e. "re-enable with
+    /// fresh credentials"; the disable event remains in the audit
+    /// chain.
     Disabled,
 }
 

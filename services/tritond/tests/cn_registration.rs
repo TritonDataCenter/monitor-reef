@@ -347,7 +347,12 @@ async fn unknown_poll_token_returns_404() {
 }
 
 #[tokio::test]
-async fn disabled_record_blocks_re_registration() {
+async fn disabled_record_re_registers_back_to_pending() {
+    // Disabling a CN is reversible by re-registration: the agent
+    // restarting drops the record back to Pending (with a fresh claim
+    // code), awaiting re-approval. This is the supported "re-enable
+    // with fresh credentials" path; the disable event stays in the
+    // audit chain.
     let test = TestServer::start().await;
     let anon = test.anonymous_client();
     let server_uuid = Uuid::new_v4();
@@ -373,7 +378,9 @@ async fn disabled_record_blocks_re_registration() {
         .await
         .unwrap();
 
-    let err = anon
+    // Re-register: should succeed and re-arm to Pending with a claim
+    // code (not 409 / not Disabled / not Approved).
+    let reg = anon
         .agent_register()
         .body(RegisterCnRequest {
             server_uuid,
@@ -385,10 +392,20 @@ async fn disabled_record_blocks_re_registration() {
         })
         .send()
         .await
-        .unwrap_err();
-    let status = err.status().unwrap();
-    // Store-level Conflict surfaces as 409.
-    assert_eq!(status.as_u16(), 409);
+        .unwrap()
+        .into_inner();
+    assert!(matches!(reg.state, CnState::Pending));
+    assert!(reg.claim_code.is_some());
+
+    // The record is listed under Pending again.
+    let pending = session
+        .list_cns()
+        .state(CnState::Pending)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(pending.iter().any(|c| c.server_uuid == server_uuid));
 
     test.close().await;
 }

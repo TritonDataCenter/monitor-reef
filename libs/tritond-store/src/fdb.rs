@@ -5659,7 +5659,6 @@ impl Store for FdbStore {
         // out of the FDB transaction closure.
         enum Outcome {
             Created(Box<Cn>),
-            Disabled,
             ClaimCodeExhausted,
         }
 
@@ -5681,10 +5680,8 @@ impl Store for FdbStore {
                         let existing: Cn = serde_json::from_slice(&bytes).map_err(|e| {
                             FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
                         })?;
-                        match existing.state {
-                            CnState::Disabled => {
-                                return Ok(Outcome::Disabled);
-                            }
+                        let prev_state = existing.state;
+                        match prev_state {
                             CnState::Approved => {
                                 // Idempotent refresh: keep credentials,
                                 // refresh sysinfo + hostname + last_seen.
@@ -5701,10 +5698,14 @@ impl Store for FdbStore {
                                 tr.set(&by_uuid_key, &value);
                                 return Ok(Outcome::Created(Box::new(updated)));
                             }
-                            CnState::Pending => {
-                                // Drop the old by_claim and by_poll
-                                // index entries; mint fresh ones (with
-                                // collision check).
+                            // Pending or Disabled: re-arm registration.
+                            // Re-registering a Disabled CN is the
+                            // supported "re-enable with fresh
+                            // credentials" path -- the disable event
+                            // stays in the audit chain. Drop the old
+                            // by_claim / by_poll index entries; mint
+                            // fresh ones (with collision check).
+                            CnState::Pending | CnState::Disabled => {
                                 if let Some(old_code) = &existing.claim_code {
                                     tr.clear(&Self::cn_by_claim_key(old_code));
                                 }
@@ -5749,7 +5750,10 @@ impl Store for FdbStore {
                                 tr.set(&by_uuid_key, &value);
                                 tr.set(&Self::cn_by_claim_key(&claim_code), &server_uuid_bytes);
                                 tr.set(&Self::cn_by_poll_key(&poll_token), &server_uuid_bytes);
-                                // by_state membership is unchanged (still pending).
+                                // Move the by_state membership to
+                                // Pending (a no-op clear+set when the
+                                // record was already Pending).
+                                tr.clear(&Self::cn_by_state_key(prev_state, server_uuid));
                                 tr.set(&Self::cn_by_state_key(CnState::Pending, server_uuid), b"");
                                 return Ok(Outcome::Created(Box::new(cn)));
                             }
@@ -5815,9 +5819,6 @@ impl Store for FdbStore {
 
         match outcome {
             Ok(Outcome::Created(cn)) => Ok(*cn),
-            Ok(Outcome::Disabled) => Err(StoreError::Conflict(format!(
-                "cn {server_uuid} is disabled; remove the record before re-registering"
-            ))),
             Ok(Outcome::ClaimCodeExhausted) => {
                 Err(StoreError::Backend("claim code exhausted".to_string()))
             }
