@@ -32,8 +32,8 @@ use tritond_client::types::{
     RealizationStatus, RealizerId, RegisterCnRequest,
 };
 use tritond_store::{
-    CnRole, Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore, NewJob, NewRoute, Nic,
-    RouteTarget, Store, User,
+    CnRole, DhcpOptionRaw, Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore,
+    NewDhcpPool, NewDhcpReservation, NewJob, NewRoute, Nic, RouteTarget, Store, User,
 };
 use uuid::Uuid;
 
@@ -926,6 +926,102 @@ async fn bound_agent_can_fetch_port_blueprint_for_assigned_instance() {
 
     assert_eq!(response.port_id, nic.id);
     assert_eq!(response.generation, 1);
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn port_blueprint_carries_vpc_dhcp_pool_and_reservation() {
+    let test = TestServer::start().await;
+    let (instance, nic) =
+        create_instance_with_primary_nic(&test, "agent-port-blueprint-dhcp").await;
+
+    // Per-VPC pool: shorter renewal cadence + one VPC-wide raw option
+    // (option 42 = NTP servers).
+    test.store
+        .set_dhcp_pool(
+            nic.vpc_id,
+            NewDhcpPool {
+                lease_seconds_default: 3_600,
+                excluded_ipv4: vec![],
+                additional_options: vec![DhcpOptionRaw {
+                    code: 42,
+                    value: vec![198, 51, 100, 123],
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    // Per-MAC reservation pinning a hostname + one per-MAC raw option.
+    test.store
+        .create_dhcp_reservation(
+            nic.vpc_id,
+            NewDhcpReservation {
+                mac: nic.mac.clone(),
+                ipv4: nic.primary_ipv4.expect("primary nic has an ipv4"),
+                hostname: Some("db-primary".to_string()),
+                per_mac_options: vec![DhcpOptionRaw {
+                    code: 252,
+                    value: b"http://wpad/wpad.dat".to_vec(),
+                }],
+            },
+        )
+        .await
+        .unwrap();
+
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-port-blueprint-dhcp").await;
+    test.store
+        .set_instance_host_cn(instance.id, Some(cn_uuid))
+        .await
+        .unwrap();
+
+    let response = test
+        .bearer_client(&api_key)
+        .agent_port_blueprint()
+        .port_id(nic.id)
+        .send()
+        .await
+        .expect("assigned CN can fetch port blueprint")
+        .into_inner();
+
+    let bytes = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        &response.blueprint_postcard_base64,
+    )
+    .expect("response should be base64");
+    let port: proteus_api::blueprint::PortBlueprint =
+        postcard::from_bytes(&bytes).expect("response should be a Proteus PortBlueprint");
+    let plugin: triton_vpc::TritonVpcBlueprint = postcard::from_bytes(&port.plugin_config.bytes)
+        .expect("plugin config should be a TritonVpcBlueprint");
+
+    let dhcp = plugin
+        .dhcpv4
+        .as_ref()
+        .expect("guest has ipv4 => dhcpv4 present");
+    assert_eq!(
+        dhcp.lease_seconds, 3_600,
+        "pool lease cadence flows through"
+    );
+    assert_eq!(
+        dhcp.hostname.as_deref(),
+        Some("db-primary"),
+        "reservation hostname overrides the nic name"
+    );
+    // pool option first, then the per-MAC option.
+    assert_eq!(dhcp.additional_options.len(), 2);
+    assert_eq!(dhcp.additional_options[0].code, 42);
+    assert_eq!(dhcp.additional_options[0].value, vec![198, 51, 100, 123]);
+    assert_eq!(dhcp.additional_options[1].code, 252);
+    assert_eq!(
+        dhcp.additional_options[1].value,
+        b"http://wpad/wpad.dat".to_vec()
+    );
+    // Subnet-derived fields remain compiler-filled.
+    assert_eq!(dhcp.dns_servers, vec![[10, 0, 0, 1]]);
+    plugin
+        .validate_caps()
+        .expect("compiled blueprint passes the kmod cap check");
 
     test.close().await;
 }

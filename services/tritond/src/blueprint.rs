@@ -21,17 +21,20 @@ use proteus_api::ids::{
 };
 use triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1;
 use triton_vpc::tritond_intent_v1::{
-    EdgeClusterIntentV1, FirewallActionIntentV1, FirewallDirectionIntentV1, FirewallRuleIntentV1,
-    FloatingIpAttachmentIntentV1, FloatingIpIntentV1, L4ProtocolIntentV1, NatGatewayIntentV1,
-    NicIntentV1, PortRangeIntentV1, RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1,
-    TritondPortIntentV1, VpcIntentV1,
+    DhcpOptionRawV1, DhcpOptionsIntentV1, EdgeClusterIntentV1, FirewallActionIntentV1,
+    FirewallDirectionIntentV1, FirewallRuleIntentV1, FloatingIpAttachmentIntentV1,
+    FloatingIpIntentV1, L4ProtocolIntentV1, NatGatewayIntentV1, NicIntentV1, PortRangeIntentV1,
+    RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1, VpcIntentV1,
 };
 use tritond_api::types::{
     FloatingIp, Instance, JobKind, JobStatus, ManagedIdentity, NatGateway, ProvisioningJob, Route,
     RouteTarget, Subnet,
 };
 use tritond_api::{AgentPortBlueprint, ProvisioningBlueprint};
-use tritond_store::{EdgeCluster, EdgeClusterInstanceState, Store, StoreError};
+use tritond_store::{
+    DhcpOptionRaw, DhcpPool, DhcpReservation, EdgeCluster, EdgeClusterInstanceState, Store,
+    StoreError,
+};
 
 use crate::cn_credential::enforce_job_belongs_to_bound_cn;
 use crate::edge_cluster::{edge_clusters_for_nat_gateways, ensure_nat_gateway_edges_for_routes};
@@ -235,6 +238,22 @@ pub(crate) async fn build_port_blueprint(
         .await
         .map_err(store_error_to_http)?;
 
+    // DHCP: the per-VPC pool (lease cadence + VPC-wide raw options) and
+    // the reservation (if any) covering this NIC's MAC (hostname + per-MAC
+    // raw options). Either being absent is normal — compile-time defaults
+    // apply. The proteus compiler enforces the wire caps, so a malformed
+    // pool config never produces an un-appliable blueprint.
+    let dhcp_pool = store
+        .get_dhcp_pool(vpc.id)
+        .await
+        .map_err(store_error_to_http)?;
+    let dhcp_reservation = match store.get_dhcp_reservation(vpc.id, &nic.mac).await {
+        Ok(r) => Some(r),
+        Err(StoreError::NotFound) => None,
+        Err(e) => return Err(store_error_to_http(e)),
+    };
+    let dhcp = dhcp_options_intent(&nic, dhcp_pool.as_ref(), dhcp_reservation.as_ref());
+
     let generation = INITIAL_PROTEUS_PORT_GENERATION;
     let intent = TritondPortIntentV1 {
         silo_id: tenant.silo_id,
@@ -287,6 +306,7 @@ pub(crate) async fn build_port_blueprint(
             .map(edge_cluster_intent)
             .collect::<Result<Vec<_>, _>>()?,
         firewall_rules: firewall_rules.iter().map(firewall_rule_intent).collect(),
+        dhcp,
     };
 
     let plugin_blueprint = intent.compile_blueprint().map_err(|err| {
@@ -483,6 +503,53 @@ pub(crate) fn firewall_rule_intent(rule: &tritond_store::FirewallRule) -> Firewa
             high: r.high,
         }),
         icmp_type_code: rule.icmp_type_code.map(|f| (f.kind, f.code)),
+    }
+}
+
+/// Flatten the per-VPC DHCP pool and the per-MAC reservation into the
+/// shape the proteus per-port compiler needs. Returns `None` when the
+/// NIC has no IPv4 (the gateway emits no `Dhcpv4Options` then anyway)
+/// *and* nothing to override; otherwise `Some` with the merged inputs.
+/// The raw-option list is `pool.additional_options` followed by the
+/// reservation's `per_mac_options` — the proteus compiler does the
+/// length-capping and per-value-size filtering, so this side just
+/// concatenates.
+pub(crate) fn dhcp_options_intent(
+    nic: &tritond_store::Nic,
+    pool: Option<&DhcpPool>,
+    reservation: Option<&DhcpReservation>,
+) -> Option<DhcpOptionsIntentV1> {
+    // Without an IPv4 the gateway never synthesises DHCP, and with no
+    // pool and no reservation there is nothing to override — let the
+    // compiler defaults stand.
+    if nic.primary_ipv4.is_none() && pool.is_none() && reservation.is_none() {
+        return None;
+    }
+
+    const DEFAULT_LEASE_SECONDS: u32 = 86_400;
+    let lease_seconds = pool
+        .map(|p| p.lease_seconds_default)
+        .unwrap_or(DEFAULT_LEASE_SECONDS);
+    let hostname = reservation.and_then(|r| r.hostname.clone());
+    let mut additional_options: Vec<DhcpOptionRawV1> = Vec::new();
+    if let Some(p) = pool {
+        additional_options.extend(p.additional_options.iter().map(dhcp_option_raw));
+    }
+    if let Some(r) = reservation {
+        additional_options.extend(r.per_mac_options.iter().map(dhcp_option_raw));
+    }
+
+    Some(DhcpOptionsIntentV1 {
+        lease_seconds,
+        hostname,
+        additional_options,
+    })
+}
+
+fn dhcp_option_raw(opt: &DhcpOptionRaw) -> DhcpOptionRawV1 {
+    DhcpOptionRawV1 {
+        code: opt.code,
+        value: opt.value.clone(),
     }
 }
 
