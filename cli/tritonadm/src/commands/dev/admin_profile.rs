@@ -4,7 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `tritonadm post-setup admin-profile` — generate a `triton` CLI profile
+//! `tritonadm dev admin-profile` — generate a `triton` CLI profile
 //! for the headnode admin account. Reads the SDC config for datacenter
 //! name and admin login, derives the SSH-key fingerprint via `ssh-keygen
 //! -E md5 -lf`, and probes the CloudAPI URL to decide whether to set
@@ -43,7 +43,7 @@ pub struct AdminProfileOpts {
 
 pub async fn run(sdc_config: Option<TritonConfig>, opts: AdminProfileOpts) -> Result<()> {
     let cfg = sdc_config.context(
-        "tritonadm post-setup admin-profile must run on a Triton headnode \
+        "tritonadm dev admin-profile must run on a Triton headnode \
          (could not load /lib/sdc/config.sh)",
     )?;
 
