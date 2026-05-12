@@ -287,9 +287,11 @@ fn print_releases(vendor: &str, releases: &[vendor::Release], json: bool) -> Res
 /// cache (under `workdir`) is intentionally left alone so re-runs of
 /// the same vendor/release don't re-fetch from upstream.
 async fn cleanup_artifacts(gz: &Path, manifest: &Path) {
+    let mut all_removed = true;
     for p in [gz, manifest] {
         // arch-lint: allow(no-error-swallowing) reason="upload already succeeded; cleanup failure is recoverable (leftover file, not data loss) and shouldn't fail the operator-visible command"
         if let Err(e) = tokio::fs::remove_file(p).await {
+            all_removed = false;
             eprintln!(
                 "warning: failed to remove {} after upload: {e} \
                  (pass --keep-files to suppress this cleanup)",
@@ -297,7 +299,9 @@ async fn cleanup_artifacts(gz: &Path, manifest: &Path) {
             );
         }
     }
-    println!("Removed local artifacts (pass --keep-files to retain).");
+    if all_removed {
+        println!("Removed local artifacts (pass --keep-files to retain).");
+    }
 }
 
 /// Shell out to `imgadm install -m <manifest> -f <gz>`. The flags are
