@@ -1051,6 +1051,26 @@ pub trait Store: Send + Sync + 'static {
         now: DateTime<Utc>,
     ) -> Result<Cn, StoreError>;
 
+    /// Record (or update) the CN's on-host console listener endpoint:
+    /// the TCP port the agent's console listener binds on the admin
+    /// IP, and the SHA-256 of that listener's TLS SubjectPublicKeyInfo
+    /// (which tritond pins when it dials the listener so a hijacked
+    /// admin IP cannot MITM the console byte stream).
+    ///
+    /// Called by the register handler right after `register_cn`; the
+    /// agent re-reports these on every (re-)registration, so this is
+    /// idempotent-update semantics. `None` for either argument clears
+    /// the corresponding field — but in practice the agent always
+    /// reports both or neither.
+    ///
+    /// Returns [`StoreError::NotFound`] if the CN does not exist.
+    async fn set_cn_console_endpoint(
+        &self,
+        server_uuid: Uuid,
+        console_listen_port: Option<u16>,
+        console_tls_spki_sha256: Option<[u8; 32]>,
+    ) -> Result<(), StoreError>;
+
     /// Look up a CN by `server_uuid`.
     async fn get_cn(&self, server_uuid: Uuid) -> Result<Cn, StoreError>;
 
@@ -1075,7 +1095,8 @@ pub trait Store: Send + Sync + 'static {
     /// Returns [`StoreError::NotFound`] if the CN does not exist.
     async fn set_cn_role(&self, server_uuid: Uuid, role: CnRole) -> Result<Cn, StoreError>;
 
-    /// Atomically attach a freshly-minted bound API key to a CN.
+    /// Atomically attach a freshly-minted bound API key to a CN,
+    /// plus the per-CN console-ticket signing key.
     ///
     /// Two callers:
     /// 1. The operator approval flow: CN is Pending; this flips
@@ -1084,6 +1105,12 @@ pub trait Store: Send + Sync + 'static {
     /// 2. The auto-approve flow: `register_cn` has already created
     ///    the record in Approved state (claim code never issued);
     ///    this attaches the freshly-minted key + plaintext.
+    ///
+    /// `console_ticket_key` is the 32-byte HS256 key the agent uses
+    /// to mint short-lived console tickets (see
+    /// `tritond_auth::ConsoleTicketKey`); it is written onto the
+    /// record in the same atomic update as `bound_api_key_id` so the
+    /// agent's first long-poll-after-approval can deliver both.
     ///
     /// Precondition: `bound_api_key_id.is_none()` AND state is not
     /// Disabled. A second call (after the agent has already retrieved
@@ -1098,6 +1125,7 @@ pub trait Store: Send + Sync + 'static {
         server_uuid: Uuid,
         bound_api_key_id: Uuid,
         pending_credential: String,
+        console_ticket_key: [u8; 32],
         approved_at: DateTime<Utc>,
     ) -> Result<Cn, StoreError>;
 

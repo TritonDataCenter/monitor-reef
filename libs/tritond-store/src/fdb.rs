@@ -5955,11 +5955,54 @@ impl Store for FdbStore {
         }
     }
 
+    async fn set_cn_console_endpoint(
+        &self,
+        server_uuid: Uuid,
+        console_listen_port: Option<u16>,
+        console_tls_spki_sha256: Option<[u8; 32]>,
+    ) -> Result<(), StoreError> {
+        enum Outcome {
+            Updated,
+            NotFound,
+        }
+
+        let by_uuid_key = Self::cn_by_uuid_key(server_uuid);
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_uuid_key = by_uuid_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_uuid_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::NotFound),
+                    };
+                    let mut cn: Cn = serde_json::from_slice(&bytes).map_err(|e| {
+                        FdbBindingError::CustomError(format!("deserialize cn: {e}").into())
+                    })?;
+                    cn.console_listen_port = console_listen_port;
+                    cn.console_tls_spki_sha256 = console_tls_spki_sha256;
+                    let value = serde_json::to_vec(&cn).map_err(|e| {
+                        FdbBindingError::CustomError(format!("serialize cn: {e}").into())
+                    })?;
+                    tr.set(&by_uuid_key, &value);
+                    Ok(Outcome::Updated)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated) => Ok(()),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
     async fn approve_cn(
         &self,
         server_uuid: Uuid,
         bound_api_key_id: Uuid,
         pending_credential: String,
+        console_ticket_key: [u8; 32],
         approved_at: chrono::DateTime<Utc>,
     ) -> Result<Cn, StoreError> {
         enum Outcome {
@@ -6012,6 +6055,7 @@ impl Store for FdbStore {
                     cn.claim_code_expires_at = None;
                     cn.bound_api_key_id = Some(bound_api_key_id);
                     cn.pending_credential = Some(pending_credential);
+                    cn.console_ticket_key = Some(console_ticket_key);
 
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())
@@ -7962,7 +8006,7 @@ mod cn_tests {
             .await
             .expect("register");
         store
-            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), now)
+            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), [0u8; 32], now)
             .await
             .expect("approve");
 
@@ -8033,7 +8077,7 @@ mod cn_tests {
             .expect("register");
         let key_id = Uuid::new_v4();
         let approved = store
-            .approve_cn(id, key_id, "tcadm_secret".into(), now)
+            .approve_cn(id, key_id, "tcadm_secret".into(), [0u8; 32], now)
             .await
             .expect("approve");
         assert_eq!(approved.state, CnState::Approved);
@@ -8070,7 +8114,7 @@ mod cn_tests {
         purge_cn(&store, id).await;
 
         let err = store
-            .approve_cn(id, Uuid::new_v4(), "x".into(), Utc::now())
+            .approve_cn(id, Uuid::new_v4(), "x".into(), [0u8; 32], Utc::now())
             .await
             .expect_err("approve before register should fail");
         assert!(matches!(err, StoreError::NotFound));
@@ -8212,7 +8256,7 @@ mod cn_tests {
             .await
             .expect("register approved-target");
         store
-            .approve_cn(aid, Uuid::new_v4(), "k".into(), now)
+            .approve_cn(aid, Uuid::new_v4(), "k".into(), [0u8; 32], now)
             .await
             .expect("approve");
 
