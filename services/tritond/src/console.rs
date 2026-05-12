@@ -417,9 +417,15 @@ pub(crate) async fn instance_console(
     if instance.lifecycle.kind() != LifecycleStateKind::Running {
         return reject(ws, "instance is not running; no console available").await;
     }
-    if kind == ConsoleKind::Vnc && !instance.brand.supports_vnc() {
-        return reject(ws, "this instance has no VNC framebuffer").await;
-    }
+    // We deliberately do NOT gate VNC on `instance.brand` here: that
+    // field is only populated at create time from the image's
+    // compatibility block, so it's `NotApplicable` (i.e. "unknown")
+    // for older instances and for images that carry no compat block --
+    // including plenty of real bhyve VMs. The agent's console listener
+    // resolves the *actual* zone brand via `zoneadm` and rejects a VNC
+    // attach on a brand without a framebuffer; that's the single
+    // source of truth. The brand we pass downstream below is just an
+    // advisory hint for that check's fallback path.
     let Some(host_cn_uuid) = instance.host_cn_uuid else {
         return reject(ws, "instance has not been placed on a host yet").await;
     };
@@ -489,9 +495,9 @@ pub(crate) async fn legacy_vm_console(
         .brand
         .clone()
         .unwrap_or_else(|| "not-applicable".to_string());
-    if kind == ConsoleKind::Vnc && !matches!(brand.as_str(), "kvm" | "bhyve") {
-        return reject(ws, "this zone has no VNC framebuffer").await;
-    }
+    // As with managed instances: don't reject VNC here on the stored
+    // brand. The agent re-derives the live zone brand via `zoneadm`
+    // and is the authority on whether a framebuffer exists.
     let cn = match ctx.store.get_cn(vm.host_cn_uuid).await {
         Ok(c) => c,
         Err(_) => return reject(ws, "the host for this zone is no longer registered").await,

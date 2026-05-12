@@ -370,7 +370,14 @@ async fn legacy_console_rejects_non_fleet_admin() {
 }
 
 #[tokio::test]
-async fn legacy_console_rejects_vnc_on_non_hvm_brand() {
+async fn console_does_not_gate_vnc_on_the_stored_brand() {
+    // tritond must NOT reject `kind=vnc` based on the brand it has on
+    // record -- that's `not-applicable` for plenty of real bhyve VMs,
+    // and the *agent* (which re-derives the live zone brand via
+    // `zoneadm`) is the authority on whether a framebuffer exists. So
+    // a `kind=vnc` request even on a record whose stored brand is
+    // `joyent-minimal` must reach the agent (here, the echo agent,
+    // which doesn't enforce brand) rather than being short-circuited.
     let test = TestServer::start().await;
     let root = test.token_for("root", ROOT_PASSWORD).await;
     let (cert_der, key_der, spki) = self_signed_for_localhost();
@@ -389,14 +396,20 @@ async fn legacy_console_rejects_vnc_on_non_hvm_brand() {
         &root,
     )
     .await
-    .expect("handshake completes before brand check");
-    match next_msg(&mut ws).await {
-        Some(Message::Close(Some(frame))) => {
-            assert!(frame.reason.as_str().contains("no VNC framebuffer"));
-        }
-        other => panic!("expected a Close frame, got {other:?}"),
+    .expect("console channel should establish (no brand short-circuit)");
+
+    ws.send(Message::Binary(b"rfb-ish".to_vec().into()))
+        .await
+        .unwrap();
+    match next_msg(&mut ws).await.expect("agent should echo bytes") {
+        Message::Binary(b) => assert_eq!(b.as_ref(), b"rfb-ish"),
+        other => panic!("expected echoed binary, got {other:?}"),
     }
 
+    let _ = ws.close(None).await;
+    while next_msg(&mut ws).await.is_some() {}
+    drop(ws);
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     test.close().await;
 }
 
