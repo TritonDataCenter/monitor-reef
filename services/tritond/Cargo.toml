@@ -82,7 +82,9 @@ rcgen = { workspace = true }
 reqwest = { workspace = true }
 rsa = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 ssh-key = { workspace = true }
+tokio-rustls = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tritond-audit = { workspace = true }
 tritond-auth = { workspace = true }
