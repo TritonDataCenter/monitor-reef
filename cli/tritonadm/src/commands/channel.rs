@@ -237,14 +237,13 @@ async fn cmd_unset(sapi_url: &str) -> Result<()> {
         .context("failed to build SAPI client")?;
     let app = fetch_sdc_app(&sapi).await?;
 
-    if configured_channel(&app).is_none() {
+    let Some(current) = configured_channel(&app).map(str::to_string) else {
         println!("No update channel was set.");
         return Ok(());
-    }
+    };
 
     // SAPI's delete action keys off the metadata map; the value is
     // ignored. Pass the current value for clarity in the audit trail.
-    let current = configured_channel(&app).unwrap_or("").to_string();
     let mut metadata = serde_json::Map::new();
     metadata.insert(
         "update_channel".to_string(),
