@@ -41,7 +41,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
 use axum::Router;
@@ -79,6 +79,17 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// (The proper fix is a keepalive ping that the proxy chain forwards
 /// end to end; until then this is the backstop.)
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// How often to send a WebSocket Ping toward the peer (tritond) to
+/// detect a dead chain faster than [`IDLE_TIMEOUT`]. The proxy hops
+/// forward Ping/Pong verbatim, and axum/tungstenite auto-respond to
+/// incoming Pings, so a peer that's alive but quiet still answers.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+
+/// If nothing at all (data, Ping, or Pong) is seen from the peer for
+/// this long, tear the hop down — Close then propagates both ways,
+/// releasing the single-consumer zoneadmd console socket within ~45 s.
+const PEER_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// Read buffer size for the UDS→WS direction.
 const UDS_READ_BUF: usize = 8 * 1024;
@@ -372,9 +383,20 @@ async fn run_zlogin_handshake(uds: &mut UnixStream) -> Result<()> {
 /// `Ping` is answered with `Pong`; `Close` ends the session; `Pong` is
 /// ignored. UDS → WS: raw bytes are sent as `Binary` frames. An EOF or
 /// error on either side closes the other.
+///
+/// Additionally, every [`KEEPALIVE_INTERVAL`] a `Ping` is sent toward
+/// the peer (tritond, which forwards it up the chain). If nothing at
+/// all is seen from the peer for [`PEER_TIMEOUT`], the session is torn
+/// down — `Close` then propagates both ways, releasing the
+/// single-consumer zoneadmd console socket within ~45 s instead of the
+/// [`IDLE_TIMEOUT`] backstop.
 async fn pump(ws: WebSocket, mut uds: UnixStream) -> Result<()> {
     let (mut ws_tx, mut ws_rx) = ws.split();
     let mut uds_buf = vec![0u8; UDS_READ_BUF];
+
+    let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_seen = Instant::now();
 
     loop {
         tokio::select! {
@@ -384,25 +406,43 @@ async fn pump(ws: WebSocket, mut uds: UnixStream) -> Result<()> {
                 let _ = ws_tx.send(Message::Close(None)).await;
                 break;
             }
+            // Keepalive: ping the peer; if it's gone silent past
+            // PEER_TIMEOUT, tear the hop down.
+            _ = keepalive.tick() => {
+                if last_seen.elapsed() > PEER_TIMEOUT {
+                    debug!("console: no traffic from peer in {PEER_TIMEOUT:?}; closing");
+                    break;
+                }
+                if ws_tx.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+            }
             from_ws = ws_rx.next() => {
                 match from_ws {
-                    Some(Ok(Message::Binary(data))) => {
-                        if uds.write_all(&data).await.is_err() {
-                            break;
+                    Some(Ok(msg)) => {
+                        // Any frame from the WS side proves the peer is alive.
+                        last_seen = Instant::now();
+                        match msg {
+                            Message::Binary(data) => {
+                                if uds.write_all(&data).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Message::Text(text) => {
+                                if uds.write_all(text.as_bytes()).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Message::Ping(payload) => {
+                                if ws_tx.send(Message::Pong(payload)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Message::Pong(_) => {}
+                            Message::Close(_) => break,
                         }
                     }
-                    Some(Ok(Message::Text(text))) => {
-                        if uds.write_all(text.as_bytes()).await.is_err() {
-                            break;
-                        }
-                    }
-                    Some(Ok(Message::Ping(payload))) => {
-                        if ws_tx.send(Message::Pong(payload)).await.is_err() {
-                            break;
-                        }
-                    }
-                    Some(Ok(Message::Pong(_))) => {}
-                    Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    Some(Err(_)) | None => break,
                 }
             }
             from_uds = uds.read(&mut uds_buf) => {

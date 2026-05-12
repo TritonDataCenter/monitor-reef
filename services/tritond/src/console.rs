@@ -23,6 +23,7 @@
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use dropshot::{Path, Query, RequestContext, WebsocketChannelResult, WebsocketConnection};
 use futures_util::{SinkExt, StreamExt};
@@ -31,10 +32,10 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme};
 use sha2::{Digest, Sha256};
 use tokio_tungstenite::Connector;
-use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::Role;
 use tokio_tungstenite::tungstenite::protocol::frame::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+use tokio_tungstenite::tungstenite::{Bytes, Message};
 use uuid::Uuid;
 
 use tritond_api::types::{Instance, InstanceBrand, LegacyVm, LifecycleStateKind};
@@ -47,6 +48,16 @@ use crate::auth::{
     Action, Principal, authenticate_and_authorize, authenticate_and_authorize_in_tenant,
 };
 use crate::context::ApiContext;
+
+/// How often to send a WebSocket Ping toward the downstream
+/// (admin-backend) peer so a dead browser/chain is detected faster
+/// than the agent's 10-minute idle backstop.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+
+/// If nothing at all (data, Ping, or Pong) is seen from the downstream
+/// peer for this long, tear this hop down — Close then propagates both
+/// ways.
+const PEER_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// The Dropshot side of the proxy, wrapped as a server-role WebSocket.
 type DownstreamWs = tokio_tungstenite::WebSocketStream<dropshot::WebsocketConnectionRaw>;
@@ -168,23 +179,43 @@ pub(crate) async fn proxy_console(
 }
 
 /// Copy WebSocket frames between the two streams until either side
-/// closes or errors. Text/Binary are relayed verbatim; a Close on either
-/// side is forwarded to the other and ends the pump. (Ping/Pong are
-/// answered by tokio-tungstenite itself on the next read/write of each
-/// stream.)
+/// closes or errors. Text/Binary **and Ping/Pong** are relayed verbatim
+/// in both directions (so an end-to-end keepalive ping isn't dropped
+/// mid-chain); a Close on either side is forwarded to the other and ends
+/// the pump. Additionally tritond pings the downstream (admin-backend)
+/// peer every [`KEEPALIVE_INTERVAL`] and tears the hop down if nothing
+/// is heard back within [`PEER_TIMEOUT`].
 async fn pump<S>(mut downstream: DownstreamWs, mut upstream: S)
 where
     S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
         + SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error>
         + Unpin,
 {
+    let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_downstream = Instant::now();
+
     loop {
         tokio::select! {
+            _ = keepalive.tick() => {
+                if last_downstream.elapsed() > PEER_TIMEOUT {
+                    break;
+                }
+                if downstream.send(Message::Ping(Bytes::new())).await.is_err() {
+                    break;
+                }
+            }
             from_browser = downstream.next() => {
                 match from_browser {
                     Some(Ok(msg)) => {
+                        // Any frame from the downstream side proves it's alive.
+                        last_downstream = Instant::now();
                         let is_close = matches!(msg, Message::Close(_));
-                        if let Message::Text(_) | Message::Binary(_) | Message::Close(_) = msg
+                        if let Message::Text(_)
+                            | Message::Binary(_)
+                            | Message::Ping(_)
+                            | Message::Pong(_)
+                            | Message::Close(_) = msg
                             && upstream.send(msg).await.is_err()
                         {
                             break;
@@ -200,7 +231,11 @@ where
                 match from_agent {
                     Some(Ok(msg)) => {
                         let is_close = matches!(msg, Message::Close(_));
-                        if let Message::Text(_) | Message::Binary(_) | Message::Close(_) = msg
+                        if let Message::Text(_)
+                            | Message::Binary(_)
+                            | Message::Ping(_)
+                            | Message::Pong(_)
+                            | Message::Close(_) = msg
                             && downstream.send(msg).await.is_err()
                         {
                             break;
