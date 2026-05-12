@@ -8130,7 +8130,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn disable_cn_blocks_re_registration() {
+    async fn disabled_cn_re_registers_back_to_pending() {
+        // Disabling a CN is reversible by re-registration: the agent
+        // restarting re-arms the record to Pending (fresh claim code,
+        // bound credential cleared), awaiting re-approval. The disable
+        // event stays in the audit chain.
         let store = MemStore::new();
         let id = Uuid::new_v4();
         let now = Utc::now();
@@ -8139,11 +8143,13 @@ mod tests {
             .await
             .unwrap();
         store.disable_cn(id).await.unwrap();
-        let err = store
+        let re = store
             .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
             .await
-            .unwrap_err();
-        assert!(matches!(err, StoreError::Conflict(_)));
+            .unwrap();
+        assert_eq!(re.state, CnState::Pending);
+        assert!(re.claim_code.is_some());
+        assert!(re.bound_api_key_id.is_none());
     }
 
     #[tokio::test]

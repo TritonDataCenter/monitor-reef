@@ -8170,7 +8170,9 @@ mod cn_tests {
 
     #[tokio::test]
     #[ignore]
-    async fn disable_cn_blocks_re_registration() {
+    async fn disabled_cn_re_registers_back_to_pending() {
+        // Re-registration re-arms a Disabled CN to Pending (fresh
+        // claim code, bound credential cleared), awaiting re-approval.
         let store = fdb_test_store();
         let id = Uuid::new_v4();
         purge_cn(&store, id).await;
@@ -8182,11 +8184,13 @@ mod cn_tests {
             .await
             .expect("register");
         store.disable_cn(id).await.expect("disable");
-        let err = store
+        let re = store
             .register_cn(id, "h".into(), None, sysinfo_fixture(), now)
             .await
-            .expect_err("re-register after disable should fail");
-        assert!(matches!(err, StoreError::Conflict(_)));
+            .expect("re-register after disable should re-arm to Pending");
+        assert_eq!(re.state, CnState::Pending);
+        assert!(re.claim_code.is_some());
+        assert!(re.bound_api_key_id.is_none());
 
         purge_cn(&store, id).await;
     }
