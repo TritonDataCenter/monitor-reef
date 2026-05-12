@@ -21,10 +21,15 @@
 //! * [`jwt`] — HS256 mint and verify for short-lived access tokens
 //!   and longer-lived refresh tokens. Single symmetric key per
 //!   cluster, generated at bootstrap, zeroed on drop.
+//! * [`console_ticket`] — per-CN HS256 key + short-lived "console
+//!   ticket" JWT scoped to one `(server_uuid, vm_uuid, kind)`, used to
+//!   authorise a single serial / VNC console attach against an agent's
+//!   on-CN listener.
 //! * [`redacted`] — `RedactedString` newtype for credential fields
 //!   that must not leak via `Debug` or coredump.
 
 pub mod api_key;
+pub mod console_ticket;
 pub mod identity_hmac;
 pub mod jwt;
 pub mod oidc;
@@ -34,6 +39,10 @@ pub mod redacted;
 pub use api_key::{
     API_KEY_PREFIX, ApiKeyError, ApiKeyMaterial, LOOKUP_ID_CHARS, SECRET_CHARS, generate_api_key,
     parse_api_key, verify_api_key_secret,
+};
+pub use console_ticket::{
+    CONSOLE_TICKET_KEY_BYTES, ConsoleKind, ConsoleTicketError, ConsoleTicketKey,
+    DEFAULT_TICKET_TTL_SECS,
 };
 pub use identity_hmac::{IDENTITY_HMAC_KEY_BYTES, IdentityHmacKey};
 pub use jwt::{
