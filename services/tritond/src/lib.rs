@@ -35,6 +35,7 @@ pub mod sweeper;
 mod blueprint;
 mod bundle;
 mod cn_credential;
+mod console;
 mod context;
 mod edge_cluster;
 mod error;

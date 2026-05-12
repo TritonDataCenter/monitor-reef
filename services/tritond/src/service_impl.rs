@@ -44,14 +44,13 @@ use tritond_api::{
     TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
-        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, Instance, LegacyVm,
-        NatGateway, NewDhcpPool, NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage,
-        NewInstance, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-        NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, PresignGetRequest,
-        PresignPutRequest, PresignResponse, Project, ProvisioningJob, Quota, Route, RouteTable,
-        SetPresignerRequest, Silo, SshKey, StorageAccessKey, StorageBucket,
-        StorageClusterSummary, StorageClusterView, StorageMembership, StorageNode,
-        StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
+        Disk, FirewallRule, FloatingIp, IdpConfigView, Image, Instance, LegacyVm, NatGateway,
+        NewDhcpPool, NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
+        NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+        NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, PresignGetRequest, PresignPutRequest,
+        PresignResponse, Project, ProvisioningJob, Quota, Route, RouteTable, SetPresignerRequest,
+        Silo, SshKey, StorageAccessKey, StorageBucket, StorageClusterSummary, StorageClusterView,
+        StorageMembership, StorageNode, StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
     },
 };
 use tritond_audit::Outcome as AuditOutcome;
@@ -751,6 +750,24 @@ impl TritondApi for TritondServiceImpl {
         path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError> {
         crate::handlers::instances::restart_project_instance(rqctx, path).await
+    }
+
+    async fn instance_console(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectInstancePath>,
+        query: Query<tritond_api::ConsoleQuery>,
+        upgraded: dropshot::WebsocketConnection,
+    ) -> dropshot::WebsocketChannelResult {
+        crate::console::instance_console(rqctx, path, query, upgraded).await
+    }
+
+    async fn legacy_vm_console(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<LegacyVmPath>,
+        query: Query<tritond_api::ConsoleQuery>,
+        upgraded: dropshot::WebsocketConnection,
+    ) -> dropshot::WebsocketChannelResult {
+        crate::console::legacy_vm_console(rqctx, path, query, upgraded).await
     }
 
     async fn list_instance_nics(

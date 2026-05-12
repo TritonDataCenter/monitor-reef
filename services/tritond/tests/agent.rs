@@ -154,6 +154,8 @@ async fn register_and_approve_with_sysinfo(
             hostname: hostname.to_string(),
             admin_ip: None,
             sysinfo,
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await

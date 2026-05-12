@@ -135,6 +135,8 @@ async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) 
             hostname: hostname.to_string(),
             admin_ip: None,
             sysinfo: serde_json::json!({ "hostname": hostname }),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await

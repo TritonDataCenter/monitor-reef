@@ -14,7 +14,7 @@ use uuid::Uuid;
 use tritond_api::StorageClusterNodePath;
 use tritond_api::types::{NetworkResourceId, ProvisioningJob, RealizerId, StorageMembership};
 use tritond_audit::Outcome as AuditOutcome;
-use tritond_auth::generate_api_key;
+use tritond_auth::{ConsoleTicketKey, generate_api_key};
 use tritond_store::{ApiKey, ApiKeyScope, Cn, Store};
 
 use crate::auth::{Action, authenticate_and_authorize, require_authenticated};
@@ -125,10 +125,26 @@ pub(crate) async fn mint_and_attach_cn_credential(
         .await
         .map_err(store_error_to_http)?;
 
+    // Per-CN console-ticket signing key. Generated here so it lands
+    // on the Cn record in the same atomic `approve_cn` update as the
+    // bound API key + pending plaintext; the agent retrieves it
+    // (hex-encoded) alongside the API key on its first
+    // long-poll-after-approval. Deliberately a distinct key from the
+    // operator-login JwtKey: a compromised CN must not be able to
+    // forge operator access tokens.
+    let console_ticket_key = ConsoleTicketKey::generate();
+    let console_ticket_key_bytes = *console_ticket_key.bytes();
+
     let now = chrono::Utc::now();
     let updated = match ctx
         .store
-        .approve_cn(cn.server_uuid, key_id, material.plaintext, now)
+        .approve_cn(
+            cn.server_uuid,
+            key_id,
+            material.plaintext,
+            console_ticket_key_bytes,
+            now,
+        )
         .await
     {
         Ok(updated) => updated,

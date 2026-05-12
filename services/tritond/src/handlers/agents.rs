@@ -396,6 +396,28 @@ pub(crate) async fn agent_register(
     let req = body.into_inner();
     let now = chrono::Utc::now();
 
+    // Decode the agent's reported console-listener TLS SPKI
+    // fingerprint up front so a malformed value 400s before we
+    // touch the store. A port without a fingerprint (or a
+    // fingerprint without a port) is also rejected: tritond pins
+    // the SPKI when it dials the listener, so half a configuration
+    // is no configuration.
+    let console_tls_spki = match req.console_tls_spki_sha256_hex.as_deref() {
+        Some(s) => {
+            let mut buf = [0u8; 32];
+            hex::decode_to_slice(s, &mut buf).map_err(|_| {
+                bad_request("console_tls_spki_sha256_hex must be 64 lowercase hex chars (32 bytes)")
+            })?;
+            Some(buf)
+        }
+        None => None,
+    };
+    if console_tls_spki.is_some() != req.console_listen_port.is_some() {
+        return Err(bad_request(
+            "console_listen_port and console_tls_spki_sha256_hex must be supplied together",
+        ));
+    }
+
     let cn = ctx
         .store
         .register_cn(
@@ -405,6 +427,15 @@ pub(crate) async fn agent_register(
             req.sysinfo.clone(),
             now,
         )
+        .await
+        .map_err(store_error_to_http)?;
+
+    // Record the on-host console listener endpoint right after
+    // register. The agent re-reports it on every (re-)registration,
+    // so this is an idempotent update; a CN that has no console
+    // listener clears the fields.
+    ctx.store
+        .set_cn_console_endpoint(req.server_uuid, req.console_listen_port, console_tls_spki)
         .await
         .map_err(store_error_to_http)?;
 
@@ -493,15 +524,25 @@ pub(crate) async fn agent_register_status(
                 .consume_cn_pending_credential(&q.poll_token)
                 .await
                 .map_err(store_error_to_http)?;
+            // The per-CN console-ticket key is delivered exactly
+            // when the API key plaintext is — i.e. on the first
+            // long-poll after approval. (Unlike `pending_credential`
+            // it stays on the Cn record permanently; we just only
+            // hand it to the agent in the same response.)
+            let console_ticket_key_hex = credential
+                .as_ref()
+                .map(|_| hex::encode(cn.console_ticket_key.unwrap_or_default()));
             return Ok(HttpResponseOk(RegisterStatusResponse {
                 state: cn.state,
                 api_key: credential,
+                console_ticket_key_hex,
             }));
         }
         if cn.state == CnState::Disabled {
             return Ok(HttpResponseOk(RegisterStatusResponse {
                 state: cn.state,
                 api_key: None,
+                console_ticket_key_hex: None,
             }));
         }
 
@@ -509,6 +550,7 @@ pub(crate) async fn agent_register_status(
             return Ok(HttpResponseOk(RegisterStatusResponse {
                 state: cn.state,
                 api_key: None,
+                console_ticket_key_hex: None,
             }));
         }
         tokio::time::sleep(poll_interval).await;

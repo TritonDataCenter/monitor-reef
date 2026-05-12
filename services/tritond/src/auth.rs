@@ -177,6 +177,7 @@ permit(
         Action::"instance_start",
         Action::"instance_stop",
         Action::"instance_restart",
+        Action::"instance_console",
         Action::"nic_list",
         Action::"nic_get",
         Action::"disk_list",
@@ -475,6 +476,11 @@ pub enum Action {
     InstanceStart,
     InstanceStop,
     InstanceRestart,
+    /// Open a browser-facing serial / VNC console to a managed
+    /// instance. Granted to the same principals that can
+    /// start/stop the instance — opening a console is an
+    /// interactive state-touching action, not a passive read.
+    InstanceConsole,
     NicList,
     NicGet,
     DiskList,
@@ -707,6 +713,7 @@ impl Action {
             Action::InstanceStart => "instance_start",
             Action::InstanceStop => "instance_stop",
             Action::InstanceRestart => "instance_restart",
+            Action::InstanceConsole => "instance_console",
             Action::NicList => "nic_list",
             Action::NicGet => "nic_get",
             Action::DiskList => "disk_list",
@@ -1337,6 +1344,9 @@ fn is_read_action(action: Action) -> bool {
         | Action::InstanceStart
         | Action::InstanceStop
         | Action::InstanceRestart
+        // Opening a console is an interactive action that touches
+        // the guest; a ReadOnly key must not reach it.
+        | Action::InstanceConsole
         | Action::FloatingIpCreate
         | Action::FloatingIpDelete
         | Action::FloatingIpAttach

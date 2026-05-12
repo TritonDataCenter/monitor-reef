@@ -124,6 +124,8 @@ async fn register_creates_pending_with_claim_code() {
             hostname: "cn-a".to_string(),
             admin_ip: Some("10.99.99.7".parse().unwrap()),
             sysinfo: fixture_sysinfo(server_uuid, "cn-a"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -155,6 +157,8 @@ async fn approve_by_code_then_status_returns_api_key_once() {
             hostname: "cn-a".to_string(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(server_uuid, "cn-a"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -230,6 +234,8 @@ async fn auto_approve_window_promotes_registration() {
             hostname: "cn-bulk".to_string(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(server_uuid, "cn-bulk"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -352,6 +358,8 @@ async fn disabled_record_blocks_re_registration() {
             hostname: "cn-x".to_string(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(server_uuid, "cn-x"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -372,6 +380,8 @@ async fn disabled_record_blocks_re_registration() {
             hostname: "cn-x".to_string(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(server_uuid, "cn-x"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -420,6 +430,8 @@ async fn list_cns_filters_by_state() {
             hostname: "p".into(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(p_uuid, "p"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -431,6 +443,8 @@ async fn list_cns_filters_by_state() {
             hostname: "a".into(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(a_uuid, "a"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -484,6 +498,8 @@ async fn root_can_set_cn_role_label() {
             hostname: "edge-a".to_string(),
             admin_ip: Some("10.99.99.40".parse().unwrap()),
             sysinfo: fixture_sysinfo(server_uuid, "edge-a"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -537,6 +553,8 @@ async fn bound_api_key_rejects_claim_for_other_cn() {
             hostname: "cn-a".to_string(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(cn_a, "cn-a"),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await
@@ -612,6 +630,8 @@ async fn register_and_approve(test: &TestServer, cn_uuid: Uuid, hostname: &str) 
             hostname: hostname.to_string(),
             admin_ip: None,
             sysinfo: fixture_sysinfo(cn_uuid, hostname),
+            console_listen_port: None,
+            console_tls_spki_sha256_hex: None,
         })
         .send()
         .await

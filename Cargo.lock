@@ -5917,6 +5917,7 @@ dependencies = [
  "tritond-logs",
  "tritond-metrics",
  "tritond-store",
+ "urlencoding",
  "uuid",
  "webpki-roots 1.0.6",
  "x509-parser 0.17.0",
