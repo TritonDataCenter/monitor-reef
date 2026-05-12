@@ -199,44 +199,33 @@ enum ProbeResult {
 /// Calling raw `reqwest::Client::builder()` falls through to
 /// rustls-platform-verifier on illumos, which can accept certs the rest
 /// of our codebase rejects.
+///
+/// Self-signed and unreachable are distinguished by *probing twice*
+/// rather than string-matching rustls/reqwest error messages (whose
+/// wording has drifted between versions). The verified probe runs
+/// first; on success we're done. On failure we retry with
+/// `TlsTrust::Insecure`: a success there means the host is up but its
+/// cert isn't trusted (self-signed), a failure means we genuinely
+/// can't reach the host.
 async fn probe_cloudapi(url: &str) -> ProbeResult {
-    let client = match triton_tls::build_http_client(triton_tls::TlsTrust::Verified).await {
-        Ok(c) => c,
-        Err(e) => return ProbeResult::Unreachable(format!("build http client: {e}")),
-    };
-    let send = client.get(url).send();
-    match tokio::time::timeout(PROBE_TIMEOUT, send).await {
-        Ok(Ok(_)) => ProbeResult::CertValid,
-        Ok(Err(e)) if is_tls_error(&e) => ProbeResult::SelfSigned,
-        Ok(Err(e)) => ProbeResult::Unreachable(format!("{e}")),
-        Err(_) => ProbeResult::Unreachable(format!("timed out after {PROBE_TIMEOUT:?}")),
+    if try_get(url, triton_tls::TlsTrust::Verified).await.is_ok() {
+        return ProbeResult::CertValid;
+    }
+    match try_get(url, triton_tls::TlsTrust::Insecure).await {
+        Ok(()) => ProbeResult::SelfSigned,
+        Err(reason) => ProbeResult::Unreachable(reason),
     }
 }
 
-/// Walk a reqwest error's source chain looking for a TLS-layer failure.
-/// reqwest wraps errors from the underlying TLS stack; the chain
-/// contains a `rustls::Error` (or native-tls equivalent) when the cert
-/// chain didn't validate. Generic transport errors (DNS, refused) won't
-/// match.
-fn is_tls_error(err: &reqwest::Error) -> bool {
-    // reqwest::Error::is_connect() is true for both "couldn't connect"
-    // and TLS handshake failures, so we have to dig into the source
-    // chain to disambiguate.
-    let mut source: Option<&dyn std::error::Error> = Some(err);
-    while let Some(e) = source {
-        let s = format!("{e}").to_lowercase();
-        if s.contains("certificate")
-            || s.contains("self signed")
-            || s.contains("self-signed")
-            || s.contains("unknownissuer")
-            || s.contains("invalid peer certificate")
-            || s.contains("tls handshake")
-        {
-            return true;
-        }
-        source = e.source();
+async fn try_get(url: &str, trust: triton_tls::TlsTrust) -> Result<(), String> {
+    let client = triton_tls::build_http_client(trust)
+        .await
+        .map_err(|e| format!("build http client: {e}"))?;
+    match tokio::time::timeout(PROBE_TIMEOUT, client.get(url).send()).await {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(e)) => Err(format!("{e}")),
+        Err(_) => Err(format!("timed out after {PROBE_TIMEOUT:?}")),
     }
-    false
 }
 
 /// Resolve `$HOME/.triton/profiles.d/<name>.json`, honoring
