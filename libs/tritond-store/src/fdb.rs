@@ -4605,6 +4605,53 @@ impl Store for FdbStore {
         }
     }
 
+    async fn set_instance_brand(
+        &self,
+        instance_id: Uuid,
+        brand: InstanceBrand,
+    ) -> Result<(), StoreError> {
+        let by_id_key = Self::instance_by_id_key(instance_id);
+
+        enum Outcome {
+            Updated,
+            Vanished,
+            Serialize,
+        }
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Outcome::Vanished),
+                    };
+                    let mut instance: Instance = match serde_json::from_slice(&bytes) {
+                        Ok(i) => i,
+                        Err(_) => return Ok(Outcome::Vanished),
+                    };
+                    instance.brand = brand;
+                    instance.updated_at = Utc::now();
+                    let value = match serde_json::to_vec(&instance) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Outcome::Serialize),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Outcome::Updated)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Updated) => Ok(()),
+            Ok(Outcome::Vanished) => Err(StoreError::NotFound),
+            Ok(Outcome::Serialize) => Err(StoreError::Backend(
+                "serialize instance brand backfill".to_string(),
+            )),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
         let prefix = Self::instance_in_host_cn_prefix(host_cn_uuid);
         let (begin, end) = prefix_range(&prefix);

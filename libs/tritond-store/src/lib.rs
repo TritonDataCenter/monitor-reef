@@ -824,6 +824,23 @@ pub trait Store: Send + Sync + 'static {
     /// placer to spread new VMs across eligible hosts.
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError>;
 
+    /// Set an instance's [`Instance::brand`] (and bump `updated_at`).
+    ///
+    /// Used by the agent-status backfill: instances created before the
+    /// `brand` field existed (or from an image with no compatibility
+    /// block) have `InstanceBrand::NotApplicable`; the agent's periodic
+    /// status report carries the live zone brand, which is folded in
+    /// here so the console UI's VNC gate becomes precise. Callers are
+    /// expected to only invoke this when the current brand is
+    /// `NotApplicable` (so it's a one-time write per instance).
+    ///
+    /// Returns [`StoreError::NotFound`] if the instance does not exist.
+    async fn set_instance_brand(
+        &self,
+        instance_id: Uuid,
+        brand: InstanceBrand,
+    ) -> Result<(), StoreError>;
+
     /// Delete an instance. Returns [`StoreError::Conflict`] if the
     /// current lifecycle is not deletable
     /// (see [`LifecycleState::is_deletable`]) — operators must

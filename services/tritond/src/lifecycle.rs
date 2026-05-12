@@ -16,7 +16,7 @@ use tritond_api::types::{
     Instance, JobKind, JobOutcome, LifecycleState, LifecycleStateKind, ProvisioningJob,
 };
 use tritond_audit::Outcome as AuditOutcome;
-use tritond_store::{Cn, CnRole, CnState, NewJob, Store, StoreError};
+use tritond_store::{Cn, CnRole, CnState, InstanceBrand, NewJob, Store, StoreError};
 
 use crate::auth::{self, Action, authenticate_and_authorize_in_tenant};
 use crate::context::ApiContext;
@@ -242,6 +242,54 @@ pub(crate) async fn run_classifier_pass(
         }
     }
     Ok(())
+}
+
+/// Best-effort backfill of [`Instance::brand`] from the agent's
+/// periodic status report.
+///
+/// The agent's status blob carries every zone on the CN with its live
+/// brand (e.g. `bhyve`, `joyent-minimal`). Managed instances appear in
+/// it too. Instances created before the `brand` field existed (or from
+/// an image with no compatibility block) carry
+/// [`InstanceBrand::NotApplicable`]; this folds the observed brand in so
+/// the console UI's VNC gate becomes precise instead of
+/// "offer-unless-known-bad".
+///
+/// Only writes when the current brand is `NotApplicable`, so it's a
+/// one-time write per instance rather than a per-status-post storm.
+/// Best-effort: any error is logged and skipped; this never fails the
+/// status post.
+pub(crate) async fn backfill_instance_brands(ctx: &ApiContext, payload: &serde_json::Value) {
+    use tritond_store::parse_vm_reports;
+
+    for report in parse_vm_reports(payload) {
+        let Some(brand) = report.brand.as_deref().filter(|b| !b.is_empty()) else {
+            continue;
+        };
+        match ctx.store.get_instance(report.uuid).await {
+            Ok(instance) if instance.brand == InstanceBrand::NotApplicable => {
+                let resolved = InstanceBrand::from_compat_brand(brand);
+                if let Err(e) = ctx.store.set_instance_brand(report.uuid, resolved).await {
+                    tracing::warn!(
+                        instance_id = %report.uuid,
+                        brand,
+                        error = %e,
+                        "failed to backfill instance brand from CN status report",
+                    );
+                }
+            }
+            // Already known, or not a managed instance — nothing to do.
+            Ok(_) => {}
+            Err(StoreError::NotFound) => {}
+            Err(e) => {
+                tracing::warn!(
+                    smartos_uuid = %report.uuid,
+                    error = %e,
+                    "failed to look up instance for brand backfill",
+                );
+            }
+        }
+    }
 }
 
 /// Token-only enum used by `instance_lifecycle_transition` to pick

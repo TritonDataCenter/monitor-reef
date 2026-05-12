@@ -2447,6 +2447,21 @@ impl Store for MemStore {
             .collect())
     }
 
+    async fn set_instance_brand(
+        &self,
+        instance_id: Uuid,
+        brand: InstanceBrand,
+    ) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let instance = guard
+            .instances_by_id
+            .get_mut(&instance_id)
+            .ok_or(StoreError::NotFound)?;
+        instance.brand = brand;
+        instance.updated_at = Utc::now();
+        Ok(())
+    }
+
     async fn delete_instance(&self, instance_id: Uuid, force: bool) -> Result<(), StoreError> {
         let mut guard = self.inner.write().await;
         // Snapshot just the data we need so the lifecycle check
@@ -5928,6 +5943,35 @@ mod tests {
 
         store.set_instance_host_cn(instance.id, None).await.unwrap();
         assert_eq!(store.list_instances_for_cn(cn_b).await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn set_instance_brand_updates_brand_and_404s_on_missing() {
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let InstanceCreateResult { instance, .. } = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+
+        store
+            .set_instance_brand(instance.id, InstanceBrand::Bhyve)
+            .await
+            .unwrap();
+        let fetched = store.get_instance(instance.id).await.unwrap();
+        assert_eq!(fetched.brand, InstanceBrand::Bhyve);
+        assert!(fetched.updated_at >= instance.updated_at);
+
+        let missing = store
+            .set_instance_brand(Uuid::new_v4(), InstanceBrand::Kvm)
+            .await
+            .expect_err("missing instance should be not-found");
+        assert!(matches!(missing, StoreError::NotFound));
     }
 
     #[tokio::test]

@@ -341,6 +341,10 @@ pub(crate) async fn agent_status(
             "classifier pass failed; status post still acked",
         );
     }
+    // Best-effort: backfill `Instance.brand` for managed instances that
+    // are still `NotApplicable`, using the live zone brand the agent
+    // just reported. Logs internally; never fails the status post.
+    backfill_instance_brands(ctx, &payload).await;
     Ok(HttpResponseOk(()))
 }
 
