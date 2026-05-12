@@ -21,39 +21,30 @@ use crate::commands::image::nocloud::vendor::Release;
 const VM_IMAGES_URL: &str = "https://download.freebsd.org/releases/VM-IMAGES/";
 
 pub async fn find_latest(http: &reqwest::Client) -> Result<String> {
-    eprintln!("Fetching FreeBSD VM-IMAGES directory listing ...");
-    let body = http
-        .get(VM_IMAGES_URL)
-        .send()
-        .await
-        .with_context(|| format!("GET {VM_IMAGES_URL}"))?
-        .error_for_status()
-        .with_context(|| format!("status from {VM_IMAGES_URL}"))?
-        .text()
-        .await
-        .with_context(|| format!("read body of {VM_IMAGES_URL}"))?;
-    parse_latest_from_html(&body)
+    let versions = fetch_versions(http).await?;
+    versions
+        .first()
+        .map(|(maj, min)| format!("{maj}.{min}"))
         .ok_or_else(|| anyhow::anyhow!("no `X.Y-RELEASE/` entries found in {VM_IMAGES_URL}"))
-}
-
-fn parse_latest_from_html(body: &str) -> Option<String> {
-    let re = Regex::new(r"\b(\d+)\.(\d+)-RELEASE/").ok()?;
-    let mut best: Option<(u32, u32)> = None;
-    for cap in re.captures_iter(body) {
-        let major: u32 = cap.get(1)?.as_str().parse().ok()?;
-        let minor: u32 = cap.get(2)?.as_str().parse().ok()?;
-        match best {
-            None => best = Some((major, minor)),
-            Some(b) if (major, minor) > b => best = Some((major, minor)),
-            _ => {}
-        }
-    }
-    best.map(|(maj, min)| format!("{maj}.{min}"))
 }
 
 /// Enumerate every `<X>.<Y>-RELEASE/` entry in the VM-IMAGES index,
 /// newest-first. No EOL signal in the listing.
 pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
+    Ok(fetch_versions(http)
+        .await?
+        .into_iter()
+        .map(|(maj, min)| Release {
+            name: format!("{maj}.{min}"),
+            label: Some(format!("FreeBSD {maj}.{min}-RELEASE")),
+            note: None,
+        })
+        .collect())
+}
+
+/// Fetch the VM-IMAGES directory listing and return every distinct
+/// `(major, minor)` pair newest-first.
+async fn fetch_versions(http: &reqwest::Client) -> Result<Vec<(u32, u32)>> {
     eprintln!("Fetching FreeBSD VM-IMAGES directory listing ...");
     let body = http
         .get(VM_IMAGES_URL)
@@ -65,10 +56,10 @@ pub async fn list(http: &reqwest::Client) -> Result<Vec<Release>> {
         .text()
         .await
         .with_context(|| format!("read body of {VM_IMAGES_URL}"))?;
-    Ok(parse_releases_from_html(&body))
+    Ok(parse_versions_from_html(&body))
 }
 
-fn parse_releases_from_html(body: &str) -> Vec<Release> {
+fn parse_versions_from_html(body: &str) -> Vec<(u32, u32)> {
     let Ok(re) = Regex::new(r"\b(\d+)\.(\d+)-RELEASE/") else {
         return Vec::new();
     };
@@ -84,13 +75,6 @@ fn parse_releases_from_html(body: &str) -> Vec<Release> {
     versions.dedup();
     versions.reverse();
     versions
-        .into_iter()
-        .map(|(maj, min)| Release {
-            name: format!("{maj}.{min}"),
-            label: Some(format!("FreeBSD {maj}.{min}-RELEASE")),
-            note: None,
-        })
-        .collect()
 }
 
 /// Validate and normalize a user-supplied release token. Accepts
@@ -113,26 +97,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_latest_picks_highest_version() {
+    fn parse_versions_picks_highest_first() {
         let body = r#"
             <a href="13.5-RELEASE/">13.5-RELEASE/</a>
             <a href="14.3-RELEASE/">14.3-RELEASE/</a>
             <a href="14.4-RELEASE/">14.4-RELEASE/</a>
             <a href="15.0-RELEASE/">15.0-RELEASE/</a>
         "#;
-        assert_eq!(parse_latest_from_html(body).unwrap(), "15.0");
+        assert_eq!(parse_versions_from_html(body).first().unwrap(), &(15, 0));
     }
 
     #[test]
-    fn parse_latest_handles_double_digits() {
+    fn parse_versions_handles_double_digits() {
         let body = "9.3-RELEASE/ 10.4-RELEASE/ 11.4-RELEASE/";
-        assert_eq!(parse_latest_from_html(body).unwrap(), "11.4");
+        assert_eq!(parse_versions_from_html(body).first().unwrap(), &(11, 4));
     }
 
     #[test]
-    fn parse_latest_returns_none_when_empty() {
-        assert!(parse_latest_from_html("").is_none());
-        assert!(parse_latest_from_html("nothing here").is_none());
+    fn parse_versions_returns_empty_when_no_matches() {
+        assert!(parse_versions_from_html("").is_empty());
+        assert!(parse_versions_from_html("nothing here").is_empty());
     }
 
     #[test]
@@ -154,15 +138,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_releases_html_sorts_newest_first_and_dedupes() {
+    fn parse_versions_html_sorts_newest_first_and_dedupes() {
         let body = r#"
             <a href="13.5-RELEASE/">13.5-RELEASE/</a>
             <a href="13.5-RELEASE/">13.5-RELEASE/</a>
             <a href="14.4-RELEASE/">14.4-RELEASE/</a>
             <a href="15.0-RELEASE/">15.0-RELEASE/</a>
         "#;
-        let rows = parse_releases_from_html(body);
-        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, vec!["15.0", "14.4", "13.5"]);
+        let rows = parse_versions_from_html(body);
+        assert_eq!(rows, vec![(15, 0), (14, 4), (13, 5)]);
     }
 }
