@@ -1771,11 +1771,149 @@ pub enum LifecycleStateKind {
 /// `tritonagent`.
 ///
 /// Several fields that real cloud instances carry are deliberately
-/// omitted in v0: cloud-init userdata, tags/labels, brand
-/// (zone/hvm/lx/bhyve), affinity rules, console URL, migration
-/// history. Each will land as the consuming use case ships. The
-/// hosting CN is recorded once placement lands so subsequent
-/// lifecycle jobs return to the same SmartOS host.
+/// SmartOS brand the instance's host-side VM runs as.
+///
+/// Derived at create time from the boot [`Image`]'s
+/// [`ImageCompatibility::brand`] (the only place tritond currently
+/// learns it). `NotApplicable` is the default — it covers both
+/// records created before this field existed and images registered
+/// via the explicit-fields path that carries no compatibility block.
+///
+/// Used by the console surface (VNC framebuffer is only meaningful
+/// for `Bhyve` / `Kvm`) and by the UI to label instances. It is
+/// `#[serde(other)]` on `NotApplicable` so an unrecognised future
+/// brand string round-trips harmlessly rather than failing
+/// deserialization.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstanceBrand {
+    /// `kvm` HVM zone (legacy hypervisor; serial + VNC consoles).
+    Kvm,
+    /// `bhyve` HVM zone (serial via the zone console; VNC framebuffer).
+    Bhyve,
+    /// `lx` Linux-syscall zone (serial via the zone console only).
+    Lx,
+    /// `joyent-minimal` native SmartOS zone (serial via the zone
+    /// console only).
+    JoyentMinimal,
+    /// Brand not recorded / not recognised. The console surface
+    /// treats this as "serial only".
+    #[default]
+    #[serde(other)]
+    NotApplicable,
+}
+
+impl InstanceBrand {
+    /// Map an [`ImageCompatibility::brand`] string onto a brand.
+    /// Unknown strings (and the empty string) map to
+    /// [`InstanceBrand::NotApplicable`].
+    #[must_use]
+    pub fn from_compat_brand(brand: &str) -> Self {
+        match brand {
+            "kvm" => InstanceBrand::Kvm,
+            "bhyve" => InstanceBrand::Bhyve,
+            "lx" => InstanceBrand::Lx,
+            "joyent-minimal" => InstanceBrand::JoyentMinimal,
+            _ => InstanceBrand::NotApplicable,
+        }
+    }
+
+    /// Derive the brand from an image's compatibility block, if any.
+    #[must_use]
+    pub fn from_image(image: &Image) -> Self {
+        image
+            .compatibility
+            .as_ref()
+            .map_or(InstanceBrand::NotApplicable, |c| {
+                Self::from_compat_brand(&c.brand)
+            })
+    }
+
+    /// Stable lowercase wire name (e.g. `"joyent-minimal"`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InstanceBrand::Kvm => "kvm",
+            InstanceBrand::Bhyve => "bhyve",
+            InstanceBrand::Lx => "lx",
+            InstanceBrand::JoyentMinimal => "joyent-minimal",
+            InstanceBrand::NotApplicable => "not-applicable",
+        }
+    }
+
+    /// Whether a VNC / framebuffer console is meaningful for this
+    /// brand. Only the two HVM brands have a graphics device.
+    #[must_use]
+    pub fn supports_vnc(self) -> bool {
+        matches!(self, InstanceBrand::Kvm | InstanceBrand::Bhyve)
+    }
+}
+
+impl std::fmt::Display for InstanceBrand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod instance_brand_tests {
+    use super::*;
+
+    #[test]
+    fn from_compat_brand_maps_known_values() {
+        assert_eq!(InstanceBrand::from_compat_brand("kvm"), InstanceBrand::Kvm);
+        assert_eq!(
+            InstanceBrand::from_compat_brand("bhyve"),
+            InstanceBrand::Bhyve
+        );
+        assert_eq!(InstanceBrand::from_compat_brand("lx"), InstanceBrand::Lx);
+        assert_eq!(
+            InstanceBrand::from_compat_brand("joyent-minimal"),
+            InstanceBrand::JoyentMinimal
+        );
+    }
+
+    #[test]
+    fn from_compat_brand_unknown_is_not_applicable() {
+        assert_eq!(
+            InstanceBrand::from_compat_brand(""),
+            InstanceBrand::NotApplicable
+        );
+        assert_eq!(
+            InstanceBrand::from_compat_brand("docker"),
+            InstanceBrand::NotApplicable
+        );
+        assert_eq!(InstanceBrand::default(), InstanceBrand::NotApplicable);
+    }
+
+    #[test]
+    fn wire_names_and_vnc_support() {
+        assert_eq!(InstanceBrand::JoyentMinimal.as_str(), "joyent-minimal");
+        assert_eq!(InstanceBrand::Bhyve.to_string(), "bhyve");
+        assert_eq!(
+            serde_json::to_string(&InstanceBrand::JoyentMinimal).unwrap(),
+            "\"joyent-minimal\""
+        );
+        assert!(InstanceBrand::Bhyve.supports_vnc());
+        assert!(InstanceBrand::Kvm.supports_vnc());
+        assert!(!InstanceBrand::Lx.supports_vnc());
+        assert!(!InstanceBrand::JoyentMinimal.supports_vnc());
+        assert!(!InstanceBrand::NotApplicable.supports_vnc());
+    }
+
+    #[test]
+    fn unknown_string_round_trips_via_serde_other() {
+        // A future brand string we don't know yet must deserialize to
+        // NotApplicable rather than erroring (Type Safety Rule #5).
+        let b: InstanceBrand = serde_json::from_str("\"some-future-brand\"").unwrap();
+        assert_eq!(b, InstanceBrand::NotApplicable);
+    }
+}
+
+/// omitted in v0: cloud-init userdata, tags/labels, affinity rules,
+/// console URL, migration history. Each will land as the consuming
+/// use case ships. The hosting CN is recorded once placement lands
+/// so subsequent lifecycle jobs return to the same SmartOS host.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Instance {
     pub id: Uuid,
@@ -1789,6 +1927,11 @@ pub struct Instance {
     /// predicate). Cross-scope references that the principal
     /// cannot see surface as `NotFound`.
     pub image_id: Uuid,
+    /// SmartOS brand this instance's host-side VM runs as. Derived
+    /// from the boot image's compatibility block at create time;
+    /// `NotApplicable` for older records and explicit-fields images.
+    #[serde(default)]
+    pub brand: InstanceBrand,
     /// Subnet the instance's primary NIC attaches to. Phase 0
     /// auto-creates a NIC at provisioning time; a future slice
     /// adds explicit NIC records that operators can manage
@@ -3009,6 +3152,29 @@ pub struct Cn {
     /// the first status post lands.
     #[serde(default)]
     pub last_status: Option<serde_json::Value>,
+    /// TCP port the agent's on-CN console listener binds (on the
+    /// admin IP). Reported by the agent at (re-)registration.
+    /// `None` until then — serial / VNC consoles are unavailable
+    /// for this CN while it is `None`.
+    #[serde(default)]
+    pub console_listen_port: Option<u16>,
+    /// SHA-256 of the agent console listener's TLS
+    /// SubjectPublicKeyInfo, reported at registration. tritond pins
+    /// this when it dials the listener so a hijacked admin IP cannot
+    /// MITM the console byte stream.
+    #[serde(default)]
+    pub console_tls_spki_sha256: Option<[u8; 32]>,
+    /// Per-CN HS256 key for minting short-lived console tickets
+    /// (see `tritond_auth::ConsoleTicketKey`). Generated when the
+    /// CN is approved and handed to the agent on its first
+    /// long-poll-after-approval (same delivery path as the API key).
+    ///
+    /// Secret. Stored at rest unencrypted in Phase 0 — same cost as
+    /// [`Cn::pending_credential`]; a future slice encrypts it
+    /// against the manta-storage secrets engine. Never serialized
+    /// into any wire-level view.
+    #[serde(default)]
+    pub console_ticket_key: Option<[u8; 32]>,
 }
 
 /// Wire-safe view of a [`Cn`]: strips the transient plaintext

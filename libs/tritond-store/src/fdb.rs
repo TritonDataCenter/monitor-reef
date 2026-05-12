@@ -164,14 +164,14 @@ use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, DhcpLease,
     DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
-    IdpConfig, Image, ImageScope, Instance, InstanceCreateResult, JobOutcome, JobStatus,
-    JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway, NetworkResourceId,
-    NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage,
-    NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
-    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings,
-    Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
-    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    IdpConfig, Image, ImageScope, Instance, InstanceBrand, InstanceCreateResult, JobOutcome,
+    JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway,
+    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule,
+    NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
+    NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
+    Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable,
+    RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
+    StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 
@@ -4285,6 +4285,7 @@ impl Store for FdbStore {
                         name: req.name.clone(),
                         description: req.description.unwrap_or_default(),
                         image_id: req.image_id,
+                        brand: InstanceBrand::from_image(&image),
                         primary_subnet_id: req.primary_subnet_id,
                         ssh_key_ids: req.ssh_key_ids,
                         cpu: req.cpu,
@@ -5730,6 +5731,15 @@ impl Store for FdbStore {
                                     bound_api_key_id: None,
                                     pending_credential: None,
                                     last_status: None,
+                                    // Re-registration drops to Pending;
+                                    // console key regenerated on next
+                                    // approval, port/cert re-reported by
+                                    // the agent on this very register
+                                    // call (the service layer threads
+                                    // them through).
+                                    console_listen_port: None,
+                                    console_tls_spki_sha256: None,
+                                    console_ticket_key: None,
                                 };
                                 let value = serde_json::to_vec(&cn).map_err(|e| {
                                     FdbBindingError::CustomError(
@@ -5782,6 +5792,12 @@ impl Store for FdbStore {
                         bound_api_key_id: None,
                         pending_credential: None,
                         last_status: None,
+                        // Populated by the service layer's register
+                        // handler from the agent's register payload /
+                        // at approval.
+                        console_listen_port: None,
+                        console_tls_spki_sha256: None,
+                        console_ticket_key: None,
                     };
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())
