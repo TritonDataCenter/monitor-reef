@@ -29,12 +29,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tracing::{info, warn};
+use tritond_auth::CONSOLE_TICKET_KEY_BYTES;
 use tritond_client::Client;
 use tritond_client::types::{CnState, RegisterCnRequest};
 use tritond_cn_platform::smartos::Sysinfo;
 use uuid::Uuid;
 
-use crate::credentials;
+use crate::{console_creds, credentials};
 
 /// Where the active claim code is mirrored to disk so ops scripts
 /// (`tcadm cn approve --code "$(cat …)"`) can scrape it without
@@ -57,36 +58,53 @@ const PENDING_RETRY_DELAY: Duration = Duration::from_secs(1);
 /// server endpoint is anonymous and idempotent, so retrying is safe.
 const TRANSIENT_RETRY_DELAY: Duration = Duration::from_secs(5);
 
-/// Resolve the agent's per-CN API key, registering with tritond if
-/// no credential is on disk yet.
+/// What [`register_or_resume`] hands back: the per-CN API key (always)
+/// plus the per-CN console-ticket key (when known — see below).
+pub struct RegistrationOutcome {
+    /// Wire-form `tcadm_…` API key for every `/v2/agent/*` call.
+    pub api_key: String,
+    /// Per-CN HS256 console-ticket key. `None` when the agent resumed
+    /// from a credential file written before this feature shipped (or
+    /// the console-credentials file was lost). The console listener is
+    /// not started in that case; the operator must `tcadm cn disable`
+    /// and let the agent re-register to get one.
+    pub console_ticket_key: Option<[u8; CONSOLE_TICKET_KEY_BYTES]>,
+}
+
+/// Resolve the agent's per-CN API key + console-ticket key, registering
+/// with tritond if no credential is on disk yet.
 ///
-/// Returns the wire-form `tcadm_…` plaintext on success. The caller
-/// is expected to feed it to [`crate::AgentConfig::api_key`].
+/// The caller passes the console listener's port + the lowercase-hex
+/// SHA-256 of its TLS leaf-cert SPKI; these are sent on every
+/// (re-)registration so tritond knows where to dial and what cert to
+/// pin.
 ///
 /// Behavior:
 ///
-/// 1. If [`credentials::load`] returns `Some`, return that — no
-///    network traffic, no logging beyond a debug breadcrumb.
+/// 1. If [`credentials::load`] returns `Some`, return that key plus
+///    whatever console-ticket key [`console_creds::load_console_ticket_key`]
+///    finds on disk (possibly `None` — see [`RegistrationOutcome`]).
+///    No network traffic.
 /// 2. Otherwise, build an anonymous tritond client, `POST /register`
-///    with the sysinfo, and surface the claim code (console + scrape
-///    file).
+///    with the sysinfo + console fields, and surface the claim code
+///    (console + scrape file).
 /// 3. Long-poll `/register/status` with the returned `poll_token`.
-///    Each iteration sleeps the server for up to ~30s. Repeat until
-///    state flips to `Approved` *and* `api_key` is `Some` — that is
-///    the one shot the agent gets at the credential. If state flips
-///    to `Disabled`, return an error. If `register_timeout` elapses,
-///    return a timeout error so the supervisor can decide what to
-///    do.
-/// 4. Persist the credential via [`credentials::save`] before
-///    returning. Best-effort delete the claim-code scrape file once
-///    we no longer need it.
+///    Repeat until state flips to `Approved` *and* `api_key` is `Some`
+///    — that is the one shot the agent gets at both the credential and
+///    the console-ticket key. If state flips to `Disabled`, return an
+///    error. If `register_timeout` elapses, return a timeout error.
+/// 4. Persist the credential via [`credentials::save`] and the
+///    console-ticket key via [`console_creds::save_console_ticket_key`]
+///    before returning. Best-effort delete the claim-code scrape file.
 pub async fn register_or_resume(
     endpoint: &str,
     sysinfo: &Sysinfo,
     server_uuid: Uuid,
     credential_path: &Path,
+    console_listen_port: u16,
+    console_tls_spki_sha256_hex: String,
     register_timeout: Duration,
-) -> Result<String> {
+) -> Result<RegistrationOutcome> {
     if let Some(existing) = credentials::load(credential_path)
         .with_context(|| format!("load credential at {}", credential_path.display()))?
     {
@@ -94,7 +112,25 @@ pub async fn register_or_resume(
             credential_path = %credential_path.display(),
             "resumed from persisted credential",
         );
-        return Ok(existing);
+        let console_ticket_key = console_creds::load_console_ticket_key(credential_path)
+            .with_context(|| {
+                format!(
+                    "load console-ticket key alongside {}",
+                    credential_path.display()
+                )
+            })?;
+        if console_ticket_key.is_none() {
+            warn!(
+                "no per-CN console-ticket key on disk (agent registered before consoles \
+                 were supported, or the console-credentials file was lost); serial / VNC \
+                 consoles are unavailable for this CN until it re-registers \
+                 (`tcadm cn disable` then approve again)",
+            );
+        }
+        return Ok(RegistrationOutcome {
+            api_key: existing,
+            console_ticket_key,
+        });
     }
 
     let client = build_anonymous_client(endpoint).context("build anonymous tritond client")?;
@@ -107,6 +143,8 @@ pub async fn register_or_resume(
 
     let register_req = RegisterCnRequest {
         admin_ip,
+        console_listen_port: Some(console_listen_port),
+        console_tls_spki_sha256_hex: Some(console_tls_spki_sha256_hex),
         hostname: hostname.clone(),
         server_uuid,
         sysinfo: sysinfo.raw.clone(),
@@ -141,7 +179,8 @@ pub async fn register_or_resume(
         );
     }
 
-    let key = await_credential(&client, &poll_token, register_timeout).await?;
+    let (key, console_ticket_key_hex) =
+        await_credential(&client, &poll_token, register_timeout).await?;
 
     credentials::save(credential_path, &key)
         .with_context(|| format!("persist credential to {}", credential_path.display()))?;
@@ -150,12 +189,63 @@ pub async fn register_or_resume(
         "approved; persisted credential",
     );
 
+    // Decode + persist the per-CN console-ticket key. tritond is
+    // expected to always send it alongside a freshly-minted api_key; if
+    // it didn't (e.g. an older tritond), warn and carry on without the
+    // console listener rather than failing the whole agent.
+    let console_ticket_key = match console_ticket_key_hex {
+        Some(hex_str) => match decode_console_ticket_key(&hex_str) {
+            Ok(bytes) => {
+                console_creds::save_console_ticket_key(credential_path, &bytes).with_context(
+                    || {
+                        format!(
+                            "persist console-ticket key alongside {}",
+                            credential_path.display()
+                        )
+                    },
+                )?;
+                info!("persisted per-CN console-ticket key");
+                Some(bytes)
+            }
+            Err(e) => {
+                warn!(error = %e, "tritond returned a malformed console-ticket key; console disabled");
+                None
+            }
+        },
+        None => {
+            warn!(
+                "registration response carried no console-ticket key; serial / VNC consoles \
+                 are unavailable for this CN",
+            );
+            None
+        }
+    };
+
     // Drop the scrape file now that the operator no longer needs it.
     // Best-effort: it might not exist (auto-approve) and it might be
     // on a read-only mount in tests. Either way we do not fail.
     let _ = std::fs::remove_file(CLAIM_CODE_PATH);
 
-    Ok(key)
+    Ok(RegistrationOutcome {
+        api_key: key,
+        console_ticket_key,
+    })
+}
+
+/// Decode a lowercase-hex (64-char) console-ticket key into 32 bytes.
+fn decode_console_ticket_key(hex_str: &str) -> Result<[u8; CONSOLE_TICKET_KEY_BYTES]> {
+    let bytes =
+        hex::decode(hex_str.trim()).context("console-ticket key is not valid lowercase hex")?;
+    if bytes.len() != CONSOLE_TICKET_KEY_BYTES {
+        anyhow::bail!(
+            "console-ticket key is {} bytes, expected {}",
+            bytes.len(),
+            CONSOLE_TICKET_KEY_BYTES,
+        );
+    }
+    let mut out = [0u8; CONSOLE_TICKET_KEY_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 /// Construct an anonymous tritond client with the bundled webpki
@@ -221,11 +311,15 @@ fn announce_claim_code(code: &str) {
 /// Long-poll tritond's `/v2/agent/register/status` until the
 /// per-CN API key arrives, the registration is disabled, or
 /// `register_timeout` elapses.
+///
+/// Returns `(api_key, console_ticket_key_hex)`. The console-ticket key
+/// is `Some` whenever tritond is current; an older tritond may omit it,
+/// which the caller treats as "console unavailable" rather than fatal.
 async fn await_credential(
     client: &Client,
     poll_token: &str,
     register_timeout: Duration,
-) -> Result<String> {
+) -> Result<(String, Option<String>)> {
     let deadline = Instant::now() + register_timeout;
     let mut last_logged_state: Option<CnState> = None;
 
@@ -279,7 +373,7 @@ async fn await_credential(
         match response.state {
             CnState::Approved => {
                 if let Some(key) = response.api_key {
-                    return Ok(key);
+                    return Ok((key, response.console_ticket_key_hex));
                 }
                 // Approved but no api_key means tritond already handed
                 // it out on a previous call — the credential file must

@@ -33,6 +33,8 @@
 //! [`ApiKeyScope::Agent`]: tritond_client::types::ApiKeyScope::Agent
 //! [`ProvisioningJob`]: tritond_client::types::ProvisioningJob
 
+pub mod console;
+pub mod console_creds;
 pub mod credentials;
 pub mod edge;
 pub mod images;
@@ -46,6 +48,7 @@ pub mod vmadm;
 pub mod zfs;
 
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -56,6 +59,7 @@ use base64::Engine;
 use proteus_api::blueprint::PortBlueprint;
 use proteus_api::ids::PortId;
 use tracing::{error, info, warn};
+use tritond_auth::CONSOLE_TICKET_KEY_BYTES;
 use tritond_client::Client;
 use tritond_client::types::{
     AgentPortBlueprint, ClaimJobRequest, CompleteJobRequest, ImageCompatibility, JobKind,
@@ -65,8 +69,11 @@ use tritond_client::types::{
 use tritond_cn_platform::cn_status::{
     DiskUsageSampler, Heartbeater, StatusCollector, UuidNamedImageFilter, ZoneeventWatcher,
 };
+use tritond_cn_platform::smartos::zoneadm::ZoneadmTool;
 use tritond_cn_platform::smartos::{KstatTool, VmadmTool, ZfsTool};
 use uuid::Uuid;
+
+use crate::console_creds::ConsoleTls;
 
 use crate::status::TritondStatusSink;
 
@@ -79,8 +86,17 @@ pub const DEFAULT_EDGE_ROOT: &str = "/var/lib/tritonagent/edge";
 /// Default fhrun launcher path on SmartOS CNs.
 pub const DEFAULT_FHRUN_BIN: &str = "/opt/firehyve/bin/fhrun";
 
+/// Default TCP port the on-CN serial / VNC console listener binds on
+/// the admin IP. Picked from the dynamic/private range; operators can
+/// override with `--console-listen-port`.
+pub const DEFAULT_CONSOLE_LISTEN_PORT: u16 = 9101;
+
 /// Configuration for an [`Agent`] run.
-#[derive(Debug, Clone)]
+///
+/// Deliberately not `Debug` — it carries the per-CN API key, the
+/// console-ticket key, and a TLS private key; a stray `{:?}` would be a
+/// credential leak.
+#[derive(Clone)]
 pub struct AgentConfig {
     /// Tritond endpoint, e.g. `http://10.199.199.10:8080`.
     pub endpoint: String,
@@ -112,8 +128,21 @@ pub struct AgentConfig {
     /// posts liveness + status to tritond's `/v2/agent/heartbeat`
     /// and `/v2/agent/status`. Disabled by `--no-heartbeater`
     /// for tritond integration tests that don't want background
-    /// chatter at the test server.
+    /// chatter at the test server. Also gates the console listener
+    /// (so integration tests don't open a port).
     pub spawn_heartbeater: bool,
+    /// Admin-network IPv4 the console listener binds on. `None` when
+    /// sysinfo didn't report one — the console listener is skipped.
+    pub admin_ip: Option<Ipv4Addr>,
+    /// TCP port the console listener binds (on `admin_ip`).
+    pub console_listen_port: u16,
+    /// Per-CN HS256 console-ticket key. `None` for an agent that
+    /// registered before consoles were supported — the listener is
+    /// skipped.
+    pub console_ticket_key: Option<[u8; CONSOLE_TICKET_KEY_BYTES]>,
+    /// Self-signed TLS material for the console listener. `None` only if
+    /// `load_or_init_tls` couldn't be run (it always can in `main`).
+    pub console_tls: Option<ConsoleTls>,
 }
 
 impl AgentConfig {
@@ -203,6 +232,15 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         (None, None)
     };
 
+    // Console listener: gated on the same `spawn_heartbeater` flag as
+    // the metrics/log tickers (so tritond integration tests with
+    // `--no-heartbeater` don't open a port), and only if we have the
+    // three things it needs: an admin IP to bind, a per-CN
+    // console-ticket key to verify against, and TLS material. Spawn it
+    // detached — its lifetime is the process; a serve() error is logged
+    // (it would mean the bind failed) but is not fatal to the agent.
+    maybe_spawn_console_listener(&cfg);
+
     let result = run_poll_loop(client.as_ref(), &cfg).await;
 
     if let Some(h) = metrics_handle.take() {
@@ -216,6 +254,55 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     }
 
     result
+}
+
+/// Spawn the on-CN console listener if and only if the config has all
+/// the pieces it needs and the heartbeater/metrics tickers are also
+/// enabled. Logs a warning and returns without doing anything otherwise
+/// (a CN with no console is degraded, not broken).
+fn maybe_spawn_console_listener(cfg: &AgentConfig) {
+    if !cfg.spawn_heartbeater {
+        return;
+    }
+    let Some(admin_ip) = cfg.admin_ip else {
+        warn!("no admin IP known; serial / VNC console listener not started");
+        return;
+    };
+    let Some(console_ticket_key) = cfg.console_ticket_key else {
+        warn!(
+            "no per-CN console-ticket key; serial / VNC console listener not started \
+             (re-register this CN to obtain one)",
+        );
+        return;
+    };
+    let Some(tls) = cfg.console_tls.clone() else {
+        warn!("no console TLS material; serial / VNC console listener not started");
+        return;
+    };
+    let server_uuid = match Uuid::parse_str(&cfg.agent_id) {
+        Ok(u) => u,
+        Err(_) => {
+            warn!(
+                agent_id = %cfg.agent_id,
+                "agent_id is not a UUID; console listener not started",
+            );
+            return;
+        }
+    };
+    let bind = SocketAddr::new(IpAddr::V4(admin_ip), cfg.console_listen_port);
+    let listener_cfg = console::ConsoleListenerConfig {
+        bind,
+        tls,
+        console_ticket_key,
+        server_uuid,
+        zoneadm: ZoneadmTool::new(),
+        edge_root: cfg.edge_root.clone(),
+    };
+    tokio::spawn(async move {
+        if let Err(e) = console::serve(listener_cfg).await {
+            error!(error = %format!("{e:#}"), "console listener exited");
+        }
+    });
 }
 
 /// The job-claim loop, factored out so [`run`] can wrap it with the

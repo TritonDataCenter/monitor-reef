@@ -24,6 +24,9 @@
 //!   manifests and control sockets live. The legacy host-process edge
 //!   shim also stores pid files and logs there.
 //! * `--fhrun-bin` / `TRITONAGENT_FHRUN_BIN` — fhrun launcher path.
+//! * `--console-listen-port` / `TRITONAGENT_CONSOLE_PORT` — TCP port the
+//!   on-CN serial / VNC console listener binds on the admin IP. Default
+//!   `9101`.
 //! * `--dry-run` / `TRITONAGENT_DRY_RUN`
 //!
 //! There is no longer an `--api-key` flag: on first boot the agent
@@ -38,7 +41,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
-use tritonagent::{AgentConfig, credentials, registration};
+use tritonagent::{AgentConfig, console_creds, credentials, registration};
 use tritond_cn_platform::smartos::Sysinfo;
 
 /// Maximum time the agent waits for an operator to approve the
@@ -107,6 +110,15 @@ struct Cli {
     )]
     fhrun_bin: String,
 
+    /// TCP port the on-CN serial / VNC console listener binds on the
+    /// admin IP. tritond dials `wss://<admin-ip>:<this>/console/{uuid}`.
+    #[arg(
+        long,
+        env = "TRITONAGENT_CONSOLE_PORT",
+        default_value_t = tritonagent::DEFAULT_CONSOLE_LISTEN_PORT,
+    )]
+    console_listen_port: u16,
+
     /// When set, skip `vmadm` entirely and mark every claimed
     /// job `Completed`. Useful for transport-only smoke testing
     /// on hosts without SmartOS. Off by default — the production
@@ -157,11 +169,22 @@ async fn main() -> Result<()> {
         )
     })?;
 
-    let api_key = registration::register_or_resume(
+    // Load (or generate, on first boot) the stable self-signed TLS
+    // keypair for the console listener and compute its SPKI fingerprint.
+    // This must happen before registration so the fingerprint can be
+    // sent in the register payload (tritond pins it). The admin IP, when
+    // known, is baked in as a cert SAN.
+    let admin_ip = sysinfo.admin_ip();
+    let console_tls = console_creds::load_or_init_tls(&cli.credential_path, admin_ip)
+        .context("load or init console TLS material")?;
+
+    let outcome = registration::register_or_resume(
         &cli.endpoint,
         &sysinfo,
         server_uuid,
         &cli.credential_path,
+        cli.console_listen_port,
+        console_tls.spki_sha256_hex.clone(),
         REGISTER_TIMEOUT,
     )
     .await
@@ -169,7 +192,7 @@ async fn main() -> Result<()> {
 
     let cfg = AgentConfig {
         endpoint: cli.endpoint,
-        api_key,
+        api_key: outcome.api_key,
         // claimed_by must be the server_uuid string — tritond's
         // bound-key check pins each per-CN key to a specific CN
         // identity, and that identity is the SmartOS server_uuid.
@@ -180,6 +203,10 @@ async fn main() -> Result<()> {
         fhrun_bin: PathBuf::from(cli.fhrun_bin),
         dry_run: cli.dry_run,
         spawn_heartbeater: !cli.no_heartbeater,
+        admin_ip,
+        console_listen_port: cli.console_listen_port,
+        console_ticket_key: outcome.console_ticket_key,
+        console_tls: Some(console_tls),
     };
     tritonagent::run(cfg).await
 }

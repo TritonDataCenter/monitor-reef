@@ -670,6 +670,7 @@ mod tests {
             cpu: 2,
             memory_bytes: 512 * 1024 * 1024,
             host_cn_uuid: None,
+            brand: tritond_client::types::InstanceBrand::JoyentMinimal,
             lifecycle: tritond_client::types::LifecycleState::Pending,
             created_at: now,
             updated_at: now,

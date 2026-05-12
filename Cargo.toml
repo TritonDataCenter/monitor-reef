@@ -83,6 +83,7 @@ askama = "0.15"
 assert_cmd = "2.0"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 base64 = "0.22"
 build-data = "0.3"
 camino = "1.1"
