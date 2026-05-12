@@ -1760,17 +1760,6 @@ pub enum LifecycleStateKind {
     Failed,
 }
 
-/// Tenant compute instance. Project-scoped; references one image
-/// (boot media), one subnet (network attach point), and zero-or-more
-/// SSH keys (injected into authorized_keys at provisioning time).
-///
-/// Phase 0 ships only the metadata + lifecycle state machine. The
-/// actual provisioning is faked synchronously inside the create
-/// handler; a future slice introduces the intent queue and stub
-/// executor that will become the swap-out point for a real
-/// `tritonagent`.
-///
-/// Several fields that real cloud instances carry are deliberately
 /// SmartOS brand the instance's host-side VM runs as.
 ///
 /// Derived at create time from the boot [`Image`]'s
@@ -1910,6 +1899,17 @@ mod instance_brand_tests {
     }
 }
 
+/// Tenant compute instance. Project-scoped; references one image
+/// (boot media), one subnet (network attach point), and zero-or-more
+/// SSH keys (injected into authorized_keys at provisioning time).
+///
+/// Phase 0 ships only the metadata + lifecycle state machine. The
+/// actual provisioning is faked synchronously inside the create
+/// handler; a future slice introduces the intent queue and stub
+/// executor that will become the swap-out point for a real
+/// `tritonagent`.
+///
+/// Several fields that real cloud instances carry are deliberately
 /// omitted in v0: cloud-init userdata, tags/labels, affinity rules,
 /// console URL, migration history. Each will land as the consuming
 /// use case ships. The hosting CN is recorded once placement lands
