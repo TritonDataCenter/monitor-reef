@@ -31,6 +31,7 @@
 pub mod api_key;
 pub mod console_ticket;
 pub mod identity_hmac;
+pub mod imds_token;
 pub mod jwt;
 pub mod oidc;
 pub mod password;
@@ -45,6 +46,10 @@ pub use console_ticket::{
     DEFAULT_TICKET_TTL_SECS,
 };
 pub use identity_hmac::{IDENTITY_HMAC_KEY_BYTES, IdentityHmacKey};
+pub use imds_token::{
+    IMDS_TOKEN_KEY_BYTES, IMDS_TOKEN_TTL_DEFAULT_SECS, IMDS_TOKEN_TTL_MAX_SECS,
+    IMDS_TOKEN_TTL_MIN_SECS, ImdsTokenError, ImdsTokenKey,
+};
 pub use jwt::{
     AccessClaims, JwtError, JwtKey, RefreshClaims, TokenKind, mint_access, mint_refresh, verify,
 };
