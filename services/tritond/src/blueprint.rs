@@ -19,7 +19,6 @@ use proteus_api::blueprint::{
 use proteus_api::ids::{
     Generation as ProteusGeneration, NetworkId as ProteusNetworkId, PortId as ProteusPortId,
 };
-use triton_vpc::TRITON_VPC_BLUEPRINT_SCHEMA_V1;
 use triton_vpc::tritond_intent_v1::{
     DhcpOptionRawV1, DhcpOptionsIntentV1, EdgeClusterIntentV1, FirewallActionIntentV1,
     FirewallDirectionIntentV1, FirewallRuleIntentV1, FloatingIpAttachmentIntentV1,
@@ -405,7 +404,13 @@ pub(crate) async fn build_port_blueprint(
         },
         plugin_config: PluginConfigBytes::new(
             ProteusNetworkId::TRITON_VPC,
-            TRITON_VPC_BLUEPRINT_SCHEMA_V1,
+            // Mirror what the intent compile actually produced.
+            // V2 is required when bp.imds is Some (the extra field
+            // at the end of the postcard payload would fail a
+            // strict V1 decode in the kmod); V1 stays correct for
+            // IMDS-off blueprints. The intent layer is the single
+            // authoritative source for which shape was emitted.
+            plugin_blueprint.schema_version,
             plugin_bytes,
         ),
     };
