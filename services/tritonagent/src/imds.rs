@@ -50,6 +50,7 @@ use tritond_auth::{
 
 use crate::imds_bindings::{ImdsBindingTable, ResolvedBinding};
 use crate::imds_data::{RealizedDataSource, RealizedFetchError, RealizedViewCache};
+use crate::imds_ratelimit::PerInstanceRateLimiter;
 
 /// HTTP header carrying the requested session-token TTL (AWS-spec).
 const TOKEN_TTL_HEADER: &str = "x-aws-ec2-metadata-token-ttl-seconds";
@@ -86,6 +87,7 @@ struct ImdsState {
     token_key: Arc<ImdsTokenKey>,
     bindings: ImdsBindingTable,
     realized: RealizedViewCache,
+    rate_limit: PerInstanceRateLimiter,
 }
 
 fn router(state: ImdsState) -> Router {
@@ -183,6 +185,15 @@ async fn require_imds_token(
         return (
             StatusCode::UNAUTHORIZED,
             "invalid IMDS token
+",
+        )
+            .into_response();
+    }
+    if !state.rate_limit.check(binding.instance_id) {
+        debug!(instance_id = %binding.instance_id, "imds: rate limited");
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded
 ",
         )
             .into_response();
@@ -303,6 +314,7 @@ pub async fn start(cfg: ImdsListenerConfig) -> Result<()> {
         token_key: Arc::new(ImdsTokenKey::from_bytes(cfg.token_key_bytes)),
         bindings: cfg.bindings,
         realized: RealizedViewCache::new(cfg.realized_source),
+        rate_limit: PerInstanceRateLimiter::new(),
     };
     let app = router(state);
     let listener = TcpListener::bind(cfg.bind)
@@ -496,6 +508,7 @@ mod tests {
             token_key: Arc::new(ImdsTokenKey::from_bytes([0u8; IMDS_TOKEN_KEY_BYTES])),
             bindings: ImdsBindingTable::new(),
             realized: RealizedViewCache::new(Arc::new(EmptySource)),
+            rate_limit: PerInstanceRateLimiter::new(),
         }
     }
 
