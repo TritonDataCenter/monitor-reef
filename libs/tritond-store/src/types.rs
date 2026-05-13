@@ -5585,3 +5585,261 @@ mod computed_meta_tests {
         );
     }
 }
+
+/// Where a leaf in the realized view came from. The four storage
+/// scopes plus `System` for the computed keys ([`computed_metadata`]).
+/// Serialized lowercase for the `triton/dynamic/realized` payload and
+/// the `/v1/meta/instance/{id}/realized` response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MetaProvenance {
+    Silo,
+    Tenant,
+    Project,
+    Instance,
+    System,
+}
+
+impl MetaProvenance {
+    /// Stable lowercase tag.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MetaProvenance::Silo => "silo",
+            MetaProvenance::Tenant => "tenant",
+            MetaProvenance::Project => "project",
+            MetaProvenance::Instance => "instance",
+            MetaProvenance::System => "system",
+        }
+    }
+}
+
+impl From<MetaScope> for MetaProvenance {
+    fn from(s: MetaScope) -> Self {
+        match s {
+            MetaScope::Silo => MetaProvenance::Silo,
+            MetaScope::Tenant => MetaProvenance::Tenant,
+            MetaScope::Project => MetaProvenance::Project,
+            MetaScope::Instance => MetaProvenance::Instance,
+        }
+    }
+}
+
+/// One instance's *full* realized view: the stored-scope precedence
+/// merge ([`RealizedMeta`]) with the computed "system" keys
+/// ([`computed_metadata`]) layered on, each leaf tagged with its
+/// [`MetaProvenance`]. This is what the `triton/dynamic/realized` IMDS
+/// endpoint and the `/v1/meta/instance/{id}/realized` API serve
+/// (the former filtered to `guest_visible`).
+///
+/// Computed keys are layered first, then the stored merge overrides;
+/// in practice their namespaces are disjoint (`meta-data/*`,
+/// `triton/system/*` are computed-only; `config/*`, `state/*`,
+/// `instance/*`, `guest/*`, `user-data` are stored) so no real
+/// collision occurs — the ordering just makes the rule unambiguous.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RealizedView {
+    /// `key` → (effective value, where it came from). `BTreeMap` so
+    /// iteration is key-sorted.
+    pub entries: BTreeMap<String, (MetaValue, MetaProvenance)>,
+}
+
+impl RealizedView {
+    /// Build the full realized view from the four storage scopes'
+    /// metadata maps (as returned by [`crate::Store::list_meta`]) and
+    /// the computed system keys (as returned by [`computed_metadata`]).
+    pub fn build(
+        silo: &[(String, MetaValue)],
+        tenant: &[(String, MetaValue)],
+        project: &[(String, MetaValue)],
+        instance: &[(String, MetaValue)],
+        computed: &[(String, MetaValue)],
+    ) -> Self {
+        let mut entries: BTreeMap<String, (MetaValue, MetaProvenance)> = BTreeMap::new();
+        for (k, v) in computed {
+            entries.insert(k.clone(), (v.clone(), MetaProvenance::System));
+        }
+        let merged = RealizedMeta::merge(silo, tenant, project, instance);
+        for (k, (v, scope)) in merged.entries {
+            entries.insert(k, (v, MetaProvenance::from(scope)));
+        }
+        RealizedView { entries }
+    }
+
+    /// The subset a process inside the VM may see: `guest_visible`
+    /// entries only.
+    pub fn guest_visible(&self) -> RealizedView {
+        RealizedView {
+            entries: self
+                .entries
+                .iter()
+                .filter(|(_, (v, _))| v.guest_visible)
+                .map(|(k, vp)| (k.clone(), vp.clone()))
+                .collect(),
+        }
+    }
+
+    /// Effective value + provenance for a key.
+    pub fn get(&self, key: &str) -> Option<&(MetaValue, MetaProvenance)> {
+        self.entries.get(key)
+    }
+
+    /// Whether IMDS is served to this instance (realized
+    /// `config/imds/enabled`, default `true`).
+    pub fn imds_enabled(&self) -> bool {
+        self.entries
+            .get(META_KEY_IMDS_ENABLED)
+            .and_then(|(v, _)| v.value.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// The IMDS response hop-limit (realized `config/imds/hop-limit`,
+    /// clamped to `[IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX]`, default
+    /// [`IMDS_HOP_LIMIT_DEFAULT`]).
+    pub fn imds_hop_limit(&self) -> u64 {
+        self.entries
+            .get(META_KEY_IMDS_HOP_LIMIT)
+            .and_then(|(v, _)| v.value.as_u64())
+            .map(|n| n.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
+            .unwrap_or(IMDS_HOP_LIMIT_DEFAULT)
+    }
+}
+
+#[cfg(test)]
+mod realized_view_tests {
+    use super::*;
+
+    fn mv(scope: MetaScope, key: &str, val: serde_json::Value) -> (String, MetaValue) {
+        (
+            key.to_string(),
+            MetaValue::new(scope, key, val, "system".to_string()),
+        )
+    }
+
+    #[test]
+    fn provenance_wire_tags_and_from_scope() {
+        for (p, tag) in [
+            (MetaProvenance::Silo, "silo"),
+            (MetaProvenance::Tenant, "tenant"),
+            (MetaProvenance::Project, "project"),
+            (MetaProvenance::Instance, "instance"),
+            (MetaProvenance::System, "system"),
+        ] {
+            assert_eq!(p.as_str(), tag);
+            assert_eq!(serde_json::to_value(p).unwrap(), serde_json::json!(tag));
+        }
+        assert_eq!(
+            MetaProvenance::from(MetaScope::Tenant),
+            MetaProvenance::Tenant
+        );
+        assert_eq!(
+            MetaProvenance::from(MetaScope::Instance),
+            MetaProvenance::Instance
+        );
+    }
+
+    #[test]
+    fn build_layers_computed_then_stored_with_provenance() {
+        let computed = vec![
+            mv(
+                MetaScope::Instance,
+                "meta-data/instance-id",
+                serde_json::json!("i-1"),
+            ),
+            mv(
+                MetaScope::Instance,
+                "triton/system/brand",
+                serde_json::json!("bhyve"),
+            ),
+        ];
+        let silo = vec![mv(
+            MetaScope::Silo,
+            "config/ntp-servers",
+            serde_json::json!("silo"),
+        )];
+        let project = vec![
+            mv(
+                MetaScope::Project,
+                "config/ntp-servers",
+                serde_json::json!("project"),
+            ),
+            mv(
+                MetaScope::Project,
+                "state/active-color",
+                serde_json::json!("blue"),
+            ),
+        ];
+        let instance = vec![mv(
+            MetaScope::Instance,
+            "instance/role",
+            serde_json::json!("web"),
+        )];
+        let v = RealizedView::build(&silo, &[], &project, &instance, &computed);
+
+        assert_eq!(
+            v.get("meta-data/instance-id").unwrap().1,
+            MetaProvenance::System
+        );
+        assert_eq!(
+            v.get("triton/system/brand").unwrap().1,
+            MetaProvenance::System
+        );
+        // config/ntp-servers set at silo and project -> project wins.
+        let (ntp, ntp_from) = v.get("config/ntp-servers").unwrap();
+        assert_eq!(ntp.value, serde_json::json!("project"));
+        assert_eq!(*ntp_from, MetaProvenance::Project);
+        assert_eq!(
+            v.get("state/active-color").unwrap().1,
+            MetaProvenance::Project
+        );
+        assert_eq!(v.get("instance/role").unwrap().1, MetaProvenance::Instance);
+        // Key-sorted iteration.
+        assert_eq!(
+            v.entries.keys().cloned().collect::<Vec<_>>(),
+            [
+                "config/ntp-servers",
+                "instance/role",
+                "meta-data/instance-id",
+                "state/active-color",
+                "triton/system/brand",
+            ]
+        );
+    }
+
+    #[test]
+    fn guest_visible_filter_and_imds_options_delegate() {
+        let mut hidden = MetaValue::new(
+            MetaScope::Silo,
+            "config/cn-secret",
+            serde_json::json!("x"),
+            "u".to_string(),
+        );
+        hidden.guest_visible = false;
+        let silo = vec![
+            mv(
+                MetaScope::Silo,
+                "config/ntp-servers",
+                serde_json::json!("a"),
+            ),
+            ("config/cn-secret".to_string(), hidden),
+            mv(
+                MetaScope::Silo,
+                META_KEY_IMDS_ENABLED,
+                serde_json::json!(false),
+            ),
+            mv(
+                MetaScope::Silo,
+                META_KEY_IMDS_HOP_LIMIT,
+                serde_json::json!(2),
+            ),
+        ];
+        let v = RealizedView::build(&silo, &[], &[], &[], &[]);
+        assert!(v.get("config/cn-secret").is_some());
+        assert!(!v.imds_enabled());
+        assert_eq!(v.imds_hop_limit(), 2);
+        let g = v.guest_visible();
+        assert!(g.get("config/cn-secret").is_none());
+        assert!(g.get("config/ntp-servers").is_some());
+        // imds-option keys are guest_visible by default, so still present.
+        assert!(g.get(META_KEY_IMDS_ENABLED).is_some());
+    }
+}
