@@ -229,6 +229,9 @@ async fn put_token(
         )
             .into_response();
     };
+    if !imds_enabled(&state, binding.instance_id).await {
+        return (StatusCode::NOT_FOUND, "imds disabled\n").into_response();
+    }
     let ttl = match parse_ttl_header(&headers) {
         Ok(t) => t,
         Err(msg) => {
@@ -320,11 +323,30 @@ pub async fn start(cfg: ImdsListenerConfig) -> Result<()> {
 /// `full_key` is the *storage-namespace* key (e.g. `meta-data/
 /// instance-id`, `config/ntp-servers`), **not** the URL path -- the
 /// caller builds it from the path-param.
+/// Read the realized `triton/config/imds/enabled` flag for this
+/// instance. Defaults to `true` if absent / not a boolean / fetch
+/// failed -- a tritond hiccup must not lock guests out of IMDS, only
+/// an explicit operator decision. See `IMDS_DESIGN.md` §3.
+async fn imds_enabled(state: &ImdsState, instance_id: uuid::Uuid) -> bool {
+    let entries = match state.realized.get(instance_id).await {
+        Ok(v) => v,
+        Err(_) => return true, // tritond down -> stay open, not closed
+    };
+    entries
+        .iter()
+        .find(|e| e.key == "config/imds/enabled")
+        .and_then(|e| e.value.value.as_bool())
+        .unwrap_or(true)
+}
+
 async fn serve_key_for_binding(
     state: &ImdsState,
     binding: ResolvedBinding,
     full_key: &str,
 ) -> Response {
+    if !imds_enabled(state, binding.instance_id).await {
+        return (StatusCode::NOT_FOUND, "imds disabled\n").into_response();
+    }
     let entries = match state.realized.get(binding.instance_id).await {
         Ok(v) => v,
         Err(RealizedFetchError::NotFound) => {
@@ -408,6 +430,9 @@ async fn triton_realized_get(
     State(state): State<ImdsState>,
     Extension(binding): Extension<ResolvedBinding>,
 ) -> Response {
+    if !imds_enabled(&state, binding.instance_id).await {
+        return (StatusCode::NOT_FOUND, "imds disabled\n").into_response();
+    }
     let entries = match state.realized.get(binding.instance_id).await {
         Ok(v) => v,
         Err(RealizedFetchError::NotFound) => {
