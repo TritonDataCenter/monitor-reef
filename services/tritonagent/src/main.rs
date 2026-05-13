@@ -207,6 +207,8 @@ async fn main() -> Result<()> {
         console_listen_port: cli.console_listen_port,
         console_ticket_key: outcome.console_ticket_key,
         console_tls: Some(console_tls),
+        imds_listen_addr: None,
+        imds_token_key_bytes: None,
     };
     tritonagent::run(cfg).await
 }

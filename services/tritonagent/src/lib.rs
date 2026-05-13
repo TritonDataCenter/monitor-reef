@@ -80,6 +80,7 @@ use uuid::Uuid;
 
 use crate::console_creds::ConsoleTls;
 use crate::imds_bindings::{ImdsBindingTable, register_blueprint_bindings};
+use tritond_auth::IMDS_TOKEN_KEY_BYTES;
 
 use crate::status::TritondStatusSink;
 
@@ -149,6 +150,19 @@ pub struct AgentConfig {
     /// Self-signed TLS material for the console listener. `None` only if
     /// `load_or_init_tls` couldn't be run (it always can in `main`).
     pub console_tls: Option<ConsoleTls>,
+    /// Bind address for the in-VM IMDS HTTP listener
+    /// (`IMDS_DESIGN.md` §3). `None` skips the listener entirely --
+    /// the production path expects the proteus `RouteTarget::LocalImds`
+    /// redirect to land on a dedicated proteus-owned internal datalink,
+    /// not the CN admin IP; until the proteus apply path wires that
+    /// datalink up, leaving this `None` is correct.
+    pub imds_listen_addr: Option<SocketAddr>,
+    /// Per-CN HS256 token key for IMDSv2 session tokens. `None`
+    /// disables the IMDS listener (same as `imds_listen_addr` being
+    /// `None`). tritond delivers the bytes at CN approval alongside
+    /// the console-ticket key; the registration-side wire is a
+    /// follow-up commit.
+    pub imds_token_key_bytes: Option<[u8; IMDS_TOKEN_KEY_BYTES]>,
 }
 
 impl AgentConfig {
@@ -190,6 +204,30 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     // it. Shared with the IMDS HTTP listener (once that wires in to
     // main); a clone gives both sides the same Arc.
     let bindings = ImdsBindingTable::new();
+
+    // In-VM IMDSv2 listener (`IMDS_DESIGN.md` §3). Skipped when
+    // either the bind address or the token key isn't configured --
+    // the production path needs both, plus the proteus apply path
+    // populating `blueprint.imds_bindings` (today: empty), so an
+    // unwired agent stays silent rather than serving 401s out of an
+    // empty table.
+    if let (Some(bind), Some(token_key_bytes)) = (cfg.imds_listen_addr, cfg.imds_token_key_bytes) {
+        use crate::imds::{ImdsListenerConfig, start as imds_start};
+        use crate::imds_data::TritondRealizedDataSource;
+        let realized_source =
+            std::sync::Arc::new(TritondRealizedDataSource::new((*client).clone()));
+        let cfg_imds = ImdsListenerConfig {
+            bind,
+            token_key_bytes,
+            bindings: bindings.clone(),
+            realized_source,
+        };
+        if let Err(e) = imds_start(cfg_imds).await {
+            warn!(error = %e, "imds: listener failed to start; skipping");
+        }
+    } else {
+        info!("imds: listener disabled (no bind addr or token key)");
+    }
     info!(
         agent_id = %cfg.agent_id,
         endpoint = %cfg.endpoint,

@@ -223,7 +223,7 @@ mod tests {
 // Blueprint integration
 // =============================================================================
 
-use tritond_client::types::{ImdsBindingWire, ProvisioningBlueprint};
+use tritond_client::types::ProvisioningBlueprint;
 
 /// Register every `ImdsBindingWire` entry from a `ProvisioningBlueprint`
 /// in the table. Returns the count inserted. Idempotent: a re-apply
@@ -273,7 +273,7 @@ pub fn release_imds_bindings_for_ports(table: &ImdsBindingTable, port_ids: &[uui
 mod blueprint_tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr};
-    use tritond_client::types::{JobKind, ProvisioningBlueprint as Bp};
+    use tritond_client::types::{ImdsBindingWire, JobKind, ProvisioningBlueprint as Bp};
 
     fn empty_bp() -> Bp {
         Bp {
