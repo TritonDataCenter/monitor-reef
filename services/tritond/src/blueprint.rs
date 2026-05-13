@@ -696,3 +696,81 @@ pub(crate) fn parse_mac_bytes(value: &str) -> Result<[u8; 6], HttpError> {
 pub(crate) fn invalid_stored_mac(value: &str) -> HttpError {
     HttpError::for_internal_error(format!("stored NIC has invalid MAC address {value:?}"))
 }
+
+#[cfg(test)]
+mod imds_tests {
+    use super::*;
+    use tritond_api::types::RouteTarget as ApiRouteTarget;
+
+    fn stored_route(name: &str) -> Route {
+        Route {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            vpc_id: Uuid::new_v4(),
+            route_table_id: Uuid::new_v4(),
+            name: name.into(),
+            description: String::new(),
+            destination: "0.0.0.0/0".parse().unwrap(),
+            target: ApiRouteTarget::VirtualGateway,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn build_routes_with_imds_off_returns_stored_only() {
+        let stored = vec![stored_route("default")];
+        let out =
+            build_routes_with_imds(&stored, stored[0].route_table_id, false).expect("compile");
+        assert_eq!(out.len(), 1);
+        assert!(
+            !matches!(out[0].target, RouteTargetIntentV1::LocalImds),
+            "no synthetic LocalImds when imds_enabled = false"
+        );
+    }
+
+    #[test]
+    fn build_routes_with_imds_on_appends_local_imds_route() {
+        let stored = vec![stored_route("default")];
+        let route_table_id = stored[0].route_table_id;
+        let out = build_routes_with_imds(&stored, route_table_id, true).expect("compile");
+        assert_eq!(out.len(), 2, "stored + synthetic IMDS route");
+        let imds_route = out
+            .iter()
+            .find(|r| matches!(r.target, RouteTargetIntentV1::LocalImds))
+            .expect("LocalImds route present when imds_enabled");
+        assert_eq!(imds_route.destination, "169.254.169.254/32");
+        assert_eq!(imds_route.route_table_id, route_table_id);
+        // The synthetic route id is deterministic -- a second call
+        // round-trips bit-identical so the blueprint cache key
+        // stays stable.
+        let out2 = build_routes_with_imds(&stored, route_table_id, true).expect("compile");
+        let imds_route2 = out2
+            .iter()
+            .find(|r| matches!(r.target, RouteTargetIntentV1::LocalImds))
+            .expect("second build still has LocalImds");
+        assert_eq!(imds_route.id, imds_route2.id);
+    }
+
+    #[test]
+    fn build_routes_with_imds_emits_distinct_id_per_route_table() {
+        // Two distinct route tables produce distinct synthetic-route
+        // UUIDs -- proves the seed actually folds in the route table
+        // id rather than collapsing to a fixed value.
+        let a = Uuid::from_u128(1);
+        let b = Uuid::from_u128(2);
+        let out_a = build_routes_with_imds(&[], a, true).expect("compile");
+        let out_b = build_routes_with_imds(&[], b, true).expect("compile");
+        let id_a = out_a
+            .iter()
+            .find(|r| matches!(r.target, RouteTargetIntentV1::LocalImds))
+            .unwrap()
+            .id;
+        let id_b = out_b
+            .iter()
+            .find(|r| matches!(r.target, RouteTargetIntentV1::LocalImds))
+            .unwrap()
+            .id;
+        assert_ne!(id_a, id_b);
+    }
+}
