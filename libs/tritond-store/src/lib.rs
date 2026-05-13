@@ -1149,6 +1149,7 @@ pub trait Store: Send + Sync + 'static {
         bound_api_key_id: Uuid,
         pending_credential: String,
         console_ticket_key: [u8; 32],
+        imds_token_key: [u8; 32],
         approved_at: DateTime<Utc>,
     ) -> Result<Cn, StoreError>;
 

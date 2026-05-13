@@ -7743,6 +7743,13 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"imds_token_key_hex\": {"]
+    #[doc = "      \"description\": \"Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes / 64 hex chars). Same delivery contract as `console_ticket_key_hex` -- handed exactly once alongside `api_key`, then `None` thereafter. The agent uses it to mint + verify the IMDSv2 session tokens guests obtain via `PUT /latest/api/token`. Secret -- never logged. See `IMDS_DESIGN.md` §3.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
     #[doc = "    }"]
@@ -7759,6 +7766,9 @@ pub mod types {
         #[doc = "Per-CN HS256 console-ticket key, lowercase hex (32 bytes / 64 hex chars). Delivered exactly once, alongside `api_key`, on the first long-poll after the operator approves (or auto-approve fires). The agent persists it next to its credential file and uses it to verify the short-lived console tickets tritond mints when proxying a serial / VNC session. Secret — never logged. `None` on every subsequent poll and whenever `api_key` is `None`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub console_ticket_key_hex: ::std::option::Option<::std::string::String>,
+        #[doc = "Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes / 64 hex chars). Same delivery contract as `console_ticket_key_hex` -- handed exactly once alongside `api_key`, then `None` thereafter. The agent uses it to mint + verify the IMDSv2 session tokens guests obtain via `PUT /latest/api/token`. Secret -- never logged. See `IMDS_DESIGN.md` §3."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub imds_token_key_hex: ::std::option::Option<::std::string::String>,
         pub state: CnState,
     }
 
@@ -18411,6 +18421,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            imds_token_key_hex: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             state: ::std::result::Result<super::CnState, ::std::string::String>,
         }
 
@@ -18419,6 +18433,7 @@ pub mod types {
                 Self {
                     api_key: Ok(Default::default()),
                     console_ticket_key_hex: Ok(Default::default()),
+                    imds_token_key_hex: Ok(Default::default()),
                     state: Err("no value supplied for state".to_string()),
                 }
             }
@@ -18445,6 +18460,16 @@ pub mod types {
                 });
                 self
             }
+            pub fn imds_token_key_hex<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.imds_token_key_hex = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for imds_token_key_hex: {e}")
+                });
+                self
+            }
             pub fn state<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::CnState>,
@@ -18465,6 +18490,7 @@ pub mod types {
                 Ok(Self {
                     api_key: value.api_key?,
                     console_ticket_key_hex: value.console_ticket_key_hex?,
+                    imds_token_key_hex: value.imds_token_key_hex?,
                     state: value.state?,
                 })
             }
@@ -18475,6 +18501,7 @@ pub mod types {
                 Self {
                     api_key: Ok(value.api_key),
                     console_ticket_key_hex: Ok(value.console_ticket_key_hex),
+                    imds_token_key_hex: Ok(value.imds_token_key_hex),
                     state: Ok(value.state),
                 }
             }

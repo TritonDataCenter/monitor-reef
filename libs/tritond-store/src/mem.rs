@@ -2985,6 +2985,7 @@ impl Store for MemStore {
                 console_listen_port: None,
                 console_tls_spki_sha256: None,
                 console_ticket_key: None,
+                imds_token_key: None,
             };
             guard
                 .cn_server_uuid_by_claim_code
@@ -3029,6 +3030,7 @@ impl Store for MemStore {
             console_listen_port: None,
             console_tls_spki_sha256: None,
             console_ticket_key: None,
+            imds_token_key: None,
         };
         if let Some(code) = &claim_code {
             guard
@@ -3117,6 +3119,7 @@ impl Store for MemStore {
         bound_api_key_id: Uuid,
         pending_credential: String,
         console_ticket_key: [u8; 32],
+        imds_token_key: [u8; 32],
         approved_at: chrono::DateTime<Utc>,
     ) -> Result<Cn, StoreError> {
         let mut guard = self.inner.write().await;
@@ -3151,6 +3154,7 @@ impl Store for MemStore {
         cn.bound_api_key_id = Some(bound_api_key_id);
         cn.pending_credential = Some(pending_credential);
         cn.console_ticket_key = Some(console_ticket_key);
+        cn.imds_token_key = Some(imds_token_key);
         guard.cns_by_server_uuid.insert(server_uuid, cn.clone());
         Ok(cn)
     }
@@ -8134,7 +8138,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), [0u8; 32], now)
+            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), [0u8; 32], [0u8; 32], now)
             .await
             .unwrap();
         // Re-register: should remain Approved, refresh sysinfo + last_seen,
@@ -8167,7 +8171,7 @@ mod tests {
             .unwrap();
         let key_id = Uuid::new_v4();
         let approved = store
-            .approve_cn(id, key_id, "tcadm_secret".into(), [0u8; 32], now)
+            .approve_cn(id, key_id, "tcadm_secret".into(), [0u8; 32], [0u8; 32], now)
             .await
             .unwrap();
         assert_eq!(approved.state, CnState::Approved);
@@ -8203,7 +8207,7 @@ mod tests {
         let id = Uuid::new_v4();
         // Approve before register: NotFound.
         let err = store
-            .approve_cn(id, Uuid::new_v4(), "x".into(), [0u8; 32], Utc::now())
+            .approve_cn(id, Uuid::new_v4(), "x".into(), [0u8; 32], [0u8; 32], Utc::now())
             .await
             .unwrap_err();
         assert!(matches!(err, StoreError::NotFound));
@@ -8309,7 +8313,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .approve_cn(a.server_uuid, Uuid::new_v4(), "k".into(), [0u8; 32], now)
+            .approve_cn(a.server_uuid, Uuid::new_v4(), "k".into(), [0u8; 32], [0u8; 32], now)
             .await
             .unwrap();
 

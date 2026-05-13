@@ -5961,6 +5961,7 @@ impl Store for FdbStore {
                                     console_listen_port: None,
                                     console_tls_spki_sha256: None,
                                     console_ticket_key: None,
+                                    imds_token_key: None,
                                 };
                                 let value = serde_json::to_vec(&cn).map_err(|e| {
                                     FdbBindingError::CustomError(
@@ -6022,6 +6023,7 @@ impl Store for FdbStore {
                         console_listen_port: None,
                         console_tls_spki_sha256: None,
                         console_ticket_key: None,
+                        imds_token_key: None,
                     };
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())
@@ -6224,6 +6226,7 @@ impl Store for FdbStore {
         bound_api_key_id: Uuid,
         pending_credential: String,
         console_ticket_key: [u8; 32],
+        imds_token_key: [u8; 32],
         approved_at: chrono::DateTime<Utc>,
     ) -> Result<Cn, StoreError> {
         enum Outcome {
@@ -6277,6 +6280,7 @@ impl Store for FdbStore {
                     cn.bound_api_key_id = Some(bound_api_key_id);
                     cn.pending_credential = Some(pending_credential);
                     cn.console_ticket_key = Some(console_ticket_key);
+                    cn.imds_token_key = Some(imds_token_key);
 
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())

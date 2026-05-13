@@ -3176,6 +3176,18 @@ pub struct Cn {
     /// into any wire-level view.
     #[serde(default)]
     pub console_ticket_key: Option<[u8; 32]>,
+    /// Per-CN HS256 key for minting / verifying IMDSv2 session
+    /// tokens (`tritond_auth::ImdsTokenKey`). Generated alongside
+    /// `console_ticket_key` when the CN is approved; delivered to
+    /// the agent in the same registration-response envelope so a
+    /// CN reboot doesn't invalidate live IMDS tokens. See
+    /// `IMDS_DESIGN.md` §3 ("Token signing" + the "per-CN keying"
+    /// rationale that mirrors the console-ticket key separation).
+    ///
+    /// Secret. Same at-rest storage caveat as `console_ticket_key`;
+    /// never appears in any wire-level view.
+    #[serde(default)]
+    pub imds_token_key: Option<[u8; 32]>,
 }
 
 /// Wire-safe view of a [`Cn`]: strips the transient plaintext

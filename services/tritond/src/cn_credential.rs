@@ -134,6 +134,8 @@ pub(crate) async fn mint_and_attach_cn_credential(
     // forge operator access tokens.
     let console_ticket_key = ConsoleTicketKey::generate();
     let console_ticket_key_bytes = *console_ticket_key.bytes();
+    let imds_token_key = tritond_auth::ImdsTokenKey::generate();
+    let imds_token_key_bytes = *imds_token_key.bytes();
 
     let now = chrono::Utc::now();
     let updated = match ctx
@@ -143,6 +145,7 @@ pub(crate) async fn mint_and_attach_cn_credential(
             key_id,
             material.plaintext,
             console_ticket_key_bytes,
+            imds_token_key_bytes,
             now,
         )
         .await

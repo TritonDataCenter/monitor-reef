@@ -446,6 +446,15 @@ pub struct RegisterStatusResponse {
     /// `None` on every subsequent poll and whenever `api_key` is `None`.
     #[serde(default)]
     pub console_ticket_key_hex: Option<String>,
+    /// Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes
+    /// / 64 hex chars). Same delivery contract as
+    /// `console_ticket_key_hex` -- handed exactly once alongside
+    /// `api_key`, then `None` thereafter. The agent uses it to mint +
+    /// verify the IMDSv2 session tokens guests obtain via
+    /// `PUT /latest/api/token`. Secret -- never logged. See
+    /// `IMDS_DESIGN.md` §3.
+    #[serde(default)]
+    pub imds_token_key_hex: Option<String>,
 }
 
 /// Path parameter for endpoints that operate on a single CN.
