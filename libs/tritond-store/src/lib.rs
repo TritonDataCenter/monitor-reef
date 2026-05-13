@@ -56,9 +56,10 @@ pub use types::{
     TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID,
     TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID, TRITOND_SSH_KEY_NAMESPACE, Tenant,
     User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc,
-    default_boot_disk_size_bytes, default_guest_visible, derive_image_id, derive_ssh_key_id,
-    format_claim_code, generate_claim_code, generate_poll_token, meta_key_guest_writable_allowed,
-    normalize_claim_code, parse_vm_reports, validate_meta_entry, validate_meta_key,
+    computed_metadata, default_boot_disk_size_bytes, default_guest_visible, derive_image_id,
+    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
+    meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports, validate_meta_entry,
+    validate_meta_key,
 };
 
 use async_trait::async_trait;

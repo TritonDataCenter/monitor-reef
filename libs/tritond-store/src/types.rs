@@ -5240,3 +5240,348 @@ mod realized_meta_tests {
         );
     }
 }
+
+/// Build the *computed* ("system") metadata keys for one instance —
+/// the AWS-compatible `meta-data/*` facts plus the Triton-native
+/// `triton/system/*` facts (`IMDS_DESIGN.md` §1.2 / §1.5). These are
+/// never stored: `tritond` derives them from the Instance / NIC / VPC /
+/// Image records (and the resolved SSH public keys) on every realized-
+/// view build, and they layer on top of the stored [`RealizedMeta`]
+/// merge. Returned entries all have provenance "system" (the caller
+/// knows this) and `guest_writable == false`; `guest_visible` is
+/// `false` for `triton/system/cn-uuid` (operator-only) and `true`
+/// otherwise.
+///
+/// Records that aren't available yet (a half-provisioned instance with
+/// no NIC, say) are simply skipped — the function degrades to whatever
+/// it can compute.
+pub fn computed_metadata(
+    instance: &Instance,
+    primary_nic: Option<&Nic>,
+    vpc: Option<&Vpc>,
+    image: Option<&Image>,
+    ssh_public_keys: &[String],
+) -> Vec<(String, MetaValue)> {
+    fn entry(
+        key: &str,
+        value: serde_json::Value,
+        guest_visible: bool,
+        at: DateTime<Utc>,
+    ) -> (String, MetaValue) {
+        (
+            key.to_string(),
+            MetaValue {
+                value,
+                guest_visible,
+                guest_writable: false,
+                updated_by: "system".to_string(),
+                updated_at: at,
+            },
+        )
+    }
+    let at = instance.updated_at;
+    let mut out: Vec<(String, MetaValue)> = Vec::new();
+
+    let hostname = if instance.name.is_empty() {
+        format!("tritond-{}", instance.id)
+    } else {
+        instance.name.clone()
+    };
+    let memory_mib = instance.memory_bytes / (1024 * 1024);
+    let brand = serde_json::to_value(instance.brand)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // ---- AWS-compatible `meta-data/*` ----
+    out.push(entry(
+        "meta-data/instance-id",
+        serde_json::json!(instance.id.to_string()),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "meta-data/ami-id",
+        serde_json::json!(instance.image_id.to_string()),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "meta-data/instance-type",
+        serde_json::json!(format!("{}vcpu-{}m", instance.cpu, memory_mib)),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "meta-data/local-hostname",
+        serde_json::json!(hostname.clone()),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "meta-data/hostname",
+        serde_json::json!(hostname.clone()),
+        true,
+        at,
+    ));
+    if let Some(nic) = primary_nic {
+        out.push(entry(
+            "meta-data/mac",
+            serde_json::json!(nic.mac.clone()),
+            true,
+            at,
+        ));
+        if let Some(ip) = nic.primary_ipv4 {
+            out.push(entry(
+                "meta-data/local-ipv4",
+                serde_json::json!(ip.to_string()),
+                true,
+                at,
+            ));
+        }
+        if let Some(ip) = nic.primary_ipv6 {
+            out.push(entry(
+                "meta-data/local-ipv6",
+                serde_json::json!(ip.to_string()),
+                true,
+                at,
+            ));
+        }
+    }
+    for (i, key) in ssh_public_keys.iter().enumerate() {
+        out.push(entry(
+            &format!("meta-data/public-keys/{i}/openssh-key"),
+            serde_json::json!(key),
+            true,
+            at,
+        ));
+    }
+
+    // ---- Triton-native `triton/system/*` ----
+    if let Some(nic) = primary_nic {
+        out.push(entry(
+            "triton/system/vpc-id",
+            serde_json::json!(nic.vpc_id.to_string()),
+            true,
+            at,
+        ));
+        out.push(entry(
+            "triton/system/subnet-id",
+            serde_json::json!(nic.subnet_id.to_string()),
+            true,
+            at,
+        ));
+    }
+    if let Some(v) = vpc {
+        out.push(entry(
+            "triton/system/vni",
+            serde_json::json!(v.vni),
+            true,
+            at,
+        ));
+    }
+    out.push(entry(
+        "triton/system/image-id",
+        serde_json::json!(instance.image_id.to_string()),
+        true,
+        at,
+    ));
+    if let Some(img) = image {
+        out.push(entry(
+            "triton/system/image-name",
+            serde_json::json!(img.name.clone()),
+            true,
+            at,
+        ));
+        out.push(entry(
+            "triton/system/image-os",
+            serde_json::json!(img.os.clone()),
+            true,
+            at,
+        ));
+        out.push(entry(
+            "triton/system/image-version",
+            serde_json::json!(img.version.clone()),
+            true,
+            at,
+        ));
+    }
+    out.push(entry(
+        "triton/system/brand",
+        serde_json::json!(brand),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "triton/system/cpu",
+        serde_json::json!(instance.cpu),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "triton/system/memory-mib",
+        serde_json::json!(memory_mib),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "triton/system/owner",
+        serde_json::json!({ "tenant": instance.tenant_id.to_string(), "project": instance.project_id.to_string() }),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "triton/system/created-at",
+        serde_json::json!(instance.created_at.to_rfc3339()),
+        true,
+        at,
+    ));
+    if let Some(cn) = instance.host_cn_uuid {
+        // Operator-only: a guest should not learn which physical host
+        // it runs on.
+        out.push(entry(
+            "triton/system/cn-uuid",
+            serde_json::json!(cn.to_string()),
+            false,
+            at,
+        ));
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod computed_meta_tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+
+    fn sample_instance() -> Instance {
+        let now = Utc::now();
+        Instance {
+            id: Uuid::parse_str("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9").unwrap(),
+            tenant_id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+            project_id: Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap(),
+            name: "web0".to_string(),
+            description: String::new(),
+            image_id: Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap(),
+            brand: InstanceBrand::Bhyve,
+            primary_subnet_id: Uuid::parse_str("44444444-4444-4444-4444-444444444444").unwrap(),
+            ssh_key_ids: vec![],
+            cpu: 2,
+            memory_bytes: 2 * 1024 * 1024 * 1024,
+            host_cn_uuid: Some(Uuid::parse_str("55555555-5555-5555-5555-555555555555").unwrap()),
+            lifecycle: LifecycleState::Running,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn sample_nic(instance_id: Uuid) -> Nic {
+        Nic {
+            id: Uuid::parse_str("66666666-6666-6666-6666-666666666666").unwrap(),
+            tenant_id: Uuid::nil(),
+            project_id: Uuid::nil(),
+            instance_id,
+            vpc_id: Uuid::parse_str("77777777-7777-7777-7777-777777777777").unwrap(),
+            subnet_id: Uuid::parse_str("44444444-4444-4444-4444-444444444444").unwrap(),
+            name: "net0".to_string(),
+            mac: "02:1a:b3:cd:ef:42".to_string(),
+            primary_ipv4: Some(Ipv4Addr::new(10, 0, 0, 42)),
+            primary_ipv6: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn computed_keys_cover_aws_and_triton_facts() {
+        let inst = sample_instance();
+        let nic = sample_nic(inst.id);
+        let keys = computed_metadata(
+            &inst,
+            Some(&nic),
+            None,
+            None,
+            &["ssh-ed25519 AAAA".to_string()],
+        );
+        let map: std::collections::BTreeMap<_, _> =
+            keys.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+        assert_eq!(
+            map["meta-data/instance-id"].value,
+            serde_json::json!(inst.id.to_string())
+        );
+        assert_eq!(
+            map["meta-data/local-hostname"].value,
+            serde_json::json!("web0")
+        );
+        assert_eq!(map["meta-data/hostname"].value, serde_json::json!("web0"));
+        assert_eq!(
+            map["meta-data/instance-type"].value,
+            serde_json::json!("2vcpu-2048m")
+        );
+        assert_eq!(
+            map["meta-data/mac"].value,
+            serde_json::json!("02:1a:b3:cd:ef:42")
+        );
+        assert_eq!(
+            map["meta-data/local-ipv4"].value,
+            serde_json::json!("10.0.0.42")
+        );
+        assert!(!map.contains_key("meta-data/local-ipv6"));
+        assert_eq!(
+            map["meta-data/public-keys/0/openssh-key"].value,
+            serde_json::json!("ssh-ed25519 AAAA")
+        );
+        assert_eq!(
+            map["triton/system/vpc-id"].value,
+            serde_json::json!(nic.vpc_id.to_string())
+        );
+        assert_eq!(
+            map["triton/system/subnet-id"].value,
+            serde_json::json!(nic.subnet_id.to_string())
+        );
+        assert_eq!(map["triton/system/brand"].value, serde_json::json!("bhyve"));
+        assert_eq!(map["triton/system/cpu"].value, serde_json::json!(2));
+        assert_eq!(
+            map["triton/system/memory-mib"].value,
+            serde_json::json!(2048)
+        );
+        assert_eq!(
+            map["triton/system/owner"].value,
+            serde_json::json!({ "tenant": inst.tenant_id.to_string(), "project": inst.project_id.to_string() })
+        );
+        // cn-uuid present but guest-invisible.
+        assert!(map.contains_key("triton/system/cn-uuid"));
+        assert!(!map["triton/system/cn-uuid"].guest_visible);
+        // Everything else is guest-visible and never guest-writable.
+        for (k, v) in &keys {
+            assert!(!v.guest_writable, "{k} should not be guest_writable");
+            if k != "triton/system/cn-uuid" {
+                assert!(v.guest_visible, "{k} should be guest_visible");
+            }
+        }
+    }
+
+    #[test]
+    fn computed_keys_degrade_without_nic_or_name() {
+        let mut inst = sample_instance();
+        inst.name = String::new();
+        inst.host_cn_uuid = None;
+        let keys = computed_metadata(&inst, None, None, None, &[]);
+        let map: std::collections::BTreeMap<_, _> =
+            keys.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        assert_eq!(
+            map["meta-data/local-hostname"].value,
+            serde_json::json!(format!("tritond-{}", inst.id))
+        );
+        assert!(!map.contains_key("meta-data/mac"));
+        assert!(!map.contains_key("meta-data/local-ipv4"));
+        assert!(!map.contains_key("triton/system/vpc-id"));
+        assert!(!map.contains_key("triton/system/cn-uuid"));
+        // Image-id is always available (it's a field on Instance).
+        assert_eq!(
+            map["triton/system/image-id"].value,
+            serde_json::json!(inst.image_id.to_string())
+        );
+    }
+}
