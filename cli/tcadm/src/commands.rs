@@ -6,7 +6,7 @@
 
 //! Subcommand implementations for `tcadm`.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use tritond_client::types::{ApiKeyScope, LoginRequest, NewApiKey, TokenResponse};
 
 /// Wire-format label for an API-key scope. Matches the JSON
@@ -1497,6 +1497,401 @@ pub async fn net_nat_gw_delete(
         .await
         .context("delete nat gateway")?;
     println!("Deleted nat gateway {nat_gateway_id} from vpc {vpc_id}");
+    Ok(())
+}
+
+// ── DHCP / IPAM (per-VPC pool, sticky reservations, issued leases) ────
+
+/// Parse a `CODE=HEXBYTES` raw-DHCP-option spec (e.g. `42=c63364fa`)
+/// into the wire shape. `HEXBYTES` is an even-length string of hex
+/// nibbles with no separators; the empty value (`53=`) is allowed.
+fn parse_dhcp_option(spec: &str) -> Result<tritond_client::types::DhcpOptionRaw> {
+    let (code_str, hex) = spec
+        .split_once('=')
+        .with_context(|| format!("DHCP option {spec:?} must be CODE=HEXBYTES"))?;
+    let code: u8 = code_str
+        .trim()
+        .parse()
+        .with_context(|| format!("DHCP option code {code_str:?} is not a u8"))?;
+    let hex = hex.trim();
+    if hex.len() % 2 != 0 {
+        bail!("DHCP option {spec:?}: hex value must have an even number of digits");
+    }
+    let value = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16))
+        .collect::<std::result::Result<Vec<u8>, _>>()
+        .with_context(|| format!("DHCP option {spec:?}: value is not valid hex"))?;
+    if value.len() > 250 {
+        bail!("DHCP option {spec:?}: value exceeds 250 bytes");
+    }
+    Ok(tritond_client::types::DhcpOptionRaw { code, value })
+}
+
+fn parse_dhcp_options(specs: &[String]) -> Result<Vec<tritond_client::types::DhcpOptionRaw>> {
+    specs.iter().map(|s| parse_dhcp_option(s)).collect()
+}
+
+fn fmt_dhcp_options(opts: &[tritond_client::types::DhcpOptionRaw]) -> String {
+    if opts.is_empty() {
+        return "(none)".to_string();
+    }
+    opts.iter()
+        .map(|o| {
+            let hex: String = o.value.iter().map(|b| format!("{b:02x}")).collect();
+            format!("{}={hex}", o.code)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn print_dhcp_pool(p: &tritond_client::types::DhcpPool) {
+    println!("  vpc:            {}", p.vpc_id);
+    println!("  lease_seconds:  {}", p.lease_seconds_default);
+    let excluded = if p.excluded_ipv4.is_empty() {
+        "(none)".to_string()
+    } else {
+        p.excluded_ipv4.join(", ")
+    };
+    println!("  excluded_ipv4:  {excluded}");
+    println!(
+        "  options:        {}",
+        fmt_dhcp_options(&p.additional_options)
+    );
+}
+
+pub async fn net_dhcp_pool_show(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    match client
+        .get_vpc_dhcp_pool()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let pool = resp.into_inner();
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&pool)?);
+            } else {
+                print_dhcp_pool(&pool);
+            }
+        }
+        // A 404 means "no pool config" — subnet defaults apply.
+        Err(tritond_client::Error::ErrorResponse(rv)) if rv.status().as_u16() == 404 => {
+            if json_output {
+                println!("null");
+            } else {
+                println!("(no dhcp pool config — subnet defaults apply)");
+            }
+        }
+        Err(e) => return Err(e).context("get dhcp pool"),
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)] // CLI subcommand args.
+pub async fn net_dhcp_pool_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    lease_seconds: u32,
+    exclude: Vec<std::net::Ipv4Addr>,
+    option: Vec<String>,
+    json_output: bool,
+) -> Result<()> {
+    let additional_options = parse_dhcp_options(&option)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let pool = client
+        .set_vpc_dhcp_pool()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .body(tritond_client::types::NewDhcpPool {
+            lease_seconds_default: lease_seconds,
+            excluded_ipv4: exclude.iter().map(|ip| ip.to_string()).collect(),
+            additional_options,
+        })
+        .send()
+        .await
+        .context("set dhcp pool")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&pool)?);
+    } else {
+        println!("Set dhcp pool config for vpc {vpc_id}");
+        print_dhcp_pool(&pool);
+    }
+    Ok(())
+}
+
+pub async fn net_dhcp_pool_clear(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .clear_vpc_dhcp_pool()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("clear dhcp pool")?;
+    println!("Cleared dhcp pool config for vpc {vpc_id}");
+    Ok(())
+}
+
+fn print_dhcp_reservation(r: &tritond_client::types::DhcpReservation) {
+    println!(
+        "{}  {}  {}  options={}",
+        r.mac,
+        r.ipv4,
+        r.hostname.as_deref().unwrap_or("(no hostname)"),
+        fmt_dhcp_options(&r.per_mac_options),
+    );
+}
+
+pub async fn net_dhcp_reservation_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let reservations = client
+        .list_vpc_dhcp_reservations()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("list dhcp reservations")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&reservations)?);
+        return Ok(());
+    }
+    if reservations.is_empty() {
+        println!("(no reservations)");
+        return Ok(());
+    }
+    for r in &reservations {
+        print_dhcp_reservation(r);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)] // CLI subcommand args.
+pub async fn net_dhcp_reservation_add(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    mac: String,
+    ip: std::net::Ipv4Addr,
+    hostname: Option<String>,
+    option: Vec<String>,
+    json_output: bool,
+) -> Result<()> {
+    let per_mac_options = parse_dhcp_options(&option)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let reservation = client
+        .create_vpc_dhcp_reservation()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .body(tritond_client::types::NewDhcpReservation {
+            mac,
+            ipv4: ip,
+            hostname,
+            per_mac_options,
+        })
+        .send()
+        .await
+        .context("create dhcp reservation")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&reservation)?);
+    } else {
+        println!("Created reservation in vpc {vpc_id}:");
+        print_dhcp_reservation(&reservation);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)] // CLI subcommand args.
+pub async fn net_dhcp_reservation_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    mac: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let reservation = client
+        .get_vpc_dhcp_reservation()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .mac(mac)
+        .send()
+        .await
+        .context("get dhcp reservation")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&reservation)?);
+    } else {
+        print_dhcp_reservation(&reservation);
+    }
+    Ok(())
+}
+
+pub async fn net_dhcp_reservation_remove(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    mac: String,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_dhcp_reservation()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .mac(&mac)
+        .send()
+        .await
+        .context("delete dhcp reservation")?;
+    println!("Removed reservation for {mac} from vpc {vpc_id}");
+    Ok(())
+}
+
+fn print_dhcp_lease(l: &tritond_client::types::DhcpLease) {
+    println!(
+        "{}  {}  instance={}  last_msg={}  renewed={}",
+        l.mac,
+        l.ipv4,
+        l.instance_id,
+        l.last_msg_type
+            .map(|m| m.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        l.last_renewed_at
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_else(|| "-".to_string()),
+    );
+}
+
+pub async fn net_dhcp_lease_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let leases = client
+        .list_vpc_dhcp_leases()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("list dhcp leases")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&leases)?);
+        return Ok(());
+    }
+    if leases.is_empty() {
+        println!("(no leases)");
+        return Ok(());
+    }
+    for l in &leases {
+        print_dhcp_lease(l);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)] // CLI subcommand args.
+pub async fn net_dhcp_lease_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    mac: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let lease = client
+        .get_vpc_dhcp_lease()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .mac(mac)
+        .send()
+        .await
+        .context("get dhcp lease")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&lease)?);
+    } else {
+        print_dhcp_lease(&lease);
+    }
+    Ok(())
+}
+
+pub async fn net_dhcp_lease_release(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    vpc_id: Uuid,
+    mac: String,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_dhcp_lease()
+        .tenant_id(tenant_id)
+        .project_id(project_id)
+        .vpc_id(vpc_id)
+        .mac(&mac)
+        .send()
+        .await
+        .context("delete dhcp lease")?;
+    println!("Released lease for {mac} from vpc {vpc_id}");
     Ok(())
 }
 

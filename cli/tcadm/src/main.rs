@@ -837,6 +837,141 @@ enum NetCommand {
         #[command(subcommand)]
         command: NetNatGwCommand,
     },
+    /// Manage VPC DHCP/IPAM (pool config, reservations, leases).
+    Dhcp {
+        #[command(subcommand)]
+        command: NetDhcpCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetDhcpCommand {
+    /// Manage the per-VPC DHCP pool (lease cadence, exclusions, raw options).
+    Pool {
+        #[command(subcommand)]
+        command: NetDhcpPoolCommand,
+    },
+    /// Manage sticky MAC -> IP reservations.
+    Reservation {
+        #[command(subcommand)]
+        command: NetDhcpReservationCommand,
+    },
+    /// Inspect or release issued DHCP leases.
+    Lease {
+        #[command(subcommand)]
+        command: NetDhcpLeaseCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetDhcpPoolCommand {
+    /// Show the VPC's DHCP pool config (prints "(none)" when unset).
+    Show {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set the VPC's DHCP pool config (replaces any existing config).
+    Set {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        /// DHCP option-51 renewal-cadence hint, in seconds.
+        #[arg(long, default_value_t = 86_400)]
+        lease_seconds: u32,
+        /// IPv4 address to exclude from allocation. Repeatable.
+        #[arg(long = "exclude", value_name = "IPV4")]
+        exclude: Vec<std::net::Ipv4Addr>,
+        /// Extra raw DHCP option as CODE=HEXBYTES (e.g. 42=c63364fa).
+        /// Repeatable.
+        #[arg(long = "option", value_name = "CODE=HEX")]
+        option: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear the VPC's DHCP pool config (revert to subnet defaults).
+    Clear {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetDhcpReservationCommand {
+    /// List the VPC's reservations.
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add (or replace) a sticky MAC -> IP reservation.
+    Add {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        mac: String,
+        #[arg(long, value_name = "IPV4")]
+        ip: std::net::Ipv4Addr,
+        #[arg(long)]
+        hostname: Option<String>,
+        /// Per-MAC raw DHCP option as CODE=HEXBYTES (e.g. 252=687474703a2f2f...).
+        /// Repeatable.
+        #[arg(long = "option", value_name = "CODE=HEX")]
+        option: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a single reservation by MAC.
+    Get {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        mac: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove a reservation by MAC.
+    Remove {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        mac: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum NetDhcpLeaseCommand {
+    /// List the VPC's issued leases.
+    List {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a single lease by MAC.
+    Get {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        mac: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Release (delete) a lease by MAC. Frees the IP; breaks
+    /// sticky-by-MAC for that MAC until a reservation is re-created.
+    Release {
+        tenant_id: Uuid,
+        project_id: Uuid,
+        vpc_id: Uuid,
+        mac: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2647,6 +2782,190 @@ async fn main() -> Result<()> {
                     )
                     .await
                 }
+            },
+            NetCommand::Dhcp { command } => match command {
+                NetDhcpCommand::Pool { command } => match command {
+                    NetDhcpPoolCommand::Show {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    } => {
+                        commands::net_dhcp_pool_show(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpPoolCommand::Set {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        lease_seconds,
+                        exclude,
+                        option,
+                        json,
+                    } => {
+                        commands::net_dhcp_pool_set(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            lease_seconds,
+                            exclude,
+                            option,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpPoolCommand::Clear {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                    } => {
+                        commands::net_dhcp_pool_clear(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                        )
+                        .await
+                    }
+                },
+                NetDhcpCommand::Reservation { command } => match command {
+                    NetDhcpReservationCommand::List {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    } => {
+                        commands::net_dhcp_reservation_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpReservationCommand::Add {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        mac,
+                        ip,
+                        hostname,
+                        option,
+                        json,
+                    } => {
+                        commands::net_dhcp_reservation_add(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            mac,
+                            ip,
+                            hostname,
+                            option,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpReservationCommand::Get {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        mac,
+                        json,
+                    } => {
+                        commands::net_dhcp_reservation_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            mac,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpReservationCommand::Remove {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        mac,
+                    } => {
+                        commands::net_dhcp_reservation_remove(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            mac,
+                        )
+                        .await
+                    }
+                },
+                NetDhcpCommand::Lease { command } => match command {
+                    NetDhcpLeaseCommand::List {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        json,
+                    } => {
+                        commands::net_dhcp_lease_list(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpLeaseCommand::Get {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        mac,
+                        json,
+                    } => {
+                        commands::net_dhcp_lease_get(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            mac,
+                            json,
+                        )
+                        .await
+                    }
+                    NetDhcpLeaseCommand::Release {
+                        tenant_id,
+                        project_id,
+                        vpc_id,
+                        mac,
+                    } => {
+                        commands::net_dhcp_lease_release(
+                            cli.endpoint,
+                            cli.api_key,
+                            tenant_id,
+                            project_id,
+                            vpc_id,
+                            mac,
+                        )
+                        .await
+                    }
+                },
             },
         },
         Commands::Image { command } => match command {
