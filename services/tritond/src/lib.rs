@@ -42,6 +42,7 @@ mod error;
 mod handlers;
 mod lifecycle;
 mod principal;
+mod realized_meta;
 mod scope;
 mod service_impl;
 mod validate;
@@ -53,6 +54,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
 
 pub use context::{ApiContext, SweeperConfig};
+pub use realized_meta::build_instance_realized_view;
 pub use service_impl::{
     TritondServiceImpl, api_description, start_server, start_server_with_context,
 };
