@@ -9721,6 +9721,28 @@
           }
         ]
       },
+      "ImdsBindingWire": {
+        "description": "Per-port IMDS binding shipped from tritond to tritonagent in the provisioning blueprint -- the data the agent's `imds_bindings` reverse-lookup table needs so the IMDS HTTP listener can resolve caller identity from a connection's peer address (the design's \"Nitro card\" caller-ID rule). See `IMDS_DESIGN.md` §2.1.\n\n`pseudo_src` is the CN-unique address the proteus kmod SNATs this port's IMDS-bound traffic to; `port_id` is the kmod-side port identifier; `instance_id` is the VM this port belongs to.\n\nOn the wire this is one entry per port that has IMDS wired; a blueprint may carry zero, one, or several (one per VPC the instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1).",
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "port_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pseudo_src": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance_id",
+          "port_id",
+          "pseudo_src"
+        ]
+      },
       "Instance": {
         "description": "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host.",
         "type": "object",
@@ -11856,6 +11878,14 @@
                 "$ref": "#/components/schemas/Image"
               }
             ]
+          },
+          "imds_bindings": {
+            "description": "Per-port IMDS bindings: `(pseudo_src, port_id, instance_id)` tuples the agent registers in its `ImdsBindingTable` after a successful `proteus::apply_blueprint`. tritond populates this when it has allocated a pseudo-source on the CN for an IMDS- enabled instance (today: empty; the populate-side commit lands alongside the proteus stateful DNAT/SNAT compile). See `IMDS_DESIGN.md` §2.1.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImdsBindingWire"
+            }
           },
           "instance": {
             "nullable": true,

@@ -31,12 +31,12 @@ use uuid::Uuid;
 use crate::types::{
     ApiKeyScope, ApiKeyView, AuditChainHead, AuditEvent, AuditVerifyOutcome, AutoApproveWindow,
     CnRole, CnState, CnView, DhcpLease, DhcpPool, DhcpReservation, Disk, FirewallRule, FloatingIp,
-    IdpConfigView, Image, Instance, JobKind, JobOutcome, LegacyVm, ManagedIdentity, NatGateway,
-    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage,
-    NewInstance, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-    RealizationStatus, RealizerId, Route, RouteTable, Silo, SshKey, StorageClusterView, Subnet,
-    Tenant, Vpc,
+    IdpConfigView, Image, ImdsBindingWire, Instance, JobKind, JobOutcome, LegacyVm,
+    ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
+    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewNatGateway, NewProject, NewQuota,
+    NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc,
+    Nic, Project, ProvisioningJob, Quota, RealizationStatus, RealizerId, Route, RouteTable, Silo,
+    SshKey, StorageClusterView, Subnet, Tenant, Vpc,
 };
 
 /// Liveness response.
@@ -348,6 +348,15 @@ pub struct ProvisioningBlueprint {
     /// `internal_metadata` inside the `vmadm create` payload.
     #[serde(default)]
     pub managed_identity: Option<ManagedIdentity>,
+    /// Per-port IMDS bindings: `(pseudo_src, port_id, instance_id)`
+    /// tuples the agent registers in its `ImdsBindingTable` after a
+    /// successful `proteus::apply_blueprint`. tritond populates this
+    /// when it has allocated a pseudo-source on the CN for an IMDS-
+    /// enabled instance (today: empty; the populate-side commit
+    /// lands alongside the proteus stateful DNAT/SNAT compile). See
+    /// `IMDS_DESIGN.md` §2.1.
+    #[serde(default)]
+    pub imds_bindings: Vec<ImdsBindingWire>,
 }
 
 /// Path parameters for endpoints that operate on a single audit event.

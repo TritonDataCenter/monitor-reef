@@ -68,6 +68,7 @@ pub(crate) async fn build_blueprint(
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
             managed_identity: None,
+            imds_bindings: Vec::new(),
         });
     };
     let instance = match store.get_instance(instance_id).await {
@@ -98,6 +99,7 @@ pub(crate) async fn build_blueprint(
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
             managed_identity: None,
+            imds_bindings: Vec::new(),
         });
     }
 
@@ -112,6 +114,7 @@ pub(crate) async fn build_blueprint(
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
             managed_identity: None,
+            imds_bindings: Vec::new(),
         });
     };
 
@@ -170,6 +173,7 @@ pub(crate) async fn build_blueprint(
         disks,
         ssh_public_keys,
         managed_identity: Some(managed_identity),
+        imds_bindings: Vec::new(),
     })
 }
 

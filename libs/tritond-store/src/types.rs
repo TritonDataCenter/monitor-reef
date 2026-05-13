@@ -5843,3 +5843,24 @@ mod realized_view_tests {
         assert!(g.get(META_KEY_IMDS_ENABLED).is_some());
     }
 }
+
+/// Per-port IMDS binding shipped from tritond to tritonagent in the
+/// provisioning blueprint -- the data the agent's `imds_bindings`
+/// reverse-lookup table needs so the IMDS HTTP listener can resolve
+/// caller identity from a connection's peer address (the design's
+/// "Nitro card" caller-ID rule). See `IMDS_DESIGN.md` §2.1.
+///
+/// `pseudo_src` is the CN-unique address the proteus kmod SNATs this
+/// port's IMDS-bound traffic to; `port_id` is the kmod-side port
+/// identifier; `instance_id` is the VM this port belongs to.
+///
+/// On the wire this is one entry per port that has IMDS wired; a
+/// blueprint may carry zero, one, or several (one per VPC the
+/// instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ImdsBindingWire {
+    #[schemars(with = "String")]
+    pub pseudo_src: IpAddr,
+    pub port_id: Uuid,
+    pub instance_id: Uuid,
+}

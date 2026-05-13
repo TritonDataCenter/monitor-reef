@@ -3297,6 +3297,50 @@ pub mod types {
         User { user_id: ::uuid::Uuid },
     }
 
+    #[doc = "Per-port IMDS binding shipped from tritond to tritonagent in the provisioning blueprint -- the data the agent's `imds_bindings` reverse-lookup table needs so the IMDS HTTP listener can resolve caller identity from a connection's peer address (the design's \"Nitro card\" caller-ID rule). See `IMDS_DESIGN.md` §2.1.\n\n`pseudo_src` is the CN-unique address the proteus kmod SNATs this port's IMDS-bound traffic to; `port_id` is the kmod-side port identifier; `instance_id` is the VM this port belongs to.\n\nOn the wire this is one entry per port that has IMDS wired; a blueprint may carry zero, one, or several (one per VPC the instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Per-port IMDS binding shipped from tritond to tritonagent in the provisioning blueprint -- the data the agent's `imds_bindings` reverse-lookup table needs so the IMDS HTTP listener can resolve caller identity from a connection's peer address (the design's \\\"Nitro card\\\" caller-ID rule). See `IMDS_DESIGN.md` §2.1.\\n\\n`pseudo_src` is the CN-unique address the proteus kmod SNATs this port's IMDS-bound traffic to; `port_id` is the kmod-side port identifier; `instance_id` is the VM this port belongs to.\\n\\nOn the wire this is one entry per port that has IMDS wired; a blueprint may carry zero, one, or several (one per VPC the instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"port_id\","]
+    #[doc = "    \"pseudo_src\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"port_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"pseudo_src\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ImdsBindingWire {
+        pub instance_id: ::uuid::Uuid,
+        pub port_id: ::uuid::Uuid,
+        pub pseudo_src: ::std::string::String,
+    }
+
+    impl ImdsBindingWire {
+        pub fn builder() -> builder::ImdsBindingWire {
+            Default::default()
+        }
+    }
+
     #[doc = "Tenant compute instance. Project-scoped; references one image (boot media), one subnet (network attach point), and zero-or-more SSH keys (injected into authorized_keys at provisioning time).\n\nPhase 0 ships only the metadata + lifecycle state machine. The actual provisioning is faked synchronously inside the create handler; a future slice introduces the intent queue and stub executor that will become the swap-out point for a real `tritonagent`.\n\nSeveral fields that real cloud instances carry are deliberately omitted in v0: cloud-init userdata, tags/labels, affinity rules, console URL, migration history. Each will land as the consuming use case ships. The hosting CN is recorded once placement lands so subsequent lifecycle jobs return to the same SmartOS host."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6862,6 +6906,14 @@ pub mod types {
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"imds_bindings\": {"]
+    #[doc = "      \"description\": \"Per-port IMDS bindings: `(pseudo_src, port_id, instance_id)` tuples the agent registers in its `ImdsBindingTable` after a successful `proteus::apply_blueprint`. tritond populates this when it has allocated a pseudo-source on the CN for an IMDS- enabled instance (today: empty; the populate-side commit lands alongside the proteus stateful DNAT/SNAT compile). See `IMDS_DESIGN.md` §2.1.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ImdsBindingWire\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"instance\": {"]
     #[doc = "      \"description\": \"`Some(...)` when the underlying instance still exists; `None` if a concurrent operator delete raced the agent's claim. The agent must report `Failed` for this case rather than acting on a phantom instance.\","]
     #[doc = "      \"oneOf\": ["]
@@ -6937,6 +6989,9 @@ pub mod types {
         #[doc = "Boot image record. Populated for Provision jobs; absent for Stop/Restart."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub image: ::std::option::Option<Image>,
+        #[doc = "Per-port IMDS bindings: `(pseudo_src, port_id, instance_id)` tuples the agent registers in its `ImdsBindingTable` after a successful `proteus::apply_blueprint`. tritond populates this when it has allocated a pseudo-source on the CN for an IMDS- enabled instance (today: empty; the populate-side commit lands alongside the proteus stateful DNAT/SNAT compile). See `IMDS_DESIGN.md` §2.1."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub imds_bindings: ::std::vec::Vec<ImdsBindingWire>,
         #[doc = "`Some(...)` when the underlying instance still exists; `None` if a concurrent operator delete raced the agent's claim. The agent must report `Failed` for this case rather than acting on a phantom instance."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub instance: ::std::option::Option<Instance>,
@@ -13301,6 +13356,79 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ImdsBindingWire {
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            port_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            pseudo_src: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ImdsBindingWire {
+            fn default() -> Self {
+                Self {
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    port_id: Err("no value supplied for port_id".to_string()),
+                    pseudo_src: Err("no value supplied for pseudo_src".to_string()),
+                }
+            }
+        }
+
+        impl ImdsBindingWire {
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn port_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.port_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for port_id: {e}"));
+                self
+            }
+            pub fn pseudo_src<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.pseudo_src = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for pseudo_src: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ImdsBindingWire> for super::ImdsBindingWire {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ImdsBindingWire,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    instance_id: value.instance_id?,
+                    port_id: value.port_id?,
+                    pseudo_src: value.pseudo_src?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ImdsBindingWire> for ImdsBindingWire {
+            fn from(value: super::ImdsBindingWire) -> Self {
+                Self {
+                    instance_id: Ok(value.instance_id),
+                    port_id: Ok(value.port_id),
+                    pseudo_src: Ok(value.pseudo_src),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Instance {
             brand: ::std::result::Result<super::InstanceBrand, ::std::string::String>,
             cpu: ::std::result::Result<u32, ::std::string::String>,
@@ -17257,6 +17385,10 @@ pub mod types {
             disks: ::std::result::Result<::std::vec::Vec<super::Disk>, ::std::string::String>,
             image:
                 ::std::result::Result<::std::option::Option<super::Image>, ::std::string::String>,
+            imds_bindings: ::std::result::Result<
+                ::std::vec::Vec<super::ImdsBindingWire>,
+                ::std::string::String,
+            >,
             instance: ::std::result::Result<
                 ::std::option::Option<super::Instance>,
                 ::std::string::String,
@@ -17280,6 +17412,7 @@ pub mod types {
                 Self {
                     disks: Ok(Default::default()),
                     image: Ok(Default::default()),
+                    imds_bindings: Ok(Default::default()),
                     instance: Ok(Default::default()),
                     job_id: Err("no value supplied for job_id".to_string()),
                     kind: Err("no value supplied for kind".to_string()),
@@ -17310,6 +17443,16 @@ pub mod types {
                 self.image = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for image: {e}"));
+                self
+            }
+            pub fn imds_bindings<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ImdsBindingWire>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.imds_bindings = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for imds_bindings: {e}"));
                 self
             }
             pub fn instance<T>(mut self, value: T) -> Self
@@ -17392,6 +17535,7 @@ pub mod types {
                 Ok(Self {
                     disks: value.disks?,
                     image: value.image?,
+                    imds_bindings: value.imds_bindings?,
                     instance: value.instance?,
                     job_id: value.job_id?,
                     kind: value.kind?,
@@ -17408,6 +17552,7 @@ pub mod types {
                 Self {
                     disks: Ok(value.disks),
                     image: Ok(value.image),
+                    imds_bindings: Ok(value.imds_bindings),
                     instance: Ok(value.instance),
                     job_id: Ok(value.job_id),
                     kind: Ok(value.kind),
