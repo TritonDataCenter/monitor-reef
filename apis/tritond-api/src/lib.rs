@@ -1199,6 +1199,57 @@ pub struct NewIdpConfig {
     pub audience: Option<String>,
 }
 
+/// Path parameters for endpoints that operate on one metadata scope
+/// (silo / tenant / project / instance). The scope kind comes from
+/// `{scope}` (deserialized as [`MetaScope`]); `{scope_id}` is the
+/// UUID of that scope's owning entity. See `IMDS_DESIGN.md` §4.1.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MetaScopePath {
+    pub scope: tritond_store::MetaScope,
+    pub scope_id: Uuid,
+}
+
+/// Query string for endpoints that operate on a single metadata
+/// entry: the metadata key. The key may contain `/` segments
+/// (`config/ntp-servers`, `state/active-color`, …), which is why it
+/// lives in the query string rather than a URL path segment.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MetaKeyQuery {
+    pub key: String,
+}
+
+/// One metadata entry as it appears on the wire (list / get
+/// responses). `value` is JSON; the flags + audit fields are flat at
+/// the top level so the OpenAPI schema reads cleanly.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MetaEntry {
+    pub key: String,
+    #[serde(flatten)]
+    pub value: tritond_store::MetaValue,
+}
+
+/// Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value`
+/// is required; the two flags are optional and default to the values
+/// from [`tritond_store::default_guest_visible`] (and `false` for
+/// `guest_writable`).
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct SetMetaRequest {
+    pub value: serde_json::Value,
+    #[serde(default)]
+    pub guest_visible: Option<bool>,
+    #[serde(default)]
+    pub guest_writable: Option<bool>,
+}
+
+/// Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries
+/// the stored entry and the scope's new generation counter (the
+/// realized-view cache key on the agent side).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SetMetaResponse {
+    pub entry: MetaEntry,
+    pub generation: u64,
+}
+
 #[dropshot::api_description]
 pub trait TritondApi {
     /// Context type for request handlers.
@@ -3439,4 +3490,63 @@ pub trait TritondApi {
         path: Path<InstanceLogsPath>,
         query: Query<LogTailQuery>,
     ) -> Result<HttpResponseOk<tritond_logs::LogTailResult>, HttpError>;
+
+    // ---- Layered instance metadata (IMDS) — IMDS_DESIGN.md §4.1 ----
+
+    /// List every metadata entry stored at one scope. RBAC: silo-member
+    /// for `scope=silo`; tenant-member (of the scope's owning tenant)
+    /// for `scope=tenant|project|instance`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/meta/{scope}/{scope_id}",
+        tags = ["meta"],
+    }]
+    async fn list_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MetaScopePath>,
+    ) -> Result<HttpResponseOk<Vec<MetaEntry>>, HttpError>;
+
+    /// Read one metadata entry by key (query parameter). The key may
+    /// contain `/` (`config/ntp-servers`, `state/active-color`, …),
+    /// hence the query-string placement.
+    #[endpoint {
+        method = GET,
+        path = "/v2/meta/{scope}/{scope_id}/entry",
+        tags = ["meta"],
+    }]
+    async fn get_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MetaScopePath>,
+        query: Query<MetaKeyQuery>,
+    ) -> Result<HttpResponseOk<MetaEntry>, HttpError>;
+
+    /// Upsert one metadata entry. Returns the stored entry plus the
+    /// scope's new generation counter (the realized-view cache key).
+    /// Validation per `tritond_store::validate_meta_entry`: namespace
+    /// + scope + value-type + byte-cap rules; `guest_writable=true` is
+    /// only accepted on `guest/*` keys at instance scope.
+    #[endpoint {
+        method = PUT,
+        path = "/v2/meta/{scope}/{scope_id}/entry",
+        tags = ["meta"],
+    }]
+    async fn set_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MetaScopePath>,
+        query: Query<MetaKeyQuery>,
+        body: TypedBody<SetMetaRequest>,
+    ) -> Result<HttpResponseOk<SetMetaResponse>, HttpError>;
+
+    /// Delete one metadata entry. 404 if the key is absent (no
+    /// generation bump in that case).
+    #[endpoint {
+        method = DELETE,
+        path = "/v2/meta/{scope}/{scope_id}/entry",
+        tags = ["meta"],
+    }]
+    async fn delete_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MetaScopePath>,
+        query: Query<MetaKeyQuery>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
 }

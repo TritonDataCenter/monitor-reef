@@ -24,14 +24,15 @@ pub use tritond_store::{
     FirewallDirection, FirewallIcmpFilter, FirewallPortRange, FirewallProtocol, FirewallRule,
     FloatingIp, FloatingIpAttachment, IdpConfigView, Image, ImageCompatibility, ImageScope,
     Instance, InstanceBrand, JobKind, JobOutcome, JobStatus, LegacyNic, LegacyVm, LifecycleState,
-    LifecycleStateKind, ManagedIdentity, NatGateway, NetworkResourceId, NewDhcpPool,
-    NewDhcpReservation, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic,
-    NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Silo, SshKey, SshKeyScope,
-    StorageClusterStatus, StorageClusterSurface, StorageClusterView, Subnet,
-    TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID,
-    TRITOND_METADATA_TENANT_ID, Tenant, UserView, VmNicReport, VmReport, VmState, Vpc,
+    LifecycleStateKind, ManagedIdentity, MetaError, MetaProvenance, MetaScope, MetaValue,
+    NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewFirewallRule, NewFloatingIp,
+    NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
+    NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
+    Project, ProvisioningJob, Quota, RealizationStatus, RealizedView, RealizerId, Route,
+    RouteTable, RouteTarget, Silo, SshKey, SshKeyScope, StorageClusterStatus,
+    StorageClusterSurface, StorageClusterView, Subnet, TRITOND_METADATA_IDENTITY_HMAC,
+    TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID, Tenant,
+    UserView, VmNicReport, VmReport, VmState, Vpc,
 };
 
 pub use crate::{

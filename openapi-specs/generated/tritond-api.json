@@ -1739,6 +1739,221 @@
         }
       }
     },
+    "/v2/meta/{scope}/{scope_id}": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "List every metadata entry stored at one scope. RBAC: silo-member",
+        "description": "for `scope=silo`; tenant-member (of the scope's owning tenant) for `scope=tenant|project|instance`.",
+        "operationId": "list_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetaScope"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_MetaEntry",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetaEntry"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/meta/{scope}/{scope_id}/entry": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Read one metadata entry by key (query parameter). The key may",
+        "description": "contain `/` (`config/ntp-servers`, `state/active-color`, …), hence the query-string placement.",
+        "operationId": "get_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetaScope"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaEntry"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Upsert one metadata entry. Returns the stored entry plus the",
+        "description": "scope's new generation counter (the realized-view cache key). Validation per `tritond_store::validate_meta_entry`: namespace + scope + value-type + byte-cap rules; `guest_writable=true` is only accepted on `guest/*` keys at instance scope.",
+        "operationId": "set_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetaScope"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMetaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetMetaResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Delete one metadata entry. 404 if the key is absent (no",
+        "description": "generation bump in that case).",
+        "operationId": "delete_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetaScope"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos": {
       "get": {
         "tags": [
@@ -10291,6 +10506,42 @@
           "tenant_id"
         ]
       },
+      "MetaEntry": {
+        "description": "One metadata entry as it appears on the wire (list / get responses). `value` is JSON; the flags + audit fields are flat at the top level so the OpenAPI schema reads cleanly.",
+        "type": "object",
+        "properties": {
+          "guest_visible": {
+            "description": "Visible to processes inside the VM via IMDS. See [`default_guest_visible`] for the per-scope/per-prefix default. Generalizes the legacy SmartOS `internal_metadata` notion (`guest_visible == false` at instance scope).",
+            "type": "boolean"
+          },
+          "guest_writable": {
+            "description": "The in-VM IMDS `PUT` may write this key. Only ever true for `guest/*` keys at instance scope on a writeback-enabled instance.",
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "description": "Who last wrote it: a user UUID, `\"guest:<instance-id>\"` for an in-VM `PUT`, or `\"system\"` for seed values.",
+            "type": "string"
+          },
+          "value": {
+            "description": "The stored value. Capped at [`MAX_META_VALUE_BYTES`] when serialized."
+          }
+        },
+        "required": [
+          "guest_visible",
+          "guest_writable",
+          "key",
+          "updated_at",
+          "updated_by",
+          "value"
+        ]
+      },
       "NatGateway": {
         "description": "Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\n\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time.",
         "type": "object",
@@ -12323,6 +12574,44 @@
           "value"
         ]
       },
+      "SetMetaRequest": {
+        "description": "Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`).",
+        "type": "object",
+        "properties": {
+          "guest_visible": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "guest_writable": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "value": {}
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "SetMetaResponse": {
+        "description": "Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side).",
+        "type": "object",
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/MetaEntry"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "entry",
+          "generation"
+        ]
+      },
       "SetPresignerRequest": {
         "description": "Body of `POST /v2/storage/clusters/{id}/presigner`. Operator configures the IAM credential tritond signs presigned S3 URLs with. To clear the presigner, send empty strings — the handler treats empty as \"unset\". `s3_endpoint` is the data-plane URL (port 7443); leave `None` to keep the existing value during credential rotation.",
         "type": "object",
@@ -13328,6 +13617,16 @@
             ]
           }
         ]
+      },
+      "MetaScope": {
+        "description": "One of the four scopes a [`MetaValue`] can be attached to. The realized view for an instance merges all four in `Silo < Tenant < Project < Instance` precedence (most-specific wins). Serialized lowercase for the `/v1/meta/{scope}/...` path parameter.",
+        "type": "string",
+        "enum": [
+          "silo",
+          "tenant",
+          "project",
+          "instance"
+        ]
       }
     },
     "responses": {
@@ -13379,6 +13678,9 @@
     },
     {
       "name": "legacy-admin"
+    },
+    {
+      "name": "meta"
     },
     {
       "name": "nat-gateways"

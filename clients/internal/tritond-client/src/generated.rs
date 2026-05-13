@@ -4430,6 +4430,161 @@ pub mod types {
         }
     }
 
+    #[doc = "One metadata entry as it appears on the wire (list / get responses). `value` is JSON; the flags + audit fields are flat at the top level so the OpenAPI schema reads cleanly."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One metadata entry as it appears on the wire (list / get responses). `value` is JSON; the flags + audit fields are flat at the top level so the OpenAPI schema reads cleanly.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"guest_visible\","]
+    #[doc = "    \"guest_writable\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"updated_at\","]
+    #[doc = "    \"updated_by\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"guest_visible\": {"]
+    #[doc = "      \"description\": \"Visible to processes inside the VM via IMDS. See [`default_guest_visible`] for the per-scope/per-prefix default. Generalizes the legacy SmartOS `internal_metadata` notion (`guest_visible == false` at instance scope).\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"guest_writable\": {"]
+    #[doc = "      \"description\": \"The in-VM IMDS `PUT` may write this key. Only ever true for `guest/*` keys at instance scope on a writeback-enabled instance.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_by\": {"]
+    #[doc = "      \"description\": \"Who last wrote it: a user UUID, `\\\"guest:<instance-id>\\\"` for an in-VM `PUT`, or `\\\"system\\\"` for seed values.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The stored value. Capped at [`MAX_META_VALUE_BYTES`] when serialized.\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct MetaEntry {
+        #[doc = "Visible to processes inside the VM via IMDS. See [`default_guest_visible`] for the per-scope/per-prefix default. Generalizes the legacy SmartOS `internal_metadata` notion (`guest_visible == false` at instance scope)."]
+        pub guest_visible: bool,
+        #[doc = "The in-VM IMDS `PUT` may write this key. Only ever true for `guest/*` keys at instance scope on a writeback-enabled instance."]
+        pub guest_writable: bool,
+        pub key: ::std::string::String,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Who last wrote it: a user UUID, `\"guest:<instance-id>\"` for an in-VM `PUT`, or `\"system\"` for seed values."]
+        pub updated_by: ::std::string::String,
+        #[doc = "The stored value. Capped at [`MAX_META_VALUE_BYTES`] when serialized."]
+        pub value: ::serde_json::Value,
+    }
+
+    impl MetaEntry {
+        pub fn builder() -> builder::MetaEntry {
+            Default::default()
+        }
+    }
+
+    #[doc = "One of the four scopes a [`MetaValue`] can be attached to. The realized view for an instance merges all four in `Silo < Tenant < Project < Instance` precedence (most-specific wins). Serialized lowercase for the `/v1/meta/{scope}/...` path parameter."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One of the four scopes a [`MetaValue`] can be attached to. The realized view for an instance merges all four in `Silo < Tenant < Project < Instance` precedence (most-specific wins). Serialized lowercase for the `/v1/meta/{scope}/...` path parameter.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"silo\","]
+    #[doc = "    \"tenant\","]
+    #[doc = "    \"project\","]
+    #[doc = "    \"instance\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum MetaScope {
+        #[serde(rename = "silo")]
+        Silo,
+        #[serde(rename = "tenant")]
+        Tenant,
+        #[serde(rename = "project")]
+        Project,
+        #[serde(rename = "instance")]
+        Instance,
+    }
+
+    impl ::std::fmt::Display for MetaScope {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Silo => f.write_str("silo"),
+                Self::Tenant => f.write_str("tenant"),
+                Self::Project => f.write_str("project"),
+                Self::Instance => f.write_str("instance"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for MetaScope {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "silo" => Ok(Self::Silo),
+                "tenant" => Ok(Self::Tenant),
+                "project" => Ok(Self::Project),
+                "instance" => Ok(Self::Instance),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for MetaScope {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for MetaScope {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for MetaScope {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\n\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7697,6 +7852,91 @@ pub mod types {
 
     impl SetConfigRequest {
         pub fn builder() -> builder::SetConfigRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"guest_visible\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"guest_writable\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {}"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct SetMetaRequest {
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub guest_visible: ::std::option::Option<bool>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub guest_writable: ::std::option::Option<bool>,
+        pub value: ::serde_json::Value,
+    }
+
+    impl SetMetaRequest {
+        pub fn builder() -> builder::SetMetaRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `PUT /v2/meta/{scope}/{scope_id}/entry`. Carries the stored entry and the scope's new generation counter (the realized-view cache key on the agent side).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"entry\","]
+    #[doc = "    \"generation\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"entry\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MetaEntry\""]
+    #[doc = "    },"]
+    #[doc = "    \"generation\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct SetMetaResponse {
+        pub entry: MetaEntry,
+        pub generation: u64,
+    }
+
+    impl SetMetaResponse {
+        pub fn builder() -> builder::SetMetaResponse {
             Default::default()
         }
     }
@@ -13769,6 +14009,124 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct MetaEntry {
+            guest_visible: ::std::result::Result<bool, ::std::string::String>,
+            guest_writable: ::std::result::Result<bool, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            updated_by: ::std::result::Result<::std::string::String, ::std::string::String>,
+            value: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for MetaEntry {
+            fn default() -> Self {
+                Self {
+                    guest_visible: Err("no value supplied for guest_visible".to_string()),
+                    guest_writable: Err("no value supplied for guest_writable".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                    updated_by: Err("no value supplied for updated_by".to_string()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl MetaEntry {
+            pub fn guest_visible<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.guest_visible = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for guest_visible: {e}"));
+                self
+            }
+            pub fn guest_writable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.guest_writable = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for guest_writable: {e}")
+                });
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn updated_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_by: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<MetaEntry> for super::MetaEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MetaEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    guest_visible: value.guest_visible?,
+                    guest_writable: value.guest_writable?,
+                    key: value.key?,
+                    updated_at: value.updated_at?,
+                    updated_by: value.updated_by?,
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::MetaEntry> for MetaEntry {
+            fn from(value: super::MetaEntry) -> Self {
+                Self {
+                    guest_visible: Ok(value.guest_visible),
+                    guest_writable: Ok(value.guest_writable),
+                    key: Ok(value.key),
+                    updated_at: Ok(value.updated_at),
+                    updated_by: Ok(value.updated_by),
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NatGateway {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -18012,6 +18370,140 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct SetMetaRequest {
+            guest_visible:
+                ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            guest_writable:
+                ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            value: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for SetMetaRequest {
+            fn default() -> Self {
+                Self {
+                    guest_visible: Ok(Default::default()),
+                    guest_writable: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl SetMetaRequest {
+            pub fn guest_visible<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.guest_visible = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for guest_visible: {e}"));
+                self
+            }
+            pub fn guest_writable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.guest_writable = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for guest_writable: {e}")
+                });
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<SetMetaRequest> for super::SetMetaRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetMetaRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    guest_visible: value.guest_visible?,
+                    guest_writable: value.guest_writable?,
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::SetMetaRequest> for SetMetaRequest {
+            fn from(value: super::SetMetaRequest) -> Self {
+                Self {
+                    guest_visible: Ok(value.guest_visible),
+                    guest_writable: Ok(value.guest_writable),
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct SetMetaResponse {
+            entry: ::std::result::Result<super::MetaEntry, ::std::string::String>,
+            generation: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for SetMetaResponse {
+            fn default() -> Self {
+                Self {
+                    entry: Err("no value supplied for entry".to_string()),
+                    generation: Err("no value supplied for generation".to_string()),
+                }
+            }
+        }
+
+        impl SetMetaResponse {
+            pub fn entry<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MetaEntry>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.entry = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for entry: {e}"));
+                self
+            }
+            pub fn generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.generation = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for generation: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<SetMetaResponse> for super::SetMetaResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetMetaResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    entry: value.entry?,
+                    generation: value.generation?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::SetMetaResponse> for SetMetaResponse {
+            fn from(value: super::SetMetaResponse) -> Self {
+                Self {
+                    entry: Ok(value.entry),
+                    generation: Ok(value.generation),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct SetPresignerRequest {
             access_key_id: ::std::result::Result<::std::string::String, ::std::string::String>,
             s3_endpoint: ::std::result::Result<
@@ -20602,6 +21094,26 @@ impl Client {
     #[doc = "Delete an image by id. Returns 404 when the image does\n\nnot exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/images/{image_id}`\n\n```ignore\nlet response = client.delete_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
     pub fn delete_image(&self) -> builder::DeleteImage<'_> {
         builder::DeleteImage::new(self)
+    }
+
+    #[doc = "List every metadata entry stored at one scope. RBAC: silo-member\n\nfor `scope=silo`; tenant-member (of the scope's owning tenant) for `scope=tenant|project|instance`.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}`\n\n```ignore\nlet response = client.list_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .send()\n    .await;\n```"]
+    pub fn list_meta(&self) -> builder::ListMeta<'_> {
+        builder::ListMeta::new(self)
+    }
+
+    #[doc = "Read one metadata entry by key (query parameter). The key may\n\ncontain `/` (`config/ntp-servers`, `state/active-color`, …), hence the query-string placement.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.get_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn get_meta(&self) -> builder::GetMeta<'_> {
+        builder::GetMeta::new(self)
+    }
+
+    #[doc = "Upsert one metadata entry. Returns the stored entry plus the\n\nscope's new generation counter (the realized-view cache key). Validation per `tritond_store::validate_meta_entry`: namespace + scope + value-type + byte-cap rules; `guest_writable=true` is only accepted on `guest/*` keys at instance scope.\n\nSends a `PUT` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.set_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn set_meta(&self) -> builder::SetMeta<'_> {
+        builder::SetMeta::new(self)
+    }
+
+    #[doc = "Delete one metadata entry. 404 if the key is absent (no\n\ngeneration bump in that case).\n\nSends a `DELETE` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.delete_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn delete_meta(&self) -> builder::DeleteMeta<'_> {
+        builder::DeleteMeta::new(self)
     }
 
     #[doc = "List every silo, sorted by `name`. Phase 0 has no per-operator\n\nsilo visibility filter so this returns the full set.\n\nSends a `GET` request to `/v2/silos`\n\n```ignore\nlet response = client.list_silos()\n    .send()\n    .await;\n```"]
@@ -24552,6 +25064,430 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "delete_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_meta`]\n\n[`Client::list_meta`]: super::Client::list_meta"]
+    #[derive(Debug, Clone)]
+    pub struct ListMeta<'a> {
+        client: &'a super::Client,
+        scope: Result<types::MetaScope, String>,
+        scope_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> ListMeta<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                scope: Err("scope was not initialized".to_string()),
+                scope_id: Err("scope_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn scope<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MetaScope>,
+        {
+            self.scope = value
+                .try_into()
+                .map_err(|_| "conversion to `MetaScope` for scope failed".to_string());
+            self
+        }
+
+        pub fn scope_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.scope_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for scope_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/meta/{scope}/{scope_id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::MetaEntry>>, Error<types::Error>> {
+            let Self {
+                client,
+                scope,
+                scope_id,
+            } = self;
+            let scope = scope.map_err(Error::InvalidRequest)?;
+            let scope_id = scope_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/meta/{}/{}",
+                client.baseurl,
+                encode_path(&scope.to_string()),
+                encode_path(&scope_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_meta",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_meta`]\n\n[`Client::get_meta`]: super::Client::get_meta"]
+    #[derive(Debug, Clone)]
+    pub struct GetMeta<'a> {
+        client: &'a super::Client,
+        scope: Result<types::MetaScope, String>,
+        scope_id: Result<::uuid::Uuid, String>,
+        key: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetMeta<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                scope: Err("scope was not initialized".to_string()),
+                scope_id: Err("scope_id was not initialized".to_string()),
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+
+        pub fn scope<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MetaScope>,
+        {
+            self.scope = value
+                .try_into()
+                .map_err(|_| "conversion to `MetaScope` for scope failed".to_string());
+            self
+        }
+
+        pub fn scope_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.scope_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for scope_id failed".to_string());
+            self
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/meta/{scope}/{scope_id}/entry`"]
+        pub async fn send(self) -> Result<ResponseValue<types::MetaEntry>, Error<types::Error>> {
+            let Self {
+                client,
+                scope,
+                scope_id,
+                key,
+            } = self;
+            let scope = scope.map_err(Error::InvalidRequest)?;
+            let scope_id = scope_id.map_err(Error::InvalidRequest)?;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/meta/{}/{}/entry",
+                client.baseurl,
+                encode_path(&scope.to_string()),
+                encode_path(&scope_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("key", &key))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_meta",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::set_meta`]\n\n[`Client::set_meta`]: super::Client::set_meta"]
+    #[derive(Debug, Clone)]
+    pub struct SetMeta<'a> {
+        client: &'a super::Client,
+        scope: Result<types::MetaScope, String>,
+        scope_id: Result<::uuid::Uuid, String>,
+        key: Result<::std::string::String, String>,
+        body: Result<types::builder::SetMetaRequest, String>,
+    }
+
+    impl<'a> SetMeta<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                scope: Err("scope was not initialized".to_string()),
+                scope_id: Err("scope_id was not initialized".to_string()),
+                key: Err("key was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn scope<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MetaScope>,
+        {
+            self.scope = value
+                .try_into()
+                .map_err(|_| "conversion to `MetaScope` for scope failed".to_string());
+            self
+        }
+
+        pub fn scope_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.scope_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for scope_id failed".to_string());
+            self
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetMetaRequest>,
+            <V as std::convert::TryInto<types::SetMetaRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetMetaRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::SetMetaRequest) -> types::builder::SetMetaRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/meta/{scope}/{scope_id}/entry`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SetMetaResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                scope,
+                scope_id,
+                key,
+                body,
+            } = self;
+            let scope = scope.map_err(Error::InvalidRequest)?;
+            let scope_id = scope_id.map_err(Error::InvalidRequest)?;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetMetaRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/meta/{}/{}/entry",
+                client.baseurl,
+                encode_path(&scope.to_string()),
+                encode_path(&scope_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .query(&progenitor_client::QueryParam::new("key", &key))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "set_meta",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_meta`]\n\n[`Client::delete_meta`]: super::Client::delete_meta"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteMeta<'a> {
+        client: &'a super::Client,
+        scope: Result<types::MetaScope, String>,
+        scope_id: Result<::uuid::Uuid, String>,
+        key: Result<::std::string::String, String>,
+    }
+
+    impl<'a> DeleteMeta<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                scope: Err("scope was not initialized".to_string()),
+                scope_id: Err("scope_id was not initialized".to_string()),
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+
+        pub fn scope<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MetaScope>,
+        {
+            self.scope = value
+                .try_into()
+                .map_err(|_| "conversion to `MetaScope` for scope failed".to_string());
+            self
+        }
+
+        pub fn scope_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.scope_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for scope_id failed".to_string());
+            self
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v2/meta/{scope}/{scope_id}/entry`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self {
+                client,
+                scope,
+                scope_id,
+                key,
+            } = self;
+            let scope = scope.map_err(Error::InvalidRequest)?;
+            let scope_id = scope_id.map_err(Error::InvalidRequest)?;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/meta/{}/{}/entry",
+                client.baseurl,
+                encode_path(&scope.to_string()),
+                encode_path(&scope_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("key", &key))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_meta",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

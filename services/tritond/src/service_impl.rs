@@ -585,6 +585,37 @@ impl TritondApi for TritondServiceImpl {
     ) -> Result<HttpResponseDeleted, HttpError> {
         crate::handlers::ssh_keys::delete_ssh_key(rqctx, path).await
     }
+    async fn list_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MetaScopePath>,
+    ) -> Result<HttpResponseOk<Vec<tritond_api::MetaEntry>>, HttpError> {
+        crate::handlers::meta::list_meta(rqctx, path).await
+    }
+
+    async fn get_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MetaScopePath>,
+        query: Query<tritond_api::MetaKeyQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::MetaEntry>, HttpError> {
+        crate::handlers::meta::get_meta(rqctx, path, query).await
+    }
+
+    async fn set_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MetaScopePath>,
+        query: Query<tritond_api::MetaKeyQuery>,
+        body: TypedBody<tritond_api::SetMetaRequest>,
+    ) -> Result<HttpResponseOk<tritond_api::SetMetaResponse>, HttpError> {
+        crate::handlers::meta::set_meta(rqctx, path, query, body).await
+    }
+
+    async fn delete_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MetaScopePath>,
+        query: Query<tritond_api::MetaKeyQuery>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::meta::delete_meta(rqctx, path, query).await
+    }
 
     async fn list_public_images(
         rqctx: RequestContext<Self::Context>,

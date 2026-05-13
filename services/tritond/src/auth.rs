@@ -130,7 +130,11 @@ permit(
         Action::"tenant_list",
         Action::"tenant_create",
         Action::"tenant_get",
-        Action::"tenant_delete"
+        Action::"tenant_delete",
+        Action::"meta_set",
+        Action::"meta_get",
+        Action::"meta_list",
+        Action::"meta_delete"
     ],
     resource
 ) when {
@@ -195,7 +199,11 @@ permit(
         Action::"ssh_key_list",
         Action::"ssh_key_create",
         Action::"ssh_key_get",
-        Action::"ssh_key_delete"
+        Action::"ssh_key_delete",
+        Action::"meta_set",
+        Action::"meta_get",
+        Action::"meta_list",
+        Action::"meta_delete"
     ],
     resource
 ) when {
@@ -631,6 +639,15 @@ pub enum Action {
     /// Abort a multipart upload (`DELETE ?uploadId=...`). mantad will
     /// garbage-collect the parts.
     StorageObjectMultipartAbort,
+    // ---- Layered instance metadata (IMDS) ----
+    /// `set_meta` -- upsert one metadata entry at any of the four scopes.
+    MetaSet,
+    /// `get_meta` -- read one metadata entry.
+    MetaGet,
+    /// `list_meta` -- list a scope's whole `key`->`MetaValue` map.
+    MetaList,
+    /// `delete_meta` -- remove one metadata entry.
+    MetaDelete,
 }
 
 impl Action {
@@ -790,6 +807,10 @@ impl Action {
             Action::StorageObjectMultipartParts => "storage_object_multipart_parts",
             Action::StorageObjectMultipartComplete => "storage_object_multipart_complete",
             Action::StorageObjectMultipartAbort => "storage_object_multipart_abort",
+            Action::MetaSet => "meta_set",
+            Action::MetaGet => "meta_get",
+            Action::MetaList => "meta_list",
+            Action::MetaDelete => "meta_delete",
         }
     }
 
@@ -1445,6 +1466,9 @@ fn is_read_action(action: Action) -> bool {
         // Presigned GET grants read access only, so it's a read
         // even though it's auditable as a separate Action.
         | Action::StorageObjectPresignGet => true,
+        // Layered instance metadata (IMDS).
+        Action::MetaGet | Action::MetaList => true,
+        Action::MetaSet | Action::MetaDelete => false,
     }
 }
 
