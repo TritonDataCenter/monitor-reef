@@ -107,10 +107,10 @@ fn router(state: ImdsState) -> Router {
         // AWS-compatible computed surface. Directory listings
         // (`/latest/meta-data` etc. without a trailing key) still
         // 501 until the directory-listing helper lands.
-        .route("/latest/meta-data", get(not_implemented))
+        .route("/latest/meta-data", get(aws_meta_data_root))
         .route("/latest/meta-data/{*key}", get(aws_meta_data_get))
         .route("/latest/user-data", get(aws_user_data_get))
-        .route("/latest/dynamic", get(not_implemented))
+        .route("/latest/dynamic", get(aws_dynamic_root))
         .route("/latest/dynamic/{*key}", get(aws_dynamic_get))
         // Triton-native surface.
         .route("/triton/dynamic/realized", get(triton_realized_get))
@@ -482,6 +482,74 @@ async fn triton_realized_get(
         .into_response()
 }
 
+/// Build the AWS-style directory listing for `prefix` over the
+/// realized view: every immediate child segment, with a trailing
+/// `/` on segments that themselves have grand-children. Only
+/// `guest_visible` entries contribute. Sorted (AWS doesn't
+/// guarantee an order, but a stable order is friendlier for the
+/// human eye).
+fn list_children(entries: &[tritond_client::types::RealizedMetaEntry], prefix: &str) -> String {
+    use std::collections::BTreeSet;
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    for e in entries.iter().filter(|e| e.value.guest_visible) {
+        let Some(rest) = e.key.strip_prefix(prefix) else {
+            continue;
+        };
+        if rest.is_empty() {
+            continue;
+        }
+        let segment = match rest.find('/') {
+            Some(i) => format!("{}/", &rest[..i]),
+            None => rest.to_string(),
+        };
+        names.insert(segment);
+    }
+    let mut body = names.into_iter().collect::<Vec<_>>().join("\n");
+    if !body.is_empty() {
+        body.push('\n');
+    }
+    body
+}
+
+async fn list_for_prefix(state: &ImdsState, binding: ResolvedBinding, prefix: &str) -> Response {
+    if !imds_enabled(state, binding.instance_id).await {
+        return (StatusCode::NOT_FOUND, "imds disabled\n").into_response();
+    }
+    let entries = match state.realized.get(binding.instance_id).await {
+        Ok(v) => v,
+        Err(RealizedFetchError::NotFound) => {
+            return (StatusCode::NOT_FOUND, "not found\n").into_response();
+        }
+        Err(RealizedFetchError::Backend(e)) => {
+            warn!(error = %e, "imds: realized view unavailable");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "realized view unavailable\n",
+            )
+                .into_response();
+        }
+    };
+    let body = list_children(&entries, prefix);
+    if body.is_empty() {
+        return (StatusCode::NOT_FOUND, "not found\n").into_response();
+    }
+    (StatusCode::OK, body).into_response()
+}
+
+async fn aws_meta_data_root(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+) -> Response {
+    list_for_prefix(&state, binding, "meta-data/").await
+}
+
+async fn aws_dynamic_root(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+) -> Response {
+    list_for_prefix(&state, binding, "dynamic/").await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,5 +630,41 @@ mod tests {
         let lookup = bindings.lookup(pseudo).expect("registered");
         assert_eq!(lookup.port_id, port);
         assert_eq!(lookup.instance_id, instance);
+    }
+
+    /// `list_children` over a small mixed view: sorted segments
+    /// with trailing `/` for non-leaf children, drops
+    /// `guest_visible == false` entries, returns the empty string
+    /// when nothing matches.
+    #[test]
+    fn list_children_emits_aws_directory_shape() {
+        use tritond_client::types::{MetaProvenance, MetaValue, RealizedMetaEntry};
+        fn entry(key: &str, visible: bool) -> RealizedMetaEntry {
+            RealizedMetaEntry {
+                key: key.to_string(),
+                from: MetaProvenance::System,
+                value: MetaValue {
+                    value: serde_json::json!("x"),
+                    guest_visible: visible,
+                    guest_writable: false,
+                    updated_by: "test".to_string(),
+                    updated_at: chrono::Utc::now(),
+                },
+            }
+        }
+        let v = vec![
+            entry("meta-data/instance-id", true),
+            entry("meta-data/local-ipv4", true),
+            entry("meta-data/network/interfaces/macs/02:00/vpc-id", true),
+            entry("meta-data/secret", false),   // dropped
+            entry("triton/system/brand", true), // outside the prefix
+        ];
+        let listing = list_children(&v, "meta-data/");
+        assert_eq!(listing, "instance-id\nlocal-ipv4\nnetwork/\n");
+        let any = list_children(&v, "");
+        assert!(any.contains("meta-data/"));
+        assert!(any.contains("triton/"));
+        let nope = list_children(&v, "bogus/");
+        assert!(nope.is_empty());
     }
 }
