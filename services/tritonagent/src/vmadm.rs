@@ -732,6 +732,7 @@ mod tests {
             disks: Vec::new(),
             ssh_public_keys: vec!["ssh-ed25519 AAAA test@host".to_string()],
             managed_identity: None,
+            imds_bindings: Vec::new(),
         }
     }
 

@@ -1062,6 +1062,7 @@ mod tests {
             disks: Vec::new(),
             ssh_public_keys: Vec::new(),
             managed_identity: None,
+            imds_bindings: Vec::new(),
         }
     }
 

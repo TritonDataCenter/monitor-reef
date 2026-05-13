@@ -218,3 +218,128 @@ mod tests {
         assert!(b.lookup(pseudo).is_some());
     }
 }
+
+// =============================================================================
+// Blueprint integration
+// =============================================================================
+
+use tritond_client::types::{ImdsBindingWire, ProvisioningBlueprint};
+
+/// Register every `ImdsBindingWire` entry from a `ProvisioningBlueprint`
+/// in the table. Returns the count inserted. Idempotent: a re-apply
+/// of the same blueprint overwrites prior entries for the same
+/// `pseudo_src`. See `IMDS_DESIGN.md` §2.1.
+///
+/// Call this from the agent's `Provision` job handler **after**
+/// `realize_provision_ports` returns successfully -- registering
+/// bindings for a port that didn't actually start is pointless
+/// and would orphan the entry on the next deploy.
+pub fn register_blueprint_bindings(
+    table: &ImdsBindingTable,
+    blueprint: &ProvisioningBlueprint,
+) -> usize {
+    let mut n = 0;
+    for b in &blueprint.imds_bindings {
+        let pseudo: std::net::IpAddr = match b.pseudo_src.parse() {
+            Ok(ip) => ip,
+            Err(_) => {
+                tracing::warn!(
+                    pseudo_src = %b.pseudo_src,
+                    port_id = %b.port_id,
+                    "imds: skipping malformed pseudo_src in blueprint"
+                );
+                continue;
+            }
+        };
+        table.insert(pseudo, b.port_id, b.instance_id);
+        n += 1;
+    }
+    n
+}
+
+/// Drop every binding whose `port_id` is in `port_ids`. Used on
+/// port-delete (the Stop/Restart paths leave bindings alone --
+/// the port stays around). Returns the total count removed across
+/// every port.
+pub fn release_imds_bindings_for_ports(table: &ImdsBindingTable, port_ids: &[uuid::Uuid]) -> usize {
+    let mut total = 0;
+    for &port_id in port_ids {
+        total += table.remove_by_port(port_id);
+    }
+    total
+}
+
+#[cfg(test)]
+mod blueprint_tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+    use tritond_client::types::{JobKind, ProvisioningBlueprint as Bp};
+
+    fn empty_bp() -> Bp {
+        Bp {
+            job_id: Uuid::new_v4(),
+            kind: JobKind::Stop {
+                instance_id: Uuid::new_v4(),
+            },
+            instance: None,
+            image: None,
+            nics: vec![],
+            subnets: vec![],
+            disks: vec![],
+            ssh_public_keys: vec![],
+            managed_identity: None,
+            imds_bindings: vec![],
+        }
+    }
+
+    #[test]
+    fn empty_blueprint_is_a_noop() {
+        let t = ImdsBindingTable::new();
+        let bp = empty_bp();
+        assert_eq!(register_blueprint_bindings(&t, &bp), 0);
+        assert!(t.is_empty());
+    }
+
+    #[test]
+    fn populated_blueprint_registers_each_entry() {
+        let t = ImdsBindingTable::new();
+        let mut bp = empty_bp();
+        let port_a = Uuid::new_v4();
+        let port_b = Uuid::new_v4();
+        let instance = Uuid::new_v4();
+        let pa = IpAddr::V4(Ipv4Addr::new(127, 1, 0, 5));
+        let pb = IpAddr::V4(Ipv4Addr::new(127, 1, 0, 6));
+        bp.imds_bindings = vec![
+            ImdsBindingWire {
+                pseudo_src: pa.to_string(),
+                port_id: port_a,
+                instance_id: instance,
+            },
+            ImdsBindingWire {
+                pseudo_src: pb.to_string(),
+                port_id: port_b,
+                instance_id: instance,
+            },
+        ];
+        assert_eq!(register_blueprint_bindings(&t, &bp), 2);
+        assert_eq!(t.lookup(pa).unwrap().port_id, port_a);
+        assert_eq!(t.lookup(pb).unwrap().port_id, port_b);
+    }
+
+    #[test]
+    fn release_drops_only_matching_ports() {
+        let t = ImdsBindingTable::new();
+        let p1 = IpAddr::V4(Ipv4Addr::new(127, 1, 0, 1));
+        let p2 = IpAddr::V4(Ipv4Addr::new(127, 1, 0, 2));
+        let p3 = IpAddr::V4(Ipv4Addr::new(127, 1, 0, 3));
+        let port_a = Uuid::new_v4();
+        let port_b = Uuid::new_v4();
+        let instance = Uuid::new_v4();
+        t.insert(p1, port_a, instance);
+        t.insert(p2, port_a, instance);
+        t.insert(p3, port_b, instance);
+        assert_eq!(release_imds_bindings_for_ports(&t, &[port_a]), 2);
+        assert!(t.lookup(p3).is_some());
+        assert!(t.lookup(p1).is_none());
+    }
+}
