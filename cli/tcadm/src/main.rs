@@ -147,6 +147,13 @@ enum Commands {
         #[command(subcommand)]
         command: AuthCommand,
     },
+    /// Manage layered IMDS metadata at any of the four scopes
+    /// (silo / tenant / project / instance), plus the realized view
+    /// for one instance. See `IMDS_DESIGN.md` §4.1.
+    Meta {
+        #[command(subcommand)]
+        command: MetaCommand,
+    },
     /// Manage registered manta-storage clusters (operator-only).
     /// Forwarder endpoints (buckets / users / policies) are exposed
     /// through admin-backend; tcadm stays at the registry level for now.
@@ -1465,6 +1472,105 @@ impl From<ApiKeyScopeArg> for tritond_client::types::ApiKeyScope {
             ApiKeyScopeArg::Agent => tritond_client::types::ApiKeyScope::Agent,
         }
     }
+}
+
+/// Scope arg for `tcadm meta ...`. Matches the four `MetaScope`
+/// values from `tritond-store` / `tritond-api`; converted to the
+/// progenitor type via `From` at the call site.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+enum MetaScopeArg {
+    Silo,
+    Tenant,
+    Project,
+    Instance,
+}
+
+impl From<MetaScopeArg> for tritond_client::types::MetaScope {
+    fn from(s: MetaScopeArg) -> Self {
+        match s {
+            MetaScopeArg::Silo => tritond_client::types::MetaScope::Silo,
+            MetaScopeArg::Tenant => tritond_client::types::MetaScope::Tenant,
+            MetaScopeArg::Project => tritond_client::types::MetaScope::Project,
+            MetaScopeArg::Instance => tritond_client::types::MetaScope::Instance,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum MetaCommand {
+    /// List every metadata entry at one scope.
+    List {
+        #[arg(long, value_enum)]
+        scope: MetaScopeArg,
+        /// UUID of the owning entity (silo / tenant / project /
+        /// instance).
+        #[arg(long)]
+        id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read one metadata entry by key.
+    Get {
+        #[arg(long, value_enum)]
+        scope: MetaScopeArg,
+        #[arg(long)]
+        id: Uuid,
+        /// Metadata key, e.g. `config/ntp-servers`,
+        /// `state/active-color`, `instance/role`, `guest/leader`,
+        /// `user-data`. Slash-separated; see `IMDS_DESIGN.md` §1.3.
+        #[arg(long)]
+        key: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Upsert one metadata entry.
+    Set {
+        #[arg(long, value_enum)]
+        scope: MetaScopeArg,
+        #[arg(long)]
+        id: Uuid,
+        #[arg(long)]
+        key: String,
+        /// Value as a JSON literal (e.g. `'"10.0.0.2"'`, `'42'`,
+        /// `'{"a":1}'`). A bare string without quotes is also
+        /// accepted and stored as a JSON string.
+        #[arg(long)]
+        value: String,
+        /// Override the default guest-visibility (defaults follow
+        /// `tritond-store::default_guest_visible`: true for
+        /// `config/*` and `state/*` at every scope, true at
+        /// project/instance for other prefixes, false at
+        /// silo/tenant for other prefixes).
+        #[arg(long)]
+        guest_visible: Option<bool>,
+        /// Mark this key guest-writable. Only meaningful on
+        /// `guest/*` keys at instance scope; the server rejects it
+        /// elsewhere.
+        #[arg(long)]
+        guest_writable: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete one metadata entry.
+    Unset {
+        #[arg(long, value_enum)]
+        scope: MetaScopeArg,
+        #[arg(long)]
+        id: Uuid,
+        #[arg(long)]
+        key: String,
+    },
+    /// The full realized view for one instance: the precedence
+    /// merge of silo/tenant/project/instance metadata plus the
+    /// computed system keys, each leaf tagged with its provenance
+    /// scope.
+    Realized {
+        /// Instance UUID.
+        #[arg(long)]
+        instance: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -3092,6 +3198,45 @@ async fn main() -> Result<()> {
                     .await
                 }
             },
+        },
+        Commands::Meta { command } => match command {
+            MetaCommand::List { scope, id, json } => {
+                commands::meta_list(cli.endpoint, cli.api_key, scope.into(), id, json).await
+            }
+            MetaCommand::Get {
+                scope,
+                id,
+                key,
+                json,
+            } => commands::meta_get(cli.endpoint, cli.api_key, scope.into(), id, key, json).await,
+            MetaCommand::Set {
+                scope,
+                id,
+                key,
+                value,
+                guest_visible,
+                guest_writable,
+                json,
+            } => {
+                commands::meta_set(
+                    cli.endpoint,
+                    cli.api_key,
+                    scope.into(),
+                    id,
+                    key,
+                    value,
+                    guest_visible,
+                    guest_writable,
+                    json,
+                )
+                .await
+            }
+            MetaCommand::Unset { scope, id, key } => {
+                commands::meta_unset(cli.endpoint, cli.api_key, scope.into(), id, key).await
+            }
+            MetaCommand::Realized { instance, json } => {
+                commands::meta_realized(cli.endpoint, cli.api_key, instance, json).await
+            }
         },
         Commands::Storage { command } => match command {
             StorageCommand::Cluster { command } => match command {

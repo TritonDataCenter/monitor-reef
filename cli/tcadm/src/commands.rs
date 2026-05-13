@@ -4437,3 +4437,243 @@ pub async fn config_reset(
     print_config_restart_hint(entry.restart_required);
     Ok(())
 }
+
+// === Meta (IMDS layered metadata) =========================================
+//
+// See `IMDS_DESIGN.md` §4.1 for the surface. These wrap the
+// progenitor-generated `tritond-client` builders + decode the
+// responses into a human-readable form (or JSON via --json).
+
+use tritond_client::types::{MetaProvenance, MetaScope, RealizedMetaEntry, SetMetaRequest};
+
+fn meta_scope_label(scope: &MetaScope) -> &'static str {
+    match scope {
+        MetaScope::Silo => "silo",
+        MetaScope::Tenant => "tenant",
+        MetaScope::Project => "project",
+        MetaScope::Instance => "instance",
+    }
+}
+
+fn provenance_label(p: &MetaProvenance) -> &'static str {
+    match p {
+        MetaProvenance::Silo => "silo",
+        MetaProvenance::Tenant => "tenant",
+        MetaProvenance::Project => "project",
+        MetaProvenance::Instance => "instance",
+        MetaProvenance::System => "system",
+    }
+}
+
+/// Parse a `--value` CLI string into a JSON value. A bare string
+/// that isn't valid JSON is wrapped as a JSON string so operators
+/// can `--value foo` without quoting.
+fn parse_meta_value(raw: &str) -> serde_json::Value {
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(v) => v,
+        Err(_) => serde_json::Value::String(raw.to_string()),
+    }
+}
+
+pub async fn meta_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    scope: MetaScope,
+    scope_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let entries = client
+        .list_meta()
+        .scope(scope.clone())
+        .scope_id(scope_id)
+        .send()
+        .await
+        .context("list_meta")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+        return Ok(());
+    }
+    if entries.is_empty() {
+        println!("(no metadata at {} {})", meta_scope_label(&scope), scope_id);
+        return Ok(());
+    }
+    println!(
+        "{} entries at {} {}:",
+        entries.len(),
+        meta_scope_label(&scope),
+        scope_id
+    );
+    for entry in entries {
+        let visible = if entry.guest_visible { "yes" } else { "no" };
+        let writable = if entry.guest_writable { "yes" } else { "no" };
+        let val = serde_json::to_string(&entry.value).unwrap_or_else(|_| "<bad-json>".into());
+        println!(
+            "  {:<40}  visible={visible:<3}  writable={writable:<3}  by={}  at={}",
+            entry.key, entry.updated_by, entry.updated_at
+        );
+        println!("    {}", val);
+    }
+    Ok(())
+}
+
+pub async fn meta_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    scope: MetaScope,
+    scope_id: Uuid,
+    key: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let entry = client
+        .get_meta()
+        .scope(scope.clone())
+        .scope_id(scope_id)
+        .key(&key)
+        .send()
+        .await
+        .context("get_meta")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&entry)?);
+        return Ok(());
+    }
+    let val = serde_json::to_string_pretty(&entry.value).unwrap_or_else(|_| "<bad-json>".into());
+    println!("key:            {}", entry.key);
+    println!("guest_visible:  {}", entry.guest_visible);
+    println!("guest_writable: {}", entry.guest_writable);
+    println!("updated_by:     {}", entry.updated_by);
+    println!("updated_at:     {}", entry.updated_at);
+    println!("value:");
+    for line in val.lines() {
+        println!("  {line}");
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn meta_set(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    scope: MetaScope,
+    scope_id: Uuid,
+    key: String,
+    value: String,
+    guest_visible: Option<bool>,
+    guest_writable: bool,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let body = SetMetaRequest {
+        value: parse_meta_value(&value),
+        guest_visible,
+        guest_writable: Some(guest_writable),
+    };
+    let response = client
+        .set_meta()
+        .scope(scope.clone())
+        .scope_id(scope_id)
+        .key(&key)
+        .body(body)
+        .send()
+        .await
+        .context("set_meta")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+        return Ok(());
+    }
+    println!(
+        "set {} at {} {}",
+        response.entry.key,
+        meta_scope_label(&scope),
+        scope_id
+    );
+    println!("  generation:     {}", response.generation);
+    println!("  guest_visible:  {}", response.entry.guest_visible);
+    println!("  guest_writable: {}", response.entry.guest_writable);
+    Ok(())
+}
+
+pub async fn meta_unset(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    scope: MetaScope,
+    scope_id: Uuid,
+    key: String,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_meta()
+        .scope(scope.clone())
+        .scope_id(scope_id)
+        .key(&key)
+        .send()
+        .await
+        .context("delete_meta")?;
+    println!(
+        "deleted {} from {} {}",
+        key,
+        meta_scope_label(&scope),
+        scope_id
+    );
+    Ok(())
+}
+
+pub async fn meta_realized(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    instance_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let entries = client
+        .get_instance_realized_meta()
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("get_instance_realized_meta")?
+        .into_inner();
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+        return Ok(());
+    }
+    if entries.is_empty() {
+        println!("(no realized metadata for instance {})", instance_id);
+        return Ok(());
+    }
+    println!(
+        "realized metadata for instance {} ({} entries):",
+        instance_id,
+        entries.len()
+    );
+    println!(
+        "  {:<40}  {:<10}  {:<8}  {:<8}  VALUE",
+        "KEY", "FROM", "VISIBLE", "WRITABLE"
+    );
+    for RealizedMetaEntry { key, value, from } in entries {
+        let val = serde_json::to_string(&value.value).unwrap_or_else(|_| "<bad-json>".into());
+        let visible = if value.guest_visible { "yes" } else { "no" };
+        let writable = if value.guest_writable { "yes" } else { "no" };
+        println!(
+            "  {:<40}  {:<10}  {:<8}  {:<8}  {}",
+            key,
+            provenance_label(&from),
+            visible,
+            writable,
+            val,
+        );
+    }
+    Ok(())
+}
