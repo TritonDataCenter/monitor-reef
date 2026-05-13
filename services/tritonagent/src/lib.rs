@@ -41,6 +41,7 @@ pub mod edge;
 pub mod images;
 pub mod imds;
 pub mod imds_bindings;
+pub mod imds_data;
 pub mod log_tailer;
 pub mod metrics;
 pub mod platform;
