@@ -34,9 +34,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::{
-    Router,
-    extract::{ConnectInfo, Request, State},
-    http::{HeaderMap, StatusCode},
+    Extension, Router,
+    extract::{ConnectInfo, Path, Request, State},
+    http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, put},
@@ -49,7 +49,7 @@ use tritond_auth::{
 };
 
 use crate::imds_bindings::{ImdsBindingTable, ResolvedBinding};
-use crate::imds_data::{RealizedDataSource, RealizedViewCache};
+use crate::imds_data::{RealizedDataSource, RealizedFetchError, RealizedViewCache};
 
 /// HTTP header carrying the requested session-token TTL (AWS-spec).
 const TOKEN_TTL_HEADER: &str = "x-aws-ec2-metadata-token-ttl-seconds";
@@ -102,15 +102,17 @@ fn router(state: ImdsState) -> Router {
     // request's derived identity. On any failure -> 401 (the variants
     // are deliberately collapsed so the verifier isn't an oracle).
     let gated = Router::new()
-        // AWS-compatible computed surface.
+        // AWS-compatible computed surface. Directory listings
+        // (`/latest/meta-data` etc. without a trailing key) still
+        // 501 until the directory-listing helper lands.
         .route("/latest/meta-data", get(not_implemented))
-        .route("/latest/meta-data/{*key}", get(not_implemented))
-        .route("/latest/user-data", get(not_implemented))
+        .route("/latest/meta-data/{*key}", get(aws_meta_data_get))
+        .route("/latest/user-data", get(aws_user_data_get))
         .route("/latest/dynamic", get(not_implemented))
-        .route("/latest/dynamic/{*key}", get(not_implemented))
+        .route("/latest/dynamic/{*key}", get(aws_dynamic_get))
         // Triton-native surface.
-        .route("/triton/{tree}/{*key}", get(not_implemented))
-        .route("/triton/dynamic/realized", get(not_implemented))
+        .route("/triton/dynamic/realized", get(triton_realized_get))
+        .route("/triton/{tree}/{*key}", get(triton_get))
         // Guest writeback (only `triton/guest/*` ever accepted; the
         // PUT/DELETE-side authorisation -- writeback enabled? key
         // pinned RO? value within caps? -- lives in the handler).
@@ -311,6 +313,136 @@ pub async fn start(cfg: ImdsListenerConfig) -> Result<()> {
         }
     });
     Ok(())
+}
+
+/// Fetch the realized view for the request's instance (resolved by
+/// the middleware) and serve the entry at `full_key`, if any.
+/// `full_key` is the *storage-namespace* key (e.g. `meta-data/
+/// instance-id`, `config/ntp-servers`), **not** the URL path -- the
+/// caller builds it from the path-param.
+async fn serve_key_for_binding(
+    state: &ImdsState,
+    binding: ResolvedBinding,
+    full_key: &str,
+) -> Response {
+    let entries = match state.realized.get(binding.instance_id).await {
+        Ok(v) => v,
+        Err(RealizedFetchError::NotFound) => {
+            return (StatusCode::NOT_FOUND, "not found\n").into_response();
+        }
+        Err(RealizedFetchError::Backend(e)) => {
+            warn!(error = %e, "imds: realized view unavailable");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "realized view unavailable\n",
+            )
+                .into_response();
+        }
+    };
+    let Some(entry) = entries
+        .iter()
+        .find(|e| e.value.guest_visible && e.key == full_key)
+    else {
+        return (StatusCode::NOT_FOUND, "not found\n").into_response();
+    };
+    // Strings serialise as themselves (no surrounding quotes); every
+    // other JSON shape serialises with `application/json`. Matches
+    // AWS IMDS conventions -- a `local-ipv4` is `10.0.0.42\n` not
+    // `"10.0.0.42"`.
+    match &entry.value.value {
+        serde_json::Value::String(s) => (StatusCode::OK, s.clone()).into_response(),
+        v => {
+            let body = serde_json::to_vec(v).unwrap_or_default();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "application/json")],
+                body,
+            )
+                .into_response()
+        }
+    }
+}
+
+async fn aws_meta_data_get(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+    Path(key): Path<String>,
+) -> Response {
+    serve_key_for_binding(&state, binding, &format!("meta-data/{key}")).await
+}
+
+async fn aws_user_data_get(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+) -> Response {
+    serve_key_for_binding(&state, binding, "user-data").await
+}
+
+async fn aws_dynamic_get(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+    Path(key): Path<String>,
+) -> Response {
+    // IMDS_DESIGN.md §3: `/latest/dynamic/iam/...` -> 404 until
+    // identityd (IM-7). Everything else under `/latest/dynamic/` we
+    // serve from the realized view under the `dynamic/` prefix.
+    if key.starts_with("iam/") || key == "iam" {
+        return (StatusCode::NOT_FOUND, "not found\n").into_response();
+    }
+    serve_key_for_binding(&state, binding, &format!("dynamic/{key}")).await
+}
+
+async fn triton_get(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+    Path((tree, key)): Path<(String, String)>,
+) -> Response {
+    serve_key_for_binding(&state, binding, &format!("{tree}/{key}")).await
+}
+
+/// `GET /triton/dynamic/realized` -- the explainability view: the
+/// guest-visible subset of the realized merge, each leaf carrying
+/// its provenance scope. Returns `application/json` as
+/// `{ "<key>": { "value": <v>, "from": "<scope>" }, ... }`.
+async fn triton_realized_get(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+) -> Response {
+    let entries = match state.realized.get(binding.instance_id).await {
+        Ok(v) => v,
+        Err(RealizedFetchError::NotFound) => {
+            return (StatusCode::NOT_FOUND, "not found\n").into_response();
+        }
+        Err(RealizedFetchError::Backend(e)) => {
+            warn!(error = %e, "imds: realized view unavailable");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "realized view unavailable\n",
+            )
+                .into_response();
+        }
+    };
+    let mut out = serde_json::Map::new();
+    for e in entries.iter().filter(|e| e.value.guest_visible) {
+        let provenance = match e.from {
+            tritond_client::types::MetaProvenance::Silo => "silo",
+            tritond_client::types::MetaProvenance::Tenant => "tenant",
+            tritond_client::types::MetaProvenance::Project => "project",
+            tritond_client::types::MetaProvenance::Instance => "instance",
+            tritond_client::types::MetaProvenance::System => "system",
+        };
+        out.insert(
+            e.key.clone(),
+            serde_json::json!({ "value": e.value.value, "from": provenance }),
+        );
+    }
+    let body = serde_json::to_vec(&serde_json::Value::Object(out)).unwrap_or_default();
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+        .into_response()
 }
 
 #[cfg(test)]
