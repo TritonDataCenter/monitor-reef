@@ -177,6 +177,26 @@ pub(crate) async fn delete_meta(
     }
 }
 
+pub(crate) async fn get_instance_realized_meta(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::InstanceRealizedMetaPath>,
+) -> Result<HttpResponseOk<Vec<tritond_api::RealizedMetaEntry>>, HttpError> {
+    let instance_id = path.into_inner().instance_id;
+    // RBAC: anyone in the instance's owning tenant can read the
+    // realized view (mirrors the per-key MetaList/MetaGet grants).
+    authorize_meta(&rqctx, MetaScope::Instance, instance_id, Action::MetaList).await?;
+    let ctx = rqctx.context();
+    match crate::build_instance_realized_view(ctx.store.as_ref(), instance_id).await {
+        Ok(view) => Ok(HttpResponseOk(
+            view.entries
+                .into_iter()
+                .map(|(key, (value, from))| tritond_api::RealizedMetaEntry { key, value, from })
+                .collect(),
+        )),
+        Err(e) => Err(store_error_to_http(e)),
+    }
+}
+
 // The unused `StoreError` import keeps the implicit conversion-via-
 // `store_error_to_http` path explicit at module scope; silence the
 // dead-code lint until we use it directly.

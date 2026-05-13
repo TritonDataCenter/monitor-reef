@@ -1739,6 +1739,49 @@
         }
       }
     },
+    "/v2/instances/{instance_id}/realized-meta": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "The full realized metadata view for one instance: the",
+        "description": "precedence merge of the four stored scopes (Silo < Tenant < Project < Instance) with the computed system keys (`meta-data/*`, `triton/system/*`) layered on top, each leaf tagged with the scope it came from. See `IMDS_DESIGN.md` §1.5. RBAC: tenant-member of the instance's owning tenant.",
+        "operationId": "get_instance_realized_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_RealizedMetaEntry",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RealizedMetaEntry"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/meta/{scope}/{scope_id}": {
       "get": {
         "tags": [
@@ -10542,6 +10585,49 @@
           "value"
         ]
       },
+      "MetaProvenance": {
+        "description": "Where a leaf in the realized view came from. The four storage scopes plus `System` for the computed keys ([`computed_metadata`]). Serialized lowercase for the `triton/dynamic/realized` payload and the `/v1/meta/instance/{id}/realized` response.",
+        "type": "string",
+        "enum": [
+          "silo",
+          "tenant",
+          "project",
+          "instance",
+          "system"
+        ]
+      },
+      "MetaValue": {
+        "description": "One metadata entry at one scope. JSON-encoded in FDB under `meta/{silo,tenant,project,instance}/<uuid>/<key>`.\n\n`value` is an arbitrary JSON value (strings are the common case; IMDS serves a JSON string as `text/plain` and any other JSON as `application/json`). The two boolean flags control the in-VM view: `guest_visible` gates whether IMDS exposes the key at all, and `guest_writable` gates whether the in-VM `PUT` may modify it (only ever true for `guest/*` keys at instance scope on a writeback- enabled instance — enforced by [`validate_meta_entry`] and the store layer).",
+        "type": "object",
+        "properties": {
+          "guest_visible": {
+            "description": "Visible to processes inside the VM via IMDS. See [`default_guest_visible`] for the per-scope/per-prefix default. Generalizes the legacy SmartOS `internal_metadata` notion (`guest_visible == false` at instance scope).",
+            "type": "boolean"
+          },
+          "guest_writable": {
+            "description": "The in-VM IMDS `PUT` may write this key. Only ever true for `guest/*` keys at instance scope on a writeback-enabled instance.",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "description": "Who last wrote it: a user UUID, `\"guest:<instance-id>\"` for an in-VM `PUT`, or `\"system\"` for seed values.",
+            "type": "string"
+          },
+          "value": {
+            "description": "The stored value. Capped at [`MAX_META_VALUE_BYTES`] when serialized."
+          }
+        },
+        "required": [
+          "guest_visible",
+          "guest_writable",
+          "updated_at",
+          "updated_by",
+          "value"
+        ]
+      },
       "NatGateway": {
         "description": "Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\n\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time.",
         "type": "object",
@@ -12042,6 +12128,26 @@
               "failed"
             ]
           }
+        ]
+      },
+      "RealizedMetaEntry": {
+        "description": "One leaf of the realized view: the effective key + value + the scope provenance (`silo|tenant|project|instance|system`). The computed system keys (`meta-data/*`, `triton/system/*`) appear with `from = system`; everything else with the storage scope that won the precedence merge. See `IMDS_DESIGN.md` §1.5.",
+        "type": "object",
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/MetaProvenance"
+          },
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/MetaValue"
+          }
+        },
+        "required": [
+          "from",
+          "key",
+          "value"
         ]
       },
       "RealizedNetworkState": {

@@ -4495,6 +4495,101 @@ pub mod types {
         }
     }
 
+    #[doc = "Where a leaf in the realized view came from. The four storage scopes plus `System` for the computed keys ([`computed_metadata`]). Serialized lowercase for the `triton/dynamic/realized` payload and the `/v1/meta/instance/{id}/realized` response."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Where a leaf in the realized view came from. The four storage scopes plus `System` for the computed keys ([`computed_metadata`]). Serialized lowercase for the `triton/dynamic/realized` payload and the `/v1/meta/instance/{id}/realized` response.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"silo\","]
+    #[doc = "    \"tenant\","]
+    #[doc = "    \"project\","]
+    #[doc = "    \"instance\","]
+    #[doc = "    \"system\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum MetaProvenance {
+        #[serde(rename = "silo")]
+        Silo,
+        #[serde(rename = "tenant")]
+        Tenant,
+        #[serde(rename = "project")]
+        Project,
+        #[serde(rename = "instance")]
+        Instance,
+        #[serde(rename = "system")]
+        System,
+    }
+
+    impl ::std::fmt::Display for MetaProvenance {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Silo => f.write_str("silo"),
+                Self::Tenant => f.write_str("tenant"),
+                Self::Project => f.write_str("project"),
+                Self::Instance => f.write_str("instance"),
+                Self::System => f.write_str("system"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for MetaProvenance {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "silo" => Ok(Self::Silo),
+                "tenant" => Ok(Self::Tenant),
+                "project" => Ok(Self::Project),
+                "instance" => Ok(Self::Instance),
+                "system" => Ok(Self::System),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for MetaProvenance {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for MetaProvenance {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for MetaProvenance {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "One of the four scopes a [`MetaValue`] can be attached to. The realized view for an instance merges all four in `Silo < Tenant < Project < Instance` precedence (most-specific wins). Serialized lowercase for the `/v1/meta/{scope}/...` path parameter."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4582,6 +4677,66 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+
+    #[doc = "One metadata entry at one scope. JSON-encoded in FDB under `meta/{silo,tenant,project,instance}/<uuid>/<key>`.\n\n`value` is an arbitrary JSON value (strings are the common case; IMDS serves a JSON string as `text/plain` and any other JSON as `application/json`). The two boolean flags control the in-VM view: `guest_visible` gates whether IMDS exposes the key at all, and `guest_writable` gates whether the in-VM `PUT` may modify it (only ever true for `guest/*` keys at instance scope on a writeback- enabled instance — enforced by [`validate_meta_entry`] and the store layer)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One metadata entry at one scope. JSON-encoded in FDB under `meta/{silo,tenant,project,instance}/<uuid>/<key>`.\\n\\n`value` is an arbitrary JSON value (strings are the common case; IMDS serves a JSON string as `text/plain` and any other JSON as `application/json`). The two boolean flags control the in-VM view: `guest_visible` gates whether IMDS exposes the key at all, and `guest_writable` gates whether the in-VM `PUT` may modify it (only ever true for `guest/*` keys at instance scope on a writeback- enabled instance — enforced by [`validate_meta_entry`] and the store layer).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"guest_visible\","]
+    #[doc = "    \"guest_writable\","]
+    #[doc = "    \"updated_at\","]
+    #[doc = "    \"updated_by\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"guest_visible\": {"]
+    #[doc = "      \"description\": \"Visible to processes inside the VM via IMDS. See [`default_guest_visible`] for the per-scope/per-prefix default. Generalizes the legacy SmartOS `internal_metadata` notion (`guest_visible == false` at instance scope).\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"guest_writable\": {"]
+    #[doc = "      \"description\": \"The in-VM IMDS `PUT` may write this key. Only ever true for `guest/*` keys at instance scope on a writeback-enabled instance.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_at\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"updated_by\": {"]
+    #[doc = "      \"description\": \"Who last wrote it: a user UUID, `\\\"guest:<instance-id>\\\"` for an in-VM `PUT`, or `\\\"system\\\"` for seed values.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The stored value. Capped at [`MAX_META_VALUE_BYTES`] when serialized.\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct MetaValue {
+        #[doc = "Visible to processes inside the VM via IMDS. See [`default_guest_visible`] for the per-scope/per-prefix default. Generalizes the legacy SmartOS `internal_metadata` notion (`guest_visible == false` at instance scope)."]
+        pub guest_visible: bool,
+        #[doc = "The in-VM IMDS `PUT` may write this key. Only ever true for `guest/*` keys at instance scope on a writeback-enabled instance."]
+        pub guest_writable: bool,
+        pub updated_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Who last wrote it: a user UUID, `\"guest:<instance-id>\"` for an in-VM `PUT`, or `\"system\"` for seed values."]
+        pub updated_by: ::std::string::String,
+        #[doc = "The stored value. Capped at [`MAX_META_VALUE_BYTES`] when serialized."]
+        pub value: ::serde_json::Value,
+    }
+
+    impl MetaValue {
+        pub fn builder() -> builder::MetaValue {
+            Default::default()
         }
     }
 
@@ -7167,6 +7322,48 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+
+    #[doc = "One leaf of the realized view: the effective key + value + the scope provenance (`silo|tenant|project|instance|system`). The computed system keys (`meta-data/*`, `triton/system/*`) appear with `from = system`; everything else with the storage scope that won the precedence merge. See `IMDS_DESIGN.md` §1.5."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One leaf of the realized view: the effective key + value + the scope provenance (`silo|tenant|project|instance|system`). The computed system keys (`meta-data/*`, `triton/system/*`) appear with `from = system`; everything else with the storage scope that won the precedence merge. See `IMDS_DESIGN.md` §1.5.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"from\","]
+    #[doc = "    \"key\","]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"from\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MetaProvenance\""]
+    #[doc = "    },"]
+    #[doc = "    \"key\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"$ref\": \"#/components/schemas/MetaValue\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RealizedMetaEntry {
+        pub from: MetaProvenance,
+        pub key: ::std::string::String,
+        pub value: MetaValue,
+    }
+
+    impl RealizedMetaEntry {
+        pub fn builder() -> builder::RealizedMetaEntry {
+            Default::default()
         }
     }
 
@@ -14127,6 +14324,110 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct MetaValue {
+            guest_visible: ::std::result::Result<bool, ::std::string::String>,
+            guest_writable: ::std::result::Result<bool, ::std::string::String>,
+            updated_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            updated_by: ::std::result::Result<::std::string::String, ::std::string::String>,
+            value: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for MetaValue {
+            fn default() -> Self {
+                Self {
+                    guest_visible: Err("no value supplied for guest_visible".to_string()),
+                    guest_writable: Err("no value supplied for guest_writable".to_string()),
+                    updated_at: Err("no value supplied for updated_at".to_string()),
+                    updated_by: Err("no value supplied for updated_by".to_string()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl MetaValue {
+            pub fn guest_visible<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.guest_visible = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for guest_visible: {e}"));
+                self
+            }
+            pub fn guest_writable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.guest_writable = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for guest_writable: {e}")
+                });
+                self
+            }
+            pub fn updated_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_at: {e}"));
+                self
+            }
+            pub fn updated_by<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated_by = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated_by: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<MetaValue> for super::MetaValue {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MetaValue,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    guest_visible: value.guest_visible?,
+                    guest_writable: value.guest_writable?,
+                    updated_at: value.updated_at?,
+                    updated_by: value.updated_by?,
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::MetaValue> for MetaValue {
+            fn from(value: super::MetaValue) -> Self {
+                Self {
+                    guest_visible: Ok(value.guest_visible),
+                    guest_writable: Ok(value.guest_writable),
+                    updated_at: Ok(value.updated_at),
+                    updated_by: Ok(value.updated_by),
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NatGateway {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -17527,6 +17828,79 @@ pub mod types {
                     message: Ok(value.message),
                     realizer: Ok(value.realizer),
                     status: Ok(value.status),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RealizedMetaEntry {
+            from: ::std::result::Result<super::MetaProvenance, ::std::string::String>,
+            key: ::std::result::Result<::std::string::String, ::std::string::String>,
+            value: ::std::result::Result<super::MetaValue, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for RealizedMetaEntry {
+            fn default() -> Self {
+                Self {
+                    from: Err("no value supplied for from".to_string()),
+                    key: Err("no value supplied for key".to_string()),
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl RealizedMetaEntry {
+            pub fn from<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MetaProvenance>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.from = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for from: {e}"));
+                self
+            }
+            pub fn key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MetaValue>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RealizedMetaEntry> for super::RealizedMetaEntry {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RealizedMetaEntry,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    from: value.from?,
+                    key: value.key?,
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RealizedMetaEntry> for RealizedMetaEntry {
+            fn from(value: super::RealizedMetaEntry) -> Self {
+                Self {
+                    from: Ok(value.from),
+                    key: Ok(value.key),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -21094,6 +21468,11 @@ impl Client {
     #[doc = "Delete an image by id. Returns 404 when the image does\n\nnot exist OR the principal lacks ownership for the image's scope: * `Public` — root only. * `Silo` / `Tenant` / `Project` — any tenant member of the resolved tenant (Phase 0 = same-tenant access). * `User` — only the owning user (or root).\n\nSends a `DELETE` request to `/v2/images/{image_id}`\n\n```ignore\nlet response = client.delete_image()\n    .image_id(image_id)\n    .send()\n    .await;\n```"]
     pub fn delete_image(&self) -> builder::DeleteImage<'_> {
         builder::DeleteImage::new(self)
+    }
+
+    #[doc = "The full realized metadata view for one instance: the\n\nprecedence merge of the four stored scopes (Silo < Tenant < Project < Instance) with the computed system keys (`meta-data/*`, `triton/system/*`) layered on top, each leaf tagged with the scope it came from. See `IMDS_DESIGN.md` §1.5. RBAC: tenant-member of the instance's owning tenant.\n\nSends a `GET` request to `/v2/instances/{instance_id}/realized-meta`\n\n```ignore\nlet response = client.get_instance_realized_meta()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
+    pub fn get_instance_realized_meta(&self) -> builder::GetInstanceRealizedMeta<'_> {
+        builder::GetInstanceRealizedMeta::new(self)
     }
 
     #[doc = "List every metadata entry stored at one scope. RBAC: silo-member\n\nfor `scope=silo`; tenant-member (of the scope's owning tenant) for `scope=tenant|project|instance`.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}`\n\n```ignore\nlet response = client.list_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .send()\n    .await;\n```"]
@@ -25071,6 +25450,81 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_instance_realized_meta`]\n\n[`Client::get_instance_realized_meta`]: super::Client::get_instance_realized_meta"]
+    #[derive(Debug, Clone)]
+    pub struct GetInstanceRealizedMeta<'a> {
+        client: &'a super::Client,
+        instance_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetInstanceRealizedMeta<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                instance_id: Err("instance_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/instances/{instance_id}/realized-meta`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::RealizedMetaEntry>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                instance_id,
+            } = self;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/instances/{}/realized-meta",
+                client.baseurl,
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_instance_realized_meta",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

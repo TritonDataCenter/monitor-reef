@@ -1250,6 +1250,25 @@ pub struct SetMetaResponse {
     pub generation: u64,
 }
 
+/// Path parameter for endpoints that operate on the realized view of
+/// one instance (`/v2/meta/instance/{instance_id}/realized`).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InstanceRealizedMetaPath {
+    pub instance_id: Uuid,
+}
+
+/// One leaf of the realized view: the effective key + value + the
+/// scope provenance (`silo|tenant|project|instance|system`). The
+/// computed system keys (`meta-data/*`, `triton/system/*`) appear with
+/// `from = system`; everything else with the storage scope that won
+/// the precedence merge. See `IMDS_DESIGN.md` §1.5.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RealizedMetaEntry {
+    pub key: String,
+    pub value: tritond_store::MetaValue,
+    pub from: tritond_store::MetaProvenance,
+}
+
 #[dropshot::api_description]
 pub trait TritondApi {
     /// Context type for request handlers.
@@ -3549,4 +3568,20 @@ pub trait TritondApi {
         path: Path<MetaScopePath>,
         query: Query<MetaKeyQuery>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// The full realized metadata view for one instance: the
+    /// precedence merge of the four stored scopes (Silo < Tenant <
+    /// Project < Instance) with the computed system keys
+    /// (`meta-data/*`, `triton/system/*`) layered on top, each leaf
+    /// tagged with the scope it came from. See `IMDS_DESIGN.md` §1.5.
+    /// RBAC: tenant-member of the instance's owning tenant.
+    #[endpoint {
+        method = GET,
+        path = "/v2/instances/{instance_id}/realized-meta",
+        tags = ["meta"],
+    }]
+    async fn get_instance_realized_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<InstanceRealizedMetaPath>,
+    ) -> Result<HttpResponseOk<Vec<RealizedMetaEntry>>, HttpError>;
 }
