@@ -4424,3 +4424,591 @@ mod realized_state_tests {
         }
     }
 }
+
+// === Layered instance metadata (IMDS) =====================================
+//
+// See `IMDS_DESIGN.md` (rev 4). Metadata is stored at four scopes
+// (silo / tenant / project / instance); a per-instance "realized"
+// view is the precedence merge of all four plus a set of computed
+// "system" keys. This section defines the storage-layer types and the
+// key/value validation rules; the realized-view builder, the wire
+// surface, and the IMDS daemon live in higher layers.
+
+/// One of the four scopes a [`MetaValue`] can be attached to. The
+/// realized view for an instance merges all four in
+/// `Silo < Tenant < Project < Instance` precedence (most-specific
+/// wins). Serialized lowercase for the `/v1/meta/{scope}/...` path
+/// parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MetaScope {
+    Silo,
+    Tenant,
+    Project,
+    Instance,
+}
+
+impl MetaScope {
+    /// Stable lowercase tag (matches the wire form and the FDB
+    /// keyspace segment).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MetaScope::Silo => "silo",
+            MetaScope::Tenant => "tenant",
+            MetaScope::Project => "project",
+            MetaScope::Instance => "instance",
+        }
+    }
+
+    /// True for the one scope that hosts per-instance namespaces
+    /// (`instance/*`, `guest/*`, `user-data`) and the only scope a
+    /// guest writeback can touch.
+    pub fn is_instance(self) -> bool {
+        matches!(self, MetaScope::Instance)
+    }
+
+    /// Precedence rank used by the realized-view merge: higher wins.
+    pub fn precedence(self) -> u8 {
+        match self {
+            MetaScope::Silo => 0,
+            MetaScope::Tenant => 1,
+            MetaScope::Project => 2,
+            MetaScope::Instance => 3,
+        }
+    }
+}
+
+/// One metadata entry at one scope. JSON-encoded in FDB under
+/// `meta/{silo,tenant,project,instance}/<uuid>/<key>`.
+///
+/// `value` is an arbitrary JSON value (strings are the common case;
+/// IMDS serves a JSON string as `text/plain` and any other JSON as
+/// `application/json`). The two boolean flags control the in-VM view:
+/// `guest_visible` gates whether IMDS exposes the key at all, and
+/// `guest_writable` gates whether the in-VM `PUT` may modify it (only
+/// ever true for `guest/*` keys at instance scope on a writeback-
+/// enabled instance — enforced by [`validate_meta_entry`] and the
+/// store layer).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MetaValue {
+    /// The stored value. Capped at [`MAX_META_VALUE_BYTES`] when
+    /// serialized.
+    pub value: serde_json::Value,
+    /// Visible to processes inside the VM via IMDS. See
+    /// [`default_guest_visible`] for the per-scope/per-prefix default.
+    /// Generalizes the legacy SmartOS `internal_metadata` notion
+    /// (`guest_visible == false` at instance scope).
+    pub guest_visible: bool,
+    /// The in-VM IMDS `PUT` may write this key. Only ever true for
+    /// `guest/*` keys at instance scope on a writeback-enabled
+    /// instance.
+    pub guest_writable: bool,
+    /// Who last wrote it: a user UUID, `"guest:<instance-id>"` for an
+    /// in-VM `PUT`, or `"system"` for seed values.
+    pub updated_by: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl MetaValue {
+    /// Build a value with the conventional defaults for `scope`/`key`
+    /// (`guest_visible` per [`default_guest_visible`], `guest_writable`
+    /// false). `updated_at` is set to now.
+    pub fn new(scope: MetaScope, key: &str, value: serde_json::Value, updated_by: String) -> Self {
+        MetaValue {
+            value,
+            guest_visible: default_guest_visible(scope, key),
+            guest_writable: false,
+            updated_by,
+            updated_at: Utc::now(),
+        }
+    }
+}
+
+/// Per-value byte cap (serialized JSON of `MetaValue.value`).
+pub const MAX_META_VALUE_BYTES: usize = 64 * 1024;
+/// Per-scope key-count cap (one scope's whole `meta/<scope>/<id>/` map).
+pub const MAX_META_KEYS_PER_SCOPE: usize = 256;
+/// Total realized-view byte cap per instance (sum of all merged
+/// values' serialized JSON).
+pub const MAX_REALIZED_BYTES_PER_INSTANCE: usize = 256 * 1024;
+/// Maximum length of a metadata key in bytes.
+pub const MAX_META_KEY_BYTES: usize = 256;
+/// Maximum number of `/`-separated segments in a metadata key.
+pub const MAX_META_KEY_DEPTH: usize = 8;
+
+/// The distinguished instance-scope key carrying the cloud-init blob,
+/// surfaced at the AWS path `/latest/user-data`.
+pub const META_KEY_USER_DATA: &str = "user-data";
+/// IMDS option: whether IMDS is served to this instance at all.
+pub const META_KEY_IMDS_ENABLED: &str = "config/imds/enabled";
+/// IMDS option: the response IP TTL / hop-limit.
+pub const META_KEY_IMDS_HOP_LIMIT: &str = "config/imds/hop-limit";
+/// Minimum legal `config/imds/hop-limit` value.
+pub const IMDS_HOP_LIMIT_MIN: u64 = 1;
+/// Maximum legal `config/imds/hop-limit` value.
+pub const IMDS_HOP_LIMIT_MAX: u64 = 64;
+/// Default `config/imds/hop-limit` when unset at every scope: on-box
+/// only (the AWS SSRF-relay mitigation default).
+pub const IMDS_HOP_LIMIT_DEFAULT: u64 = 1;
+
+/// Top-level key namespace that decides who may write a key and at
+/// which scopes it is allowed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MetaNamespace {
+    /// `config/*` — layered shared configuration; any scope; settable.
+    Config,
+    /// `state/*` — layered low-frequency shared runtime state; any
+    /// scope; settable.
+    State,
+    /// `instance/*` — per-instance operator metadata; instance scope
+    /// only; settable.
+    Instance,
+    /// `guest/*` — guest-written per-instance state; instance scope
+    /// only; settable (with the writeback gate at a higher layer).
+    Guest,
+    /// `user-data` — the distinguished cloud-init blob; instance scope
+    /// only; settable.
+    UserData,
+    /// `meta-data/*`, `system/*`, `dynamic/*` — computed, never
+    /// stored; `meta set` is rejected.
+    Computed,
+}
+
+/// Validation failures for metadata keys/values. Higher layers map
+/// these to HTTP 400.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MetaError {
+    #[error("metadata key must not be empty")]
+    EmptyKey,
+    #[error("metadata key exceeds {MAX_META_KEY_BYTES} bytes")]
+    KeyTooLong,
+    #[error("metadata key exceeds {MAX_META_KEY_DEPTH} path segments")]
+    KeyTooDeep,
+    #[error("metadata key has an empty path segment (leading/trailing/double '/')")]
+    EmptySegment,
+    #[error("metadata key contains an illegal character: {0:?}")]
+    BadChar(char),
+    #[error("metadata key must start with a lowercase letter or digit, not {0:?}")]
+    BadFirstChar(char),
+    #[error(
+        "unknown metadata key namespace: {0:?} (expected one of config/, state/, instance/, guest/, user-data)"
+    )]
+    UnknownNamespace(String),
+    #[error("metadata key namespace {0:?} is only valid at instance scope")]
+    ScopeNotInstance(&'static str),
+    #[error("metadata key {0:?} is computed and cannot be set")]
+    ReservedKey(&'static str),
+    #[error("metadata key {0:?} requires at least one child segment")]
+    MissingChildSegment(&'static str),
+    #[error("config/imds/enabled must be a boolean")]
+    ImdsEnabledNotBool,
+    #[error(
+        "config/imds/hop-limit must be an integer in {IMDS_HOP_LIMIT_MIN}..={IMDS_HOP_LIMIT_MAX}"
+    )]
+    ImdsHopLimitOutOfRange,
+    #[error("guest_writable is only allowed for guest/* keys at instance scope")]
+    GuestWritableNotAllowed,
+    #[error("metadata value exceeds {MAX_META_VALUE_BYTES} bytes")]
+    ValueTooLarge,
+}
+
+/// Classify a key's top-level namespace and validate its syntax
+/// (charset, segment structure, depth, length). Does not look at the
+/// scope.
+fn classify_meta_key(key: &str) -> Result<MetaNamespace, MetaError> {
+    if key.is_empty() {
+        return Err(MetaError::EmptyKey);
+    }
+    if key.len() > MAX_META_KEY_BYTES {
+        return Err(MetaError::KeyTooLong);
+    }
+    let first = key.chars().next().unwrap();
+    if !(first.is_ascii_lowercase() || first.is_ascii_digit()) {
+        return Err(MetaError::BadFirstChar(first));
+    }
+    for ch in key.chars() {
+        let ok =
+            ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '.' | '_' | '/' | '-');
+        if !ok {
+            return Err(MetaError::BadChar(ch));
+        }
+    }
+    let segments: Vec<&str> = key.split('/').collect();
+    if segments.len() > MAX_META_KEY_DEPTH {
+        return Err(MetaError::KeyTooDeep);
+    }
+    if segments.iter().any(|s| s.is_empty()) {
+        return Err(MetaError::EmptySegment);
+    }
+    let ns = match segments[0] {
+        "config" => MetaNamespace::Config,
+        "state" => MetaNamespace::State,
+        "instance" => MetaNamespace::Instance,
+        "guest" => MetaNamespace::Guest,
+        "user-data" => MetaNamespace::UserData,
+        "meta-data" | "system" | "dynamic" => MetaNamespace::Computed,
+        other => return Err(MetaError::UnknownNamespace(other.to_string())),
+    };
+    // The layered/per-instance namespaces are directory-shaped: they
+    // need at least one child segment. `user-data` is a leaf.
+    match ns {
+        MetaNamespace::Config => {
+            if segments.len() < 2 {
+                return Err(MetaError::MissingChildSegment("config"));
+            }
+        }
+        MetaNamespace::State => {
+            if segments.len() < 2 {
+                return Err(MetaError::MissingChildSegment("state"));
+            }
+        }
+        MetaNamespace::Instance => {
+            if segments.len() < 2 {
+                return Err(MetaError::MissingChildSegment("instance"));
+            }
+        }
+        MetaNamespace::Guest => {
+            if segments.len() < 2 {
+                return Err(MetaError::MissingChildSegment("guest"));
+            }
+        }
+        MetaNamespace::UserData => {
+            if segments.len() != 1 {
+                return Err(MetaError::MissingChildSegment("user-data"));
+            }
+        }
+        MetaNamespace::Computed => {}
+    }
+    Ok(ns)
+}
+
+/// Validate that `key` may be **set** at `scope` (syntax + namespace +
+/// scope rules). Does not validate the value — see
+/// [`validate_meta_entry`].
+pub fn validate_meta_key(scope: MetaScope, key: &str) -> Result<(), MetaError> {
+    let ns = classify_meta_key(key)?;
+    match ns {
+        MetaNamespace::Config | MetaNamespace::State => Ok(()),
+        MetaNamespace::Instance => {
+            if scope.is_instance() {
+                Ok(())
+            } else {
+                Err(MetaError::ScopeNotInstance("instance/"))
+            }
+        }
+        MetaNamespace::Guest => {
+            if scope.is_instance() {
+                Ok(())
+            } else {
+                Err(MetaError::ScopeNotInstance("guest/"))
+            }
+        }
+        MetaNamespace::UserData => {
+            if scope.is_instance() {
+                Ok(())
+            } else {
+                Err(MetaError::ScopeNotInstance("user-data"))
+            }
+        }
+        MetaNamespace::Computed => {
+            // Map back to a stable label for the error.
+            let label = match key.split('/').next().unwrap() {
+                "meta-data" => "meta-data/",
+                "system" => "system/",
+                "dynamic" => "dynamic/",
+                _ => "meta-data/",
+            };
+            Err(MetaError::ReservedKey(label))
+        }
+    }
+}
+
+/// True if `key` may carry `guest_writable == true` at `scope`: only
+/// `guest/*` keys at instance scope. (Whether writeback is *enabled*
+/// on the instance is a separate, higher-layer check.)
+pub fn meta_key_guest_writable_allowed(scope: MetaScope, key: &str) -> bool {
+    scope.is_instance() && key.starts_with("guest/")
+}
+
+/// The conventional default for `MetaValue.guest_visible` given the
+/// scope and key: `config/*` and `state/*` are guest-facing by design
+/// (true at every scope); everything else defaults visible only at
+/// project/instance scope (false at silo/tenant — the legacy
+/// `internal_metadata` shape).
+pub fn default_guest_visible(scope: MetaScope, key: &str) -> bool {
+    if key.starts_with("config/") || key.starts_with("state/") {
+        true
+    } else {
+        matches!(scope, MetaScope::Project | MetaScope::Instance)
+    }
+}
+
+/// Full validation of a `(scope, key, value)` triple plus the
+/// `guest_writable` flag the caller wants to set: syntax + namespace +
+/// scope rules + value-type rules for the reserved `config/imds/*`
+/// option keys + the byte cap + the `guest_writable` placement rule.
+pub fn validate_meta_entry(
+    scope: MetaScope,
+    key: &str,
+    value: &serde_json::Value,
+    guest_writable: bool,
+) -> Result<(), MetaError> {
+    validate_meta_key(scope, key)?;
+
+    // Reserved option keys are type-constrained.
+    if key == META_KEY_IMDS_ENABLED {
+        if !value.is_boolean() {
+            return Err(MetaError::ImdsEnabledNotBool);
+        }
+    } else if key == META_KEY_IMDS_HOP_LIMIT {
+        match value.as_u64() {
+            Some(n) if (IMDS_HOP_LIMIT_MIN..=IMDS_HOP_LIMIT_MAX).contains(&n) => {}
+            _ => return Err(MetaError::ImdsHopLimitOutOfRange),
+        }
+    }
+
+    // Byte cap on the serialized value.
+    let encoded = serde_json::to_vec(value).map_err(|_| MetaError::ValueTooLarge)?;
+    if encoded.len() > MAX_META_VALUE_BYTES {
+        return Err(MetaError::ValueTooLarge);
+    }
+
+    if guest_writable && !meta_key_guest_writable_allowed(scope, key) {
+        return Err(MetaError::GuestWritableNotAllowed);
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod meta_tests {
+    use super::*;
+
+    #[test]
+    fn meta_scope_wire_tags_and_precedence_are_stable() {
+        for (s, tag, p) in [
+            (MetaScope::Silo, "silo", 0u8),
+            (MetaScope::Tenant, "tenant", 1),
+            (MetaScope::Project, "project", 2),
+            (MetaScope::Instance, "instance", 3),
+        ] {
+            assert_eq!(s.as_str(), tag);
+            assert_eq!(s.precedence(), p);
+            assert_eq!(serde_json::to_value(s).unwrap(), serde_json::json!(tag));
+            assert_eq!(
+                serde_json::from_value::<MetaScope>(serde_json::json!(tag)).unwrap(),
+                s
+            );
+        }
+        assert!(MetaScope::Instance.is_instance());
+        assert!(!MetaScope::Project.is_instance());
+        assert!(MetaScope::Instance.precedence() > MetaScope::Silo.precedence());
+    }
+
+    #[test]
+    fn config_and_state_keys_are_valid_at_every_scope() {
+        for scope in [
+            MetaScope::Silo,
+            MetaScope::Tenant,
+            MetaScope::Project,
+            MetaScope::Instance,
+        ] {
+            validate_meta_key(scope, "config/ntp-servers").unwrap();
+            validate_meta_key(scope, "state/active-color").unwrap();
+            validate_meta_key(scope, "config/imds/enabled").unwrap();
+            validate_meta_key(scope, "config/imds/hop-limit").unwrap();
+            // Defaults: config/* and state/* are guest-visible everywhere.
+            assert!(default_guest_visible(scope, "config/ntp-servers"));
+            assert!(default_guest_visible(scope, "state/leader"));
+        }
+    }
+
+    #[test]
+    fn instance_only_namespaces_are_rejected_above_instance() {
+        for key in ["instance/role", "guest/leader", "user-data"] {
+            for scope in [MetaScope::Silo, MetaScope::Tenant, MetaScope::Project] {
+                assert!(matches!(
+                    validate_meta_key(scope, key),
+                    Err(MetaError::ScopeNotInstance(_))
+                ));
+            }
+            validate_meta_key(MetaScope::Instance, key).unwrap();
+        }
+        // instance/* and guest/* are not guest-visible by default at
+        // upper scopes (moot — they can't be set there) but ARE at
+        // instance scope.
+        assert!(default_guest_visible(MetaScope::Instance, "instance/role"));
+        assert!(default_guest_visible(MetaScope::Instance, "user-data"));
+        // ...whereas a hypothetical non-config/state key at silo scope
+        // would default invisible.
+        assert!(!default_guest_visible(MetaScope::Silo, "instance/role"));
+    }
+
+    #[test]
+    fn computed_namespaces_cannot_be_set() {
+        for key in [
+            "meta-data/instance-id",
+            "system/package",
+            "dynamic/realized",
+            "system/cn-uuid",
+        ] {
+            assert!(matches!(
+                validate_meta_key(MetaScope::Instance, key),
+                Err(MetaError::ReservedKey(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn unknown_namespace_and_syntax_errors() {
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "tritond.instance_id"),
+            Err(MetaError::UnknownNamespace(_))
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, ""),
+            Err(MetaError::EmptyKey)
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "config//x"),
+            Err(MetaError::EmptySegment)
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "config/x/"),
+            Err(MetaError::EmptySegment)
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "/config/x"),
+            // leading '/' -> first char is '/', which fails BadFirstChar
+            Err(MetaError::BadFirstChar('/'))
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "Config/x"),
+            Err(MetaError::BadFirstChar('C'))
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "config/x y"),
+            Err(MetaError::BadChar(' '))
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "config"),
+            Err(MetaError::MissingChildSegment("config"))
+        ));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, "user-data/foo"),
+            Err(MetaError::MissingChildSegment("user-data"))
+        ));
+        let deep = format!("config/{}", "a/".repeat(MAX_META_KEY_DEPTH));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, &deep),
+            Err(MetaError::KeyTooDeep)
+        ));
+        let long = format!("config/{}", "a".repeat(MAX_META_KEY_BYTES));
+        assert!(matches!(
+            validate_meta_key(MetaScope::Instance, &long),
+            Err(MetaError::KeyTooLong)
+        ));
+    }
+
+    #[test]
+    fn imds_option_value_types_are_enforced() {
+        validate_meta_entry(
+            MetaScope::Tenant,
+            META_KEY_IMDS_ENABLED,
+            &serde_json::json!(true),
+            false,
+        )
+        .unwrap();
+        assert!(matches!(
+            validate_meta_entry(
+                MetaScope::Tenant,
+                META_KEY_IMDS_ENABLED,
+                &serde_json::json!("yes"),
+                false
+            ),
+            Err(MetaError::ImdsEnabledNotBool)
+        ));
+        validate_meta_entry(
+            MetaScope::Project,
+            META_KEY_IMDS_HOP_LIMIT,
+            &serde_json::json!(2),
+            false,
+        )
+        .unwrap();
+        for bad in [
+            serde_json::json!(0),
+            serde_json::json!(65),
+            serde_json::json!("2"),
+        ] {
+            assert!(matches!(
+                validate_meta_entry(MetaScope::Project, META_KEY_IMDS_HOP_LIMIT, &bad, false),
+                Err(MetaError::ImdsHopLimitOutOfRange)
+            ));
+        }
+    }
+
+    #[test]
+    fn guest_writable_only_for_guest_keys_at_instance_scope() {
+        assert!(meta_key_guest_writable_allowed(
+            MetaScope::Instance,
+            "guest/role"
+        ));
+        assert!(!meta_key_guest_writable_allowed(
+            MetaScope::Instance,
+            "config/x"
+        ));
+        assert!(!meta_key_guest_writable_allowed(
+            MetaScope::Project,
+            "guest/role"
+        ));
+        validate_meta_entry(
+            MetaScope::Instance,
+            "guest/role",
+            &serde_json::json!("replica"),
+            true,
+        )
+        .unwrap();
+        assert!(matches!(
+            validate_meta_entry(
+                MetaScope::Instance,
+                "instance/role",
+                &serde_json::json!("web"),
+                true
+            ),
+            Err(MetaError::GuestWritableNotAllowed)
+        ));
+    }
+
+    #[test]
+    fn value_byte_cap_is_enforced() {
+        let big = serde_json::Value::String("x".repeat(MAX_META_VALUE_BYTES + 1));
+        assert!(matches!(
+            validate_meta_entry(MetaScope::Instance, "user-data", &big, false),
+            Err(MetaError::ValueTooLarge)
+        ));
+        let ok = serde_json::Value::String("x".repeat(1024));
+        validate_meta_entry(MetaScope::Instance, "user-data", &ok, false).unwrap();
+    }
+
+    #[test]
+    fn meta_value_new_sets_conventional_defaults() {
+        let v = MetaValue::new(
+            MetaScope::Tenant,
+            "config/ntp-servers",
+            serde_json::json!("10.0.0.2"),
+            "user:abc".to_string(),
+        );
+        assert!(v.guest_visible);
+        assert!(!v.guest_writable);
+        assert_eq!(v.updated_by, "user:abc");
+
+        let v2 = MetaValue::new(
+            MetaScope::Silo,
+            "instance/x",
+            serde_json::json!("y"),
+            "system".to_string(),
+        );
+        // non-config/state at silo scope -> not guest-visible by default
+        assert!(!v2.guest_visible);
+    }
+}
