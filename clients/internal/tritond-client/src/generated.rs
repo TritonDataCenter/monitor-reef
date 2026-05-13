@@ -1182,7 +1182,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"Explicitly disabled by an operator. The bound API key is revoked. The record stays for audit visibility; a fresh registration from the same `server_uuid` is rejected until the operator removes the disabled record (Phase 1 surface) — for Phase 0, \\\"disable\\\" is the terminal state.\","]
+    #[doc = "      \"description\": \"Explicitly disabled by an operator. The bound API key is revoked and the record stays for audit visibility. A fresh registration from the same `server_uuid` re-arms the record back to `Pending` (awaiting approval) — i.e. \\\"re-enable with fresh credentials\\\"; the disable event remains in the audit chain.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
     #[doc = "        \"disabled\""]
@@ -1212,7 +1212,7 @@ pub mod types {
         #[doc = "Approved and active. The per-CN API key bound via [`ApiKey::bound_to_cn`] is the agent's credential for the rest of the `/v2/agent/*` surface."]
         #[serde(rename = "approved")]
         Approved,
-        #[doc = "Explicitly disabled by an operator. The bound API key is revoked. The record stays for audit visibility; a fresh registration from the same `server_uuid` is rejected until the operator removes the disabled record (Phase 1 surface) — for Phase 0, \"disable\" is the terminal state."]
+        #[doc = "Explicitly disabled by an operator. The bound API key is revoked and the record stays for audit visibility. A fresh registration from the same `server_uuid` re-arms the record back to `Pending` (awaiting approval) — i.e. \"re-enable with fresh credentials\"; the disable event remains in the audit chain."]
         #[serde(rename = "disabled")]
         Disabled,
     }
@@ -1775,6 +1775,101 @@ pub mod types {
 
     impl DhcpLease {
         pub fn builder() -> builder::DhcpLease {
+            Default::default()
+        }
+    }
+
+    #[doc = "One DHCP message the kmod observed for a guest port, forwarded by the bound CN agent draining the Proteus event ring. Tritond uses these to keep the lease record's `last_renewed_at` fresh so the reconciler's idle-GC heuristic doesn't mistake a long-lived VM for an orphaned lease. RELEASE / DECLINE are recorded as the last message type but never expire the lease (persistent-lease policy); only DISCOVER / REQUEST advance the renewal clock."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One DHCP message the kmod observed for a guest port, forwarded by the bound CN agent draining the Proteus event ring. Tritond uses these to keep the lease record's `last_renewed_at` fresh so the reconciler's idle-GC heuristic doesn't mistake a long-lived VM for an orphaned lease. RELEASE / DECLINE are recorded as the last message type but never expire the lease (persistent-lease policy); only DISCOVER / REQUEST advance the renewal clock.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"client_mac\","]
+    #[doc = "    \"msg_type\","]
+    #[doc = "    \"port_id\","]
+    #[doc = "    \"xid\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"client_mac\": {"]
+    #[doc = "      \"description\": \"Client MAC as the kmod saw it, canonical lowercase colon-separated form (e.g. `02:08:20:ab:cd:ef`). Used for a cross-check against the stored NIC; not the lookup key.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"msg_type\": {"]
+    #[doc = "      \"description\": \"DHCP message type (RFC 2132 option 53): 1 DISCOVER, 2 OFFER, 3 REQUEST, 4 DECLINE, 5 ACK, 6 NAK, 7 RELEASE, 8 INFORM.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint8\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"port_id\": {"]
+    #[doc = "      \"description\": \"Proteus port id — equal to the NIC id.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"xid\": {"]
+    #[doc = "      \"description\": \"BOOTP transaction id from the request.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DhcpLeaseActivity {
+        #[doc = "Client MAC as the kmod saw it, canonical lowercase colon-separated form (e.g. `02:08:20:ab:cd:ef`). Used for a cross-check against the stored NIC; not the lookup key."]
+        pub client_mac: ::std::string::String,
+        #[doc = "DHCP message type (RFC 2132 option 53): 1 DISCOVER, 2 OFFER, 3 REQUEST, 4 DECLINE, 5 ACK, 6 NAK, 7 RELEASE, 8 INFORM."]
+        pub msg_type: u8,
+        #[doc = "Proteus port id — equal to the NIC id."]
+        pub port_id: ::uuid::Uuid,
+        #[doc = "BOOTP transaction id from the request."]
+        pub xid: u32,
+    }
+
+    impl DhcpLeaseActivity {
+        pub fn builder() -> builder::DhcpLeaseActivity {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DhcpLeaseActivity\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DhcpLeaseActivityReport {
+        pub items: ::std::vec::Vec<DhcpLeaseActivity>,
+    }
+
+    impl DhcpLeaseActivityReport {
+        pub fn builder() -> builder::DhcpLeaseActivityReport {
             Default::default()
         }
     }
@@ -11039,6 +11134,141 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct DhcpLeaseActivity {
+            client_mac: ::std::result::Result<::std::string::String, ::std::string::String>,
+            msg_type: ::std::result::Result<u8, ::std::string::String>,
+            port_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            xid: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DhcpLeaseActivity {
+            fn default() -> Self {
+                Self {
+                    client_mac: Err("no value supplied for client_mac".to_string()),
+                    msg_type: Err("no value supplied for msg_type".to_string()),
+                    port_id: Err("no value supplied for port_id".to_string()),
+                    xid: Err("no value supplied for xid".to_string()),
+                }
+            }
+        }
+
+        impl DhcpLeaseActivity {
+            pub fn client_mac<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.client_mac = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for client_mac: {e}"));
+                self
+            }
+            pub fn msg_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u8>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.msg_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for msg_type: {e}"));
+                self
+            }
+            pub fn port_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.port_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for port_id: {e}"));
+                self
+            }
+            pub fn xid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.xid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for xid: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DhcpLeaseActivity> for super::DhcpLeaseActivity {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DhcpLeaseActivity,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    client_mac: value.client_mac?,
+                    msg_type: value.msg_type?,
+                    port_id: value.port_id?,
+                    xid: value.xid?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DhcpLeaseActivity> for DhcpLeaseActivity {
+            fn from(value: super::DhcpLeaseActivity) -> Self {
+                Self {
+                    client_mac: Ok(value.client_mac),
+                    msg_type: Ok(value.msg_type),
+                    port_id: Ok(value.port_id),
+                    xid: Ok(value.xid),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DhcpLeaseActivityReport {
+            items: ::std::result::Result<
+                ::std::vec::Vec<super::DhcpLeaseActivity>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for DhcpLeaseActivityReport {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                }
+            }
+        }
+
+        impl DhcpLeaseActivityReport {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DhcpLeaseActivity>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DhcpLeaseActivityReport> for super::DhcpLeaseActivityReport {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DhcpLeaseActivityReport,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DhcpLeaseActivityReport> for DhcpLeaseActivityReport {
+            fn from(value: super::DhcpLeaseActivityReport) -> Self {
+                Self {
+                    items: Ok(value.items),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct DhcpOptionRaw {
             code: ::std::result::Result<u8, ::std::string::String>,
             value: ::std::result::Result<::std::vec::Vec<u8>, ::std::string::String>,
@@ -20174,6 +20404,11 @@ impl Client {
         builder::AgentClaimJob::new(self)
     }
 
+    #[doc = "Report DHCP request activity the kmod observed for guest ports\n\nAuth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic — the response is always `200 OK`; items for unknown ports or ports with no lease record yet are silently skipped.\n\nSends a `POST` request to `/v2/agent/dhcp-lease-activity`\n\n```ignore\nlet response = client.agent_report_dhcp_lease_activity()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_report_dhcp_lease_activity(&self) -> builder::AgentReportDhcpLeaseActivity<'_> {
+        builder::AgentReportDhcpLeaseActivity::new(self)
+    }
+
     #[doc = "Heartbeat from a bound agent. Lightweight ping — empty\n\nbody, just bumps `Cn.last_seen`. Auth: requires an API key with [`tritond_store::ApiKeyScope::Agent`] AND a `bound_to_cn` value (the per-CN keys minted at approval). Unbound Agent keys (legacy operator-minted) get 403 since there's no CN to attribute the heartbeat to.\n\nSends a `POST` request to `/v2/agent/heartbeat`\n\n```ignore\nlet response = client.agent_heartbeat()\n    .send()\n    .await;\n```"]
     pub fn agent_heartbeat(&self) -> builder::AgentHeartbeat<'_> {
         builder::AgentHeartbeat::new(self)
@@ -21404,6 +21639,90 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_claim_job",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_report_dhcp_lease_activity`]\n\n[`Client::agent_report_dhcp_lease_activity`]: super::Client::agent_report_dhcp_lease_activity"]
+    #[derive(Debug, Clone)]
+    pub struct AgentReportDhcpLeaseActivity<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::DhcpLeaseActivityReport, String>,
+    }
+
+    impl<'a> AgentReportDhcpLeaseActivity<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::DhcpLeaseActivityReport>,
+            <V as std::convert::TryInto<types::DhcpLeaseActivityReport>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `DhcpLeaseActivityReport` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::DhcpLeaseActivityReport,
+                ) -> types::builder::DhcpLeaseActivityReport,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/agent/dhcp-lease-activity`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| {
+                    types::DhcpLeaseActivityReport::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/dhcp-lease-activity", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_report_dhcp_lease_activity",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

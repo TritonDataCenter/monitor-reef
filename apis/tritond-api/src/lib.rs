@@ -238,6 +238,36 @@ pub struct NetworkRealizationRequest {
     pub message: Option<String>,
 }
 
+/// One DHCP message the kmod observed for a guest port, forwarded by
+/// the bound CN agent draining the Proteus event ring. Tritond uses
+/// these to keep the lease record's `last_renewed_at` fresh so the
+/// reconciler's idle-GC heuristic doesn't mistake a long-lived VM for
+/// an orphaned lease. RELEASE / DECLINE are recorded as the last
+/// message type but never expire the lease (persistent-lease policy);
+/// only DISCOVER / REQUEST advance the renewal clock.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DhcpLeaseActivity {
+    /// Proteus port id — equal to the NIC id.
+    pub port_id: Uuid,
+    /// Client MAC as the kmod saw it, canonical lowercase
+    /// colon-separated form (e.g. `02:08:20:ab:cd:ef`). Used for a
+    /// cross-check against the stored NIC; not the lookup key.
+    pub client_mac: String,
+    /// DHCP message type (RFC 2132 option 53): 1 DISCOVER, 2 OFFER,
+    /// 3 REQUEST, 4 DECLINE, 5 ACK, 6 NAK, 7 RELEASE, 8 INFORM.
+    pub msg_type: u8,
+    /// BOOTP transaction id from the request.
+    pub xid: u32,
+}
+
+/// Request body for `POST /v2/agent/dhcp-lease-activity`. A batch —
+/// the agent drains the event ring on each poll and forwards every
+/// DHCP request it found in one round-trip.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DhcpLeaseActivityReport {
+    pub items: Vec<DhcpLeaseActivity>,
+}
+
 /// Opaque Proteus port blueprint returned to a bound CN agent.
 ///
 /// `blueprint_postcard_base64` is a base64-encoded
@@ -1421,6 +1451,21 @@ pub trait TritondApi {
     async fn agent_report_network_realization(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<NetworkRealizationRequest>,
+    ) -> Result<HttpResponseOk<()>, HttpError>;
+
+    /// Report DHCP request activity the kmod observed for guest ports.
+    /// Auth: requires a CN-bound API key with
+    /// [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic —
+    /// the response is always `200 OK`; items for unknown ports or
+    /// ports with no lease record yet are silently skipped.
+    #[endpoint {
+        method = POST,
+        path = "/v2/agent/dhcp-lease-activity",
+        tags = ["agent"],
+    }]
+    async fn agent_report_dhcp_lease_activity(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<DhcpLeaseActivityReport>,
     ) -> Result<HttpResponseOk<()>, HttpError>;
 
     /// Self-register a compute node. Anonymous endpoint (no API

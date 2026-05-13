@@ -30,19 +30,19 @@ use tritond_api::{
     AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath, AgentStatusRequest, ApiKeyCreated,
     ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest, AuditEventList, AuditEventPath,
     AuditListQuery, AuditVerifyQuery, AuditVerifyResponse, ClaimJobRequest, ClaimJobResponse,
-    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
-    InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
-    LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
-    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
-    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
-    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
-    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
-    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
-    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
-    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
-    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, DhcpLeaseActivityReport,
+    HealthResponse, ImagePath, InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary,
+    LegacyVmListQuery, LegacyVmPath, LogTailQuery, LoginRequest, MetricsRangeQuery,
+    NetworkRealizationRequest, NewApiKey, NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest,
+    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
+    RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath,
+    SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
+    StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
+    StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
+    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
+    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope, Instance, JobKind,
@@ -379,6 +379,74 @@ pub(crate) async fn agent_report_network_realization(
     // operator mutation stream. The per-resource realization
     // rows are the durable signal; auditing every periodic
     // report would make the audit chain noisy.
+    Ok(HttpResponseOk(()))
+}
+
+pub(crate) async fn agent_report_dhcp_lease_activity(
+    rqctx: RequestContext<ApiContext>,
+    body: TypedBody<DhcpLeaseActivityReport>,
+) -> Result<HttpResponseOk<()>, HttpError> {
+    let ctx = rqctx.context();
+    // Authorisation only confirms the caller is an Agent-scoped,
+    // CN-bound key. We deliberately do NOT verify the reported ports
+    // belong to *this* CN: a stale or cross-CN report can at most
+    // bump `last_renewed_at` on a lease whose instance still exists —
+    // which the reconciler keeps regardless — so the extra
+    // `list_recent_jobs` scan that check would cost (per item, per
+    // poll) buys nothing.
+    let _principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpLeaseActivityReport,
+    )
+    .await?;
+    let report = body.into_inner();
+    let now = chrono::Utc::now();
+    for item in &report.items {
+        // port id == NIC id. A port that no longer resolves is a
+        // stale event for a deleted NIC; drop it.
+        let nic = match ctx.store.get_nic(item.port_id).await {
+            Ok(n) => n,
+            Err(tritond_store::StoreError::NotFound) => continue,
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+        if nic.mac != item.client_mac {
+            tracing::warn!(
+                port_id = %item.port_id,
+                stored_mac = %nic.mac,
+                reported_mac = %item.client_mac,
+                "DHCP activity report MAC does not match stored NIC; skipping"
+            );
+            continue;
+        }
+        let lease = match ctx.store.get_dhcp_lease(nic.vpc_id, &nic.mac).await {
+            Ok(l) => l,
+            // No lease record yet — the pre-assignment hook writes one
+            // at instance create, so this is only hit during the boot
+            // race or for a NIC created before the IPAM landing.
+            Err(tritond_store::StoreError::NotFound) => continue,
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+        let mut updated = lease.clone();
+        updated.last_msg_type = Some(item.msg_type);
+        updated.last_xid = Some(item.xid);
+        // Persistent-lease policy: RELEASE (7) / DECLINE (4) are
+        // recorded but never expire the lease; only DISCOVER (1) and
+        // REQUEST (3) advance the renewal clock.
+        if matches!(item.msg_type, 1 | 3) {
+            updated.last_renewed_at = Some(now);
+        }
+        if updated != lease {
+            ctx.store
+                .record_dhcp_lease(updated)
+                .await
+                .map_err(store_error_to_http)?;
+        }
+    }
+    // State-sample traffic, not an operator mutation — not audited,
+    // for the same reason `agent_report_network_realization` isn't.
     Ok(HttpResponseOk(()))
 }
 

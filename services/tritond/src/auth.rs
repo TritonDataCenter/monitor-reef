@@ -515,6 +515,9 @@ pub enum Action {
     /// agent after it accepts, applies, or fails a dataplane
     /// generation.
     NetworkRealizationReport,
+    /// Batch of DHCP request activity observed by the kmod, forwarded
+    /// by a bound agent. Refreshes the lease record's renewal clock.
+    DhcpLeaseActivityReport,
     /// Anonymous self-registration of a compute node. Gated by
     /// the per-source-IP rate limiter, not by Cedar credentials —
     /// the agent has no key at this point in its lifecycle.
@@ -730,6 +733,7 @@ impl Action {
             Action::AgentHeartbeat => "agent_heartbeat",
             Action::AgentStatus => "agent_status",
             Action::NetworkRealizationReport => "network_realization_report",
+            Action::DhcpLeaseActivityReport => "dhcp_lease_activity_report",
             Action::AgentRegister => "agent_register",
             Action::AgentRegisterStatus => "agent_register_status",
             Action::CnList => "cn_list",
@@ -1250,6 +1254,7 @@ fn scope_allows_action(scope: ApiKeyScope, action: Action) -> bool {
                 | Action::AgentHeartbeat
                 | Action::AgentStatus
                 | Action::NetworkRealizationReport
+                | Action::DhcpLeaseActivityReport
         ),
         _ => false,
     }
@@ -1362,6 +1367,7 @@ fn is_read_action(action: Action) -> bool {
         | Action::AgentHeartbeat
         | Action::AgentStatus
         | Action::NetworkRealizationReport
+        | Action::DhcpLeaseActivityReport
         // Agent registration is anonymous (no key), but if a key
         // is somehow attached the scope check should reject it
         // outright — these aren't read actions, they create a CN

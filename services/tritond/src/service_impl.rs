@@ -864,6 +864,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_report_network_realization(rqctx, body).await
     }
 
+    async fn agent_report_dhcp_lease_activity(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<tritond_api::DhcpLeaseActivityReport>,
+    ) -> Result<HttpResponseOk<()>, HttpError> {
+        crate::handlers::agents::agent_report_dhcp_lease_activity(rqctx, body).await
+    }
+
     // ----- CN registration / approval (slice C) -----
 
     async fn agent_register(

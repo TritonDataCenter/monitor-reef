@@ -36,6 +36,7 @@
 pub mod console;
 pub mod console_creds;
 pub mod credentials;
+pub mod dhcp_events;
 pub mod edge;
 pub mod images;
 pub mod log_tailer;
@@ -241,7 +242,26 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     // (it would mean the bind failed) but is not fatal to the agent.
     maybe_spawn_console_listener(&cfg);
 
+    // DHCP-event ticker: drains the Proteus event ring and forwards
+    // observed DHCP requests to tritond so lease records' renewal
+    // clocks stay fresh. Gated on the same `spawn_heartbeater` flag as
+    // the metrics/log tickers so `--no-heartbeater` integration tests
+    // don't touch /dev/proteus; best-effort if the device is absent.
+    let mut dhcp_events_handle = if cfg.spawn_heartbeater {
+        Some(dhcp_events::spawn(
+            Arc::clone(&client),
+            cfg.proteus_dev.clone(),
+            dhcp_events::DEFAULT_DHCP_EVENT_INTERVAL,
+        ))
+    } else {
+        None
+    };
+
     let result = run_poll_loop(client.as_ref(), &cfg).await;
+
+    if let Some(h) = dhcp_events_handle.take() {
+        h.shutdown().await;
+    }
 
     if let Some(h) = metrics_handle.take() {
         h.shutdown().await;

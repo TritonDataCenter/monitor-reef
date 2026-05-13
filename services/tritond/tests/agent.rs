@@ -27,9 +27,9 @@ use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password};
 use tritond_client::types::{
     AddressFamily, ApiKeyScope, ApproveCnRequest, ClaimJobRequest, CnState, CompleteJobRequest,
-    JobOutcome, JobStatus, LoginRequest, NatGateway, NetworkRealizationRequest, NetworkResourceId,
-    NewApiKey, NewInstance as ClientNewInstance, NewNatGateway, NewProject, NewSilo, NewVpc,
-    RealizationStatus, RealizerId, RegisterCnRequest,
+    DhcpLeaseActivity, DhcpLeaseActivityReport, JobOutcome, JobStatus, LoginRequest, NatGateway,
+    NetworkRealizationRequest, NetworkResourceId, NewApiKey, NewInstance as ClientNewInstance,
+    NewNatGateway, NewProject, NewSilo, NewVpc, RealizationStatus, RealizerId, RegisterCnRequest,
 };
 use tritond_store::{
     CnRole, DhcpOptionRaw, Instance, JobKind, LifecycleState, LifecycleStateKind, MemStore,
@@ -926,6 +926,129 @@ async fn bound_agent_can_fetch_port_blueprint_for_assigned_instance() {
 
     assert_eq!(response.port_id, nic.id);
     assert_eq!(response.generation, 1);
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn agent_report_dhcp_lease_activity_refreshes_the_lease_record() {
+    let test = TestServer::start().await;
+    let (instance, nic) = create_instance_with_primary_nic(&test, "agent-dhcp-activity").await;
+    // The pre-assignment hook writes a lease at create time.
+    let before = test
+        .store
+        .get_dhcp_lease(nic.vpc_id, &nic.mac)
+        .await
+        .expect("create_instance wrote a lease for the ipv4 nic");
+    assert_eq!(before.last_msg_type, None);
+    assert_eq!(before.last_renewed_at, None);
+
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-dhcp-activity").await;
+    test.store
+        .set_instance_host_cn(instance.id, Some(cn_uuid))
+        .await
+        .unwrap();
+    let agent = test.bearer_client(&api_key);
+
+    // A DHCPREQUEST (53 = 3) advances the renewal clock.
+    agent
+        .agent_report_dhcp_lease_activity()
+        .body(DhcpLeaseActivityReport {
+            items: vec![DhcpLeaseActivity {
+                port_id: nic.id,
+                client_mac: nic.mac.clone(),
+                msg_type: 3,
+                xid: 0x1234_5678,
+            }],
+        })
+        .send()
+        .await
+        .expect("bound agent can report dhcp activity");
+
+    let after = test
+        .store
+        .get_dhcp_lease(nic.vpc_id, &nic.mac)
+        .await
+        .unwrap();
+    assert_eq!(after.last_msg_type, Some(3));
+    assert_eq!(after.last_xid, Some(0x1234_5678));
+    let renewed_at = after.last_renewed_at.expect("REQUEST sets last_renewed_at");
+
+    // A DHCPRELEASE (53 = 7) is recorded as the last message but does
+    // NOT roll back the renewal clock (persistent-lease policy).
+    agent
+        .agent_report_dhcp_lease_activity()
+        .body(DhcpLeaseActivityReport {
+            items: vec![DhcpLeaseActivity {
+                port_id: nic.id,
+                client_mac: nic.mac.clone(),
+                msg_type: 7,
+                xid: 0x9abc_def0,
+            }],
+        })
+        .send()
+        .await
+        .expect("release report accepted");
+    let after_release = test
+        .store
+        .get_dhcp_lease(nic.vpc_id, &nic.mac)
+        .await
+        .unwrap();
+    assert_eq!(after_release.last_msg_type, Some(7));
+    assert_eq!(after_release.last_xid, Some(0x9abc_def0));
+    assert_eq!(
+        after_release.last_renewed_at,
+        Some(renewed_at),
+        "RELEASE keeps the lease alive — renewal clock unchanged"
+    );
+
+    test.close().await;
+}
+
+#[tokio::test]
+async fn agent_report_dhcp_lease_activity_skips_unknown_and_mismatched() {
+    let test = TestServer::start().await;
+    let (instance, nic) = create_instance_with_primary_nic(&test, "agent-dhcp-activity-skip").await;
+    let cn_uuid = Uuid::new_v4();
+    let api_key = register_and_approve(&test, cn_uuid, "cn-dhcp-activity-skip").await;
+    test.store
+        .set_instance_host_cn(instance.id, Some(cn_uuid))
+        .await
+        .unwrap();
+    let agent = test.bearer_client(&api_key);
+
+    // Unknown port id + a real port with a mismatched MAC — both are
+    // silently skipped; the call still succeeds, and the real lease
+    // is untouched.
+    agent
+        .agent_report_dhcp_lease_activity()
+        .body(DhcpLeaseActivityReport {
+            items: vec![
+                DhcpLeaseActivity {
+                    port_id: Uuid::new_v4(),
+                    client_mac: "02:00:00:00:00:01".to_string(),
+                    msg_type: 3,
+                    xid: 1,
+                },
+                DhcpLeaseActivity {
+                    port_id: nic.id,
+                    client_mac: "ff:ff:ff:ff:ff:ff".to_string(),
+                    msg_type: 3,
+                    xid: 2,
+                },
+            ],
+        })
+        .send()
+        .await
+        .expect("report with only-skippable items still returns 200");
+
+    let lease = test
+        .store
+        .get_dhcp_lease(nic.vpc_id, &nic.mac)
+        .await
+        .unwrap();
+    assert_eq!(lease.last_msg_type, None, "mismatched MAC item was skipped");
 
     test.close().await;
 }

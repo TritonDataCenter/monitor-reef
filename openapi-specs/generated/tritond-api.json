@@ -239,6 +239,48 @@
         }
       }
     },
+    "/v2/agent/dhcp-lease-activity": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Report DHCP request activity the kmod observed for guest ports.",
+        "description": "Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]. State-sample traffic — the response is always `200 OK`; items for unknown ports or ports with no lease record yet are silently skipped.",
+        "operationId": "agent_report_dhcp_lease_activity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DhcpLeaseActivityReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/heartbeat": {
       "post": {
         "tags": [
@@ -8420,7 +8462,7 @@
             ]
           },
           {
-            "description": "Explicitly disabled by an operator. The bound API key is revoked. The record stays for audit visibility; a fresh registration from the same `server_uuid` is rejected until the operator removes the disabled record (Phase 1 surface) — for Phase 0, \"disable\" is the terminal state.",
+            "description": "Explicitly disabled by an operator. The bound API key is revoked and the record stays for audit visibility. A fresh registration from the same `server_uuid` re-arms the record back to `Pending` (awaiting approval) — i.e. \"re-enable with fresh credentials\"; the disable event remains in the audit chain.",
             "type": "string",
             "enum": [
               "disabled"
@@ -8693,6 +8735,54 @@
           "mac",
           "nic_id",
           "vpc_id"
+        ]
+      },
+      "DhcpLeaseActivity": {
+        "description": "One DHCP message the kmod observed for a guest port, forwarded by the bound CN agent draining the Proteus event ring. Tritond uses these to keep the lease record's `last_renewed_at` fresh so the reconciler's idle-GC heuristic doesn't mistake a long-lived VM for an orphaned lease. RELEASE / DECLINE are recorded as the last message type but never expire the lease (persistent-lease policy); only DISCOVER / REQUEST advance the renewal clock.",
+        "type": "object",
+        "properties": {
+          "client_mac": {
+            "description": "Client MAC as the kmod saw it, canonical lowercase colon-separated form (e.g. `02:08:20:ab:cd:ef`). Used for a cross-check against the stored NIC; not the lookup key.",
+            "type": "string"
+          },
+          "msg_type": {
+            "description": "DHCP message type (RFC 2132 option 53): 1 DISCOVER, 2 OFFER, 3 REQUEST, 4 DECLINE, 5 ACK, 6 NAK, 7 RELEASE, 8 INFORM.",
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0
+          },
+          "port_id": {
+            "description": "Proteus port id — equal to the NIC id.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "xid": {
+            "description": "BOOTP transaction id from the request.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "client_mac",
+          "msg_type",
+          "port_id",
+          "xid"
+        ]
+      },
+      "DhcpLeaseActivityReport": {
+        "description": "Request body for `POST /v2/agent/dhcp-lease-activity`. A batch — the agent drains the event ring on each poll and forwards every DHCP request it found in one round-trip.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DhcpLeaseActivity"
+            }
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "DhcpOptionRaw": {
