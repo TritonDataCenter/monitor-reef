@@ -119,6 +119,18 @@ struct Cli {
     )]
     console_listen_port: u16,
 
+    /// Bind address for the in-VM IMDSv2 HTTP listener
+    /// (`IMDS_DESIGN.md` §3). The proteus `RouteTarget::LocalImds`
+    /// redirect lands traffic here; production wires this to the
+    /// dedicated proteus-owned internal datalink, not the CN admin
+    /// IP. Unset = IMDS listener disabled (the default). Once
+    /// proteus delivers the dedicated datalink and tritond
+    /// populates `blueprint.imds_bindings`, this can be set to
+    /// e.g. `127.0.0.1:8051` for dev or the datalink's address in
+    /// production.
+    #[arg(long, env = "TRITONAGENT_IMDS_LISTEN_ADDR")]
+    imds_listen_addr: Option<std::net::SocketAddr>,
+
     /// When set, skip `vmadm` entirely and mark every claimed
     /// job `Completed`. Useful for transport-only smoke testing
     /// on hosts without SmartOS. Off by default — the production
@@ -207,7 +219,7 @@ async fn main() -> Result<()> {
         console_listen_port: cli.console_listen_port,
         console_ticket_key: outcome.console_ticket_key,
         console_tls: Some(console_tls),
-        imds_listen_addr: None,
+        imds_listen_addr: cli.imds_listen_addr,
         imds_token_key_bytes: outcome.imds_token_key,
     };
     tritonagent::run(cfg).await
