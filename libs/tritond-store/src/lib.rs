@@ -1466,4 +1466,59 @@ pub trait Store: Send + Sync + 'static {
         access_key_id: Option<String>,
         secret_access_key: Option<String>,
     ) -> Result<StorageCluster, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Layered instance metadata (IMDS)
+    // ------------------------------------------------------------------
+    //
+    // Four scopes (silo / tenant / project / instance); the realized
+    // view (built in a higher layer) is the precedence merge of all
+    // four plus computed "system" keys. The store is a dumb scoped
+    // key→[`MetaValue`] map plus a per-(scope, id) monotonic generation
+    // counter that the realized-view cache keys off. **Validation
+    // (namespace rules, scope rules, value-type rules, byte caps,
+    // `guest_writable` placement) is the caller's responsibility — see
+    // [`validate_meta_entry`]**; the store trusts what it is handed.
+
+    /// Upsert `key` = `value` in `scope`/`scope_id`'s metadata map and
+    /// bump that scope's generation counter. Returns the new
+    /// generation.
+    async fn set_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+        value: MetaValue,
+    ) -> Result<u64, StoreError>;
+
+    /// Read one metadata entry. [`StoreError::NotFound`] if the key is
+    /// absent (regardless of whether the scope entity exists).
+    async fn get_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+    ) -> Result<MetaValue, StoreError>;
+
+    /// Remove one metadata entry and bump the scope's generation
+    /// counter. Returns the new generation. [`StoreError::NotFound`]
+    /// if the key was absent (no bump in that case).
+    async fn delete_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+    ) -> Result<u64, StoreError>;
+
+    /// List every metadata entry at `scope`/`scope_id`, sorted by key.
+    /// Empty when the scope has no metadata (or does not exist).
+    async fn list_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+    ) -> Result<Vec<(String, MetaValue)>, StoreError>;
+
+    /// The current generation counter for `scope`/`scope_id`. `0` when
+    /// the scope has never had a metadata write.
+    async fn get_meta_gen(&self, scope: MetaScope, scope_id: Uuid) -> Result<u64, StoreError>;
 }

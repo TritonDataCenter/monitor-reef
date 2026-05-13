@@ -9,7 +9,7 @@
 //! Used for unit tests, integration tests, and `tritond` runs that
 //! don't need durable state.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use async_trait::async_trait;
@@ -26,14 +26,14 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp,
     FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceBrand,
     InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState,
-    LifecycleStateKind, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation,
-    NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway,
-    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo, SshKey,
-    SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet, SystemKey,
-    Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes,
-    generate_claim_code, generate_poll_token,
+    LifecycleStateKind, MetaScope, MetaValue, NatGateway, NetworkResourceId, NewDhcpPool,
+    NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
+    NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
+    Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
+    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
+    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{
@@ -260,6 +260,13 @@ struct Inner {
     /// `name` → cluster id reverse index for the cluster-wide
     /// uniqueness check.
     storage_cluster_id_by_name: HashMap<String, Uuid>,
+    /// IMDS layered metadata: `(scope, scope_id)` → its `key`→value map
+    /// (BTreeMap so listing is key-sorted). Mirrors the FDB
+    /// `meta/<scope>/<uuid>/<key>` keyspace.
+    meta: HashMap<(MetaScope, Uuid), BTreeMap<String, MetaValue>>,
+    /// `(scope, scope_id)` → monotonic generation counter, bumped on
+    /// every metadata write/delete. Absent == 0.
+    meta_gen: HashMap<(MetaScope, Uuid), u64>,
 }
 
 /// In-process [`Store`] implementation.
@@ -3808,6 +3815,79 @@ impl Store for MemStore {
         cluster.presigner_access_key_id = access_key_id;
         cluster.presigner_secret_access_key = secret_access_key;
         Ok(cluster.clone())
+    }
+
+    // ---- Layered instance metadata (IMDS) ----
+
+    async fn set_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+        value: MetaValue,
+    ) -> Result<u64, StoreError> {
+        let mut guard = self.inner.write().await;
+        guard
+            .meta
+            .entry((scope, scope_id))
+            .or_default()
+            .insert(key.to_string(), value);
+        let counter = guard.meta_gen.entry((scope, scope_id)).or_insert(0);
+        *counter += 1;
+        Ok(*counter)
+    }
+
+    async fn get_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+    ) -> Result<MetaValue, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .meta
+            .get(&(scope, scope_id))
+            .and_then(|m| m.get(key))
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn delete_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+    ) -> Result<u64, StoreError> {
+        let mut guard = self.inner.write().await;
+        let removed = guard
+            .meta
+            .get_mut(&(scope, scope_id))
+            .and_then(|m| m.remove(key))
+            .is_some();
+        if !removed {
+            return Err(StoreError::NotFound);
+        }
+        let counter = guard.meta_gen.entry((scope, scope_id)).or_insert(0);
+        *counter += 1;
+        Ok(*counter)
+    }
+
+    async fn list_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+    ) -> Result<Vec<(String, MetaValue)>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .meta
+            .get(&(scope, scope_id))
+            .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default())
+    }
+
+    async fn get_meta_gen(&self, scope: MetaScope, scope_id: Uuid) -> Result<u64, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.meta_gen.get(&(scope, scope_id)).copied().unwrap_or(0))
     }
 }
 
@@ -8808,5 +8888,113 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn meta_round_trip_and_generation_counter() {
+        use crate::MetaScope;
+        let store = MemStore::new();
+        let sid = Uuid::new_v4();
+
+        // Fresh scope: generation 0, nothing listed, get is NotFound.
+        assert_eq!(store.get_meta_gen(MetaScope::Tenant, sid).await.unwrap(), 0);
+        assert!(
+            store
+                .list_meta(MetaScope::Tenant, sid)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(matches!(
+            store.get_meta(MetaScope::Tenant, sid, "config/x").await,
+            Err(StoreError::NotFound)
+        ));
+
+        // First write bumps the generation 0 -> 1.
+        let v1 = crate::MetaValue::new(
+            MetaScope::Tenant,
+            "config/ntp-servers",
+            serde_json::json!("10.0.0.2"),
+            "user:a".to_string(),
+        );
+        assert_eq!(
+            store
+                .set_meta(MetaScope::Tenant, sid, "config/ntp-servers", v1.clone())
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(store.get_meta_gen(MetaScope::Tenant, sid).await.unwrap(), 1);
+        assert_eq!(
+            store
+                .get_meta(MetaScope::Tenant, sid, "config/ntp-servers")
+                .await
+                .unwrap(),
+            v1
+        );
+
+        // A second key bumps again; list is key-sorted.
+        let v2 = crate::MetaValue::new(
+            MetaScope::Tenant,
+            "config/dns-search",
+            serde_json::json!("corp.example.com"),
+            "user:a".to_string(),
+        );
+        assert_eq!(
+            store
+                .set_meta(MetaScope::Tenant, sid, "config/dns-search", v2.clone())
+                .await
+                .unwrap(),
+            2
+        );
+        let listed = store.list_meta(MetaScope::Tenant, sid).await.unwrap();
+        assert_eq!(
+            listed.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            ["config/dns-search", "config/ntp-servers"]
+        );
+
+        // Overwriting an existing key also bumps the generation.
+        let v1b = crate::MetaValue::new(
+            MetaScope::Tenant,
+            "config/ntp-servers",
+            serde_json::json!("10.0.0.9"),
+            "user:b".to_string(),
+        );
+        assert_eq!(
+            store
+                .set_meta(MetaScope::Tenant, sid, "config/ntp-servers", v1b.clone())
+                .await
+                .unwrap(),
+            3
+        );
+
+        // Delete bumps; deleting an absent key is NotFound and does not bump.
+        assert_eq!(
+            store
+                .delete_meta(MetaScope::Tenant, sid, "config/dns-search")
+                .await
+                .unwrap(),
+            4
+        );
+        assert!(matches!(
+            store
+                .delete_meta(MetaScope::Tenant, sid, "config/dns-search")
+                .await,
+            Err(StoreError::NotFound)
+        ));
+        assert_eq!(store.get_meta_gen(MetaScope::Tenant, sid).await.unwrap(), 4);
+
+        // Scopes are independent: a different (scope, id) is untouched.
+        assert_eq!(
+            store.get_meta_gen(MetaScope::Instance, sid).await.unwrap(),
+            0
+        );
+        assert!(
+            store
+                .list_meta(MetaScope::Project, sid)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }

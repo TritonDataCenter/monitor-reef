@@ -143,6 +143,12 @@
 //! storage_cluster/by_id/<uuid>      -> JSON-encoded StorageCluster
 //! storage_cluster/by_name/<name>    -> uuid hyphenated bytes
 //! storage_cluster/all/<uuid>        -> empty (membership index)
+//! meta/<scope>/<uuid>/<key>         -> JSON-encoded MetaValue
+//!                                      (<scope> in silo|tenant|
+//!                                       project|instance)
+//! meta/gen/<scope>/<uuid>           -> big-endian u64 generation,
+//!                                      bumped per metadata write
+//!                                      (absent == 0)
 //! ```
 //!
 //! Each multi-key write happens in a single transaction so name
@@ -165,14 +171,15 @@ use crate::{
     DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
     IdpConfig, Image, ImageScope, Instance, InstanceBrand, InstanceCreateResult, JobOutcome,
-    JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, NatGateway,
-    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule,
-    NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute,
-    NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
-    Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable,
-    RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store,
-    StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
+    JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope, MetaValue,
+    NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
+    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
+    NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
+    Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
+    StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
+    generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -780,6 +787,26 @@ impl FdbStore {
         b"config/settings"
     }
 
+    /// Prefix for all metadata entries at one `(scope, scope_id)`:
+    /// `meta/<scope>/<uuid>/`. Range-scanning this yields that scope's
+    /// whole `key`->`MetaValue` map in key-sorted order.
+    fn meta_scope_prefix(scope: MetaScope, scope_id: Uuid) -> Vec<u8> {
+        format!("meta/{}/{}/", scope.as_str(), scope_id).into_bytes()
+    }
+
+    /// Storage key for one metadata entry: `meta/<scope>/<uuid>/<key>`.
+    fn meta_entry_key(scope: MetaScope, scope_id: Uuid, key: &str) -> Vec<u8> {
+        let mut k = Self::meta_scope_prefix(scope, scope_id);
+        k.extend_from_slice(key.as_bytes());
+        k
+    }
+
+    /// Storage key for a scope's generation counter:
+    /// `meta/gen/<scope>/<uuid>` -> big-endian u64 (absent == 0).
+    fn meta_gen_key(scope: MetaScope, scope_id: Uuid) -> Vec<u8> {
+        format!("meta/gen/{}/{}", scope.as_str(), scope_id).into_bytes()
+    }
+
     fn legacy_vm_by_id_key(smartos_uuid: Uuid) -> Vec<u8> {
         format!("legacy_vm/by_id/{smartos_uuid}").into_bytes()
     }
@@ -1384,6 +1411,152 @@ impl Store for FdbStore {
             })
             .await;
         result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    // ---- Layered instance metadata (IMDS) ----
+    //
+    // `meta/<scope>/<uuid>/<key>` -> JSON-encoded MetaValue;
+    // `meta/gen/<scope>/<uuid>` -> big-endian u64 generation (absent ==
+    // 0), bumped in the same transaction as every write/delete so the
+    // realized-view cache can key off the four-scope gen tuple.
+    // Validation is the caller's job (see `validate_meta_entry`).
+
+    async fn set_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+        value: MetaValue,
+    ) -> Result<u64, StoreError> {
+        let entry_key = Self::meta_entry_key(scope, scope_id, key);
+        let gen_key = Self::meta_gen_key(scope, scope_id);
+        let encoded = serde_json::to_vec(&value)
+            .map_err(|e| StoreError::Backend(format!("serialize MetaValue: {e}")))?;
+        let result: Result<u64, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let entry_key = entry_key.clone();
+                let gen_key = gen_key.clone();
+                let encoded = encoded.clone();
+                async move {
+                    tr.set(&entry_key, &encoded);
+                    let cur = tr
+                        .get(&gen_key, false)
+                        .await?
+                        .and_then(|s| <[u8; 8]>::try_from(s.as_ref()).ok())
+                        .map(u64::from_be_bytes)
+                        .unwrap_or(0);
+                    let next = cur.saturating_add(1);
+                    tr.set(&gen_key, &next.to_be_bytes());
+                    Ok(next)
+                }
+            })
+            .await;
+        result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn get_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+    ) -> Result<MetaValue, StoreError> {
+        let entry_key = Self::meta_entry_key(scope, scope_id, key);
+        match self.read_bytes(&entry_key).await? {
+            Some(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize MetaValue: {e}"))),
+            None => Err(StoreError::NotFound),
+        }
+    }
+
+    async fn delete_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+        key: &str,
+    ) -> Result<u64, StoreError> {
+        let entry_key = Self::meta_entry_key(scope, scope_id, key);
+        let gen_key = Self::meta_gen_key(scope, scope_id);
+        let result: Result<Option<u64>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let entry_key = entry_key.clone();
+                let gen_key = gen_key.clone();
+                async move {
+                    if tr.get(&entry_key, false).await?.is_none() {
+                        return Ok(None);
+                    }
+                    tr.clear(&entry_key);
+                    let cur = tr
+                        .get(&gen_key, false)
+                        .await?
+                        .and_then(|s| <[u8; 8]>::try_from(s.as_ref()).ok())
+                        .map(u64::from_be_bytes)
+                        .unwrap_or(0);
+                    let next = cur.saturating_add(1);
+                    tr.set(&gen_key, &next.to_be_bytes());
+                    Ok(Some(next))
+                }
+            })
+            .await;
+        match result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))? {
+            Some(next) => Ok(next),
+            None => Err(StoreError::NotFound),
+        }
+    }
+
+    async fn list_meta(
+        &self,
+        scope: MetaScope,
+        scope_id: Uuid,
+    ) -> Result<Vec<(String, MetaValue)>, StoreError> {
+        let prefix = Self::meta_scope_prefix(scope, scope_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+        let raw: Result<Vec<(String, Vec<u8>)>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut out = Vec::new();
+                    for kv in kvs.iter() {
+                        if kv.key().len() <= prefix_len {
+                            continue;
+                        }
+                        let key_bytes = &kv.key()[prefix_len..];
+                        if let Ok(k) = std::str::from_utf8(key_bytes) {
+                            out.push((k.to_string(), kv.value().to_vec()));
+                        }
+                    }
+                    Ok(out)
+                }
+            })
+            .await;
+        let raw = raw.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(raw.len());
+        for (k, bytes) in raw {
+            let v: MetaValue = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize MetaValue: {e}")))?;
+            out.push((k, v));
+        }
+        Ok(out)
+    }
+
+    async fn get_meta_gen(&self, scope: MetaScope, scope_id: Uuid) -> Result<u64, StoreError> {
+        let gen_key = Self::meta_gen_key(scope, scope_id);
+        Ok(self
+            .read_bytes(&gen_key)
+            .await?
+            .and_then(|s| <[u8; 8]>::try_from(s.as_slice()).ok())
+            .map(u64::from_be_bytes)
+            .unwrap_or(0))
     }
 
     async fn get_user_by_federation(
