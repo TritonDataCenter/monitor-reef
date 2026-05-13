@@ -39,6 +39,7 @@ pub mod credentials;
 pub mod dhcp_events;
 pub mod edge;
 pub mod images;
+pub mod imds;
 pub mod log_tailer;
 pub mod metrics;
 pub mod platform;
