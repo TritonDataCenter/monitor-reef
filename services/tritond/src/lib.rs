@@ -40,6 +40,7 @@ mod context;
 mod edge_cluster;
 mod error;
 mod handlers;
+mod imds_config;
 mod lifecycle;
 mod principal;
 mod realized_meta;

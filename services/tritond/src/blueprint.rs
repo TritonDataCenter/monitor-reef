@@ -26,6 +26,7 @@ use triton_vpc::tritond_intent_v1::{
     FloatingIpIntentV1, L4ProtocolIntentV1, NatGatewayIntentV1, NicIntentV1, PortRangeIntentV1,
     RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1, VpcIntentV1,
 };
+use tritond_api::types::ImdsBindingWire;
 use tritond_api::types::{
     FloatingIp, Instance, JobKind, JobStatus, ManagedIdentity, NatGateway, ProvisioningJob, Route,
     RouteTarget, Subnet,
@@ -39,6 +40,8 @@ use tritond_store::{
 use crate::cn_credential::enforce_job_belongs_to_bound_cn;
 use crate::edge_cluster::{edge_clusters_for_nat_gateways, ensure_nat_gateway_edges_for_routes};
 use crate::error::{not_found, store_error_to_http};
+use crate::imds_config::{ImdsListenerConfig, pseudo_src_for_port};
+use crate::realized_meta::build_instance_realized_view;
 
 const INITIAL_PROTEUS_PORT_GENERATION: u64 = 1;
 
@@ -163,6 +166,12 @@ pub(crate) async fn build_blueprint(
         identity_hmac: identity_hmac_key.sign(instance.id, instance.tenant_id, instance.project_id),
     };
 
+    // IMDS bindings -- one per NIC when the cluster has IMDS wired
+    // AND this instance's realized `config/imds/enabled` allows it.
+    // Skipped silently when env vars are unset (IMDS not wired) so
+    // pre-IMDS deployments keep their `imds_bindings: []` behaviour.
+    let imds_bindings = build_imds_bindings_for_instance(store, instance.id, &nics).await;
+
     Ok(ProvisioningBlueprint {
         job_id: job.id,
         kind: job.kind.clone(),
@@ -173,8 +182,46 @@ pub(crate) async fn build_blueprint(
         disks,
         ssh_public_keys,
         managed_identity: Some(managed_identity),
-        imds_bindings: Vec::new(),
+        imds_bindings,
     })
+}
+
+/// Build the per-NIC IMDS binding entries the tritonagent's
+/// reverse-lookup table needs. Returns empty when:
+///   * `TRITOND_IMDS_LISTENER_IPV4` is unset (cluster IMDS not wired)
+///   * the instance's realized `config/imds/enabled` is false
+///   * the realized-view fetch fails (we degrade rather than block
+///     provisioning -- IMDS is an addition, not a precondition)
+async fn build_imds_bindings_for_instance(
+    store: &dyn Store,
+    instance_id: Uuid,
+    nics: &[tritond_store::Nic],
+) -> Vec<ImdsBindingWire> {
+    if ImdsListenerConfig::from_env().is_none() {
+        // Cluster IMDS not wired -- the listener address only flows
+        // into the per-port kmod blueprint anyway; the agent
+        // discovers its own bind address via `--imds-listen-addr`.
+        // What the agent NEEDS from us is the per-port pseudo-src
+        // table, which is itself gated by this env-var presence.
+        return Vec::new();
+    }
+    // Realized view gates per-instance. If it fails to assemble we
+    // skip the binding -- a malformed metadata blob shouldn't break
+    // provisioning.
+    let view = match build_instance_realized_view(store, instance_id).await {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    if !view.imds_enabled() {
+        return Vec::new();
+    }
+    nics.iter()
+        .map(|nic| ImdsBindingWire {
+            pseudo_src: pseudo_src_for_port(nic.id),
+            port_id: nic.id,
+            instance_id,
+        })
+        .collect()
 }
 
 /// Materialise the opaque Proteus `PortBlueprint` the bound CN agent
@@ -258,6 +305,24 @@ pub(crate) async fn build_port_blueprint(
     };
     let dhcp = dhcp_options_intent(&nic, dhcp_pool.as_ref(), dhcp_reservation.as_ref());
 
+    // IMDS wiring: when the cluster has the listener configured and
+    // this instance's realized `config/imds/enabled` is true, attach a
+    // synthesized `LocalImds` route on the 169.254.169.254/32 magic
+    // address and populate the per-port `imds` binding. The route
+    // entry alone wouldn't fire the kmod NAT compile -- the binding
+    // is what flips the schema to V2 and gives the compiler the
+    // listener address to DNAT into. Both are skipped when IMDS is
+    // disabled cluster-wide or per-instance, leaving the dataplane
+    // exactly where it was pre-IM-3.
+    let imds_cfg = ImdsListenerConfig::from_env();
+    let imds_enabled = match imds_cfg {
+        Some(_) => build_instance_realized_view(store, instance.id)
+            .await
+            .map(|v| v.imds_enabled())
+            .unwrap_or(false),
+        None => false,
+    };
+
     let generation = INITIAL_PROTEUS_PORT_GENERATION;
     let intent = TritondPortIntentV1 {
         silo_id: tenant.silo_id,
@@ -299,10 +364,7 @@ pub(crate) async fn build_port_blueprint(
         },
         instance_id: instance.id,
         port_id,
-        routes: routes
-            .iter()
-            .map(route_intent)
-            .collect::<Result<Vec<_>, _>>()?,
+        routes: build_routes_with_imds(&routes, subnet.route_table_id, imds_enabled)?,
         nat_gateways: nat_gateways.iter().map(nat_gateway_intent).collect(),
         floating_ips: floating_ips.iter().map(floating_ip_intent).collect(),
         edge_clusters: edge_clusters
@@ -311,6 +373,15 @@ pub(crate) async fn build_port_blueprint(
             .collect::<Result<Vec<_>, _>>()?,
         firewall_rules: firewall_rules.iter().map(firewall_rule_intent).collect(),
         dhcp,
+        imds: match (imds_cfg, imds_enabled) {
+            (Some(cfg), true) => Some(triton_vpc::tritond_intent_v1::ImdsBindingIntentV1 {
+                pseudo_src: pseudo_src_for_port(port_id),
+                instance_id: instance.id,
+                listener_ip: cfg.listener_ip,
+                listener_port: cfg.listener_port,
+            }),
+            _ => None,
+        },
     };
 
     let plugin_blueprint = intent.compile_blueprint().map_err(|err| {
@@ -386,6 +457,55 @@ pub(crate) async fn enforce_port_instance_claimed_by_bound_cn(
         ClientErrorStatusCode::FORBIDDEN,
         "bound key has no in-progress claim for this port's instance".to_string(),
     ))
+}
+
+/// Translate the per-subnet stored routes into the intent shape and
+/// (when IMDS is enabled for this instance) splice in a synthetic
+/// `169.254.169.254/32 -> LocalImds` entry on the same route table.
+///
+/// The route doesn't exist in the store -- it's a property of the
+/// dataplane wire, not user-configurable routing -- so we don't write
+/// it to FDB; we just hand it to the kmod's compile step every time
+/// the port blueprint is built. Stable UUID derived from the route
+/// table id so repeated builds round-trip bit-identical.
+fn build_routes_with_imds(
+    stored: &[Route],
+    route_table_id: Uuid,
+    imds_enabled: bool,
+) -> Result<Vec<RouteIntentV1>, HttpError> {
+    let mut out: Vec<RouteIntentV1> = stored
+        .iter()
+        .map(route_intent)
+        .collect::<Result<Vec<_>, _>>()?;
+    if imds_enabled {
+        // Synthetic IMDS magic-address route. The UUID is deterministic
+        // for the (route_table, "imds-v4-magic") pair so a blueprint
+        // re-emit comes out bit-identical.
+        let synthetic_id = Uuid::new_v5(
+            &Uuid::NAMESPACE_OID,
+            &derive_imds_route_seed(route_table_id),
+        );
+        out.push(RouteIntentV1 {
+            id: synthetic_id,
+            tenant_id: Uuid::nil(),
+            project_id: Uuid::nil(),
+            vpc_id: Uuid::nil(),
+            route_table_id,
+            name: "imds-v4-magic".to_string(),
+            description: "Synthesized: 169.254.169.254/32 -> LocalImds. IMDS_DESIGN.md §2.1."
+                .to_string(),
+            destination: "169.254.169.254/32".to_string(),
+            target: RouteTargetIntentV1::LocalImds,
+        });
+    }
+    Ok(out)
+}
+
+fn derive_imds_route_seed(route_table_id: Uuid) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[..16].copy_from_slice(route_table_id.as_bytes());
+    out[16..].copy_from_slice(b"imds-v4-magic\0\0\0");
+    out
 }
 
 pub(crate) fn route_intent(route: &Route) -> Result<RouteIntentV1, HttpError> {
