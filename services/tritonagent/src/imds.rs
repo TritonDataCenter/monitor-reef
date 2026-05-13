@@ -35,9 +35,10 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use axum::{
     Router,
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Request, State},
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, put},
 };
 use tokio::net::TcpListener;
@@ -51,6 +52,9 @@ use crate::imds_bindings::{ImdsBindingTable, ResolvedBinding};
 
 /// HTTP header carrying the requested session-token TTL (AWS-spec).
 const TOKEN_TTL_HEADER: &str = "x-aws-ec2-metadata-token-ttl-seconds";
+
+/// HTTP header carrying the IMDSv2 session token (AWS-spec).
+const TOKEN_HEADER: &str = "x-aws-ec2-metadata-token";
 
 /// Per-CN configuration for the IMDS listener.
 pub struct ImdsListenerConfig {
@@ -75,9 +79,19 @@ struct ImdsState {
 }
 
 fn router(state: ImdsState) -> Router {
-    Router::new()
-        // IMDSv2 token mint -- the only un-token-gated endpoint.
+    // Mint is the only un-token-gated endpoint (the design ships
+    // IMDSv2-only -- the PUT obtains the token every other request
+    // then needs to carry).
+    let mint = Router::new()
         .route("/latest/api/token", put(put_token))
+        .with_state(state.clone());
+
+    // Everything else is gated by `require_imds_token` which extracts
+    // the token header, resolves the peer via the binding table, and
+    // verifies the token's bound `(port_id, instance_id)` matches the
+    // request's derived identity. On any failure -> 401 (the variants
+    // are deliberately collapsed so the verifier isn't an oracle).
+    let gated = Router::new()
         // AWS-compatible computed surface.
         .route("/latest/meta-data", get(not_implemented))
         .route("/latest/meta-data/{*key}", get(not_implemented))
@@ -87,12 +101,20 @@ fn router(state: ImdsState) -> Router {
         // Triton-native surface.
         .route("/triton/{tree}/{*key}", get(not_implemented))
         .route("/triton/dynamic/realized", get(not_implemented))
-        // Guest writeback (only `triton/guest/*` is ever accepted).
+        // Guest writeback (only `triton/guest/*` ever accepted; the
+        // PUT/DELETE-side authorisation -- writeback enabled? key
+        // pinned RO? value within caps? -- lives in the handler).
         .route(
             "/triton/guest/{*key}",
             put(not_implemented).delete(not_implemented),
         )
-        .with_state(state)
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_imds_token,
+        ))
+        .with_state(state);
+
+    mint.merge(gated)
 }
 
 /// Placeholder for handlers that haven't landed yet. Returns 501
@@ -103,6 +125,58 @@ async fn not_implemented() -> impl IntoResponse {
         "IMDS handler not yet implemented (IM-4 in progress; see IMDS_DESIGN.md)
 ",
     )
+}
+
+/// Token-verification middleware for every non-mint endpoint. Pulls
+/// the `X-aws-ec2-metadata-token` header, recovers the peer's
+/// `(port_id, instance_id)` from the binding table, and verifies the
+/// token against that pair. On any failure -> 401 (collapsed so the
+/// verifier doesn't double as an oracle distinguishing "wrong token"
+/// from "wrong scope"). On success, the resolved binding is stashed
+/// in request extensions so handlers can read it without re-looking
+/// it up.
+async fn require_imds_token(
+    State(state): State<ImdsState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    // Look up the peer first -- a request from an unknown virtual
+    // wire is 401 regardless of any token it might carry. We collapse
+    // "unknown peer" into the same status as "bad token" so a probe
+    // can't tell the difference.
+    let Some(binding) = state.bindings.lookup(peer.ip()) else {
+        debug!(peer = %peer, "imds: unknown peer");
+        return (
+            StatusCode::UNAUTHORIZED,
+            "invalid IMDS token
+",
+        )
+            .into_response();
+    };
+    let Some(token) = headers.get(TOKEN_HEADER).and_then(|v| v.to_str().ok()) else {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "missing IMDS token
+",
+        )
+            .into_response();
+    };
+    if state
+        .token_key
+        .verify(token, binding.port_id, binding.instance_id)
+        .is_err()
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            "invalid IMDS token
+",
+        )
+            .into_response();
+    }
+    req.extensions_mut().insert(binding);
+    next.run(req).await
 }
 
 /// `PUT /latest/api/token` -- mint an IMDSv2 session token bound to
