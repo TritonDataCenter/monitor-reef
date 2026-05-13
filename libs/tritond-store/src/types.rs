@@ -5012,3 +5012,231 @@ mod meta_tests {
         assert!(!v2.guest_visible);
     }
 }
+
+/// The precedence merge of one instance's four metadata scopes — the
+/// "stored" half of the realized view (`IMDS_DESIGN.md` §1.5). The
+/// computed "system" keys (`meta-data/*`, `triton/system/*`, …) are
+/// layered on top of this by `tritond` from the Instance/NIC/Subnet/…
+/// records; this struct is just the part the storage layer can produce
+/// on its own.
+///
+/// Merge rule: for any key present at more than one scope the
+/// highest-precedence scope wins (`Silo < Tenant < Project <
+/// Instance`). In practice only `config/*` and `state/*` are
+/// cross-scope (validation pins `instance/*`, `guest/*`, `user-data`
+/// to instance scope), so for those the answer is just "the instance's
+/// copy"; the merge handles all of it uniformly.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RealizedMeta {
+    /// `key` → (effective value, the scope it came from). `BTreeMap`
+    /// so iteration is key-sorted.
+    pub entries: BTreeMap<String, (MetaValue, MetaScope)>,
+}
+
+impl RealizedMeta {
+    /// Merge the four scopes' stored metadata (each a key→value list,
+    /// e.g. as returned by [`crate::Store::list_meta`]).
+    pub fn merge(
+        silo: &[(String, MetaValue)],
+        tenant: &[(String, MetaValue)],
+        project: &[(String, MetaValue)],
+        instance: &[(String, MetaValue)],
+    ) -> Self {
+        let mut entries: BTreeMap<String, (MetaValue, MetaScope)> = BTreeMap::new();
+        for (scope, list) in [
+            (MetaScope::Silo, silo),
+            (MetaScope::Tenant, tenant),
+            (MetaScope::Project, project),
+            (MetaScope::Instance, instance),
+        ] {
+            for (k, v) in list {
+                // Iterating in ascending precedence order means a later
+                // (higher-precedence) scope overwrites an earlier one.
+                entries.insert(k.clone(), (v.clone(), scope));
+            }
+        }
+        RealizedMeta { entries }
+    }
+
+    /// The subset a process inside the VM may see: entries with
+    /// `guest_visible == true`.
+    pub fn guest_visible(&self) -> RealizedMeta {
+        RealizedMeta {
+            entries: self
+                .entries
+                .iter()
+                .filter(|(_, (v, _))| v.guest_visible)
+                .map(|(k, vs)| (k.clone(), vs.clone()))
+                .collect(),
+        }
+    }
+
+    /// Look up an effective value (and the scope it came from) by key.
+    pub fn get(&self, key: &str) -> Option<&(MetaValue, MetaScope)> {
+        self.entries.get(key)
+    }
+
+    /// Whether IMDS is served to this instance: the realized
+    /// `config/imds/enabled`, defaulting to `true` when unset (or set
+    /// to a non-boolean — validation prevents that, but be defensive).
+    pub fn imds_enabled(&self) -> bool {
+        self.entries
+            .get(META_KEY_IMDS_ENABLED)
+            .and_then(|(v, _)| v.value.as_bool())
+            .unwrap_or(true)
+    }
+
+    /// The IMDS response hop-limit: the realized `config/imds/hop-limit`
+    /// clamped to `[IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX]`, defaulting
+    /// to [`IMDS_HOP_LIMIT_DEFAULT`] when unset.
+    pub fn imds_hop_limit(&self) -> u64 {
+        self.entries
+            .get(META_KEY_IMDS_HOP_LIMIT)
+            .and_then(|(v, _)| v.value.as_u64())
+            .map(|n| n.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
+            .unwrap_or(IMDS_HOP_LIMIT_DEFAULT)
+    }
+}
+
+#[cfg(test)]
+mod realized_meta_tests {
+    use super::*;
+
+    fn mv(scope: MetaScope, key: &str, val: serde_json::Value) -> (String, MetaValue) {
+        (
+            key.to_string(),
+            MetaValue::new(scope, key, val, "system".to_string()),
+        )
+    }
+
+    #[test]
+    fn instance_wins_over_project_wins_over_tenant_wins_over_silo() {
+        let silo = vec![
+            mv(
+                MetaScope::Silo,
+                "config/ntp-servers",
+                serde_json::json!("silo"),
+            ),
+            mv(
+                MetaScope::Silo,
+                "config/ca-bundle",
+                serde_json::json!("silo-ca"),
+            ),
+        ];
+        let tenant = vec![mv(
+            MetaScope::Tenant,
+            "config/ntp-servers",
+            serde_json::json!("tenant"),
+        )];
+        let project = vec![
+            mv(
+                MetaScope::Project,
+                "config/ntp-servers",
+                serde_json::json!("project"),
+            ),
+            mv(
+                MetaScope::Project,
+                "state/active-color",
+                serde_json::json!("blue"),
+            ),
+        ];
+        let instance = vec![
+            mv(
+                MetaScope::Instance,
+                "config/ntp-servers",
+                serde_json::json!("instance"),
+            ),
+            mv(
+                MetaScope::Instance,
+                "instance/role",
+                serde_json::json!("web"),
+            ),
+        ];
+        let r = RealizedMeta::merge(&silo, &tenant, &project, &instance);
+        let (ntp, ntp_from) = r.get("config/ntp-servers").unwrap();
+        assert_eq!(ntp.value, serde_json::json!("instance"));
+        assert_eq!(*ntp_from, MetaScope::Instance);
+        assert_eq!(r.get("config/ca-bundle").unwrap().1, MetaScope::Silo);
+        assert_eq!(r.get("state/active-color").unwrap().1, MetaScope::Project);
+        assert_eq!(r.get("instance/role").unwrap().1, MetaScope::Instance);
+        // Iteration is key-sorted.
+        assert_eq!(
+            r.entries.keys().cloned().collect::<Vec<_>>(),
+            [
+                "config/ca-bundle",
+                "config/ntp-servers",
+                "instance/role",
+                "state/active-color"
+            ]
+        );
+    }
+
+    #[test]
+    fn guest_visible_filters_invisible_entries() {
+        let mut hidden = MetaValue::new(
+            MetaScope::Tenant,
+            "config/secret",
+            serde_json::json!("x"),
+            "u".to_string(),
+        );
+        hidden.guest_visible = false;
+        let tenant = vec![
+            mv(
+                MetaScope::Tenant,
+                "config/ntp-servers",
+                serde_json::json!("a"),
+            ),
+            ("config/secret".to_string(), hidden),
+        ];
+        let r = RealizedMeta::merge(&[], &tenant, &[], &[]);
+        assert!(r.get("config/secret").is_some());
+        let g = r.guest_visible();
+        assert!(g.get("config/secret").is_none());
+        assert!(g.get("config/ntp-servers").is_some());
+    }
+
+    #[test]
+    fn imds_options_resolve_with_defaults_and_clamp() {
+        // Unset -> defaults.
+        let empty = RealizedMeta::default();
+        assert!(empty.imds_enabled());
+        assert_eq!(empty.imds_hop_limit(), IMDS_HOP_LIMIT_DEFAULT);
+
+        // Set at tenant, overridden at project.
+        let tenant = vec![
+            mv(
+                MetaScope::Tenant,
+                META_KEY_IMDS_ENABLED,
+                serde_json::json!(false),
+            ),
+            mv(
+                MetaScope::Tenant,
+                META_KEY_IMDS_HOP_LIMIT,
+                serde_json::json!(8),
+            ),
+        ];
+        let project = vec![mv(
+            MetaScope::Project,
+            META_KEY_IMDS_HOP_LIMIT,
+            serde_json::json!(2),
+        )];
+        let r = RealizedMeta::merge(&[], &tenant, &project, &[]);
+        assert!(!r.imds_enabled());
+        assert_eq!(r.imds_hop_limit(), 2);
+        assert_eq!(
+            r.get(META_KEY_IMDS_HOP_LIMIT).unwrap().1,
+            MetaScope::Project
+        );
+
+        // Out-of-range value gets clamped (defensive).
+        let bad = vec![mv(
+            MetaScope::Silo,
+            META_KEY_IMDS_HOP_LIMIT,
+            serde_json::json!(9999),
+        )];
+        assert_eq!(
+            RealizedMeta::merge(&bad, &[], &[], &[]).imds_hop_limit(),
+            IMDS_HOP_LIMIT_MAX
+        );
+    }
+}
