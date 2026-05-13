@@ -114,6 +114,7 @@ fn router(state: ImdsState) -> Router {
         .route("/latest/dynamic/{*key}", get(aws_dynamic_get))
         // Triton-native surface.
         .route("/triton/dynamic/realized", get(triton_realized_get))
+        .route("/triton/{tree}", get(triton_tree_root))
         .route("/triton/{tree}/{*key}", get(triton_get))
         // Guest writeback (only `triton/guest/*` ever accepted; the
         // PUT/DELETE-side authorisation -- writeback enabled? key
@@ -377,6 +378,20 @@ async fn serve_key_for_binding(
         .iter()
         .find(|e| e.value.guest_visible && e.key == full_key)
     else {
+        // No exact match -- but the URL might be addressing a
+        // directory rather than a leaf. AWS IMDS convention: a
+        // trailing-slash URL (or any prefix that has children)
+        // lists those children. Try the listing fallback before
+        // returning 404.
+        let dir_prefix = if full_key.ends_with('/') {
+            full_key.to_string()
+        } else {
+            format!("{full_key}/")
+        };
+        let listing = list_children(&entries, &dir_prefix);
+        if !listing.is_empty() {
+            return (StatusCode::OK, listing).into_response();
+        }
         return (StatusCode::NOT_FOUND, "not found\n").into_response();
     };
     // Strings serialise as themselves (no surrounding quotes); every
@@ -438,6 +453,14 @@ async fn triton_get(
 /// guest-visible subset of the realized merge, each leaf carrying
 /// its provenance scope. Returns `application/json` as
 /// `{ "<key>": { "value": <v>, "from": "<scope>" }, ... }`.
+async fn triton_tree_root(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+    Path(tree): Path<String>,
+) -> Response {
+    list_for_prefix(&state, binding, &format!("{tree}/")).await
+}
+
 async fn triton_realized_get(
     State(state): State<ImdsState>,
     Extension(binding): Extension<ResolvedBinding>,
