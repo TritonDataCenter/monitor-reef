@@ -49,6 +49,7 @@ use tritond_auth::{
 };
 
 use crate::imds_bindings::{ImdsBindingTable, ResolvedBinding};
+use crate::imds_data::{RealizedDataSource, RealizedViewCache};
 
 /// HTTP header carrying the requested session-token TTL (AWS-spec).
 const TOKEN_TTL_HEADER: &str = "x-aws-ec2-metadata-token-ttl-seconds";
@@ -69,6 +70,14 @@ pub struct ImdsListenerConfig {
     /// commit hooks `proteus::apply_blueprint`). Cheaply cloneable;
     /// the listener task and the apply path share the same Arc.
     pub bindings: ImdsBindingTable,
+    /// Realized-view data source the GET handlers read through. The
+    /// daemon wraps this in a `RealizedViewCache` so the hot path
+    /// doesn't pay a tritond round trip per request; cache misses
+    /// fetch through this source. See `IMDS_DESIGN.md` §3 -- the
+    /// swappable data-source trait whose default impl is the
+    /// tritond `/v2/instances/{id}/realized-meta` client (later, a
+    /// direct restricted FDB read).
+    pub realized_source: Arc<dyn RealizedDataSource>,
 }
 
 /// Shared listener state passed to every handler.
@@ -76,6 +85,7 @@ pub struct ImdsListenerConfig {
 struct ImdsState {
     token_key: Arc<ImdsTokenKey>,
     bindings: ImdsBindingTable,
+    realized: RealizedViewCache,
 }
 
 fn router(state: ImdsState) -> Router {
@@ -287,6 +297,7 @@ pub async fn start(cfg: ImdsListenerConfig) -> Result<()> {
     let state = ImdsState {
         token_key: Arc::new(ImdsTokenKey::from_bytes(cfg.token_key_bytes)),
         bindings: cfg.bindings,
+        realized: RealizedViewCache::new(cfg.realized_source),
     };
     let app = router(state);
     let listener = TcpListener::bind(cfg.bind)
@@ -308,9 +319,26 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     fn fixed_state() -> ImdsState {
+        // A static (empty) data source keeps the unit tests
+        // hermetic -- no tritond, no network. Real wiring lives in
+        // tritonagent's main loop.
+        struct EmptySource;
+        #[async_trait::async_trait]
+        impl RealizedDataSource for EmptySource {
+            async fn get(
+                &self,
+                _: uuid::Uuid,
+            ) -> Result<
+                Vec<tritond_client::types::RealizedMetaEntry>,
+                crate::imds_data::RealizedFetchError,
+            > {
+                Ok(vec![])
+            }
+        }
         ImdsState {
             token_key: Arc::new(ImdsTokenKey::from_bytes([0u8; IMDS_TOKEN_KEY_BYTES])),
             bindings: ImdsBindingTable::new(),
+            realized: RealizedViewCache::new(Arc::new(EmptySource)),
         }
     }
 

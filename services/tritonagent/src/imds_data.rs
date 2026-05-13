@@ -182,25 +182,30 @@ struct CachedView {
 /// shape we'd retrofit once the per-instance request rate
 /// justifies it.
 #[derive(Clone)]
-pub struct RealizedViewCache<D: RealizedDataSource> {
-    inner: Arc<RealizedViewCacheInner<D>>,
+pub struct RealizedViewCache {
+    inner: Arc<RealizedViewCacheInner>,
 }
 
-struct RealizedViewCacheInner<D: RealizedDataSource> {
-    source: D,
+struct RealizedViewCacheInner {
+    source: Arc<dyn RealizedDataSource>,
     ttl: Duration,
     by_instance: RwLock<HashMap<Uuid, CachedView>>,
 }
 
-impl<D: RealizedDataSource> RealizedViewCache<D> {
-    /// New cache with the [`DEFAULT_CACHE_TTL`].
-    pub fn new(source: D) -> Self {
+impl RealizedViewCache {
+    /// New cache with the [`DEFAULT_CACHE_TTL`]. The source is type-
+    /// erased behind `Arc<dyn _>` so the IMDS daemon's state can hold
+    /// a single concrete `RealizedViewCache` regardless of which
+    /// underlying data source (tritond-fetch today, direct restricted
+    /// FDB read later -- see `IMDS_DESIGN.md` §3) the agent's main
+    /// loop wired up.
+    pub fn new(source: Arc<dyn RealizedDataSource>) -> Self {
         Self::with_ttl(source, DEFAULT_CACHE_TTL)
     }
 
     /// New cache with a custom TTL (tests use a tiny TTL to exercise
     /// the expiry path; production uses the default).
-    pub fn with_ttl(source: D, ttl: Duration) -> Self {
+    pub fn with_ttl(source: Arc<dyn RealizedDataSource>, ttl: Duration) -> Self {
         Self {
             inner: Arc::new(RealizedViewCacheInner {
                 source,
@@ -297,10 +302,10 @@ mod cache_tests {
     #[tokio::test]
     async fn first_get_fetches_second_is_cached() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let cache = RealizedViewCache::new(CountingSource {
+        let cache = RealizedViewCache::new(Arc::new(CountingSource {
             view: vec![entry("config/ntp-servers")],
             calls: calls.clone(),
-        });
+        }));
         let id = Uuid::new_v4();
         let a = cache.get(id).await.unwrap();
         let b = cache.get(id).await.unwrap();
@@ -312,10 +317,10 @@ mod cache_tests {
     #[tokio::test]
     async fn invalidate_busts_the_cached_view() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let cache = RealizedViewCache::new(CountingSource {
+        let cache = RealizedViewCache::new(Arc::new(CountingSource {
             view: vec![],
             calls: calls.clone(),
-        });
+        }));
         let id = Uuid::new_v4();
         cache.get(id).await.unwrap();
         cache.invalidate(id).await;
@@ -327,10 +332,10 @@ mod cache_tests {
     async fn ttl_expiry_triggers_refetch() {
         let calls = Arc::new(AtomicUsize::new(0));
         let cache = RealizedViewCache::with_ttl(
-            CountingSource {
+            Arc::new(CountingSource {
                 view: vec![],
                 calls: calls.clone(),
-            },
+            }),
             Duration::from_millis(10),
         );
         let id = Uuid::new_v4();
@@ -349,7 +354,7 @@ mod cache_tests {
                 Err(RealizedFetchError::Backend("boom".into()))
             }
         }
-        let cache = RealizedViewCache::new(Boom);
+        let cache = RealizedViewCache::new(Arc::new(Boom));
         let id = Uuid::new_v4();
         assert!(cache.get(id).await.is_err());
         // A subsequent get tries again rather than returning a
@@ -360,10 +365,10 @@ mod cache_tests {
     #[tokio::test]
     async fn clear_drops_everything() {
         let calls = Arc::new(AtomicUsize::new(0));
-        let cache = RealizedViewCache::new(CountingSource {
+        let cache = RealizedViewCache::new(Arc::new(CountingSource {
             view: vec![],
             calls: calls.clone(),
-        });
+        }));
         cache.get(Uuid::new_v4()).await.unwrap();
         cache.get(Uuid::new_v4()).await.unwrap();
         cache.clear().await;
