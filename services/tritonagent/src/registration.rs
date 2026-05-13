@@ -59,7 +59,8 @@ const PENDING_RETRY_DELAY: Duration = Duration::from_secs(1);
 const TRANSIENT_RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// What [`register_or_resume`] hands back: the per-CN API key (always)
-/// plus the per-CN console-ticket key (when known — see below).
+/// plus the per-CN console-ticket key and IMDS token key (each when
+/// known -- see below).
 pub struct RegistrationOutcome {
     /// Wire-form `tcadm_…` API key for every `/v2/agent/*` call.
     pub api_key: String,
@@ -69,6 +70,12 @@ pub struct RegistrationOutcome {
     /// not started in that case; the operator must `tcadm cn disable`
     /// and let the agent re-register to get one.
     pub console_ticket_key: Option<[u8; CONSOLE_TICKET_KEY_BYTES]>,
+    /// Per-CN HS256 IMDSv2 session-token key. Same delivery contract
+    /// as `console_ticket_key`; `None` when the agent resumed from a
+    /// credential file written before IMDS shipped (or the
+    /// imds-credentials file was lost). The IMDS listener is not
+    /// started in that case. See `IMDS_DESIGN.md` §3.
+    pub imds_token_key: Option<[u8; tritond_auth::IMDS_TOKEN_KEY_BYTES]>,
 }
 
 /// Resolve the agent's per-CN API key + console-ticket key, registering
@@ -119,6 +126,13 @@ pub async fn register_or_resume(
                     credential_path.display()
                 )
             })?;
+        let imds_token_key =
+            crate::imds_creds::load_imds_token_key(credential_path).with_context(|| {
+                format!(
+                    "load IMDS token key alongside {}",
+                    credential_path.display()
+                )
+            })?;
         if console_ticket_key.is_none() {
             warn!(
                 "no per-CN console-ticket key on disk (agent registered before consoles \
@@ -130,6 +144,7 @@ pub async fn register_or_resume(
         return Ok(RegistrationOutcome {
             api_key: existing,
             console_ticket_key,
+            imds_token_key,
         });
     }
 
@@ -179,7 +194,7 @@ pub async fn register_or_resume(
         );
     }
 
-    let (key, console_ticket_key_hex) =
+    let (key, console_ticket_key_hex, imds_token_key_hex) =
         await_credential(&client, &poll_token, register_timeout).await?;
 
     credentials::save(credential_path, &key)
@@ -221,6 +236,35 @@ pub async fn register_or_resume(
         }
     };
 
+    // Decode + persist the per-CN IMDS token key. Same delivery
+    // contract + same fallback as the console-ticket key above.
+    let imds_token_key = match imds_token_key_hex {
+        Some(hex_str) => match decode_imds_token_key(&hex_str) {
+            Ok(bytes) => {
+                crate::imds_creds::save_imds_token_key(credential_path, &bytes).with_context(
+                    || {
+                        format!(
+                            "persist IMDS token key alongside {}",
+                            credential_path.display()
+                        )
+                    },
+                )?;
+                info!("persisted per-CN IMDS token key");
+                Some(bytes)
+            }
+            Err(e) => {
+                warn!(error = %e, "tritond returned a malformed IMDS token key; IMDS disabled");
+                None
+            }
+        },
+        None => {
+            warn!(
+                "registration response carried no IMDS token key; IMDS is unavailable for this CN",
+            );
+            None
+        }
+    };
+
     // Drop the scrape file now that the operator no longer needs it.
     // Best-effort: it might not exist (auto-approve) and it might be
     // on a read-only mount in tests. Either way we do not fail.
@@ -229,7 +273,23 @@ pub async fn register_or_resume(
     Ok(RegistrationOutcome {
         api_key: key,
         console_ticket_key,
+        imds_token_key,
     })
+}
+
+/// Decode a lowercase-hex (64-char) IMDS token key into 32 bytes.
+fn decode_imds_token_key(hex_str: &str) -> Result<[u8; tritond_auth::IMDS_TOKEN_KEY_BYTES]> {
+    let bytes = hex::decode(hex_str.trim()).context("IMDS token key is not valid lowercase hex")?;
+    if bytes.len() != tritond_auth::IMDS_TOKEN_KEY_BYTES {
+        anyhow::bail!(
+            "IMDS token key is {} bytes, expected {}",
+            bytes.len(),
+            tritond_auth::IMDS_TOKEN_KEY_BYTES,
+        );
+    }
+    let mut out = [0u8; tritond_auth::IMDS_TOKEN_KEY_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 /// Decode a lowercase-hex (64-char) console-ticket key into 32 bytes.
@@ -312,14 +372,16 @@ fn announce_claim_code(code: &str) {
 /// per-CN API key arrives, the registration is disabled, or
 /// `register_timeout` elapses.
 ///
-/// Returns `(api_key, console_ticket_key_hex)`. The console-ticket key
-/// is `Some` whenever tritond is current; an older tritond may omit it,
-/// which the caller treats as "console unavailable" rather than fatal.
+/// Returns `(api_key, console_ticket_key_hex, imds_token_key_hex)`.
+/// Each post-key field is `Some` when tritond is current and that
+/// per-CN feature has been wired; an older tritond may omit them,
+/// which the caller treats as "that listener unavailable" rather
+/// than fatal.
 async fn await_credential(
     client: &Client,
     poll_token: &str,
     register_timeout: Duration,
-) -> Result<(String, Option<String>)> {
+) -> Result<(String, Option<String>, Option<String>)> {
     let deadline = Instant::now() + register_timeout;
     let mut last_logged_state: Option<CnState> = None;
 
@@ -373,7 +435,11 @@ async fn await_credential(
         match response.state {
             CnState::Approved => {
                 if let Some(key) = response.api_key {
-                    return Ok((key, response.console_ticket_key_hex));
+                    return Ok((
+                        key,
+                        response.console_ticket_key_hex,
+                        response.imds_token_key_hex,
+                    ));
                 }
                 // Approved but no api_key means tritond already handed
                 // it out on a previous call — the credential file must
