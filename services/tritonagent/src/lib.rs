@@ -79,6 +79,7 @@ use tritond_cn_platform::smartos::{KstatTool, VmadmTool, ZfsTool};
 use uuid::Uuid;
 
 use crate::console_creds::ConsoleTls;
+use crate::imds_bindings::{ImdsBindingTable, register_blueprint_bindings};
 
 use crate::status::TritondStatusSink;
 
@@ -184,6 +185,11 @@ impl AgentConfig {
 /// Run the agent loop forever. Returns only on a fatal error.
 pub async fn run(cfg: AgentConfig) -> Result<()> {
     let client = Arc::new(cfg.build_client()?);
+    // Per-CN IMDS reverse-lookup table. Empty until the first
+    // Provision blueprint with non-empty `imds_bindings` populates
+    // it. Shared with the IMDS HTTP listener (once that wires in to
+    // main); a clone gives both sides the same Arc.
+    let bindings = ImdsBindingTable::new();
     info!(
         agent_id = %cfg.agent_id,
         endpoint = %cfg.endpoint,
@@ -261,7 +267,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
-    let result = run_poll_loop(client.as_ref(), &cfg).await;
+    let result = run_poll_loop(client.as_ref(), &cfg, &bindings).await;
 
     if let Some(h) = dhcp_events_handle.take() {
         h.shutdown().await;
@@ -336,9 +342,13 @@ fn maybe_spawn_console_listener(cfg: &AgentConfig) {
 /// nothing inside the loop can return a clean `Ok(())`, but the
 /// signature matches `run` so future SIGTERM handling drops in
 /// without a refactor.
-async fn run_poll_loop(client: &Client, cfg: &AgentConfig) -> Result<()> {
+async fn run_poll_loop(
+    client: &Client,
+    cfg: &AgentConfig,
+    bindings: &ImdsBindingTable,
+) -> Result<()> {
     loop {
-        match poll_once(client, cfg).await {
+        match poll_once(client, cfg, bindings).await {
             Ok(true) => {
                 // Worked a job; immediately try the next one — the
                 // queue may have more.
@@ -414,7 +424,11 @@ fn spawn_publisher(client: Arc<Client>) -> PublisherHandles {
 /// processed (regardless of whether the work succeeded — failures
 /// are reported via `JobOutcome::Failed`), `Ok(false)` if the
 /// queue was empty.
-async fn poll_once(client: &Client, cfg: &AgentConfig) -> Result<bool> {
+async fn poll_once(
+    client: &Client,
+    cfg: &AgentConfig,
+    bindings: &ImdsBindingTable,
+) -> Result<bool> {
     let claimed = client
         .agent_claim_job()
         .body(ClaimJobRequest {
@@ -429,7 +443,7 @@ async fn poll_once(client: &Client, cfg: &AgentConfig) -> Result<bool> {
         return Ok(false);
     };
 
-    let outcome = match drive_job(client, cfg, &job).await {
+    let outcome = match drive_job(client, cfg, bindings, &job).await {
         Ok(()) => JobOutcome::Completed,
         Err(reason) => {
             // Agent-side failures are reported back to tritond so
@@ -467,7 +481,12 @@ async fn poll_once(client: &Client, cfg: &AgentConfig) -> Result<bool> {
 /// Drive a single claimed job to a terminal state. Returns
 /// `Ok(())` for success (caller reports `Completed`), `Err` for
 /// agent-side failure (caller reports `Failed { reason }`).
-async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) -> Result<()> {
+async fn drive_job(
+    client: &Client,
+    cfg: &AgentConfig,
+    bindings: &ImdsBindingTable,
+    job: &ProvisioningJob,
+) -> Result<()> {
     info!(
         job_id = %job.id,
         kind = ?job.kind,
@@ -540,6 +559,14 @@ async fn drive_job(client: &Client, cfg: &AgentConfig, job: &ProvisioningJob) ->
                 &blueprint,
             )
             .await?;
+            let registered = register_blueprint_bindings(bindings, &blueprint);
+            if registered > 0 {
+                info!(
+                    instance_id = %instance_id,
+                    bindings = registered,
+                    "imds: registered binding(s) for provision",
+                );
+            }
             let nic_tags = started_ports
                 .iter()
                 .map(|port| (port.nic_id, port.link_name.clone()))
