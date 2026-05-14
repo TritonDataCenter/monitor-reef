@@ -80,6 +80,12 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
     if let Some(url) = strv(env_str_key(ConfigKey::MetricsClickhouseUrl)) {
         s.metrics_clickhouse_url = Some(url);
     }
+    if let Some(v) = flag(env_str_key(ConfigKey::ImdsEnabledDefault)) {
+        s.imds_enabled_default = v;
+    }
+    if let Some(v) = u64v(env_str_key(ConfigKey::ImdsHopLimitDefault)) {
+        s.imds_hop_limit_default = v;
+    }
     s
 }
 

@@ -71,6 +71,7 @@ pub(crate) async fn build_blueprint(
             ssh_public_keys: Vec::new(),
             managed_identity: None,
             imds_bindings: Vec::new(),
+            provision_metadata: Vec::new(),
         });
     };
     let instance = match store.get_instance(instance_id).await {
@@ -102,6 +103,7 @@ pub(crate) async fn build_blueprint(
             ssh_public_keys: Vec::new(),
             managed_identity: None,
             imds_bindings: Vec::new(),
+            provision_metadata: Vec::new(),
         });
     }
 
@@ -117,6 +119,7 @@ pub(crate) async fn build_blueprint(
             ssh_public_keys: Vec::new(),
             managed_identity: None,
             imds_bindings: Vec::new(),
+            provision_metadata: Vec::new(),
         });
     };
 
@@ -171,6 +174,14 @@ pub(crate) async fn build_blueprint(
     // pre-IMDS deployments keep their `imds_bindings: []` behaviour.
     let imds_bindings = build_imds_bindings_for_instance(store, instance.id, &nics).await;
 
+    // Instance-scope metadata to fold into the vmadm payload's
+    // customer_metadata / internal_metadata maps. Pull straight from
+    // the instance's stored entries -- we only care about
+    // `triton/instance/*` here (operator-set, this-VM-only),
+    // not the layered config/state values; those flow via IMDS HTTP
+    // at runtime and don't need to be in the cidata seed.
+    let provision_metadata = build_provision_metadata(store, instance.id).await;
+
     Ok(ProvisioningBlueprint {
         job_id: job.id,
         kind: job.kind.clone(),
@@ -182,7 +193,32 @@ pub(crate) async fn build_blueprint(
         ssh_public_keys,
         managed_identity: Some(managed_identity),
         imds_bindings,
+        provision_metadata,
     })
+}
+
+/// Build the `provision_metadata` field of `ProvisioningBlueprint`:
+/// the list of `triton/instance/*` entries the agent will fold into
+/// `customer_metadata` / `internal_metadata` on `vmadm create`. A
+/// missing/empty list is fine -- the agent just doesn't add anything
+/// extra, and the historical SSH key + identity plumbing keeps
+/// working.
+async fn build_provision_metadata(
+    store: &dyn Store,
+    instance_id: Uuid,
+) -> Vec<tritond_api::MetaEntry> {
+    let entries = match store
+        .list_meta(tritond_store::MetaScope::Instance, instance_id)
+        .await
+    {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    entries
+        .into_iter()
+        .filter(|(k, _v)| k.starts_with("instance/"))
+        .map(|(k, v)| tritond_api::MetaEntry { key: k, value: v })
+        .collect()
 }
 
 /// Build the per-NIC IMDS binding entries the tritonagent's
@@ -211,7 +247,12 @@ async fn build_imds_bindings_for_instance(
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
-    if !view.imds_enabled() {
+    let default_enabled = store
+        .get_settings()
+        .await
+        .map(|s| s.imds_enabled_default)
+        .unwrap_or(tritond_store::DEFAULT_IMDS_ENABLED);
+    if !view.imds_enabled(default_enabled) {
         return Vec::new();
     }
     nics.iter()
@@ -315,10 +356,21 @@ pub(crate) async fn build_port_blueprint(
     // exactly where it was pre-IM-3.
     let imds_cfg = ImdsListenerConfig::from_env();
     let imds_enabled = match imds_cfg {
-        Some(_) => build_instance_realized_view(store, instance.id)
-            .await
-            .map(|v| v.imds_enabled())
-            .unwrap_or(false),
+        Some(_) => {
+            // Cluster-default for `config/imds/enabled` lives in
+            // Settings now (was a hardcoded constant); fetch it
+            // alongside the realized view so an unset realized value
+            // falls back to the operator-tunable cluster default.
+            let default_enabled = store
+                .get_settings()
+                .await
+                .map(|s| s.imds_enabled_default)
+                .unwrap_or(tritond_store::DEFAULT_IMDS_ENABLED);
+            build_instance_realized_view(store, instance.id)
+                .await
+                .map(|v| v.imds_enabled(default_enabled))
+                .unwrap_or(false)
+        }
         None => false,
     };
 

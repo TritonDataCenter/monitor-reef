@@ -2705,6 +2705,17 @@ impl SystemKey {
 // Cluster settings (`Settings`)
 // ---------------------------------------------------------------------
 
+/// Cluster-default `config/imds/enabled` when no scope in the
+/// silo/tenant/project/instance chain pins one. Mirrors the value
+/// [`Settings::imds_enabled_default`] starts at; `tcadm config set
+/// imds.enabled_default false` flips it cluster-wide without
+/// touching any per-scope key.
+pub const DEFAULT_IMDS_ENABLED: bool = true;
+/// Cluster-default `config/imds/hop-limit` (1) — same role as
+/// [`DEFAULT_IMDS_ENABLED`], surfaced through
+/// [`Settings::imds_hop_limit_default`].
+pub const DEFAULT_IMDS_HOP_LIMIT: u64 = 1;
+
 /// Default cadence of the stale-claim sweeper, in seconds.
 pub const DEFAULT_SWEEPER_INTERVAL_SECS: u64 = 60;
 /// Default age (seconds) a job claim must reach before the sweeper reaps it.
@@ -2764,6 +2775,21 @@ pub struct Settings {
     /// is `clickhouse`.
     #[serde(rename = "metrics.clickhouse_url")]
     pub metrics_clickhouse_url: Option<String>,
+    /// Cluster-default for `config/imds/enabled` when no scope pins a
+    /// value. The layered metadata system's fallback used to be the
+    /// hardcoded constant [`DEFAULT_IMDS_ENABLED`]; this knob lets an
+    /// operator flip it cluster-wide via `tcadm config set
+    /// imds.enabled_default false` (e.g. to default-deny IMDS) without
+    /// touching every silo's `config/imds/enabled`. The compiled-in
+    /// constant is the bootstrap default (the value [`Default::default`]
+    /// returns when nothing's in FDB yet).
+    #[serde(rename = "imds.enabled_default")]
+    pub imds_enabled_default: bool,
+    /// Cluster-default for `config/imds/hop-limit`. Same role as
+    /// `imds_enabled_default`; defaults to [`DEFAULT_IMDS_HOP_LIMIT`]
+    /// (1) for SSRF-relay safety.
+    #[serde(rename = "imds.hop_limit_default")]
+    pub imds_hop_limit_default: u64,
 }
 
 impl Default for Settings {
@@ -2776,6 +2802,8 @@ impl Default for Settings {
             dhcp_lease_gc_threshold_secs: DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
             metrics_backend: MetricsBackend::Memory,
             metrics_clickhouse_url: None,
+            imds_enabled_default: DEFAULT_IMDS_ENABLED,
+            imds_hop_limit_default: DEFAULT_IMDS_HOP_LIMIT,
         }
     }
 }
@@ -2842,11 +2870,15 @@ pub enum ConfigKey {
     MetricsBackend,
     /// [`Settings::metrics_clickhouse_url`]
     MetricsClickhouseUrl,
+    /// [`Settings::imds_enabled_default`]
+    ImdsEnabledDefault,
+    /// [`Settings::imds_hop_limit_default`]
+    ImdsHopLimitDefault,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 7] = [
+    pub const ALL: [ConfigKey; 9] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -2854,6 +2886,8 @@ impl ConfigKey {
         ConfigKey::DhcpLeaseGcThresholdSecs,
         ConfigKey::MetricsBackend,
         ConfigKey::MetricsClickhouseUrl,
+        ConfigKey::ImdsEnabledDefault,
+        ConfigKey::ImdsHopLimitDefault,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -2867,6 +2901,8 @@ impl ConfigKey {
             ConfigKey::DhcpLeaseGcThresholdSecs => "dhcp.lease_gc_threshold_secs",
             ConfigKey::MetricsBackend => "metrics.backend",
             ConfigKey::MetricsClickhouseUrl => "metrics.clickhouse_url",
+            ConfigKey::ImdsEnabledDefault => "imds.enabled_default",
+            ConfigKey::ImdsHopLimitDefault => "imds.hop_limit_default",
         }
     }
 
@@ -2895,6 +2931,12 @@ impl ConfigKey {
             ConfigKey::MetricsClickhouseUrl => {
                 "ClickHouse HTTP base URL (used only when metrics.backend is clickhouse)"
             }
+            ConfigKey::ImdsEnabledDefault => {
+                "cluster default for config/imds/enabled when no scope pins a value"
+            }
+            ConfigKey::ImdsHopLimitDefault => {
+                "cluster default for config/imds/hop-limit when no scope pins one (1..64)"
+            }
         }
     }
 
@@ -2918,6 +2960,8 @@ impl ConfigKey {
             ConfigKey::DhcpLeaseGcThresholdSecs => "TRITOND_DHCP_LEASE_GC_THRESHOLD_SECS",
             ConfigKey::MetricsBackend => "TRITOND_METRICS_STORE",
             ConfigKey::MetricsClickhouseUrl => "TRITOND_METRICS_CLICKHOUSE_URL",
+            ConfigKey::ImdsEnabledDefault => "TRITOND_IMDS_ENABLED_DEFAULT",
+            ConfigKey::ImdsHopLimitDefault => "TRITOND_IMDS_HOP_LIMIT_DEFAULT",
         })
     }
 }
@@ -5089,24 +5133,30 @@ impl RealizedMeta {
     }
 
     /// Whether IMDS is served to this instance: the realized
-    /// `config/imds/enabled`, defaulting to `true` when unset (or set
-    /// to a non-boolean — validation prevents that, but be defensive).
-    pub fn imds_enabled(&self) -> bool {
+    /// `config/imds/enabled` if any scope pins one, otherwise the
+    /// cluster default `default_enabled` (sourced from
+    /// `Settings::imds_enabled_default`; the compiled-in fallback is
+    /// [`DEFAULT_IMDS_ENABLED`]).
+    pub fn imds_enabled(&self, default_enabled: bool) -> bool {
         self.entries
             .get(META_KEY_IMDS_ENABLED)
             .and_then(|(v, _)| v.value.as_bool())
-            .unwrap_or(true)
+            .unwrap_or(default_enabled)
     }
 
     /// The IMDS response hop-limit: the realized `config/imds/hop-limit`
-    /// clamped to `[IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX]`, defaulting
-    /// to [`IMDS_HOP_LIMIT_DEFAULT`] when unset.
-    pub fn imds_hop_limit(&self) -> u64 {
+    /// clamped to `[IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX]`, falling
+    /// back to the cluster default `default_hop_limit` (sourced from
+    /// `Settings::imds_hop_limit_default`; the compiled-in fallback is
+    /// [`DEFAULT_IMDS_HOP_LIMIT`]).
+    pub fn imds_hop_limit(&self, default_hop_limit: u64) -> u64 {
         self.entries
             .get(META_KEY_IMDS_HOP_LIMIT)
             .and_then(|(v, _)| v.value.as_u64())
             .map(|n| n.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
-            .unwrap_or(IMDS_HOP_LIMIT_DEFAULT)
+            .unwrap_or_else(|| {
+                default_hop_limit.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX)
+            })
     }
 }
 
@@ -5209,10 +5259,14 @@ mod realized_meta_tests {
 
     #[test]
     fn imds_options_resolve_with_defaults_and_clamp() {
-        // Unset -> defaults.
+        // Unset -> cluster defaults passed in by the caller. The
+        // builtin fallback constants are the value tritond loads when
+        // Settings hasn't been written yet.
         let empty = RealizedMeta::default();
-        assert!(empty.imds_enabled());
-        assert_eq!(empty.imds_hop_limit(), IMDS_HOP_LIMIT_DEFAULT);
+        assert!(empty.imds_enabled(DEFAULT_IMDS_ENABLED));
+        assert!(!empty.imds_enabled(false), "default flips with caller");
+        assert_eq!(empty.imds_hop_limit(IMDS_HOP_LIMIT_DEFAULT), IMDS_HOP_LIMIT_DEFAULT);
+        assert_eq!(empty.imds_hop_limit(3), 3, "default flips with caller");
 
         // Set at tenant, overridden at project.
         let tenant = vec![
@@ -5233,8 +5287,9 @@ mod realized_meta_tests {
             serde_json::json!(2),
         )];
         let r = RealizedMeta::merge(&[], &tenant, &project, &[]);
-        assert!(!r.imds_enabled());
-        assert_eq!(r.imds_hop_limit(), 2);
+        // Pinned value wins; the caller-supplied default is ignored.
+        assert!(!r.imds_enabled(true));
+        assert_eq!(r.imds_hop_limit(IMDS_HOP_LIMIT_DEFAULT), 2);
         assert_eq!(
             r.get(META_KEY_IMDS_HOP_LIMIT).unwrap().1,
             MetaScope::Project
@@ -5247,7 +5302,7 @@ mod realized_meta_tests {
             serde_json::json!(9999),
         )];
         assert_eq!(
-            RealizedMeta::merge(&bad, &[], &[], &[]).imds_hop_limit(),
+            RealizedMeta::merge(&bad, &[], &[], &[]).imds_hop_limit(IMDS_HOP_LIMIT_DEFAULT),
             IMDS_HOP_LIMIT_MAX
         );
     }
@@ -5710,24 +5765,32 @@ impl RealizedView {
         self.entries.get(key)
     }
 
-    /// Whether IMDS is served to this instance (realized
-    /// `config/imds/enabled`, default `true`).
-    pub fn imds_enabled(&self) -> bool {
+    /// Whether IMDS is served to this instance: realized
+    /// `config/imds/enabled` when any scope pins one, otherwise the
+    /// cluster-default `default_enabled` (sourced from
+    /// `Settings::imds_enabled_default`; the compiled-in fallback is
+    /// [`DEFAULT_IMDS_ENABLED`]).
+    pub fn imds_enabled(&self, default_enabled: bool) -> bool {
         self.entries
             .get(META_KEY_IMDS_ENABLED)
             .and_then(|(v, _)| v.value.as_bool())
-            .unwrap_or(true)
+            .unwrap_or(default_enabled)
     }
 
-    /// The IMDS response hop-limit (realized `config/imds/hop-limit`,
-    /// clamped to `[IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX]`, default
-    /// [`IMDS_HOP_LIMIT_DEFAULT`]).
-    pub fn imds_hop_limit(&self) -> u64 {
+    /// The IMDS response hop-limit: realized `config/imds/hop-limit`
+    /// when any scope pins one, otherwise the cluster-default
+    /// `default_hop_limit` (sourced from
+    /// `Settings::imds_hop_limit_default`; the compiled-in fallback
+    /// is [`DEFAULT_IMDS_HOP_LIMIT`]). Clamped in either case to
+    /// `[IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX]`.
+    pub fn imds_hop_limit(&self, default_hop_limit: u64) -> u64 {
         self.entries
             .get(META_KEY_IMDS_HOP_LIMIT)
             .and_then(|(v, _)| v.value.as_u64())
             .map(|n| n.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
-            .unwrap_or(IMDS_HOP_LIMIT_DEFAULT)
+            .unwrap_or_else(|| {
+                default_hop_limit.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX)
+            })
     }
 }
 
@@ -5861,8 +5924,8 @@ mod realized_view_tests {
         ];
         let v = RealizedView::build(&silo, &[], &[], &[], &[]);
         assert!(v.get("config/cn-secret").is_some());
-        assert!(!v.imds_enabled());
-        assert_eq!(v.imds_hop_limit(), 2);
+        assert!(!v.imds_enabled(DEFAULT_IMDS_ENABLED));
+        assert_eq!(v.imds_hop_limit(DEFAULT_IMDS_HOP_LIMIT), 2);
         let g = v.guest_visible();
         assert!(g.get("config/cn-secret").is_none());
         assert!(g.get("config/ntp-servers").is_some());
