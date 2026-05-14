@@ -169,7 +169,7 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
             Ok(v) => Some(v.tag),
             Err(e) => {
                 if !json {
-                    eprintln!("    WARNING: Could not query version for {}: {}", name, e);
+                    eprintln!("    WARNING: Could not query version for {}: {:#}", name, e);
                 }
                 None
             }
@@ -276,7 +276,7 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
                 }
                 Err(e) => {
                     if !json {
-                        eprintln!("    Cluster health: FAILED - {}", e);
+                        eprintln!("    Cluster health: FAILED - {:#}", e);
                         eprintln!();
                         eprintln!("    Use --force to skip pre-flight checks, or");
                         eprintln!(
@@ -284,7 +284,7 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
                             args.health_timeout
                         );
                     }
-                    anyhow::bail!("Pre-flight health check failed: {}", e);
+                    anyhow::bail!("Pre-flight health check failed: {:#}", e);
                 }
             }
         }
@@ -332,11 +332,11 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
                 }
             }
             Err(e) => {
-                status.status = format!("failed: {}", e);
+                status.status = format!("failed: {:#}", e);
                 if !json {
-                    eprintln!("    FAILED: {}", e);
+                    eprintln!("    FAILED: {:#}", e);
                 }
-                anyhow::bail!("Failed to upgrade {}: {}", status.name, e);
+                anyhow::bail!("Failed to upgrade {}: {:#}", status.name, e);
             }
         }
 
@@ -425,7 +425,7 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
                 }
                 Err(e) => {
                     if !json {
-                        eprintln!("    WARNING: Health check failed: {}", e);
+                        eprintln!("    WARNING: Health check failed: {:#}", e);
                         eprintln!("    Continuing with upgrade...");
                     }
                 }
