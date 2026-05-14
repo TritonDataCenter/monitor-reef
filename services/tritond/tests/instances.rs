@@ -602,6 +602,65 @@ async fn duplicate_instance_name_within_project_returns_409() {
     test.close().await;
 }
 
+/// SG-4 end-to-end: creating an instance produces an observable
+/// `instance-create` operation on `/v2/operations`. This is the
+/// shippable proof that the saga engine + the operator-visibility
+/// surface are wired correctly to each other.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn instance_create_appears_on_operations_surface() {
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_fixture(&root).await;
+
+    let inst = root
+        .create_project_instance()
+        .tenant_id(fx.tenant_id)
+        .project_id(fx.project_id)
+        .body(instance_req(&fx, "obs"))
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(lifecycle_state(&inst.lifecycle), "Pending");
+
+    // The saga finishes synchronously inside the handler (SG-2 is
+    // a 4-action chain with no await_terminal); the operation
+    // should land on the listing immediately.
+    let ops = root.list_operations().send().await.unwrap().into_inner();
+    let our_op = ops
+        .iter()
+        .find(|o| o.kind == "instance-create")
+        .expect("instance-create operation must be visible on /v2/operations");
+    assert_eq!(our_op.version, 1);
+    // The saga has run to terminal (Done with Ok); the
+    // operations surface maps that to "done".
+    let state_str = serde_json::to_value(&our_op.state)
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(state_str, "done", "operation should land Done");
+    assert!(
+        our_op.stuck_reason.is_none(),
+        "happy-path saga must not be Stuck"
+    );
+
+    // The detail surface returns the persisted DAG (4 actions for
+    // SG-2). We don't assert exact DAG bytes — they're internal to
+    // Steno — but the call should succeed and return our id.
+    let detail = root
+        .get_operation()
+        .operation_id(our_op.id)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(detail.id, our_op.id);
+    assert_eq!(detail.kind, "instance-create");
+
+    test.close().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn anonymous_cannot_reach_instance_endpoints() {
     let test = TestServer::start().await;
