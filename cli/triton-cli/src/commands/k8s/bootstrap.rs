@@ -55,8 +55,8 @@ pub struct BootstrapArgs {
     #[arg(long, default_value = "talos-1.12-nocloud")]
     pub image: String,
 
-    /// Talos version for config generation
-    #[arg(long, default_value = "1.6.0")]
+    /// Talos version for config generation (used as the installer image tag)
+    #[arg(long, default_value = "v1.12.7")]
     pub talos_version: String,
 
     /// IP addresses to allow through firewall for management access.
@@ -347,6 +347,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         &secrets_path,
         &cluster_dir,
         cns_hostname.as_deref(),
+        &args.talos_version,
         &logger,
     )
     .await
@@ -1000,6 +1001,7 @@ async fn generate_talos_configs(
     secrets_path: &std::path::Path,
     output_dir: &std::path::Path,
     cns_hostname: Option<&str>,
+    talos_version: &str,
     logger: &LogWriter,
 ) -> Result<()> {
     // Note: --install-disk /dev/vda is required for Triton bhyve VMs which use
@@ -1027,6 +1029,7 @@ async fn generate_talos_configs(
         endpoint,
         "/dev/vda",
         &additional_sans,
+        talos_version,
     )
     .context("Failed to generate machine configs")?;
 

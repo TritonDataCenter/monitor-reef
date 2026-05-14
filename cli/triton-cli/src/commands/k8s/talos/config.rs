@@ -19,8 +19,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use time::{Duration, OffsetDateTime};
 
-// Talos and Kubernetes version constants
-const TALOS_VERSION: &str = "v1.12.0";
+// Kubernetes version constant
 const KUBERNETES_VERSION: &str = "v1.35.0";
 
 /// Talos secrets bundle
@@ -712,6 +711,7 @@ pub fn generate_machine_configs(
     endpoint_ip: &str,
     install_disk: &str,
     additional_sans: &[String],
+    talos_version: &str,
 ) -> Result<MachineConfigOutput> {
     // Generate admin client certificate for talosconfig
     let admin_cert = generate_admin_client_cert(&secrets.certs.os)?;
@@ -721,12 +721,24 @@ pub fn generate_machine_configs(
     cert_sans.extend(additional_sans.iter().cloned());
 
     // Generate controlplane configuration
-    let controlplane_config =
-        generate_controlplane_config(secrets, cluster_name, endpoint_ip, install_disk, &cert_sans)?;
+    let controlplane_config = generate_controlplane_config(
+        secrets,
+        cluster_name,
+        endpoint_ip,
+        install_disk,
+        &cert_sans,
+        talos_version,
+    )?;
 
     // Generate worker configuration
-    let worker_config =
-        generate_worker_config(secrets, cluster_name, endpoint_ip, install_disk, &cert_sans)?;
+    let worker_config = generate_worker_config(
+        secrets,
+        cluster_name,
+        endpoint_ip,
+        install_disk,
+        &cert_sans,
+        talos_version,
+    )?;
 
     // Generate talosconfig
     let talosconfig =
@@ -767,6 +779,7 @@ fn generate_controlplane_config(
     endpoint_ip: &str,
     install_disk: &str,
     cert_sans: &[String],
+    talos_version: &str,
 ) -> Result<TalosMachineConfig> {
     let machine = MachineSection {
         machine_type: "controlplane".to_string(),
@@ -781,7 +794,7 @@ fn generate_controlplane_config(
         network: Some(HashMap::new()),
         install: InstallConfig {
             disk: install_disk.to_string(),
-            image: format!("ghcr.io/siderolabs/installer:{}", TALOS_VERSION),
+            image: format!("ghcr.io/siderolabs/installer:{}", talos_version),
             wipe: false,
             grub_use_uki_cmdline: true,
         },
@@ -897,6 +910,7 @@ fn generate_worker_config(
     endpoint_ip: &str,
     install_disk: &str,
     cert_sans: &[String],
+    talos_version: &str,
 ) -> Result<TalosMachineConfig> {
     // Worker config is similar to controlplane but with key differences
     let machine = MachineSection {
@@ -915,7 +929,7 @@ fn generate_worker_config(
         network: Some(HashMap::new()),
         install: InstallConfig {
             disk: install_disk.to_string(),
-            image: format!("ghcr.io/siderolabs/installer:{}", TALOS_VERSION),
+            image: format!("ghcr.io/siderolabs/installer:{}", talos_version),
             wipe: false,
             grub_use_uki_cmdline: true,
         },
