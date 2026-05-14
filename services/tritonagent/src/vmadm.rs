@@ -77,6 +77,63 @@ pub(crate) const TRITOND_METADATA_TENANT_ID: &str = "tritond:tenant_id";
 pub(crate) const TRITOND_METADATA_PROJECT_ID: &str = "tritond:project_id";
 pub(crate) const TRITOND_METADATA_IDENTITY_HMAC: &str = "tritond:identity_hmac";
 
+/// Fold `blueprint.provision_metadata` (the operator-set
+/// `triton/instance/*` entries) into the vmadm create payload's
+/// metadata maps:
+///   * `guest_visible=true`  -> `customer_metadata.<suffix>`
+///     (cloud-init's SmartOS / NoCloud datasource picks these up at
+///     first boot)
+///   * `guest_visible=false` -> `internal_metadata.<suffix>`
+///     (the legacy "internal_metadata" shape, where the historical
+///     `root_pw` lives)
+/// The `instance/` prefix is stripped when folding, so a stored key
+/// `instance/root_pw` (`guest_visible=false`) ends up as
+/// `internal_metadata.root_pw` in the payload -- matching what
+/// cloud-init / SmartOS / `mdata-get` expect.
+///
+/// Each value is rendered to a SmartOS-style string (the two metadata
+/// maps both accept only string values): JSON strings pass through
+/// unwrapped, numbers / bools stringify, structured values
+/// (objects/arrays) get JSON-encoded so they at least round-trip.
+fn apply_provision_metadata(
+    customer_metadata: &mut serde_json::Map<String, serde_json::Value>,
+    internal_metadata: &mut serde_json::Map<String, serde_json::Value>,
+    blueprint: &ProvisioningBlueprint,
+) {
+    for entry in &blueprint.provision_metadata {
+        // The store key is namespaced like `instance/<suffix>`;
+        // anything else would have been filtered out tritond-side
+        // but defend in depth.
+        let Some(suffix) = entry.key.strip_prefix("instance/") else {
+            continue;
+        };
+        if suffix.is_empty() {
+            continue;
+        }
+        // Generated client flattens MetaValue into MetaEntry, so the
+        // flags + value are top-level on `entry`.
+        let rendered = render_meta_value_as_string(&entry.value);
+        let target = if entry.guest_visible {
+            &mut *customer_metadata
+        } else {
+            &mut *internal_metadata
+        };
+        target.insert(suffix.to_string(), serde_json::Value::String(rendered));
+    }
+}
+
+/// Render a metadata `serde_json::Value` for one of vmadm's
+/// string-only metadata maps. Strings unwrap to their inner text so
+/// `"root_pw":"Nic^..."` doesn't show up doubly-quoted; everything
+/// else is JSON-stringified so structured values still round-trip.
+fn render_meta_value_as_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
 /// Insert the four `tritond:*` identity keys into a vmadm
 /// `internal_metadata` map when the blueprint carries a
 /// `managed_identity`. No-op when absent (Stop/Restart/Delete jobs do
@@ -343,6 +400,22 @@ pub(crate) fn create_zone_payload(blueprint: &ProvisioningBlueprint) -> Result<s
             serde_json::Value::String(image.sha256.clone()),
         );
         apply_managed_identity(&mut internal_metadata, blueprint);
+        // Pull customer_metadata back out so the IMDS fold can write
+        // into the same map the SSH-keys block produced. None of the
+        // earlier identity inserts use the metadata keys an operator
+        // can set (the `tritond.*` prefix is the namespace barrier).
+        let mut customer_metadata = obj
+            .remove("customer_metadata")
+            .and_then(|v| match v {
+                serde_json::Value::Object(m) => Some(m),
+                _ => None,
+            })
+            .unwrap_or_default();
+        apply_provision_metadata(&mut customer_metadata, &mut internal_metadata, blueprint);
+        obj.insert(
+            "customer_metadata".to_string(),
+            serde_json::Value::Object(customer_metadata),
+        );
         obj.insert(
             "internal_metadata".to_string(),
             serde_json::Value::Object(internal_metadata),
@@ -418,6 +491,7 @@ pub(crate) fn create_bhyve_payload_with_nic_tags(
         serde_json::Value::String("nocloud".to_string()),
     );
     apply_managed_identity(&mut internal_metadata, blueprint);
+    apply_provision_metadata(&mut customer_metadata, &mut internal_metadata, blueprint);
 
     Ok(serde_json::json!({
         "uuid": instance.id,
@@ -733,6 +807,7 @@ mod tests {
             ssh_public_keys: vec!["ssh-ed25519 AAAA test@host".to_string()],
             managed_identity: None,
             imds_bindings: Vec::new(),
+            provision_metadata: Vec::new(),
         }
     }
 

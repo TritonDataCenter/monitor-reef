@@ -6959,6 +6959,14 @@ pub mod types {
     #[doc = "        \"$ref\": \"#/components/schemas/Nic\""]
     #[doc = "      }"]
     #[doc = "    },"]
+    #[doc = "    \"provision_metadata\": {"]
+    #[doc = "      \"description\": \"Instance-scope metadata to fold into the SmartOS vmadm-create payload's `customer_metadata` / `internal_metadata` maps: * `triton/instance/*` keys with `guest_visible=true` -> `customer_metadata.<suffix>` (cloud-init reads this) * `triton/instance/*` keys with `guest_visible=false` -> `internal_metadata.<suffix>` (the legacy \\\"internal_metadata\\\" shape, where the historical `root_pw` lives) Empty for non-Provision jobs. The agent strips the `triton/instance/` prefix when folding so an operator who sets `triton/instance/root_pw` ends up with `internal_metadata.root_pw` in the create payload, matching what cloud-init's SmartOS datasource expects.\","]
+    #[doc = "      \"default\": [],"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/MetaEntry\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
     #[doc = "    \"ssh_public_keys\": {"]
     #[doc = "      \"description\": \"Raw openssh-form public keys to inject via the SmartOS `root_authorized_keys` metadata at zone-create time. Resolved from `Instance::ssh_key_ids`.\","]
     #[doc = "      \"default\": [],"]
@@ -7003,6 +7011,9 @@ pub mod types {
         #[doc = "All NICs attached to the instance. Empty for non-Provision jobs."]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub nics: ::std::vec::Vec<Nic>,
+        #[doc = "Instance-scope metadata to fold into the SmartOS vmadm-create payload's `customer_metadata` / `internal_metadata` maps: * `triton/instance/*` keys with `guest_visible=true` -> `customer_metadata.<suffix>` (cloud-init reads this) * `triton/instance/*` keys with `guest_visible=false` -> `internal_metadata.<suffix>` (the legacy \"internal_metadata\" shape, where the historical `root_pw` lives) Empty for non-Provision jobs. The agent strips the `triton/instance/` prefix when folding so an operator who sets `triton/instance/root_pw` ends up with `internal_metadata.root_pw` in the create payload, matching what cloud-init's SmartOS datasource expects."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub provision_metadata: ::std::vec::Vec<MetaEntry>,
         #[doc = "Raw openssh-form public keys to inject via the SmartOS `root_authorized_keys` metadata at zone-create time. Resolved from `Instance::ssh_key_ids`."]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub ssh_public_keys: ::std::vec::Vec<::std::string::String>,
@@ -17410,6 +17421,8 @@ pub mod types {
                 ::std::string::String,
             >,
             nics: ::std::result::Result<::std::vec::Vec<super::Nic>, ::std::string::String>,
+            provision_metadata:
+                ::std::result::Result<::std::vec::Vec<super::MetaEntry>, ::std::string::String>,
             ssh_public_keys: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
                 ::std::string::String,
@@ -17428,6 +17441,7 @@ pub mod types {
                     kind: Err("no value supplied for kind".to_string()),
                     managed_identity: Ok(Default::default()),
                     nics: Ok(Default::default()),
+                    provision_metadata: Ok(Default::default()),
                     ssh_public_keys: Ok(Default::default()),
                     subnets: Ok(Default::default()),
                 }
@@ -17515,6 +17529,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for nics: {e}"));
                 self
             }
+            pub fn provision_metadata<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MetaEntry>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.provision_metadata = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for provision_metadata: {e}")
+                });
+                self
+            }
             pub fn ssh_public_keys<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
@@ -17551,6 +17575,7 @@ pub mod types {
                     kind: value.kind?,
                     managed_identity: value.managed_identity?,
                     nics: value.nics?,
+                    provision_metadata: value.provision_metadata?,
                     ssh_public_keys: value.ssh_public_keys?,
                     subnets: value.subnets?,
                 })
@@ -17568,6 +17593,7 @@ pub mod types {
                     kind: Ok(value.kind),
                     managed_identity: Ok(value.managed_identity),
                     nics: Ok(value.nics),
+                    provision_metadata: Ok(value.provision_metadata),
                     ssh_public_keys: Ok(value.ssh_public_keys),
                     subnets: Ok(value.subnets),
                 }

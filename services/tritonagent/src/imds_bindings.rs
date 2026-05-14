@@ -289,6 +289,7 @@ mod blueprint_tests {
             ssh_public_keys: vec![],
             managed_identity: None,
             imds_bindings: vec![],
+            provision_metadata: vec![],
         }
     }
 

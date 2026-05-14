@@ -357,6 +357,21 @@ pub struct ProvisioningBlueprint {
     /// `IMDS_DESIGN.md` §2.1.
     #[serde(default)]
     pub imds_bindings: Vec<ImdsBindingWire>,
+    /// Instance-scope metadata to fold into the SmartOS vmadm-create
+    /// payload's `customer_metadata` / `internal_metadata` maps:
+    ///   * `triton/instance/*` keys with `guest_visible=true`
+    ///     -> `customer_metadata.<suffix>` (cloud-init reads this)
+    ///   * `triton/instance/*` keys with `guest_visible=false`
+    ///     -> `internal_metadata.<suffix>` (the legacy
+    ///     "internal_metadata" shape, where the historical
+    ///     `root_pw` lives)
+    /// Empty for non-Provision jobs. The agent strips the
+    /// `triton/instance/` prefix when folding so an operator who
+    /// sets `triton/instance/root_pw` ends up with
+    /// `internal_metadata.root_pw` in the create payload, matching
+    /// what cloud-init's SmartOS datasource expects.
+    #[serde(default)]
+    pub provision_metadata: Vec<MetaEntry>,
 }
 
 /// Path parameters for endpoints that operate on a single audit event.

@@ -877,6 +877,21 @@ where
         match proteus.ensure_started(&port_blueprint, &link_name) {
             Ok(status) => {
                 let applied_generation = status.generation.applied_generation.0;
+                // Register the proteus link as a SmartOS nic_tag so
+                // `vmadm create` accepts it. Without this step the
+                // kmod link exists but vmadm rejects with "Invalid
+                // nic tag". Idempotent (`nictagadm exists` short-
+                // circuits before `add`) and best-effort so a
+                // stale tag from a previous realize doesn't block
+                // provisioning. Skipped under `dry_run`.
+                if let Err(err) = ensure_proteus_nic_tag(&link_name) {
+                    tracing::warn!(
+                        nic_id = %nic.id,
+                        link_name,
+                        error = %err,
+                        "nictagadm registration failed; vmadm create may reject the tag"
+                    );
+                }
                 let request = NetworkRealizationRequest {
                     resource,
                     realizer: realizer.clone(),
@@ -954,7 +969,78 @@ where
         if let Err(err) = proteus.cleanup_port(port.port_id) {
             warn!(port_id = %port.port_id, error = %err, "failed to clean up Proteus port");
         }
+        if let Err(err) = drop_proteus_nic_tag(&port.link_name) {
+            warn!(
+                link_name = %port.link_name,
+                error = %err,
+                "failed to delete proteus nic_tag; will leave stale entry"
+            );
+        }
     }
+}
+
+/// Register a proteus pseudo-link as a SmartOS nic_tag so
+/// `vmadm create` accepts it. proteus links aren't in the boot-time
+/// `/usbkey/config` nic_tag list, so without this step vmadm rejects
+/// the per-NIC `nic_tag=proteus<linkid>` with "Invalid nic tag".
+///
+/// Idempotent: `nictagadm exists -l` short-circuits the add when the
+/// tag is already present (e.g. a previous Provision job for the same
+/// port that completed past the agent's local cleanup). We use the
+/// `-l` "local" flag because proteus is a pseudo-link, not a physical
+/// NIC -- the same flag etherstubs use.
+fn ensure_proteus_nic_tag(link_name: &str) -> anyhow::Result<()> {
+    use std::process::Command;
+    // `nictagadm exists` returns 0 if the tag is registered, 1
+    // otherwise. We treat exit 0 as "already done, nothing to do".
+    let exists = Command::new("nictagadm")
+        .args(["exists", "-l", link_name])
+        .status()
+        .with_context(|| format!("invoke nictagadm exists for {link_name}"))?;
+    if exists.success() {
+        return Ok(());
+    }
+    let out = Command::new("nictagadm")
+        .args(["add", "-l", link_name])
+        .output()
+        .with_context(|| format!("invoke nictagadm add for {link_name}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!(
+            "nictagadm add -l {link_name} failed (exit {}): {}",
+            out.status,
+            stderr.trim(),
+        );
+    }
+    Ok(())
+}
+
+/// Tear down the nic_tag created by `ensure_proteus_nic_tag` when the
+/// port is cleaned up. Best-effort: failures are logged by the caller
+/// but never propagated; a stale tag at worst trips the
+/// `nictagadm exists` short-circuit on the next realize.
+fn drop_proteus_nic_tag(link_name: &str) -> anyhow::Result<()> {
+    use std::process::Command;
+    let exists = Command::new("nictagadm")
+        .args(["exists", "-l", link_name])
+        .status()
+        .with_context(|| format!("invoke nictagadm exists for {link_name}"))?;
+    if !exists.success() {
+        return Ok(());
+    }
+    let out = Command::new("nictagadm")
+        .args(["delete", "-f", link_name])
+        .output()
+        .with_context(|| format!("invoke nictagadm delete for {link_name}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!(
+            "nictagadm delete {link_name} failed (exit {}): {}",
+            out.status,
+            stderr.trim(),
+        );
+    }
+    Ok(())
 }
 
 fn decode_agent_port_blueprint(response: AgentPortBlueprint) -> Result<PortBlueprint> {
@@ -1129,6 +1215,7 @@ mod tests {
             ssh_public_keys: Vec::new(),
             managed_identity: None,
             imds_bindings: Vec::new(),
+            provision_metadata: Vec::new(),
         }
     }
 
