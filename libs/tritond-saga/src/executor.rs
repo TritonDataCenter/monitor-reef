@@ -52,7 +52,7 @@ impl SagaExecutor {
     /// Build the executor. Callers must build the Steno `SecClient`
     /// over the same `Arc<dyn steno::SecStore>` that `sec_store`
     /// implements, so the engine and the extension see the same
-    /// state. `new_for_test` below wires this for `MemSecStore`.
+    /// state. [`Self::new_with_mem_store`] below wires this for `MemSecStore`.
     pub fn new(
         sec_id: SecId,
         sec_epoch: SecEpoch,
@@ -208,11 +208,16 @@ impl SagaExecutor {
     }
 }
 
-/// Test-only constructor that wires a `MemSecStore` to both Steno's
-/// `SecClient` and our `TritondSecStore` from the same `Arc`, so the
-/// engine and the fencing extension see the same backing state.
+/// Build an executor over an [`MemSecStore`]. The same `Arc` is
+/// shared between Steno's `SecClient` and our `TritondSecStore` so
+/// the engine and the fencing extension see the same backing state.
+///
+/// This is the constructor `tritond` itself uses at SG-1 (where
+/// `FdbSecStore` is a stub) and the one every integration test uses.
+/// SG-1b will add a sibling `new_with_fdb_store` that wires the FDB
+/// SecStore for production deploys whose `Store` is `FdbStore`.
 impl SagaExecutor {
-    pub fn new_for_test(
+    pub fn new_with_mem_store(
         sec_id: SecId,
         sec_epoch: SecEpoch,
         sec_store: Arc<MemSecStore>,

@@ -9,8 +9,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use slog::Drain;
 use tritond_audit::MemChain;
 use tritond_auth::JwtKey;
+use tritond_saga::{ActionRegistry, MemSecStore, SagaExecutor, SecEpoch, SecId};
 use tritond_store::{MemStore, Store};
 
 use crate::audit::AuditService;
@@ -71,6 +73,20 @@ pub struct ApiContext {
     /// [`ApiContext::with_logs`]. Same fail-open behaviour as
     /// `metrics` -- a storage hiccup never 5xx's the agent.
     pub logs: Arc<dyn tritond_logs::LogStore>,
+    /// Durable workflow executor (RFD 00004). Every multi-resource
+    /// operation that touches more than one FDB resource, or that
+    /// enqueues work for any `tritonagent`, runs as a registered
+    /// saga with explicit per-action undo. Catalog modules in
+    /// `crate::sagas` (SG-2 onwards) register their actions on this
+    /// executor.
+    ///
+    /// SG-1 builds a default executor over [`MemSecStore`] regardless
+    /// of the underlying [`Store`] backend; SG-1b will select
+    /// `FdbSecStore` when `Store` is `FdbStore` so sagas survive
+    /// process restarts. With an empty catalog the executor is a
+    /// no-op for everyone except the heartbeat/recovery plumbing it
+    /// keeps alive for SG-2.
+    pub saga: Arc<SagaExecutor>,
 }
 
 /// Cadence and staleness threshold for the
@@ -79,6 +95,28 @@ pub struct ApiContext {
 pub struct SweeperConfig {
     pub interval: std::time::Duration,
     pub stale_after: std::time::Duration,
+}
+
+/// Build a default `SagaExecutor` over a fresh in-memory SecStore.
+/// Used by both [`ApiContext::new`] and [`ApiContext::in_memory`]
+/// so every test fixture gets an isolated SEC id. SG-1b will add a
+/// `with_saga_executor` builder that lets production override with
+/// an FDB-backed SecStore once `FdbSecStore` is implemented.
+fn default_saga_executor() -> Arc<SagaExecutor> {
+    let drain = slog::Discard;
+    let log = slog::Logger::root(drain.fuse(), slog::o!("component" => "tritond-saga"));
+    let store = MemSecStore::new();
+    // Catalog is empty at SG-1; SG-2 onwards register actions
+    // (and saga versions) via dedicated builder calls before the
+    // server starts.
+    let exec = SagaExecutor::new_with_mem_store(
+        SecId::random(),
+        SecEpoch::new(1),
+        store,
+        ActionRegistry::new(),
+        log,
+    );
+    Arc::new(exec)
 }
 
 impl ApiContext {
@@ -95,6 +133,7 @@ impl ApiContext {
             identity_hmac_key: Arc::new(tritond_auth::IdentityHmacKey::generate()),
             metrics: Arc::new(tritond_metrics::store::RingBufferStore::new()),
             logs: Arc::new(tritond_logs::RingBufferLogStore::new()),
+            saga: default_saga_executor(),
         }
     }
 
@@ -151,6 +190,16 @@ impl ApiContext {
     #[must_use]
     pub fn with_dhcp_reconciler(mut self, cfg: crate::dhcp_reconciler::ReconcilerConfig) -> Self {
         self.dhcp_reconciler = Some(cfg);
+        self
+    }
+
+    /// Replace the default `SagaExecutor` with a caller-built one.
+    /// SG-2 onwards uses this to install an executor whose registry
+    /// contains the catalog actions; SG-1b will use it from `main`
+    /// to install an FDB-backed executor in production deploys.
+    #[must_use]
+    pub fn with_saga_executor(mut self, saga: Arc<SagaExecutor>) -> Self {
+        self.saga = saga;
         self
     }
 

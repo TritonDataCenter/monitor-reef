@@ -1646,6 +1646,46 @@ pub async fn start_server_with_context(
     .map_err(|e| anyhow::anyhow!("failed to construct logger: {e}"))?;
 
     let api = api_description()?;
+
+    // SG-1 (RFD 00004): before the HTTP server accepts traffic,
+    // recover this SEC's unfinished sagas from the SecStore.
+    // SG-1 ships an empty catalog so this is a no-op for now, but
+    // the plumbing is in place so SG-2 onwards work the moment the
+    // first catalog module registers.
+    let recovered = context
+        .saga
+        .recover_all_for_sec()
+        .await
+        .map_err(|e| anyhow::anyhow!("saga recovery at startup failed: {e}"))?;
+    if recovered > 0 {
+        tracing::info!(recovered, "tritond-saga: resumed unfinished sagas");
+    }
+
+    // Spawn the heartbeat task. Writes `(epoch, now)` for this SEC
+    // every `SEC_HEARTBEAT_INTERVAL` so other SECs' sweepers can
+    // tell when this one's gone (D-Sg-4). Cadence is a fraction of
+    // the sweeper's stale threshold; SG-1 picks 60 s which is
+    // comfortably under the sweeper's 600 s default.
+    {
+        const SEC_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+        let saga = Arc::clone(&context.saga);
+        let _heartbeat = tokio::spawn(async move {
+            // First touch immediately so a sweeper that fires right
+            // after startup doesn't see us as stale.
+            if let Err(e) = saga.touch_heartbeat().await {
+                tracing::warn!(error = %e, "tritond-saga: initial heartbeat write failed");
+            }
+            let mut tick = tokio::time::interval(SEC_HEARTBEAT_INTERVAL);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tick.tick().await;
+                if let Err(e) = saga.touch_heartbeat().await {
+                    tracing::warn!(error = %e, "tritond-saga: heartbeat write failed");
+                }
+            }
+        });
+    }
+
     // Spawn the stub provisioner before starting the HTTP server
     // so the queue is being drained from the moment handlers can
     // accept requests. Tests / real-agent deploys can opt out via
@@ -1663,6 +1703,7 @@ pub async fn start_server_with_context(
         let _sweeper = sweeper::spawn(
             Arc::clone(&context.store),
             Arc::clone(&context.audit),
+            Arc::clone(&context.saga),
             sw.interval,
             sw.stale_after,
         );

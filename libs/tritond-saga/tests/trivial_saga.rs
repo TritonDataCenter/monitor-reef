@@ -118,8 +118,13 @@ fn build_dag_and_registry() -> (Arc<SagaDag>, ActionRegistry) {
 
 fn build_executor(store: Arc<MemSecStore>) -> (SagaExecutor, Arc<SagaDag>) {
     let (dag, reg) = build_dag_and_registry();
-    let mut exec =
-        SagaExecutor::new_for_test(SecId::random(), SecEpoch::new(1), store, reg, null_logger());
+    let mut exec = SagaExecutor::new_with_mem_store(
+        SecId::random(),
+        SecEpoch::new(1),
+        store,
+        reg,
+        null_logger(),
+    );
     exec.register_saga_version(SAGA_NAME, SAGA_VERSION);
     (exec, dag)
 }

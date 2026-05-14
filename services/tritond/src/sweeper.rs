@@ -43,6 +43,7 @@ use std::time::Duration;
 use chrono::Utc;
 use tracing::{debug, info, warn};
 use tritond_audit::Outcome as AuditOutcome;
+use tritond_saga::SagaExecutor;
 use tritond_store::{JobOutcome, Store};
 
 use crate::audit::AuditService;
@@ -64,15 +65,17 @@ const SWEEPER_ACTOR: &str = "tritond-sweeper";
 pub fn spawn(
     store: Arc<dyn Store>,
     audit: Arc<AuditService>,
+    saga: Arc<SagaExecutor>,
     interval: Duration,
     threshold: Duration,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(run(store, audit, interval, threshold))
+    tokio::spawn(run(store, audit, saga, interval, threshold))
 }
 
 async fn run(
     store: Arc<dyn Store>,
     audit: Arc<AuditService>,
+    saga: Arc<SagaExecutor>,
     interval: Duration,
     threshold: Duration,
 ) {
@@ -102,6 +105,20 @@ async fn run(
             }
             Err(e) => {
                 warn!(error = %e, "list_stale_claims failed; will retry next interval");
+            }
+        }
+        // RFD 00004 D-Sg-4 / SG-1: the same sweeper now picks up
+        // sagas whose owning SEC's heartbeat is older than `cutoff`.
+        // Reassignment CASes `current_sec` over and bumps
+        // `current_epoch` (D-Sg-8), then resumes through Steno.
+        // We reuse `cutoff` rather than introduce a separate
+        // threshold (README open question, settled in code for SG-1
+        // to match the existing tunable; SG-1b may split it).
+        match saga.reassign_stale_sec_sagas(cutoff).await {
+            Ok(0) => debug!("no stale-SEC sagas this sweep"),
+            Ok(n) => info!(adopted = n, "tritond-saga: adopted stale-SEC sagas"),
+            Err(e) => {
+                warn!(error = %e, "tritond-saga: reassign_stale_sec_sagas failed; will retry next interval")
             }
         }
     }

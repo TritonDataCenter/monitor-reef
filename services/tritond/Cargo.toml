@@ -16,7 +16,11 @@ workspace = true
 default = []
 # Compile in the FoundationDB backends (storage + audit chain).
 # Builds with this feature require libfdb_c.so on the build/run host.
-foundationdb = ["tritond-store/foundationdb", "tritond-audit/foundationdb"]
+foundationdb = [
+    "tritond-store/foundationdb",
+    "tritond-audit/foundationdb",
+    "tritond-saga/foundationdb",
+]
 
 [lib]
 name = "tritond"
@@ -62,6 +66,8 @@ tritond-auth = { workspace = true }
 tritond-image-manifest = { workspace = true }
 tritond-logs = { workspace = true }
 tritond-metrics = { workspace = true, features = ["clickhouse"] }
+tritond-saga = { workspace = true }
+slog = { workspace = true }
 tritond-store = { workspace = true }
 triton-vpc = { path = "../../../proteus/plugins/triton-vpc", features = ["std"] }
 urlencoding = { workspace = true }
