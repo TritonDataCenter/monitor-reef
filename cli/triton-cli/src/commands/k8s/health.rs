@@ -7,7 +7,8 @@
 //! Comprehensive cluster health status command
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -38,6 +39,14 @@ pub struct HealthArgs {
     /// Talosconfig file (defaults to cluster's talosconfig)
     #[arg(long)]
     pub talosconfig: Option<String>,
+
+    /// Continuously poll and refresh the health display
+    #[arg(long, short)]
+    pub watch: bool,
+
+    /// Polling interval in seconds (default: 5)
+    #[arg(long, default_value = "5")]
+    pub interval: u64,
 }
 
 /// Overall cluster health report
@@ -72,6 +81,10 @@ pub struct ClusterInfo {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub control_plane_endpoint: Option<String>,
+
+    /// CNS hostname for the control plane (e.g. "ctrl.cns.us-west-1.triton.zone")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cns_name: Option<String>,
 
     pub total_nodes: usize,
 
@@ -264,24 +277,82 @@ pub async fn run(args: HealthArgs, use_json: bool) -> Result<()> {
     };
     let talosconfig_str = talosconfig_path.to_string_lossy().to_string();
 
-    // Gather cluster info
-    let control_nodes: Vec<_> = cluster
+    let ctx = HealthContext {
+        cluster,
+        control_endpoint,
+        kubeconfig_path,
+        talosconfig_str,
+    };
+
+    if args.watch {
+        let interval = Duration::from_secs(args.interval);
+        loop {
+            let report = gather_report(&ctx, args.summary, args.etcd).await?;
+            // Clear screen and move cursor to top
+            eprint!("\x1b[2J\x1b[H");
+            if use_json {
+                json::print_json(&report)?;
+            } else {
+                print_health_report(&report);
+                eprintln!();
+                eprintln!(
+                    "\x1b[90mRefreshing every {}s — press Ctrl+C to stop\x1b[0m",
+                    args.interval
+                );
+            }
+            tokio::time::sleep(interval).await;
+        }
+    } else {
+        let report = gather_report(&ctx, args.summary, args.etcd).await?;
+        if use_json {
+            json::print_json(&report)?;
+        } else {
+            print_health_report(&report);
+        }
+        Ok(())
+    }
+}
+
+/// Resolved context needed to poll health, computed once at startup.
+struct HealthContext {
+    cluster: ClusterState,
+    control_endpoint: String,
+    kubeconfig_path: PathBuf,
+    talosconfig_str: String,
+}
+
+async fn gather_report(
+    ctx: &HealthContext,
+    summary_only: bool,
+    include_etcd: bool,
+) -> Result<ClusterHealthReport> {
+    let control_nodes: Vec<_> = ctx
+        .cluster
         .nodes
         .iter()
         .filter(|(_, n)| n.role == NodeRole::Control)
         .collect();
-    let worker_nodes: Vec<_> = cluster
+    let worker_nodes: Vec<_> = ctx
+        .cluster
         .nodes
         .iter()
         .filter(|(_, n)| n.role == NodeRole::Worker)
         .collect();
 
+    let cns_name = ctx
+        .cluster
+        .control_plane
+        .as_ref()
+        .and_then(|cp| cp.cns_suffix.as_ref())
+        .map(|suffix| format!("ctrl.{}", suffix));
+
     let cluster_info = ClusterInfo {
-        name: cluster.name.clone(),
-        uuid: cluster.uuid.to_string(),
-        created_at: cluster.created_at.to_rfc3339(),
-        control_plane_endpoint: Some(control_endpoint.clone()),
-        total_nodes: cluster.nodes.len(),
+        name: ctx.cluster.name.clone(),
+        uuid: ctx.cluster.uuid.to_string(),
+        created_at: ctx.cluster.created_at.to_rfc3339(),
+        control_plane_endpoint: Some(ctx.control_endpoint.clone()),
+        cns_name,
+        total_nodes: ctx.cluster.nodes.len(),
         control_plane_nodes: control_nodes.len(),
         worker_nodes: worker_nodes.len(),
     };
@@ -293,14 +364,15 @@ pub async fn run(args: HealthArgs, use_json: bool) -> Result<()> {
     let mut unreachable_count = 0usize;
     let mut issues = Vec::new();
 
-    // Build a map of k8s node statuses if kubeconfig exists
-    let k8s_node_map = if kubeconfig_path.exists() {
-        get_k8s_node_map(&kubeconfig_path).await.unwrap_or_default()
+    let k8s_node_map = if ctx.kubeconfig_path.exists() {
+        get_k8s_node_map(&ctx.kubeconfig_path)
+            .await
+            .unwrap_or_default()
     } else {
         HashMap::new()
     };
 
-    for (name, info) in &cluster.nodes {
+    for (name, info) in &ctx.cluster.nodes {
         let (endpoint, target_node) = match info.role {
             NodeRole::Control => {
                 let ep = info
@@ -315,7 +387,7 @@ pub async fn run(args: HealthArgs, use_json: bool) -> Result<()> {
                     .as_ref()
                     .or(info.primary_ip.as_ref())
                     .ok_or_else(|| anyhow::anyhow!("Worker node {} has no IP address", name))?;
-                (control_endpoint.clone(), Some(fabric_ip.as_str()))
+                (ctx.control_endpoint.clone(), Some(fabric_ip.as_str()))
             }
         };
 
@@ -324,7 +396,7 @@ pub async fn run(args: HealthArgs, use_json: bool) -> Result<()> {
             info.role,
             &endpoint,
             target_node,
-            &talosconfig_str,
+            &ctx.talosconfig_str,
             k8s_node_map.get(name).cloned(),
         )
         .await;
@@ -346,7 +418,6 @@ pub async fn run(args: HealthArgs, use_json: bool) -> Result<()> {
         node_healths.push(node_health);
     }
 
-    // Determine overall status
     let status = if unreachable_count > 0 || unhealthy_count > 0 {
         if healthy_count > 0 {
             HealthStatus::Degraded
@@ -367,41 +438,31 @@ pub async fn run(args: HealthArgs, use_json: bool) -> Result<()> {
         issues,
     };
 
-    // Get Kubernetes health if kubeconfig exists
-    let kubernetes = if kubeconfig_path.exists() {
-        get_kubernetes_health(&kubeconfig_path).await.ok()
+    let kubernetes = if ctx.kubeconfig_path.exists() {
+        get_kubernetes_health(&ctx.kubeconfig_path).await.ok()
     } else {
         None
     };
 
-    // Get etcd health if requested
-    let etcd = if args.etcd && !control_nodes.is_empty() {
-        get_etcd_health(&control_endpoint, &talosconfig_str)
+    let etcd = if include_etcd && !control_nodes.is_empty() {
+        get_etcd_health(&ctx.control_endpoint, &ctx.talosconfig_str)
             .await
             .ok()
     } else {
         None
     };
 
-    let report = ClusterHealthReport {
+    Ok(ClusterHealthReport {
         cluster: cluster_info,
         summary,
-        nodes: if args.summary {
+        nodes: if summary_only {
             None
         } else {
             Some(node_healths)
         },
         kubernetes,
         etcd,
-    };
-
-    if use_json {
-        json::print_json(&report)?;
-    } else {
-        print_health_report(&report);
-    }
-
-    Ok(())
+    })
 }
 
 async fn query_node_health(
@@ -449,9 +510,25 @@ async fn query_node_health(
                 }
             }
 
+            // Derive k8s status when the Kubernetes API hasn't reported on
+            // this node yet.  Three cases:
+            //   - kubelet running → "Registering" (waiting for API server)
+            //   - kubelet present but not yet running → "Waiting" (kubelet
+            //     starting)
+            //   - kubelet not present at all → leave as None (too early)
+            let kubelet = services.iter().find(|s| s.id == "kubelet");
+            let k8s_status = match k8s_status {
+                Some(s) => Some(s),
+                None => match kubelet {
+                    Some(s) if s.state == "Running" => Some("Registering".to_string()),
+                    Some(_) => Some("Waiting".to_string()),
+                    None => None,
+                },
+            };
+
             // Check k8s status
             if let Some(ref status) = k8s_status
-                && status != "Ready"
+                && !matches!(status.as_str(), "Ready" | "Registering" | "Waiting")
             {
                 issues.push(format!("Kubernetes node status: {}", status));
             }
@@ -773,7 +850,10 @@ fn print_health_report(report: &ClusterHealthReport) {
         &report.cluster.uuid[..8]
     );
     if let Some(ref endpoint) = report.cluster.control_plane_endpoint {
-        eprintln!("Endpoint:   {}", endpoint);
+        match report.cluster.cns_name {
+            Some(ref cns) => eprintln!("Endpoint:   {} ({})", endpoint, cns),
+            None => eprintln!("Endpoint:   {}", endpoint),
+        }
     }
     eprintln!(
         "Nodes:      {} total ({} control, {} workers)",
@@ -810,12 +890,19 @@ fn print_health_report(report: &ClusterHealthReport) {
         eprintln!("Node Health");
         eprintln!("-----------");
         for node in nodes {
-            let status_icon = if node.reachable && node.issues.is_empty() {
-                "\x1b[32m✓\x1b[0m"
-            } else if node.reachable {
-                "\x1b[33m!\x1b[0m"
-            } else {
+            let k8s_pending = node
+                .k8s_status
+                .as_deref()
+                .is_some_and(|s| matches!(s, "Registering" | "Waiting"));
+
+            let status_icon = if !node.reachable {
                 "\x1b[31m✗\x1b[0m"
+            } else if !node.issues.is_empty() {
+                "\x1b[33m!\x1b[0m"
+            } else if k8s_pending {
+                "\x1b[33m~\x1b[0m"
+            } else {
+                "\x1b[32m✓\x1b[0m"
             };
 
             let version_str = node
@@ -830,7 +917,14 @@ fn print_health_report(report: &ClusterHealthReport) {
             );
 
             if let Some(ref k8s_status) = node.k8s_status {
-                eprintln!("    K8s: {}", k8s_status);
+                let colored_status = match k8s_status.as_str() {
+                    "Ready" => format!("\x1b[32m{}\x1b[0m", k8s_status),
+                    "Registering" | "Waiting" => {
+                        format!("\x1b[33m{}\x1b[0m", k8s_status)
+                    }
+                    _ => format!("\x1b[31m{}\x1b[0m", k8s_status),
+                };
+                eprintln!("    K8s: {}", colored_status);
             }
 
             // Show key services
