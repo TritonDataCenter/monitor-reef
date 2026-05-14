@@ -1072,17 +1072,33 @@ pub async fn resolve_image_id(name_or_uuid: &str, client: &TypedClient) -> Resul
         0 => bail!("Image not found: {}", name_or_uuid),
         1 => Ok(matches[0].id),
         _ => {
-            let list = matches
+            // Multiple images with the same name: pick the newest by
+            // published_at timestamp.
+            let newest = matches
                 .iter()
-                .map(|img| format!("  - {} ({})", img.name, &img.id.to_string()[..8]))
-                .collect::<Vec<_>>()
-                .join("\n");
-            bail!(
-                "Multiple images named '{}':\n{}\n\
-                Use UUID to specify which image.",
+                .filter(|img| img.published_at.is_some())
+                .max_by_key(|img| img.published_at.clone())
+                .ok_or_else(|| {
+                    let list = matches
+                        .iter()
+                        .map(|img| format!("  - {} ({})", img.name, &img.id.to_string()[..8]))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    anyhow::anyhow!(
+                        "Multiple images named '{}' but none have a published_at \
+                         timestamp:\n{}\nUse UUID to specify which image.",
+                        name_or_uuid,
+                        list,
+                    )
+                })?;
+
+            eprintln!(
+                "    Multiple images named '{}'; using newest ({})",
                 name_or_uuid,
-                list
-            )
+                &newest.id.to_string()[..8],
+            );
+
+            Ok(newest.id)
         }
     }
 }
