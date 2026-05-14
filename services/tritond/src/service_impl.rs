@@ -149,6 +149,20 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::auth_keys::verify_audit_chain(rqctx, query).await
     }
 
+    async fn list_operations(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::ListOperationsQuery>,
+    ) -> Result<HttpResponseOk<Vec<tritond_api::OperationSummary>>, HttpError> {
+        crate::handlers::operations::list_operations(rqctx, query).await
+    }
+
+    async fn get_operation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::OperationPath>,
+    ) -> Result<HttpResponseOk<tritond_api::OperationDetail>, HttpError> {
+        crate::handlers::operations::get_operation(rqctx, path).await
+    }
+
     async fn agent_claim_job(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<ClaimJobRequest>,

@@ -6534,6 +6534,349 @@ pub mod types {
         }
     }
 
+    #[doc = "Detail view: the summary plus the persisted DAG + event log. Used by `GET /v2/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Detail view: the summary plus the persisted DAG + event log. Used by `GET /v2/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"adopt_generation\","]
+    #[doc = "    \"creator_sec\","]
+    #[doc = "    \"current_epoch\","]
+    #[doc = "    \"current_sec\","]
+    #[doc = "    \"dag\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"time_created\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"adopt_generation\": {"]
+    #[doc = "      \"description\": \"How many times this saga has been adopted by a SEC.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"creator_sec\": {"]
+    #[doc = "      \"description\": \"The SEC that originally created the saga. Operators looking at \\\"which tritond ran this\\\" see this here.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"current_epoch\": {"]
+    #[doc = "      \"description\": \"Fence epoch for `current_sec`. Bumped on every adoption and every recovery hop (RFD 00004 D-Sg-8).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"current_sec\": {"]
+    #[doc = "      \"description\": \"The SEC currently driving it. Differs from `creator_sec` only after a reassignment hop (D-Sg-4).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"dag\": {"]
+    #[doc = "      \"description\": \"The persisted Steno `SagaDag` JSON. Opaque to clients; the adminUI surfaces it for operators who need the structure.\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Stable operation id (== Steno saga id).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"description\": \"Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"Public state (see [`OperationState`]).\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/OperationState\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stuck_reason\": {"]
+    #[doc = "      \"description\": \"Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"time_created\": {"]
+    #[doc = "      \"description\": \"When the saga was created (UTC).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"time_done\": {"]
+    #[doc = "      \"description\": \"When the saga reached `Done`. `None` if still running.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Saga `VERSION` (RFD 00004 D-Sg-10).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct OperationDetail {
+        #[doc = "How many times this saga has been adopted by a SEC."]
+        pub adopt_generation: u64,
+        #[doc = "The SEC that originally created the saga. Operators looking at \"which tritond ran this\" see this here."]
+        pub creator_sec: ::uuid::Uuid,
+        #[doc = "Fence epoch for `current_sec`. Bumped on every adoption and every recovery hop (RFD 00004 D-Sg-8)."]
+        pub current_epoch: u64,
+        #[doc = "The SEC currently driving it. Differs from `creator_sec` only after a reassignment hop (D-Sg-4)."]
+        pub current_sec: ::uuid::Uuid,
+        #[doc = "The persisted Steno `SagaDag` JSON. Opaque to clients; the adminUI surfaces it for operators who need the structure."]
+        pub dag: ::serde_json::Value,
+        #[doc = "Stable operation id (== Steno saga id)."]
+        pub id: ::uuid::Uuid,
+        #[doc = "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab."]
+        pub kind: ::std::string::String,
+        #[doc = "Public state (see [`OperationState`])."]
+        pub state: OperationState,
+        #[doc = "Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stuck_reason: ::std::option::Option<::std::string::String>,
+        #[doc = "When the saga was created (UTC)."]
+        pub time_created: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "When the saga reached `Done`. `None` if still running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub time_done: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[doc = "Saga `VERSION` (RFD 00004 D-Sg-10)."]
+        pub version: u32,
+    }
+
+    impl OperationDetail {
+        pub fn builder() -> builder::OperationDetail {
+            Default::default()
+        }
+    }
+
+    #[doc = "Public state of a long-running operation. Maps from Steno's `SagaCachedState` + the saga's `stuck_reason` so operators can distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one field. The string values are stable on the wire and match the RFD 00004 D-Sg-13 enum."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Public state of a long-running operation. Maps from Steno's `SagaCachedState` + the saga's `stuck_reason` so operators can distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one field. The string values are stable on the wire and match the RFD 00004 D-Sg-13 enum.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Saga is in the forward direction.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"running\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"At least one undo errored or the saga's persisted version is no longer registered. Operator action needed.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"stuck\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Saga reached the `Done` cached state. Use [`OperationDetail`] to see whether the result was Ok or Err (the latter means a full unwind).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"done\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum OperationState {
+        #[doc = "Saga is in the forward direction."]
+        #[serde(rename = "running")]
+        Running,
+        #[doc = "At least one undo errored or the saga's persisted version is no longer registered. Operator action needed."]
+        #[serde(rename = "stuck")]
+        Stuck,
+        #[doc = "Saga reached the `Done` cached state. Use [`OperationDetail`] to see whether the result was Ok or Err (the latter means a full unwind)."]
+        #[serde(rename = "done")]
+        Done,
+    }
+
+    impl ::std::fmt::Display for OperationState {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Running => f.write_str("running"),
+                Self::Stuck => f.write_str("stuck"),
+                Self::Done => f.write_str("done"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for OperationState {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "running" => Ok(Self::Running),
+                "stuck" => Ok(Self::Stuck),
+                "done" => Ok(Self::Done),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for OperationState {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for OperationState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for OperationState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "One operation as it appears in `GET /v2/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One operation as it appears in `GET /v2/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"creator_sec\","]
+    #[doc = "    \"current_sec\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kind\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"time_created\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"creator_sec\": {"]
+    #[doc = "      \"description\": \"The SEC that originally created the saga. Operators looking at \\\"which tritond ran this\\\" see this here.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"current_sec\": {"]
+    #[doc = "      \"description\": \"The SEC currently driving it. Differs from `creator_sec` only after a reassignment hop (D-Sg-4).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Stable operation id (== Steno saga id).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kind\": {"]
+    #[doc = "      \"description\": \"Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"Public state (see [`OperationState`]).\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/OperationState\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"stuck_reason\": {"]
+    #[doc = "      \"description\": \"Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"time_created\": {"]
+    #[doc = "      \"description\": \"When the saga was created (UTC).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"time_done\": {"]
+    #[doc = "      \"description\": \"When the saga reached `Done`. `None` if still running.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Saga `VERSION` (RFD 00004 D-Sg-10).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct OperationSummary {
+        #[doc = "The SEC that originally created the saga. Operators looking at \"which tritond ran this\" see this here."]
+        pub creator_sec: ::uuid::Uuid,
+        #[doc = "The SEC currently driving it. Differs from `creator_sec` only after a reassignment hop (D-Sg-4)."]
+        pub current_sec: ::uuid::Uuid,
+        #[doc = "Stable operation id (== Steno saga id)."]
+        pub id: ::uuid::Uuid,
+        #[doc = "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab."]
+        pub kind: ::std::string::String,
+        #[doc = "Public state (see [`OperationState`])."]
+        pub state: OperationState,
+        #[doc = "Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub stuck_reason: ::std::option::Option<::std::string::String>,
+        #[doc = "When the saga was created (UTC)."]
+        pub time_created: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "When the saga reached `Done`. `None` if still running."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub time_done: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[doc = "Saga `VERSION` (RFD 00004 D-Sg-10)."]
+        pub version: u32,
+    }
+
+    impl OperationSummary {
+        pub fn builder() -> builder::OperationSummary {
+            Default::default()
+        }
+    }
+
     #[doc = "Outcome of the action after the handler finished."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -17074,6 +17417,384 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct OperationDetail {
+            adopt_generation: ::std::result::Result<u64, ::std::string::String>,
+            creator_sec: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            current_epoch: ::std::result::Result<u64, ::std::string::String>,
+            current_sec: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            dag: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            state: ::std::result::Result<super::OperationState, ::std::string::String>,
+            stuck_reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            time_created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            time_done: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for OperationDetail {
+            fn default() -> Self {
+                Self {
+                    adopt_generation: Err("no value supplied for adopt_generation".to_string()),
+                    creator_sec: Err("no value supplied for creator_sec".to_string()),
+                    current_epoch: Err("no value supplied for current_epoch".to_string()),
+                    current_sec: Err("no value supplied for current_sec".to_string()),
+                    dag: Err("no value supplied for dag".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                    stuck_reason: Ok(Default::default()),
+                    time_created: Err("no value supplied for time_created".to_string()),
+                    time_done: Ok(Default::default()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl OperationDetail {
+            pub fn adopt_generation<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.adopt_generation = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for adopt_generation: {e}")
+                });
+                self
+            }
+            pub fn creator_sec<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.creator_sec = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for creator_sec: {e}"));
+                self
+            }
+            pub fn current_epoch<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_epoch = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for current_epoch: {e}"));
+                self
+            }
+            pub fn current_sec<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_sec = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for current_sec: {e}"));
+                self
+            }
+            pub fn dag<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dag = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for dag: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::OperationState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn stuck_reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stuck_reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stuck_reason: {e}"));
+                self
+            }
+            pub fn time_created<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.time_created = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for time_created: {e}"));
+                self
+            }
+            pub fn time_done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.time_done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for time_done: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<OperationDetail> for super::OperationDetail {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: OperationDetail,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    adopt_generation: value.adopt_generation?,
+                    creator_sec: value.creator_sec?,
+                    current_epoch: value.current_epoch?,
+                    current_sec: value.current_sec?,
+                    dag: value.dag?,
+                    id: value.id?,
+                    kind: value.kind?,
+                    state: value.state?,
+                    stuck_reason: value.stuck_reason?,
+                    time_created: value.time_created?,
+                    time_done: value.time_done?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::OperationDetail> for OperationDetail {
+            fn from(value: super::OperationDetail) -> Self {
+                Self {
+                    adopt_generation: Ok(value.adopt_generation),
+                    creator_sec: Ok(value.creator_sec),
+                    current_epoch: Ok(value.current_epoch),
+                    current_sec: Ok(value.current_sec),
+                    dag: Ok(value.dag),
+                    id: Ok(value.id),
+                    kind: Ok(value.kind),
+                    state: Ok(value.state),
+                    stuck_reason: Ok(value.stuck_reason),
+                    time_created: Ok(value.time_created),
+                    time_done: Ok(value.time_done),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct OperationSummary {
+            creator_sec: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            current_sec: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            state: ::std::result::Result<super::OperationState, ::std::string::String>,
+            stuck_reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            time_created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            time_done: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for OperationSummary {
+            fn default() -> Self {
+                Self {
+                    creator_sec: Err("no value supplied for creator_sec".to_string()),
+                    current_sec: Err("no value supplied for current_sec".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    kind: Err("no value supplied for kind".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                    stuck_reason: Ok(Default::default()),
+                    time_created: Err("no value supplied for time_created".to_string()),
+                    time_done: Ok(Default::default()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl OperationSummary {
+            pub fn creator_sec<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.creator_sec = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for creator_sec: {e}"));
+                self
+            }
+            pub fn current_sec<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_sec = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for current_sec: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kind<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kind = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kind: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::OperationState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn stuck_reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.stuck_reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for stuck_reason: {e}"));
+                self
+            }
+            pub fn time_created<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.time_created = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for time_created: {e}"));
+                self
+            }
+            pub fn time_done<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.time_done = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for time_done: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<OperationSummary> for super::OperationSummary {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: OperationSummary,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    creator_sec: value.creator_sec?,
+                    current_sec: value.current_sec?,
+                    id: value.id?,
+                    kind: value.kind?,
+                    state: value.state?,
+                    stuck_reason: value.stuck_reason?,
+                    time_created: value.time_created?,
+                    time_done: value.time_done?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::OperationSummary> for OperationSummary {
+            fn from(value: super::OperationSummary) -> Self {
+                Self {
+                    creator_sec: Ok(value.creator_sec),
+                    current_sec: Ok(value.current_sec),
+                    id: Ok(value.id),
+                    kind: Ok(value.kind),
+                    state: Ok(value.state),
+                    stuck_reason: Ok(value.stuck_reason),
+                    time_created: Ok(value.time_created),
+                    time_done: Ok(value.time_done),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct PresignGetRequest {
             bucket: ::std::result::Result<::std::string::String, ::std::string::String>,
             expires_secs: ::std::result::Result<u32, ::std::string::String>,
@@ -21693,6 +22414,16 @@ impl Client {
         builder::DeleteMeta::new(self)
     }
 
+    #[doc = "List long-running operations (RFD 00004 SG-4). Returns\n\nevery saga the SecStore knows about — `Running`, `Stuck`, and `Done` alike. Continuation pagination via the `after_id` query parameter. Operator-only at SG-4; SG-4b will add tenant scoping once the catalog has tenant-scoped sagas with resource references.\n\nSends a `GET` request to `/v2/operations`\n\nArguments:\n- `after_id`: Continuation token: return operations strictly after this id. `None` for the first page.\n- `limit`: Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.\n```ignore\nlet response = client.list_operations()\n    .after_id(after_id)\n    .limit(limit)\n    .send()\n    .await;\n```"]
+    pub fn list_operations(&self) -> builder::ListOperations<'_> {
+        builder::ListOperations::new(self)
+    }
+
+    #[doc = "Detail view for a single operation: summary + persisted DAG\n\n+ fence fields. Used by `tcadm operations get` and the adminUI Operations detail panel.\n\nSends a `GET` request to `/v2/operations/{operation_id}`\n\n```ignore\nlet response = client.get_operation()\n    .operation_id(operation_id)\n    .send()\n    .await;\n```"]
+    pub fn get_operation(&self) -> builder::GetOperation<'_> {
+        builder::GetOperation::new(self)
+    }
+
     #[doc = "List every silo, sorted by `name`. Phase 0 has no per-operator\n\nsilo visibility filter so this returns the full set.\n\nSends a `GET` request to `/v2/silos`\n\n```ignore\nlet response = client.list_silos()\n    .send()\n    .await;\n```"]
     pub fn list_silos(&self) -> builder::ListSilos<'_> {
         builder::ListSilos::new(self)
@@ -26147,6 +26878,169 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::list_operations`]\n\n[`Client::list_operations`]: super::Client::list_operations"]
+    #[derive(Debug, Clone)]
+    pub struct ListOperations<'a> {
+        client: &'a super::Client,
+        after_id: Result<Option<::uuid::Uuid>, String>,
+        limit: Result<Option<u32>, String>,
+    }
+
+    impl<'a> ListOperations<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                after_id: Ok(None),
+                limit: Ok(None),
+            }
+        }
+
+        pub fn after_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.after_id = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for after_id failed".to_string());
+            self
+        }
+
+        pub fn limit<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u32>,
+        {
+            self.limit = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u32` for limit failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/operations`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<::std::vec::Vec<types::OperationSummary>>, Error<types::Error>>
+        {
+            let Self {
+                client,
+                after_id,
+                limit,
+            } = self;
+            let after_id = after_id.map_err(Error::InvalidRequest)?;
+            let limit = limit.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/operations", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("after_id", &after_id))
+                .query(&progenitor_client::QueryParam::new("limit", &limit))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "list_operations",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_operation`]\n\n[`Client::get_operation`]: super::Client::get_operation"]
+    #[derive(Debug, Clone)]
+    pub struct GetOperation<'a> {
+        client: &'a super::Client,
+        operation_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> GetOperation<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                operation_id: Err("operation_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn operation_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.operation_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for operation_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/operations/{operation_id}`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::OperationDetail>, Error<types::Error>> {
+            let Self {
+                client,
+                operation_id,
+            } = self;
+            let operation_id = operation_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/operations/{}",
+                client.baseurl,
+                encode_path(&operation_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_operation",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

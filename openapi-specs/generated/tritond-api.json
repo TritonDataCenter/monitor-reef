@@ -1997,6 +1997,100 @@
         }
       }
     },
+    "/v2/operations": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "List long-running operations (RFD 00004 SG-4). Returns",
+        "description": "every saga the SecStore knows about — `Running`, `Stuck`, and `Done` alike. Continuation pagination via the `after_id` query parameter. Operator-only at SG-4; SG-4b will add tenant scoping once the catalog has tenant-scoped sagas with resource references.",
+        "operationId": "list_operations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after_id",
+            "description": "Continuation token: return operations strictly after this id. `None` for the first page.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_OperationSummary",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OperationSummary"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/operations/{operation_id}": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Detail view for a single operation: summary + persisted DAG",
+        "description": "+ fence fields. Used by `tcadm operations get` and the adminUI Operations detail panel.",
+        "operationId": "get_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDetail"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos": {
       "get": {
         "tags": [
@@ -11654,6 +11748,178 @@
           "duration_secs"
         ]
       },
+      "OperationDetail": {
+        "description": "Detail view: the summary plus the persisted DAG + event log. Used by `GET /v2/operations/{operation_id}` and rendered by `tcadm operations get` / adminUI Operations detail panel.",
+        "type": "object",
+        "properties": {
+          "adopt_generation": {
+            "description": "How many times this saga has been adopted by a SEC.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "creator_sec": {
+            "description": "The SEC that originally created the saga. Operators looking at \"which tritond ran this\" see this here.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "current_epoch": {
+            "description": "Fence epoch for `current_sec`. Bumped on every adoption and every recovery hop (RFD 00004 D-Sg-8).",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "current_sec": {
+            "description": "The SEC currently driving it. Differs from `creator_sec` only after a reassignment hop (D-Sg-4).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "dag": {
+            "description": "The persisted Steno `SagaDag` JSON. Opaque to clients; the adminUI surfaces it for operators who need the structure."
+          },
+          "id": {
+            "description": "Stable operation id (== Steno saga id).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "description": "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Public state (see [`OperationState`]).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperationState"
+              }
+            ]
+          },
+          "stuck_reason": {
+            "nullable": true,
+            "description": "Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable.",
+            "type": "string"
+          },
+          "time_created": {
+            "description": "When the saga was created (UTC).",
+            "type": "string",
+            "format": "date-time"
+          },
+          "time_done": {
+            "nullable": true,
+            "description": "When the saga reached `Done`. `None` if still running.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "description": "Saga `VERSION` (RFD 00004 D-Sg-10).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "adopt_generation",
+          "creator_sec",
+          "current_epoch",
+          "current_sec",
+          "dag",
+          "id",
+          "kind",
+          "state",
+          "time_created",
+          "version"
+        ]
+      },
+      "OperationState": {
+        "description": "Public state of a long-running operation. Maps from Steno's `SagaCachedState` + the saga's `stuck_reason` so operators can distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one field. The string values are stable on the wire and match the RFD 00004 D-Sg-13 enum.",
+        "oneOf": [
+          {
+            "description": "Saga is in the forward direction.",
+            "type": "string",
+            "enum": [
+              "running"
+            ]
+          },
+          {
+            "description": "At least one undo errored or the saga's persisted version is no longer registered. Operator action needed.",
+            "type": "string",
+            "enum": [
+              "stuck"
+            ]
+          },
+          {
+            "description": "Saga reached the `Done` cached state. Use [`OperationDetail`] to see whether the result was Ok or Err (the latter means a full unwind).",
+            "type": "string",
+            "enum": [
+              "done"
+            ]
+          }
+        ]
+      },
+      "OperationSummary": {
+        "description": "One operation as it appears in `GET /v2/operations`. Minimal shape suitable for an adminUI list view; clients fetch the detail surface for the full DAG / event log.",
+        "type": "object",
+        "properties": {
+          "creator_sec": {
+            "description": "The SEC that originally created the saga. Operators looking at \"which tritond ran this\" see this here.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "current_sec": {
+            "description": "The SEC currently driving it. Differs from `creator_sec` only after a reassignment hop (D-Sg-4).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "id": {
+            "description": "Stable operation id (== Steno saga id).",
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "description": "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Public state (see [`OperationState`]).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperationState"
+              }
+            ]
+          },
+          "stuck_reason": {
+            "nullable": true,
+            "description": "Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable.",
+            "type": "string"
+          },
+          "time_created": {
+            "description": "When the saga was created (UTC).",
+            "type": "string",
+            "format": "date-time"
+          },
+          "time_done": {
+            "nullable": true,
+            "description": "When the saga reached `Done`. `None` if still running.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "description": "Saga `VERSION` (RFD 00004 D-Sg-10).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "creator_sec",
+          "current_sec",
+          "id",
+          "kind",
+          "state",
+          "time_created",
+          "version"
+        ]
+      },
       "Outcome": {
         "description": "Outcome of the action after the handler finished.",
         "oneOf": [
@@ -13837,6 +14103,9 @@
     },
     {
       "name": "nics"
+    },
+    {
+      "name": "operations"
     },
     {
       "name": "projects"

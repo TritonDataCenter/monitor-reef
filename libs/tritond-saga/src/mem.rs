@@ -252,4 +252,27 @@ impl TritondSecStore for MemSecStore {
         }
         Ok(())
     }
+
+    async fn list_sagas(
+        &self,
+        marker: Option<SagaId>,
+        limit: usize,
+    ) -> SagaResult<Vec<SagaRecord>> {
+        let g = self.inner.read().await;
+        // `BTreeMap::iter` is ordered by key; use the natural
+        // SagaId order. `range` skips entries up to and including
+        // the marker.
+        let it: Box<dyn Iterator<Item = (&SagaId, &SagaRecord)>> = if let Some(m) = marker {
+            // BTreeMap ranges are inclusive on the lower bound; we
+            // want strict greater-than, so step once past the
+            // marker.
+            Box::new(
+                g.sagas
+                    .range((std::ops::Bound::Excluded(m), std::ops::Bound::Unbounded)),
+            )
+        } else {
+            Box::new(g.sagas.iter())
+        };
+        Ok(it.take(limit).map(|(_, r)| r.clone()).collect())
+    }
 }

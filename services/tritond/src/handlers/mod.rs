@@ -16,6 +16,7 @@ pub(crate) mod instances;
 pub(crate) mod legacy;
 pub(crate) mod meta;
 pub(crate) mod network;
+pub(crate) mod operations;
 pub(crate) mod projects;
 pub(crate) mod silos;
 pub(crate) mod ssh_keys;

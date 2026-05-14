@@ -102,4 +102,18 @@ pub trait TritondSecStore: steno::SecStore {
     /// by the executor when an undo errors or when a saga's
     /// persisted version is missing from the registry.
     async fn mark_stuck(&self, saga_id: SagaId, reason: String) -> SagaResult<()>;
+
+    /// Page through every saga the store knows about, regardless of
+    /// owning SEC or terminal status. Used by the operator-visible
+    /// `/v2/operations` surface and the adminUI Operations tab
+    /// (RFD 00004 SG-4). `marker` is an opaque continuation
+    /// token; pass `None` for the first page.
+    ///
+    /// Implementations are free to pick any stable ordering as
+    /// long as `marker` produces a deterministic next-page
+    /// boundary; the SG-4 contract is "operators can walk the
+    /// catalog", not "newest-first". The wire shape is stable
+    /// across implementations.
+    async fn list_sagas(&self, marker: Option<SagaId>, limit: usize)
+    -> SagaResult<Vec<SagaRecord>>;
 }

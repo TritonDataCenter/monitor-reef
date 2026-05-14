@@ -381,6 +381,95 @@ pub struct AuditEventPath {
 }
 
 // ---------------------------------------------------------------------
+// Operations / sagas (RFD 00004 SG-4)
+// ---------------------------------------------------------------------
+
+/// Public state of a long-running operation. Maps from Steno's
+/// `SagaCachedState` + the saga's `stuck_reason` so operators can
+/// distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one
+/// field. The string values are stable on the wire and match the
+/// RFD 00004 D-Sg-13 enum.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationState {
+    /// Saga is in the forward direction.
+    Running,
+    /// At least one undo errored or the saga's persisted version is
+    /// no longer registered. Operator action needed.
+    Stuck,
+    /// Saga reached the `Done` cached state. Use [`OperationDetail`]
+    /// to see whether the result was Ok or Err (the latter means a
+    /// full unwind).
+    Done,
+}
+
+/// One operation as it appears in `GET /v2/operations`. Minimal
+/// shape suitable for an adminUI list view; clients fetch the
+/// detail surface for the full DAG / event log.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OperationSummary {
+    /// Stable operation id (== Steno saga id).
+    pub id: Uuid,
+    /// Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.
+    pub kind: String,
+    /// Saga `VERSION` (RFD 00004 D-Sg-10).
+    pub version: u32,
+    /// Public state (see [`OperationState`]).
+    pub state: OperationState,
+    /// The SEC that originally created the saga. Operators looking
+    /// at "which tritond ran this" see this here.
+    pub creator_sec: Uuid,
+    /// The SEC currently driving it. Differs from `creator_sec`
+    /// only after a reassignment hop (D-Sg-4).
+    pub current_sec: Uuid,
+    /// When the saga was created (UTC).
+    pub time_created: DateTime<Utc>,
+    /// When the saga reached `Done`. `None` if still running.
+    pub time_done: Option<DateTime<Utc>>,
+    /// Set when the saga ends `Stuck` (Done-with-undo-error or
+    /// missing-version). Human-readable.
+    pub stuck_reason: Option<String>,
+}
+
+/// Detail view: the summary plus the persisted DAG + event log.
+/// Used by `GET /v2/operations/{operation_id}` and rendered by
+/// `tcadm operations get` / adminUI Operations detail panel.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OperationDetail {
+    #[serde(flatten)]
+    pub summary: OperationSummary,
+    /// Fence epoch for `current_sec`. Bumped on every adoption and
+    /// every recovery hop (RFD 00004 D-Sg-8).
+    pub current_epoch: u64,
+    /// How many times this saga has been adopted by a SEC.
+    pub adopt_generation: u64,
+    /// The persisted Steno `SagaDag` JSON. Opaque to clients; the
+    /// adminUI surfaces it for operators who need the structure.
+    pub dag: serde_json::Value,
+}
+
+/// Path parameters for `/v2/operations/{operation_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct OperationPath {
+    pub operation_id: Uuid,
+}
+
+/// Query parameters for `GET /v2/operations`. Pagination is
+/// continuation-token style: pass back the `id` of the last entry
+/// from the previous page as `after_id`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListOperationsQuery {
+    /// Maximum number of items to return. Defaults to 50 if absent;
+    /// the server caps the maximum to bound response size.
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Continuation token: return operations strictly after this
+    /// id. `None` for the first page.
+    #[serde(default)]
+    pub after_id: Option<Uuid>,
+}
+
+// ---------------------------------------------------------------------
 // CN registration / approval (slice C)
 // ---------------------------------------------------------------------
 
@@ -1447,6 +1536,35 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         query: Query<AuditVerifyQuery>,
     ) -> Result<HttpResponseOk<AuditVerifyResponse>, HttpError>;
+
+    /// List long-running operations (RFD 00004 SG-4). Returns
+    /// every saga the SecStore knows about — `Running`, `Stuck`,
+    /// and `Done` alike. Continuation pagination via the
+    /// `after_id` query parameter. Operator-only at SG-4; SG-4b
+    /// will add tenant scoping once the catalog has tenant-scoped
+    /// sagas with resource references.
+    #[endpoint {
+        method = GET,
+        path = "/v2/operations",
+        tags = ["operations"],
+    }]
+    async fn list_operations(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<ListOperationsQuery>,
+    ) -> Result<HttpResponseOk<Vec<OperationSummary>>, HttpError>;
+
+    /// Detail view for a single operation: summary + persisted DAG
+    /// + fence fields. Used by `tcadm operations get` and the
+    /// adminUI Operations detail panel.
+    #[endpoint {
+        method = GET,
+        path = "/v2/operations/{operation_id}",
+        tags = ["operations"],
+    }]
+    async fn get_operation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<OperationPath>,
+    ) -> Result<HttpResponseOk<OperationDetail>, HttpError>;
 
     /// Atomically claim the next Pending provisioning job.
     /// Returns `200 OK` with `{"job": null}` when the queue is

@@ -183,6 +183,26 @@ impl SagaExecutor {
         self.resume_many(moved).await
     }
 
+    /// Operator-facing listing: page through every saga the
+    /// SecStore knows about. Used by the SG-4 `/v2/operations`
+    /// surface. `marker` is an opaque continuation token; pass
+    /// `None` for the first page. See
+    /// [`TritondSecStore::list_sagas`] for ordering semantics.
+    pub async fn list_sagas(
+        &self,
+        marker: Option<steno::SagaId>,
+        limit: usize,
+    ) -> SagaResult<Vec<crate::types::SagaRecord>> {
+        self.sec_store.list_sagas(marker, limit).await
+    }
+
+    /// Operator-facing detail lookup: the full `SagaRecord` for
+    /// one saga. Returns `SagaError::NotFound` if the id is
+    /// unknown. Used by `GET /v2/operations/{id}`.
+    pub async fn get_saga(&self, id: steno::SagaId) -> SagaResult<crate::types::SagaRecord> {
+        self.sec_store.get_record(id).await
+    }
+
     /// Heartbeat-write the local SEC's `(epoch, now)`. The
     /// heartbeat task in SG-1 calls this on a cadence.
     pub async fn touch_heartbeat(&self) -> SagaResult<()> {

@@ -109,4 +109,12 @@ impl TritondSecStore for FdbSecStore {
     async fn mark_stuck(&self, _saga_id: SagaId, _reason: String) -> SagaResult<()> {
         Err(SagaError::Backend(NOT_YET.into()))
     }
+
+    async fn list_sagas(
+        &self,
+        _marker: Option<SagaId>,
+        _limit: usize,
+    ) -> SagaResult<Vec<SagaRecord>> {
+        Err(SagaError::Backend(NOT_YET.into()))
+    }
 }
