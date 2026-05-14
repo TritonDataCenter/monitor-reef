@@ -338,10 +338,7 @@ fn build_configmap_data(config: &ControllerConfig) -> BTreeMap<String, String> {
         config.worker_cns_name.clone(),
     );
     data.insert("cluster-name".to_string(), config.cluster_name.clone());
-    data.insert(
-        "cluster-uuid".to_string(),
-        config.cluster_uuid.to_string(),
-    );
+    data.insert("cluster-uuid".to_string(), config.cluster_uuid.to_string());
     data.insert("requeue-after-seconds".to_string(), "30".to_string());
     data
 }
