@@ -28,6 +28,7 @@ members = [
     "libs/tritond-image-manifest",
     "libs/tritond-logs",
     "libs/tritond-metrics",
+    "libs/tritond-saga",
     "libs/tritond-store",
     "client-generator",
     "openapi-manager",
@@ -163,6 +164,14 @@ rustls-pemfile = "2"
 # Revisit after both crates cut a coordinated release that closes
 # the assertion.
 schemars = { version = "0.8", features = ["chrono", "derive", "uuid1"] }
+# Durable workflow engine. See `libs/tritond-saga/` and RFD 00004.
+# 0.4 is the latest as of 2026-05; it's the engine Oxide's Nexus runs.
+steno = "0.4"
+# Steno emits its own logs via slog. tritond bridges tracing<->slog
+# at the executor build site so saga logs flow into the same stream
+# as the rest of the daemon.
+slog = "2"
+slog-stdlog = "4"
 sec1 = { version = "0.7", features = ["pem"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -222,6 +231,7 @@ tritond-cn-platform = { path = "libs/tritond-cn-platform" }
 tritond-image-manifest = { path = "libs/tritond-image-manifest" }
 tritond-logs = { path = "libs/tritond-logs" }
 tritond-metrics = { path = "libs/tritond-metrics" }
+tritond-saga = { path = "libs/tritond-saga" }
 tritond-store = { path = "libs/tritond-store" }
 tritonagent = { path = "services/tritonagent" }
 vmapi-api = { path = "apis/vmapi-api" }

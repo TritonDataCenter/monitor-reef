@@ -1,0 +1,40 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritond-saga"
+version = "0.1.0"
+edition.workspace = true
+description = "Durable workflow engine (Steno + FDB SecStore) for the Triton Cloud control plane. See RFD 00004."
+license = "MPL-2.0"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# FoundationDB-backed SecStore. Off by default so unit tests and
+# `make docker-up` don't need libfdb_c. tritond turns it on when its
+# tritond-store backend is FdbStore.
+foundationdb = ["dep:foundationdb"]
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+foundationdb = { workspace = true, optional = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = { workspace = true }
+slog-stdlog = { workspace = true }
+steno = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
