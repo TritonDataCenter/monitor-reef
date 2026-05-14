@@ -58,7 +58,7 @@ pub use foundationdb::Database as FdbDatabase;
 
 pub use context::{ActionRegistry, SagaAction, SagaActionContext, SagaContext, TritondSagaType};
 pub use error::{SagaError, SagaResult};
-pub use executor::SagaExecutor;
+pub use executor::{SagaAuditEmitter, SagaExecutor};
 pub use mem::MemSecStore;
 pub use secstore::TritondSecStore;
 pub use types::{

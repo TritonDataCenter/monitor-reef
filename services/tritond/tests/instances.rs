@@ -662,6 +662,32 @@ async fn instance_create_appears_on_operations_surface() {
     assert_eq!(detail.id, our_op.id);
     assert_eq!(detail.kind, "instance-create");
 
+    // SG-2b + D-Sg-11: the saga's lifecycle emits `saga.started`
+    // and `saga.finished` to the audit chain. The operator sees
+    // them via `/v2/audit/events` next to the per-silo
+    // side-effect events the catalog actions wrote.
+    let events = root
+        .list_audit_events()
+        .limit(1000)
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let started = events
+        .events
+        .iter()
+        .find(|e| e.action == "saga.started")
+        .expect("saga.started event must be on the audit chain");
+    let finished = events
+        .events
+        .iter()
+        .find(|e| e.action == "saga.finished")
+        .expect("saga.finished event must be on the audit chain");
+    assert!(
+        finished.seq > started.seq,
+        "saga.finished must follow saga.started in chain order"
+    );
+
     test.close().await;
 }
 

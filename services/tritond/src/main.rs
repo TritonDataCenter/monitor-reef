@@ -140,7 +140,12 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
     // `saga/...` prefix and survive `tritond` restarts.
     #[cfg(feature = "foundationdb")]
     if let Some(db) = fdb_db.clone() {
-        let saga = tritond::context::fdb_saga_executor(db, &store, &identity_hmac_key);
+        let saga = tritond::context::fdb_saga_executor(
+            db,
+            &store,
+            &identity_hmac_key,
+            context.audit.chain(),
+        );
         context = context.with_saga_executor(saga);
         info!("saga engine: FDB-backed SecStore enabled");
     }

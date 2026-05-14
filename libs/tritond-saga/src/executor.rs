@@ -25,6 +25,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use steno::{SagaDag, SagaId, SagaResult as StenoSagaResult};
 
@@ -33,6 +34,34 @@ use crate::error::{SagaError, SagaResult};
 use crate::mem::MemSecStore;
 use crate::secstore::TritondSecStore;
 use crate::types::{RecoverableSaga, SecEpoch, SecHeartbeat, SecId};
+
+/// Audit emitter for saga lifecycle events (RFD 00004 D-Sg-11).
+///
+/// Implementations land in the daemon (tritond) where the
+/// underlying audit chain lives; tritond-saga stays a leaf crate
+/// relative to `tritond-audit` by defining only the trait.
+///
+/// SG-2b ships start + finish hooks. Per-action `operation_step`
+/// events are deferred — Steno doesn't expose action-completion
+/// hooks, and the SecStore's node-event log already carries that
+/// information for `/v2/operations/{id}` and `tcadm operations
+/// get`. Operators get fleet-chain breadcrumbs for "saga X started
+/// / finished" today; deep step-by-step audit lives on the
+/// existing per-step `record_event` writes.
+#[async_trait]
+pub trait SagaAuditEmitter: Send + Sync + 'static {
+    /// Fired immediately after `SecClient::saga_create` succeeds.
+    /// The fence has been stamped onto the record; the saga has not
+    /// yet started executing.
+    async fn operation_started(&self, saga_id: SagaId, kind: &str, version: u32);
+
+    /// Fired after the saga reaches a terminal state. `state` is
+    /// `"succeeded"` for `Ok`, `"unwound"` for an `Err` whose
+    /// unwind ran cleanly, `"stuck"` for an `Err` left in a partial
+    /// state. `error` carries a short human-readable summary when
+    /// the saga didn't succeed.
+    async fn operation_finished(&self, saga_id: SagaId, state: &str, error: Option<String>);
+}
 
 /// The `tritond`-side wrapper around Steno's `SecClient`.
 pub struct SagaExecutor {
@@ -53,6 +82,12 @@ pub struct SagaExecutor {
     /// Optional identity HMAC key (RFD 00003). Same wiring posture
     /// as `store` above.
     identity_hmac_key: Option<Arc<tritond_auth::IdentityHmacKey>>,
+    /// Optional audit emitter for saga lifecycle events
+    /// (RFD 00004 D-Sg-11). When set, the executor fires
+    /// `operation_started` / `operation_finished` around each
+    /// `saga_execute` / `saga_resume`. SG-0 trivial test sagas
+    /// leave it `None`.
+    audit: Option<Arc<dyn SagaAuditEmitter>>,
 }
 
 impl SagaExecutor {
@@ -78,7 +113,15 @@ impl SagaExecutor {
             log,
             store: None,
             identity_hmac_key: None,
+            audit: None,
         }
+    }
+
+    /// Builder: attach the saga audit emitter (D-Sg-11).
+    #[must_use]
+    pub fn with_audit(mut self, audit: Arc<dyn SagaAuditEmitter>) -> Self {
+        self.audit = Some(audit);
+        self
     }
 
     /// Builder: attach the state store catalog actions reach for.
@@ -165,13 +208,35 @@ impl SagaExecutor {
         self.sec_store
             .stamp_create(saga_id, name, version, self.sec_id, self.sec_epoch)
             .await?;
-        // 3. Kick the SEC.
+        // 3. Audit: operation_started (D-Sg-11). Fired after the
+        //    record is durable so a reader of the audit log can
+        //    correlate `saga_id` with the record on `/v2/operations`.
+        if let Some(audit) = self.audit.as_ref() {
+            audit.operation_started(saga_id, name, version).await;
+        }
+        // 4. Kick the SEC.
         self.sec_client
             .saga_start(saga_id)
             .await
             .map_err(SagaError::from)?;
-        // 4. Await the terminal result.
-        Ok(result_fut.await)
+        // 5. Await the terminal result.
+        let result = result_fut.await;
+        // 6. Audit: operation_finished.
+        if let Some(audit) = self.audit.as_ref() {
+            let (state, error) = match &result.kind {
+                Ok(_) => ("succeeded", None),
+                Err(e) => {
+                    // Steno's SagaResultErr carries the failing
+                    // node + action error. Surface a short
+                    // human-readable summary; the full payload
+                    // lives in the saga's event log.
+                    let summary = format!("node {:?}: {:?}", e.error_node_name, e.error_source);
+                    ("unwound", Some(summary))
+                }
+            };
+            audit.operation_finished(saga_id, state, error).await;
+        }
+        Ok(result)
     }
 
     /// Load every not-`Done` saga this SEC owns, resume each

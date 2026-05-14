@@ -9,15 +9,90 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use async_trait::async_trait;
 use slog::Drain;
-use tritond_audit::MemChain;
+use tritond_audit::{Actor, Chain, Decision, MemChain, Outcome, PendingEvent};
 use tritond_auth::JwtKey;
-use tritond_saga::{ActionRegistry, MemSecStore, SagaExecutor, SecEpoch, SecId};
+use tritond_saga::{
+    ActionRegistry, MemSecStore, SagaAuditEmitter, SagaExecutor, SagaId, SecEpoch, SecId,
+};
 use tritond_store::{MemStore, Store};
 
 use crate::audit::AuditService;
 use crate::auth::AuthService;
 use crate::rate_limit::{IpRateLimiter, LoginRateLimiter};
+
+/// Bridge from `tritond_saga::SagaAuditEmitter` to the existing
+/// `tritond_audit::Chain` (RFD 00004 D-Sg-11).
+///
+/// Saga lifecycle events (`saga.started` / `saga.finished`) land in
+/// the same chain as every other audit event, with a `Saga::"<uuid>"`
+/// resource and `actor=system` (sagas are control-plane-initiated;
+/// the *triggering* operator's identity is on the per-silo
+/// side-effect events the catalog actions write through the
+/// existing `record_mutation` path). This gives operators
+/// breadcrumbs to correlate the saga's lifecycle with the per-silo
+/// resource writes via the shared `saga_id` payload field.
+///
+/// Strict per-silo / fleet chain separation (the RFD's `audit/saga/...`
+/// keyspace) is deferred to a follow-up that introduces a second
+/// chain instance.
+struct ChainAuditEmitter {
+    chain: Arc<dyn Chain>,
+}
+
+#[async_trait]
+impl SagaAuditEmitter for ChainAuditEmitter {
+    async fn operation_started(&self, saga_id: SagaId, kind: &str, version: u32) {
+        let event = PendingEvent {
+            ts: chrono::Utc::now(),
+            actor: Actor::System,
+            action: "saga.started".to_string(),
+            resource: Some(format!("Saga::\"{}\"", saga_id.0)),
+            request_id: None,
+            decision: Decision::NotEvaluated,
+            outcome: Outcome::Success {
+                resource: Some(format!("Saga::\"{}\"", saga_id.0)),
+            },
+            payload: serde_json::json!({
+                "saga_id": saga_id.0,
+                "kind": kind,
+                "version": version,
+            }),
+        };
+        // Fail-open: saga shouldn't block on an audit-chain hiccup.
+        // Drop the error and log via the saga executor's slog
+        // logger instead.
+        let _ = self.chain.append(event).await;
+    }
+
+    async fn operation_finished(&self, saga_id: SagaId, state: &str, error: Option<String>) {
+        let outcome = if state == "succeeded" {
+            Outcome::Success {
+                resource: Some(format!("Saga::\"{}\"", saga_id.0)),
+            }
+        } else {
+            Outcome::ServerError {
+                message: error.clone().unwrap_or_else(|| state.to_string()),
+            }
+        };
+        let event = PendingEvent {
+            ts: chrono::Utc::now(),
+            actor: Actor::System,
+            action: "saga.finished".to_string(),
+            resource: Some(format!("Saga::\"{}\"", saga_id.0)),
+            request_id: None,
+            decision: Decision::NotEvaluated,
+            outcome,
+            payload: serde_json::json!({
+                "saga_id": saga_id.0,
+                "state": state,
+                "error": error,
+            }),
+        };
+        let _ = self.chain.append(event).await;
+    }
+}
 
 /// Shared state for API handlers.
 pub struct ApiContext {
@@ -122,12 +197,16 @@ pub struct SweeperConfig {
 fn default_saga_executor(
     state_store: &Arc<dyn Store>,
     identity_hmac_key: &Arc<tritond_auth::IdentityHmacKey>,
+    audit_chain: &Arc<dyn Chain>,
 ) -> Arc<SagaExecutor> {
     let drain = slog::Discard;
     let log = slog::Logger::root(drain.fuse(), slog::o!("component" => "tritond-saga"));
     let sec_store = MemSecStore::new();
     let mut registry = ActionRegistry::new();
     crate::sagas::register_all_actions(&mut registry);
+    let audit_emitter: Arc<dyn SagaAuditEmitter> = Arc::new(ChainAuditEmitter {
+        chain: Arc::clone(audit_chain),
+    });
     let mut exec = SagaExecutor::new_with_mem_store(
         SecId::random(),
         SecEpoch::new(1),
@@ -136,7 +215,8 @@ fn default_saga_executor(
         log,
     )
     .with_store(Arc::clone(state_store))
-    .with_identity_hmac_key(Arc::clone(identity_hmac_key));
+    .with_identity_hmac_key(Arc::clone(identity_hmac_key))
+    .with_audit(audit_emitter);
     for (name, version) in crate::sagas::registered_versions() {
         exec.register_saga_version(name, version);
     }
@@ -152,6 +232,7 @@ pub fn fdb_saga_executor(
     db: Arc<tritond_saga::FdbDatabase>,
     state_store: &Arc<dyn Store>,
     identity_hmac_key: &Arc<tritond_auth::IdentityHmacKey>,
+    audit_chain: &Arc<dyn Chain>,
 ) -> Arc<SagaExecutor> {
     let drain = slog::Discard;
     let log = slog::Logger::root(
@@ -160,10 +241,14 @@ pub fn fdb_saga_executor(
     );
     let mut registry = ActionRegistry::new();
     crate::sagas::register_all_actions(&mut registry);
+    let audit_emitter: Arc<dyn SagaAuditEmitter> = Arc::new(ChainAuditEmitter {
+        chain: Arc::clone(audit_chain),
+    });
     let mut exec =
         SagaExecutor::new_with_fdb_store(SecId::random(), SecEpoch::new(1), db, registry, log)
             .with_store(Arc::clone(state_store))
-            .with_identity_hmac_key(Arc::clone(identity_hmac_key));
+            .with_identity_hmac_key(Arc::clone(identity_hmac_key))
+            .with_audit(audit_emitter);
     for (name, version) in crate::sagas::registered_versions() {
         exec.register_saga_version(name, version);
     }
@@ -173,7 +258,7 @@ pub fn fdb_saga_executor(
 impl ApiContext {
     pub fn new(store: Arc<dyn Store>, auth: Arc<AuthService>, audit: Arc<AuditService>) -> Self {
         let identity_hmac_key = Arc::new(tritond_auth::IdentityHmacKey::generate());
-        let saga = default_saga_executor(&store, &identity_hmac_key);
+        let saga = default_saga_executor(&store, &identity_hmac_key, audit.chain());
         Self {
             store,
             auth,
