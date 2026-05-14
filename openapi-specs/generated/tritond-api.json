@@ -505,6 +505,96 @@
         }
       }
     },
+    "/v2/agent/peer": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host",
+        "description": "underlay. The bound CN agent calls this on every v2p cache miss; tritond walks the NIC table, finds the NIC that owns the IP, looks up its host CN, and returns the CN's underlay address. Returns 404 when no realized NIC owns the IP. See `PROTEUS_PLAN.md` §11.7.1.",
+        "operationId": "agent_peer_resolve",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "ip",
+            "description": "Peer IP as a string. v4 and v6 both accepted; the resolver parses and dispatches by family.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vni",
+            "description": "VNI of the target VPC. Required so the lookup is bounded to one tenant's address space (peers are NOT globally unique).",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPeerResolveResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/agent/peer-invalidations": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Pull pending v2p invalidations for this CN, strictly after",
+        "description": "the supplied `since` cursor. The bound CN agent polls this on a fixed cadence (default ~10s) and applies each entry via `InvalidatePeerEntry` on every local port that might have cached it. Phase A v1: tritond broadcasts NIC-teardown invalidations to all CNs; Phase B adds per-CN filtering by tracking which CNs have queried `/v2/agent/peer`. See `PROTEUS_PLAN.md` §11.7.1.",
+        "operationId": "agent_peer_invalidations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "description": "Last sequence number the agent has applied. `0` on first call after agent start.",
+            "schema": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPeerInvalidationsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/register": {
       "post": {
         "tags": [
@@ -8485,6 +8575,79 @@
             ],
             "additionalProperties": false
           }
+        ]
+      },
+      "AgentPeerInvalidation": {
+        "description": "One invalidation directive the agent should apply against the kmod's v2p cache. Fired by tritond on NIC teardown / migration. `(vni, peer_ip)` identifies the entry to drop; the agent applies it to every local port that might have cached the peer.",
+        "type": "object",
+        "properties": {
+          "peer_ip": {
+            "description": "Peer IP (v4 or v6) as a string. Family inferred at parse time on the agent.",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Monotonic per-tritond sequence number. The agent's `since` cursor uses this to dedup on retry / agent restart.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "vni": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "peer_ip",
+          "seq",
+          "vni"
+        ]
+      },
+      "AgentPeerInvalidationsResponse": {
+        "description": "Response body for `GET /v2/agent/peer-invalidations`.",
+        "type": "object",
+        "properties": {
+          "invalidations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPeerInvalidation"
+            }
+          },
+          "tail_seq": {
+            "description": "Highest sequence number returned; the agent passes this as `since` on its next poll.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "invalidations",
+          "tail_seq"
+        ]
+      },
+      "AgentPeerResolveResponse": {
+        "description": "Response body for `GET /v2/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`].",
+        "type": "object",
+        "properties": {
+          "guest_mac": {
+            "description": "Resolved peer guest's MAC, `aa:bb:cc:dd:ee:ff`.",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "description": "Suggested cache TTL in seconds. The agent clamps + the kmod clamps again; honoured as a soft upper bound.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "underlay": {
+            "description": "Host CN underlay IPv6 the kmod uses as the Geneve outer dst.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guest_mac",
+          "ttl_seconds",
+          "underlay"
         ]
       },
       "AgentPortBlueprint": {
