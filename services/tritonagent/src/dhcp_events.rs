@@ -580,7 +580,7 @@ fn clear_inflight_after_failure(
     }
 }
 
-#[cfg(target_os = "illumos")]
+#[cfg(any(target_os = "illumos", test))]
 fn format_peer_ip(family: proteus_api::PeerAddrFamily, ip: &[u8; 16]) -> String {
     match family {
         proteus_api::PeerAddrFamily::V4 => {
@@ -593,7 +593,7 @@ fn format_peer_ip(family: proteus_api::PeerAddrFamily, ip: &[u8; 16]) -> String 
     }
 }
 
-#[cfg(target_os = "illumos")]
+#[cfg(any(target_os = "illumos", test))]
 fn parse_resolve_response(
     family: proteus_api::PeerAddrFamily,
     peer_ip: &[u8; 16],
@@ -817,5 +817,73 @@ mod tests {
         assert!(nc.entries.contains_key(&k));
         nc.note_success(&k);
         assert!(!nc.entries.contains_key(&k));
+    }
+
+    // -------------------------------------------------------------
+    // format_peer_ip / parse_resolve_response: pure helpers
+    // -------------------------------------------------------------
+
+    #[test]
+    fn format_peer_ip_v4_uses_first_four_bytes() {
+        let mut ip = [0u8; 16];
+        ip[..4].copy_from_slice(&[10, 42, 1, 3]);
+        assert_eq!(
+            format_peer_ip(proteus_api::PeerAddrFamily::V4, &ip),
+            "10.42.1.3"
+        );
+    }
+
+    #[test]
+    fn format_peer_ip_v6_uses_all_sixteen() {
+        let ip: [u8; 16] = [
+            0xfd, 0x00, 0xca, 0xbe, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+        ];
+        assert_eq!(
+            format_peer_ip(proteus_api::PeerAddrFamily::V6, &ip),
+            "fd00:cabe::1"
+        );
+    }
+
+    #[test]
+    fn parse_resolve_response_v4_round_trips_a_real_record() {
+        let body = tritond_api::AgentPeerResolveResponse {
+            guest_mac: "02:db:1d:a7:07:59".to_string(),
+            underlay: "fd00:cabe::a:c7:c7:28".to_string(),
+            ttl_seconds: 300,
+        };
+        let mut peer_ip = [0u8; 16];
+        peer_ip[..4].copy_from_slice(&[10, 42, 1, 3]);
+        let entry = parse_resolve_response(proteus_api::PeerAddrFamily::V4, &peer_ip, &body)
+            .expect("parse should succeed");
+        assert_eq!(entry.guest_mac, [0x02, 0xdb, 0x1d, 0xa7, 0x07, 0x59]);
+        assert_eq!(entry.addr[..4], [10, 42, 1, 3]);
+        assert!(matches!(entry.family, proteus_api::PeerAddrFamily::V4));
+        // Underlay parsed back to bytes; high bytes carry the ULA prefix.
+        assert_eq!(entry.underlay[0], 0xfd);
+        assert_eq!(entry.underlay[1], 0x00);
+    }
+
+    #[test]
+    fn parse_resolve_response_rejects_garbage_mac() {
+        let body = tritond_api::AgentPeerResolveResponse {
+            guest_mac: "not-a-mac".to_string(),
+            underlay: "fd00::1".to_string(),
+            ttl_seconds: 60,
+        };
+        let mut peer_ip = [0u8; 16];
+        peer_ip[..4].copy_from_slice(&[10, 0, 0, 1]);
+        assert!(parse_resolve_response(proteus_api::PeerAddrFamily::V4, &peer_ip, &body).is_none());
+    }
+
+    #[test]
+    fn parse_resolve_response_rejects_garbage_underlay() {
+        let body = tritond_api::AgentPeerResolveResponse {
+            guest_mac: "02:00:00:00:00:01".to_string(),
+            underlay: "definitely-not-an-ipv6".to_string(),
+            ttl_seconds: 60,
+        };
+        let mut peer_ip = [0u8; 16];
+        peer_ip[..4].copy_from_slice(&[10, 0, 0, 1]);
+        assert!(parse_resolve_response(proteus_api::PeerAddrFamily::V4, &peer_ip, &body).is_none());
     }
 }
