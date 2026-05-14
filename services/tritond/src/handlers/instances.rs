@@ -62,8 +62,8 @@ use tritond_auth::{
     TokenKind, generate_api_key, mint_access, mint_refresh, verify, verify_password,
 };
 use tritond_store::{
-    AUTO_APPROVE_WINDOW_MAX, ApiKey, CnState, ConfigError, ConfigKey, IdpConfig, Store, StoreError,
-    normalize_claim_code,
+    AUTO_APPROVE_WINDOW_MAX, ApiKey, CnState, ConfigError, ConfigKey, IdpConfig, MetaScope,
+    MetaValue, Store, StoreError, normalize_claim_code,
 };
 use uuid::Uuid;
 
@@ -242,6 +242,46 @@ pub(crate) async fn create_project_instance(
                 return Err(store_error_to_http(e));
             }
         };
+    }
+
+    // Auto-generate the initial root password and persist it as
+    // `triton/instance/root_pw` at instance scope with
+    // `guest_visible=false`. This is the layered-metadata equivalent
+    // of the legacy SmartOS `internal_metadata.root_pw` field: the
+    // agent's `apply_provision_metadata` folds it into the vmadm
+    // payload's `internal_metadata` at provision time, and
+    // cloud-init's SmartOS DataSource picks it up via mdata-get on
+    // first boot. Writing it BEFORE `enqueue_job` removes the race
+    // window where the agent could claim the Provision job and
+    // build a blueprint without the password.
+    //
+    // Operators retrieve it via `tcadm meta get --scope instance
+    // --id <id> --key instance/root_pw` or the admin UI's Metadata
+    // tab. `guest_visible=false` keeps it out of IMDS.
+    //
+    // If the meta write fails, the instance stays created -- the
+    // operator can re-set the password manually. Failure is logged
+    // at WARN but doesn't block provisioning, because losing the
+    // auto-generated password to a transient FDB blip is better
+    // than refusing the create.
+    let root_pw = tritond_auth::generate_random_password();
+    let pw_meta = MetaValue {
+        value: serde_json::Value::String(root_pw.expose().to_string()),
+        guest_visible: false,
+        guest_writable: false,
+        updated_by: "system".to_string(),
+        updated_at: chrono::Utc::now(),
+    };
+    if let Err(e) = ctx
+        .store
+        .set_meta(MetaScope::Instance, instance.id, "instance/root_pw", pw_meta)
+        .await
+    {
+        tracing::warn!(
+            instance_id = %instance.id,
+            error = %e,
+            "auto-generate root_pw: failed to persist meta; operator must set manually"
+        );
     }
 
     // Enqueue the provisioning job. The stub provisioner (or
