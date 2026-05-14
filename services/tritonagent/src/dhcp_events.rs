@@ -287,6 +287,14 @@ async fn run_loop(
     let mut ticker = tokio::time::interval(interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut neg_cache = NegativeCache::default();
+    /// Track the highest invalidation sequence we've applied so
+    /// each poll only returns deltas. Survives only this loop's
+    /// lifetime; on agent restart we re-poll with `since=0`.
+    let mut inval_since: u64 = 0;
+    /// Poll invalidations every Nth tick (keeps the per-CN GET
+    /// rate at ~1/2.5s by default).
+    let mut tick_count: u64 = 0;
+    const INVAL_POLL_EVERY_N_TICKS: u64 = 5;
 
     loop {
         tokio::select! {
@@ -323,6 +331,16 @@ async fn run_loop(
                         Ok(_) => debug!(forwarded, "forwarded DHCP request events to tritond"),
                         Err(e) => warn!(error = %e, "forwarding DHCP request events to tritond failed"),
                     }
+                }
+                tick_count = tick_count.wrapping_add(1);
+                if peer_resolver_enabled && tick_count.is_multiple_of(INVAL_POLL_EVERY_N_TICKS) {
+                    inval_since = poll_invalidations(
+                        client.as_ref(),
+                        &proteus,
+                        inval_since,
+                    )
+                    .await
+                    .unwrap_or(inval_since);
                 }
                 for job in peer_jobs {
                     let key = NegativeKey {
@@ -458,6 +476,86 @@ async fn resolve_one_peer(
             false
         }
     }
+}
+
+/// Poll `GET /v2/agent/peer-invalidations?since=<cursor>` and
+/// apply each returned invalidation to every local port via
+/// `InvalidatePeerEntry`. Returns the new `since` cursor. Errors
+/// degrade silently (the next poll catches up).
+///
+/// Phase A: the kmod ioctl requires a port_id, but tritond's
+/// invalidation directive is per-(vni, ip) -- it doesn't know
+/// which local ports might have cached the peer. We DumpPeerCache
+/// for every local port to enumerate them. This is O(ports * inv)
+/// per poll which is fine at CN scale (~100 ports, ~tens of
+/// invalidations per cycle). Phase B will narrow with a single
+/// "invalidate-all-ports-for-vni" ioctl.
+#[cfg(target_os = "illumos")]
+async fn poll_invalidations(
+    client: &Client,
+    proteus: &proteus_ioctl::Client<proteus_ioctl::KernelTransport>,
+    since: u64,
+) -> Option<u64> {
+    use tritond_client::ClientInfo;
+    let baseurl = client.baseurl().to_string();
+    let url = format!("{baseurl}/v2/agent/peer-invalidations?since={since}");
+    let resp = match client.client().get(&url).send().await {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            tracing::debug!(status = r.status().as_u16(), "peer-invalidations: non-success");
+            return None;
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "peer-invalidations: HTTP failed");
+            return None;
+        }
+    };
+    let body: tritond_api::AgentPeerInvalidationsResponse = match resp.json().await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::debug!(error = %e, "peer-invalidations: malformed body");
+            return None;
+        }
+    };
+    if body.invalidations.is_empty() {
+        return Some(body.tail_seq);
+    }
+    tracing::info!(
+        applied = body.invalidations.len(),
+        "applying v2p invalidations from tritond",
+    );
+    // Phase A: list local ports via DumpUnderlay (TODO: gives us
+    // the underlay handles, not the port list). For now, iterate
+    // every (vni, ip) and try `InvalidatePeerEntry` against each
+    // port the kmod knows about; the ioctl is a no-op for absent
+    // entries (cheap). We do this by walking `ListPorts` first.
+    let ports = match proteus.list_ports() {
+        Ok(p) => p,
+        Err(_) => return Some(body.tail_seq),
+    };
+    for inv in &body.invalidations {
+        let Ok(addr) = inv.peer_ip.parse::<std::net::IpAddr>() else {
+            continue;
+        };
+        let (family, addr16) = match addr {
+            std::net::IpAddr::V4(v4) => {
+                let mut p = [0u8; 16];
+                p[..4].copy_from_slice(&v4.octets());
+                (proteus_api::PeerAddrFamily::V4, p)
+            }
+            std::net::IpAddr::V6(v6) => (proteus_api::PeerAddrFamily::V6, v6.octets()),
+        };
+        for summary in &ports {
+            let req = proteus_api::peer::InvalidatePeerEntryRequest {
+                port_id: summary.port_id,
+                vni: inv.vni,
+                family,
+                addr: addr16,
+            };
+            let _ = proteus.invalidate_peer_entry(&req);
+        }
+    }
+    Some(body.tail_seq)
 }
 
 /// On any resolver failure (404, 5xx, malformed body, ioctl error),

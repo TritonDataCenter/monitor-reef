@@ -429,6 +429,26 @@ pub(crate) async fn delete_project_instance(
         return Err(not_found());
     }
     let target_cn_uuid = instance.host_cn_uuid;
+
+    // v2p invalidation push (PROTEUS_PLAN §11.7.1 item 8): before
+    // delete_instance drops the NIC records, snapshot each NIC's
+    // (vni, primary_ip) and push an invalidation onto the global
+    // ring so every CN's next peer-invalidations poll picks them
+    // up. NIC churn is low-frequency; the broadcast cost is bounded.
+    if let Ok(nics) = ctx.store.list_nics_for_instance(instance_id).await {
+        for nic in nics {
+            let Ok(vpc) = ctx.store.get_vpc(nic.vpc_id).await else {
+                continue;
+            };
+            if let Some(v4) = nic.primary_ipv4 {
+                ctx.peer_invalidations.push(vpc.vni, v4.to_string());
+            }
+            if let Some(v6) = nic.primary_ipv6 {
+                ctx.peer_invalidations.push(vpc.vni, v6.to_string());
+            }
+        }
+    }
+
     match ctx.store.delete_instance(instance_id, force).await {
         Ok(()) => {
             ctx.audit

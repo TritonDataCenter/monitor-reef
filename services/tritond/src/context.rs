@@ -176,6 +176,13 @@ pub struct ApiContext {
     /// no-op for everyone except the heartbeat/recovery plumbing it
     /// keeps alive for SG-2.
     pub saga: Arc<SagaExecutor>,
+    /// v2p invalidation ring (PROTEUS_PLAN §11.7.1 item 8). Pushed
+    /// onto by NIC teardown / migration paths; drained by
+    /// `GET /v2/agent/peer-invalidations` per-CN polls. Phase A
+    /// shape: a single global ring broadcast to every CN that polls
+    /// (acceptable for low-churn cluster sizes). Phase B narrows
+    /// to per-CN filtering once the resolver-served-log lands.
+    pub peer_invalidations: Arc<crate::peer_invalidations::Ring>,
 }
 
 /// Cadence and staleness threshold for the
@@ -273,6 +280,7 @@ impl ApiContext {
             logs: Arc::new(tritond_logs::RingBufferLogStore::new()),
             saga,
             saga_wait_for_agent: true,
+            peer_invalidations: Arc::new(crate::peer_invalidations::Ring::new()),
         }
     }
 

@@ -237,6 +237,33 @@ pub(crate) async fn agent_peer_resolve(
         .map(HttpResponseOk)
 }
 
+/// `GET /v2/agent/peer-invalidations`: long-poll for v2p
+/// invalidations the agent should apply against the kmod cache.
+/// Returns everything strictly after the supplied `since` cursor
+/// plus a `tail_seq` for the next call.
+pub(crate) async fn agent_peer_invalidations(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::AgentPeerInvalidationsQuery>,
+) -> Result<HttpResponseOk<tritond_api::AgentPeerInvalidationsResponse>, HttpError> {
+    let ctx = rqctx.context();
+    let _principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentBlueprint,
+    )
+    .await?;
+    let q = query.into_inner();
+    let (invalidations, tail_seq) = ctx.peer_invalidations.drain_since(q.since);
+    Ok(HttpResponseOk(
+        tritond_api::AgentPeerInvalidationsResponse {
+            invalidations,
+            tail_seq,
+        },
+    ))
+}
+
 pub(crate) async fn agent_complete_job(
     rqctx: RequestContext<ApiContext>,
     path: Path<AgentJobPath>,

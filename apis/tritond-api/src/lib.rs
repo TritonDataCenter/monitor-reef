@@ -187,6 +187,41 @@ pub struct AgentPeerResolveResponse {
     pub ttl_seconds: u32,
 }
 
+/// Query parameters for `GET /v2/agent/peer-invalidations`. The
+/// agent supplies the last invalidation `seq` it has applied; the
+/// response returns everything strictly after that seq.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentPeerInvalidationsQuery {
+    /// Last sequence number the agent has applied. `0` on first
+    /// call after agent start.
+    #[serde(default)]
+    pub since: u64,
+}
+
+/// One invalidation directive the agent should apply against the
+/// kmod's v2p cache. Fired by tritond on NIC teardown / migration.
+/// `(vni, peer_ip)` identifies the entry to drop; the agent applies
+/// it to every local port that might have cached the peer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentPeerInvalidation {
+    /// Monotonic per-tritond sequence number. The agent's `since`
+    /// cursor uses this to dedup on retry / agent restart.
+    pub seq: u64,
+    pub vni: u32,
+    /// Peer IP (v4 or v6) as a string. Family inferred at parse
+    /// time on the agent.
+    pub peer_ip: String,
+}
+
+/// Response body for `GET /v2/agent/peer-invalidations`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentPeerInvalidationsResponse {
+    pub invalidations: Vec<AgentPeerInvalidation>,
+    /// Highest sequence number returned; the agent passes this as
+    /// `since` on its next poll.
+    pub tail_seq: u64,
+}
+
 /// Optional `?force=true` query parameter on
 /// `DELETE /v2/silos/.../instances/{id}`. Default is `false`,
 /// which preserves the "must be Stopped or Failed first" gate.
@@ -1706,6 +1741,24 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         query: Query<AgentPeerResolveQuery>,
     ) -> Result<HttpResponseOk<AgentPeerResolveResponse>, HttpError>;
+
+    /// Pull pending v2p invalidations for this CN, strictly after
+    /// the supplied `since` cursor. The bound CN agent polls this
+    /// on a fixed cadence (default ~10s) and applies each entry
+    /// via `InvalidatePeerEntry` on every local port that might
+    /// have cached it. Phase A v1: tritond broadcasts NIC-teardown
+    /// invalidations to all CNs; Phase B adds per-CN filtering by
+    /// tracking which CNs have queried `/v2/agent/peer`. See
+    /// `PROTEUS_PLAN.md` §11.7.1.
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/peer-invalidations",
+        tags = ["agent"],
+    }]
+    async fn agent_peer_invalidations(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<AgentPeerInvalidationsQuery>,
+    ) -> Result<HttpResponseOk<AgentPeerInvalidationsResponse>, HttpError>;
 
     /// Heartbeat from a bound agent. Lightweight ping — empty
     /// body, just bumps `Cn.last_seen`. Auth: requires an API

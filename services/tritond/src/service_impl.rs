@@ -198,6 +198,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_peer_resolve(rqctx, query).await
     }
 
+    async fn agent_peer_invalidations(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::AgentPeerInvalidationsQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::AgentPeerInvalidationsResponse>, HttpError> {
+        crate::handlers::agents::agent_peer_invalidations(rqctx, query).await
+    }
+
     async fn agent_complete_job(
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentJobPath>,
