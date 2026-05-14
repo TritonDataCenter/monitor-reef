@@ -301,6 +301,71 @@ pub async fn audit_get(
     Ok(())
 }
 
+/// List long-running operations (RFD 00004 SG-4). Operator-only.
+pub async fn operations_list(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    after_id: Option<Uuid>,
+    limit: Option<u32>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_operations();
+    if let Some(a) = after_id {
+        req = req.after_id(a);
+    }
+    if let Some(l) = limit {
+        req = req.limit(l);
+    }
+    let ops = req.send().await.context("list operations")?.into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&ops)?);
+        return Ok(());
+    }
+    if ops.is_empty() {
+        println!("(no operations)");
+    } else {
+        println!(
+            "{:36}  {:24}  {:>3}  {:>8}  {:30}",
+            "id", "kind", "ver", "state", "created"
+        );
+        for op in &ops {
+            let state = serde_json::to_value(&op.state)
+                .ok()
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| "?".to_string());
+            println!(
+                "{:36}  {:24}  {:>3}  {:>8}  {}",
+                op.id, op.kind, op.version, state, op.time_created
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Fetch the detail view (summary + persisted DAG) for one operation.
+pub async fn operations_get(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    operation_id: Uuid,
+    _json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let detail = client
+        .get_operation()
+        .operation_id(operation_id)
+        .send()
+        .await
+        .context("get operation")?
+        .into_inner();
+    // Detail surface has no useful short form; always pretty-print
+    // JSON so operators can grep the DAG.
+    println!("{}", serde_json::to_string_pretty(&detail)?);
+    Ok(())
+}
+
 /// Configure the tenant's OIDC IdP. Eager discovery happens
 /// server-side; a bad URL or unreachable IdP fails the call with
 /// a 4xx; a duplicate issuer (claimed by another tenant) is 409.

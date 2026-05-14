@@ -109,6 +109,12 @@ enum Commands {
         #[command(subcommand)]
         command: AuditCommand,
     },
+    /// Inspect long-running operations (durable workflow runs / sagas).
+    /// See RFD 00004.
+    Operations {
+        #[command(subcommand)]
+        command: OperationsCommand,
+    },
     /// Manage silo-scoped resources (IdP, SSH keys, images).
     Silo {
         #[command(subcommand)]
@@ -1397,6 +1403,27 @@ enum TenantIdpCommand {
 }
 
 #[derive(Subcommand)]
+enum OperationsCommand {
+    /// List operations (durable workflow runs).
+    List {
+        /// Return operations strictly after this id.
+        #[arg(long)]
+        after_id: Option<Uuid>,
+        /// Maximum operations to return (default 50, max 200).
+        #[arg(long)]
+        limit: Option<u32>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fetch one operation by id, including its persisted DAG.
+    Get {
+        operation_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum AuditCommand {
     /// Page through audit events.
     List {
@@ -1855,6 +1882,16 @@ async fn main() -> Result<()> {
             }
             AuditCommand::Verify { from, to, json } => {
                 commands::audit_verify(cli.endpoint, cli.api_key, from, to, json).await
+            }
+        },
+        Commands::Operations { command } => match command {
+            OperationsCommand::List {
+                after_id,
+                limit,
+                json,
+            } => commands::operations_list(cli.endpoint, cli.api_key, after_id, limit, json).await,
+            OperationsCommand::Get { operation_id, json } => {
+                commands::operations_get(cli.endpoint, cli.api_key, operation_id, json).await
             }
         },
         Commands::Silo { command } => match command {
