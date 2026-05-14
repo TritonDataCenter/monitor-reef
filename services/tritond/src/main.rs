@@ -108,7 +108,7 @@ fn init_process(log_filter: &str) {
 }
 
 async fn serve(boot: BootstrapConfig) -> Result<()> {
-    let (store, audit_chain) = build_store_and_audit(boot.fdb_cluster_file.as_deref())?;
+    let (store, audit_chain, fdb_db) = build_store_and_audit(boot.fdb_cluster_file.as_deref())?;
     let (jwt_key, identity_hmac_key) = bootstrap::ensure(store.as_ref())
         .await
         .context("first-run bootstrap")?;
@@ -129,8 +129,23 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
             .context("load cluster settings")?,
     );
 
-    let mut context =
-        ApiContext::new(store, auth, audit).with_identity_hmac_key(Arc::new(identity_hmac_key));
+    let identity_hmac_key = Arc::new(identity_hmac_key);
+    let mut context = ApiContext::new(Arc::clone(&store), auth, audit)
+        .with_identity_hmac_key(Arc::clone(&identity_hmac_key));
+
+    // RFD 00004 SG-1b: when running with FDB, swap the default
+    // MemSecStore-backed executor for one backed by the same FDB
+    // Database the store and audit chain use. Sagas in FDB land in
+    // the region's single cluster (Locked Decision #4) under the
+    // `saga/...` prefix and survive `tritond` restarts.
+    #[cfg(feature = "foundationdb")]
+    if let Some(db) = fdb_db.clone() {
+        let saga = tritond::context::fdb_saga_executor(db, &store, &identity_hmac_key);
+        context = context.with_saga_executor(saga);
+        info!("saga engine: FDB-backed SecStore enabled");
+    }
+    #[cfg(not(feature = "foundationdb"))]
+    let _ = fdb_db; // unused without the feature
 
     if resolved.provisioner_inprocess_disabled {
         info!("in-process stub provisioner disabled; expecting external tritonagent");
@@ -327,21 +342,27 @@ fn build_store(fdb_cluster_file: Option<&str>) -> Result<Arc<dyn Store>> {
 #[cfg(feature = "foundationdb")]
 fn build_store_and_audit(
     fdb_cluster_file: Option<&str>,
-) -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
+) -> Result<(
+    Arc<dyn Store>,
+    Arc<dyn Chain>,
+    Option<Arc<tritond_saga::FdbDatabase>>,
+)> {
     if let Some(cluster_file) = fdb_cluster_file {
-        info!(%cluster_file, "using FoundationDB backend (store + audit)");
+        info!(%cluster_file, "using FoundationDB backend (store + audit + saga)");
         let store = tritond_store::FdbStore::open(Some(cluster_file))
             .map_err(|e| anyhow::anyhow!("open FDB store: {e}"))?;
-        // Share the FDB Database handle with the audit chain so we
-        // don't have two `boot()` callers. FdbStore holds it as
-        // Arc<Database>; FdbChain takes its own Arc reference.
-        let audit_chain: Arc<dyn Chain> = Arc::new(tritond_audit::FdbChain::new(store.database()));
-        Ok((Arc::new(store), audit_chain))
+        // Share the FDB Database handle with the audit chain + saga
+        // SecStore so we don't have multiple `boot()` callers.
+        // FdbStore holds it as Arc<Database>; FdbChain and
+        // FdbSecStore take their own Arc references.
+        let db = store.database();
+        let audit_chain: Arc<dyn Chain> = Arc::new(tritond_audit::FdbChain::new(Arc::clone(&db)));
+        Ok((Arc::new(store), audit_chain, Some(db)))
     } else {
-        info!("no FoundationDB cluster file configured; using in-memory store + audit");
+        info!("no FoundationDB cluster file configured; using in-memory store + audit + saga");
         let store: Arc<dyn Store> = Arc::new(MemStore::new());
         let audit: Arc<dyn Chain> = Arc::new(MemChain::new());
-        Ok((store, audit))
+        Ok((store, audit, None))
     }
 }
 
@@ -359,7 +380,7 @@ fn build_store(fdb_cluster_file: Option<&str>) -> Result<Arc<dyn Store>> {
 #[cfg(not(feature = "foundationdb"))]
 fn build_store_and_audit(
     fdb_cluster_file: Option<&str>,
-) -> Result<(Arc<dyn Store>, Arc<dyn Chain>)> {
+) -> Result<(Arc<dyn Store>, Arc<dyn Chain>, Option<()>)> {
     if fdb_cluster_file.is_some() {
         anyhow::bail!(
             "a FoundationDB cluster file is configured but tritond was built without the `foundationdb` feature"
@@ -368,7 +389,7 @@ fn build_store_and_audit(
     info!("using in-memory store + audit (binary not built with `foundationdb` feature)");
     let store: Arc<dyn Store> = Arc::new(MemStore::new());
     let audit: Arc<dyn Chain> = Arc::new(MemChain::new());
-    Ok((store, audit))
+    Ok((store, audit, None))
 }
 
 #[cfg(test)]

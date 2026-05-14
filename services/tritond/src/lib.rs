@@ -37,7 +37,7 @@ mod blueprint;
 mod bundle;
 mod cn_credential;
 mod console;
-mod context;
+pub mod context;
 mod edge_cluster;
 mod error;
 mod handlers;

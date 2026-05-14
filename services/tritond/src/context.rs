@@ -97,12 +97,14 @@ pub struct SweeperConfig {
     pub stale_after: std::time::Duration,
 }
 
-/// Build a default `SagaExecutor` over a fresh in-memory SecStore,
-/// with every catalog action in [`crate::sagas`] pre-registered.
-/// Used by both [`ApiContext::new`] and [`ApiContext::in_memory`]
-/// so every test fixture gets an isolated SEC id and a fully wired
-/// catalog. SG-1b will add a similar builder that wires
-/// `FdbSecStore` when the underlying [`Store`] is `FdbStore`.
+/// Build a default `SagaExecutor` over an in-memory SecStore, with
+/// every catalog action in [`crate::sagas`] pre-registered. Used by
+/// both [`ApiContext::new`] and [`ApiContext::in_memory`] so every
+/// test fixture gets an isolated SEC id and a fully wired catalog.
+///
+/// Production deploys with FoundationDB call
+/// [`ApiContext::with_fdb_saga_executor`] from `main` to swap this
+/// out for an FDB-backed executor.
 fn default_saga_executor(
     state_store: &Arc<dyn Store>,
     identity_hmac_key: &Arc<tritond_auth::IdentityHmacKey>,
@@ -121,6 +123,33 @@ fn default_saga_executor(
     )
     .with_store(Arc::clone(state_store))
     .with_identity_hmac_key(Arc::clone(identity_hmac_key));
+    for (name, version) in crate::sagas::registered_versions() {
+        exec.register_saga_version(name, version);
+    }
+    Arc::new(exec)
+}
+
+/// Build a production `SagaExecutor` backed by FoundationDB. The
+/// supplied `db` handle is the same one `tritond_store::FdbStore`
+/// uses, so the saga state lives in the region's single FDB
+/// cluster (Locked Decision #4) under the `saga/...` prefix.
+#[cfg(feature = "foundationdb")]
+pub fn fdb_saga_executor(
+    db: Arc<tritond_saga::FdbDatabase>,
+    state_store: &Arc<dyn Store>,
+    identity_hmac_key: &Arc<tritond_auth::IdentityHmacKey>,
+) -> Arc<SagaExecutor> {
+    let drain = slog::Discard;
+    let log = slog::Logger::root(
+        drain.fuse(),
+        slog::o!("component" => "tritond-saga", "backend" => "fdb"),
+    );
+    let mut registry = ActionRegistry::new();
+    crate::sagas::register_all_actions(&mut registry);
+    let mut exec =
+        SagaExecutor::new_with_fdb_store(SecId::random(), SecEpoch::new(1), db, registry, log)
+            .with_store(Arc::clone(state_store))
+            .with_identity_hmac_key(Arc::clone(identity_hmac_key));
     for (name, version) in crate::sagas::registered_versions() {
         exec.register_saga_version(name, version);
     }

@@ -50,6 +50,12 @@ pub mod mem;
 pub mod secstore;
 pub mod types;
 
+/// Re-export the FoundationDB `Database` type so callers (tritond)
+/// don't have to take a direct dep on the `foundationdb` crate just
+/// to pass the handle into `fdb_saga_executor`.
+#[cfg(feature = "foundationdb")]
+pub use foundationdb::Database as FdbDatabase;
+
 pub use context::{ActionRegistry, SagaAction, SagaActionContext, SagaContext, TritondSagaType};
 pub use error::{SagaError, SagaResult};
 pub use executor::SagaExecutor;

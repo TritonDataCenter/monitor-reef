@@ -263,10 +263,9 @@ impl SagaExecutor {
 /// shared between Steno's `SecClient` and our `TritondSecStore` so
 /// the engine and the fencing extension see the same backing state.
 ///
-/// This is the constructor `tritond` itself uses at SG-1 (where
-/// `FdbSecStore` is a stub) and the one every integration test uses.
-/// SG-1b will add a sibling `new_with_fdb_store` that wires the FDB
-/// SecStore for production deploys whose `Store` is `FdbStore`.
+/// This is the constructor every integration test uses and the
+/// dev-daemon default. Production deploys with FDB use
+/// [`Self::new_with_fdb_store`].
 impl SagaExecutor {
     pub fn new_with_mem_store(
         sec_id: SecId,
@@ -275,6 +274,28 @@ impl SagaExecutor {
         registry: ActionRegistry,
         log: slog::Logger,
     ) -> Self {
+        let steno_store: Arc<dyn steno::SecStore> = sec_store.clone();
+        let sec_client = steno::sec(log.clone(), steno_store);
+        let trit_store: Arc<dyn TritondSecStore> = sec_store;
+        Self::new(sec_id, sec_epoch, sec_client, trit_store, registry, log)
+    }
+}
+
+#[cfg(feature = "foundationdb")]
+impl SagaExecutor {
+    /// Build an executor over an [`crate::fdb::FdbSecStore`]
+    /// backed by the supplied FoundationDB `Database` handle.
+    /// `db` is the same handle that backs `tritond_store::FdbStore`;
+    /// the two share boot/network state via the `Arc<Database>`
+    /// indirection.
+    pub fn new_with_fdb_store(
+        sec_id: SecId,
+        sec_epoch: SecEpoch,
+        db: Arc<foundationdb::Database>,
+        registry: ActionRegistry,
+        log: slog::Logger,
+    ) -> Self {
+        let sec_store = crate::fdb::FdbSecStore::new(db);
         let steno_store: Arc<dyn steno::SecStore> = sec_store.clone();
         let sec_client = steno::sec(log.clone(), steno_store);
         let trit_store: Arc<dyn TritondSecStore> = sec_store;
