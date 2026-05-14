@@ -97,30 +97,40 @@ pub struct SweeperConfig {
     pub stale_after: std::time::Duration,
 }
 
-/// Build a default `SagaExecutor` over a fresh in-memory SecStore.
+/// Build a default `SagaExecutor` over a fresh in-memory SecStore,
+/// with every catalog action in [`crate::sagas`] pre-registered.
 /// Used by both [`ApiContext::new`] and [`ApiContext::in_memory`]
-/// so every test fixture gets an isolated SEC id. SG-1b will add a
-/// `with_saga_executor` builder that lets production override with
-/// an FDB-backed SecStore once `FdbSecStore` is implemented.
-fn default_saga_executor() -> Arc<SagaExecutor> {
+/// so every test fixture gets an isolated SEC id and a fully wired
+/// catalog. SG-1b will add a similar builder that wires
+/// `FdbSecStore` when the underlying [`Store`] is `FdbStore`.
+fn default_saga_executor(
+    state_store: &Arc<dyn Store>,
+    identity_hmac_key: &Arc<tritond_auth::IdentityHmacKey>,
+) -> Arc<SagaExecutor> {
     let drain = slog::Discard;
     let log = slog::Logger::root(drain.fuse(), slog::o!("component" => "tritond-saga"));
-    let store = MemSecStore::new();
-    // Catalog is empty at SG-1; SG-2 onwards register actions
-    // (and saga versions) via dedicated builder calls before the
-    // server starts.
-    let exec = SagaExecutor::new_with_mem_store(
+    let sec_store = MemSecStore::new();
+    let mut registry = ActionRegistry::new();
+    crate::sagas::register_all_actions(&mut registry);
+    let mut exec = SagaExecutor::new_with_mem_store(
         SecId::random(),
         SecEpoch::new(1),
-        store,
-        ActionRegistry::new(),
+        sec_store,
+        registry,
         log,
-    );
+    )
+    .with_store(Arc::clone(state_store))
+    .with_identity_hmac_key(Arc::clone(identity_hmac_key));
+    for (name, version) in crate::sagas::registered_versions() {
+        exec.register_saga_version(name, version);
+    }
     Arc::new(exec)
 }
 
 impl ApiContext {
     pub fn new(store: Arc<dyn Store>, auth: Arc<AuthService>, audit: Arc<AuditService>) -> Self {
+        let identity_hmac_key = Arc::new(tritond_auth::IdentityHmacKey::generate());
+        let saga = default_saga_executor(&store, &identity_hmac_key);
         Self {
             store,
             auth,
@@ -130,10 +140,10 @@ impl ApiContext {
             spawn_in_process_provisioner: true,
             sweeper: None,
             dhcp_reconciler: None,
-            identity_hmac_key: Arc::new(tritond_auth::IdentityHmacKey::generate()),
+            identity_hmac_key,
             metrics: Arc::new(tritond_metrics::store::RingBufferStore::new()),
             logs: Arc::new(tritond_logs::RingBufferLogStore::new()),
-            saga: default_saga_executor(),
+            saga,
         }
     }
 

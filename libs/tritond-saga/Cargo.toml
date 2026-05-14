@@ -34,6 +34,11 @@ slog-stdlog = { workspace = true }
 steno = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+# Path dep on tritond-store: catalog actions take store handles via
+# SagaContext. RFD 00004 doc 01 documents this; the dep stays a leaf
+# relative to tritond the service (no HTTP, no Cedar).
+tritond-store = { workspace = true }
+tritond-auth = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]

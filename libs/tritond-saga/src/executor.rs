@@ -46,6 +46,13 @@ pub struct SagaExecutor {
     /// module. D-Sg-10.
     saga_versions: HashMap<&'static str, u32>,
     log: slog::Logger,
+    /// Optional state-store catalog action bodies reach for via
+    /// `SagaContext::store()`. SG-1 leaves this `None` (trivial
+    /// test, no catalog); SG-2 onwards always wires it.
+    store: Option<Arc<dyn tritond_store::Store>>,
+    /// Optional identity HMAC key (RFD 00003). Same wiring posture
+    /// as `store` above.
+    identity_hmac_key: Option<Arc<tritond_auth::IdentityHmacKey>>,
 }
 
 impl SagaExecutor {
@@ -69,7 +76,25 @@ impl SagaExecutor {
             registry: Arc::new(registry),
             saga_versions: HashMap::new(),
             log,
+            store: None,
+            identity_hmac_key: None,
         }
+    }
+
+    /// Builder: attach the state store catalog actions reach for.
+    /// SG-2 catalog modules need this; SG-1's empty catalog and
+    /// SG-0's trivial test leave it unset.
+    #[must_use]
+    pub fn with_store(mut self, store: Arc<dyn tritond_store::Store>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// Builder: attach the identity HMAC key.
+    #[must_use]
+    pub fn with_identity_hmac_key(mut self, key: Arc<tritond_auth::IdentityHmacKey>) -> Self {
+        self.identity_hmac_key = Some(key);
+        self
     }
 
     /// Tell the executor "this catalog module is registered at this
@@ -91,12 +116,18 @@ impl SagaExecutor {
         &self.log
     }
 
-    /// Build a `SagaContext` pinned to this SEC's `(id, epoch)`.
-    /// SG-1 will replace this with the richer `tritond` context
-    /// bundle (Store / AuditService / clients) but the fencing
-    /// fields stay the same.
+    /// Build a `SagaContext` pinned to this SEC's `(id, epoch)`,
+    /// with `store`/`identity_hmac_key` threaded through if the
+    /// executor was built with them.
     pub fn make_context(&self) -> SagaContext {
-        SagaContext::new(self.sec_id, self.sec_epoch, self.log.clone())
+        let mut ctx = SagaContext::new(self.sec_id, self.sec_epoch, self.log.clone());
+        if let Some(s) = self.store.clone() {
+            ctx = ctx.with_store(s);
+        }
+        if let Some(k) = self.identity_hmac_key.clone() {
+            ctx = ctx.with_identity_hmac_key(k);
+        }
+        ctx
     }
 
     /// Run a saga end-to-end: persist the create, stamp the fence,

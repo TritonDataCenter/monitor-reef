@@ -17,6 +17,8 @@
 use std::sync::Arc;
 
 use steno::SagaId;
+use tritond_auth::IdentityHmacKey;
+use tritond_store::Store;
 
 use crate::types::{SagaRequestCtx, SecEpoch, SecId};
 
@@ -35,6 +37,13 @@ struct SagaContextInner {
     /// sagas, so the value here is the latest known epoch for *this*
     /// SEC, suitable for stamping outbound writes.
     sec_epoch: SecEpoch,
+    /// State store catalog actions reach for. SG-0's trivial test
+    /// passes `None`; SG-2 onwards always carry a real handle.
+    store: Option<Arc<dyn Store>>,
+    /// HMAC key the blueprint identity stamping uses (RFD 00003).
+    /// SG-0 trivial test passes `None`; SG-2 catalog modules carry
+    /// the real key through.
+    identity_hmac_key: Option<Arc<IdentityHmacKey>>,
     log: slog::Logger,
 }
 
@@ -44,9 +53,27 @@ impl SagaContext {
             inner: Arc::new(SagaContextInner {
                 sec_id,
                 sec_epoch,
+                store: None,
+                identity_hmac_key: None,
                 log,
             }),
         }
+    }
+
+    /// Builder: attach the state store catalog actions need.
+    #[must_use]
+    pub fn with_store(mut self, store: Arc<dyn Store>) -> Self {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.store = Some(store);
+        self
+    }
+
+    /// Builder: attach the identity HMAC key.
+    #[must_use]
+    pub fn with_identity_hmac_key(mut self, key: Arc<IdentityHmacKey>) -> Self {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.identity_hmac_key = Some(key);
+        self
     }
 
     pub fn sec_id(&self) -> SecId {
@@ -61,10 +88,40 @@ impl SagaContext {
         &self.inner.log
     }
 
+    /// The state store. Panics if `with_store` was never called;
+    /// catalog action bodies that reach for `store` are always run
+    /// from a `tritond`-built executor that wires it.
+    pub fn store(&self) -> &Arc<dyn Store> {
+        self.inner
+            .store
+            .as_ref()
+            .unwrap_or_else(|| panic!("SagaContext::store called without with_store"))
+    }
+
+    /// The identity HMAC key. See [`Self::store`] for the
+    /// "always-wired in production" invariant.
+    pub fn identity_hmac_key(&self) -> &Arc<IdentityHmacKey> {
+        self.inner.identity_hmac_key.as_ref().unwrap_or_else(|| {
+            panic!("SagaContext::identity_hmac_key called without with_identity_hmac_key")
+        })
+    }
+
     /// Build the fencing tuple action bodies pass into store
     /// mutations and `enqueue_job` calls.
     pub fn request_ctx(&self, saga_id: SagaId) -> SagaRequestCtx {
         SagaRequestCtx::new(saga_id, self.inner.sec_id, self.inner.sec_epoch)
+    }
+}
+
+impl Clone for SagaContextInner {
+    fn clone(&self) -> Self {
+        Self {
+            sec_id: self.sec_id,
+            sec_epoch: self.sec_epoch,
+            store: self.store.clone(),
+            identity_hmac_key: self.identity_hmac_key.clone(),
+            log: self.log.clone(),
+        }
     }
 }
 
@@ -73,6 +130,11 @@ impl std::fmt::Debug for SagaContext {
         f.debug_struct("SagaContext")
             .field("sec_id", &self.inner.sec_id)
             .field("sec_epoch", &self.inner.sec_epoch)
+            .field("has_store", &self.inner.store.is_some())
+            .field(
+                "has_identity_hmac_key",
+                &self.inner.identity_hmac_key.is_some(),
+            )
             .finish()
     }
 }

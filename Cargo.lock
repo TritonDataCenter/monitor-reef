@@ -6180,6 +6180,8 @@ dependencies = [
  "steno",
  "thiserror 2.0.18",
  "tokio",
+ "tritond-auth",
+ "tritond-store",
  "uuid",
 ]
 

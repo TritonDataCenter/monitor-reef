@@ -204,8 +204,23 @@ pub(crate) async fn create_project_instance(
             }
         };
 
-    let mut instance = match ctx.store.create_instance(tenant_id, project_id, req).await {
-        Ok(result) => result.instance,
+    // From here on, instance allocation + host-CN pin + root_pw
+    // meta + Provision-job enqueue run as a `tritond-saga`
+    // `instance-create` saga. The saga has explicit per-action undo
+    // so any failure unwinds cleanly (no leaked Instance / NIC / IP
+    // / Disk / DhcpLease rows). See
+    // `services/tritond/src/sagas/instance_create.rs` for the chain
+    // and the unwind matrix; the RFD is 00004 SG-2.
+    let saga_params = crate::sagas::instance_create::InstanceCreateParams {
+        tenant_id,
+        project_id,
+        request: req,
+        target_cn_uuid,
+        // SG-4 will plumb the Idempotency-Key header here.
+        idempotency_key: None,
+    };
+    let saga_dag = match crate::sagas::instance_create::build_dag(&saga_params) {
+        Ok(d) => d,
         Err(e) => {
             ctx.audit
                 .record_mutation(
@@ -213,108 +228,121 @@ pub(crate) async fn create_project_instance(
                     Action::InstanceCreate,
                     request_id,
                     None,
-                    store_error_to_audit_outcome(&e),
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("saga dag build: {e}"),
+                    },
                     serde_json::Value::Null,
                 )
                 .await;
-            return Err(store_error_to_http(e));
+            return Err(HttpError::for_internal_error(format!(
+                "instance-create saga dag build failed: {e}"
+            )));
         }
     };
-
-    if let Some(host_cn_uuid) = target_cn_uuid {
-        instance = match ctx
-            .store
-            .set_instance_host_cn(instance.id, Some(host_cn_uuid))
-            .await
-        {
-            Ok(updated) => updated,
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let saga_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::instance_create::SAGA_NAME,
+            crate::sagas::instance_create::SAGA_VERSION,
+            saga_dag,
+        )
+        .await;
+    let steno_result = match saga_result {
+        Ok(r) => r,
+        Err(e) => {
+            // Engine error before the saga even started running
+            // (registry mismatch, persistence layer failure, etc.).
+            // This shouldn't happen on the well-known catalog at
+            // SG-2; surface as 500 with the error string.
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceCreate,
+                    request_id,
+                    None,
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("saga executor error: {e}"),
+                    },
+                    serde_json::Value::Null,
+                )
+                .await;
+            return Err(HttpError::for_internal_error(format!(
+                "instance-create saga executor error: {e}"
+            )));
+        }
+    };
+    let instance: Instance = match steno_result.kind {
+        Ok(ok) => match ok.lookup_node_output::<Instance>("final_instance") {
+            Ok(i) => i,
             Err(e) => {
                 ctx.audit
                     .record_mutation(
                         &principal,
                         Action::InstanceCreate,
                         request_id,
-                        Some(format!("Instance::\"{}\"", instance.id)),
-                        store_error_to_audit_outcome(&e),
+                        None,
+                        tritond_audit::Outcome::ServerError {
+                            message: format!("saga output lookup: {e}"),
+                        },
                         serde_json::Value::Null,
                     )
                     .await;
-                return Err(store_error_to_http(e));
+                return Err(HttpError::for_internal_error(format!(
+                    "instance-create saga finished but final_instance output missing: {e}"
+                )));
             }
-        };
-    }
-
-    // Auto-generate the initial root password and persist it as
-    // `triton/instance/root_pw` at instance scope with
-    // `guest_visible=false`. This is the layered-metadata equivalent
-    // of the legacy SmartOS `internal_metadata.root_pw` field: the
-    // agent's `apply_provision_metadata` folds it into the vmadm
-    // payload's `internal_metadata` at provision time, and
-    // cloud-init's SmartOS DataSource picks it up via mdata-get on
-    // first boot. Writing it BEFORE `enqueue_job` removes the race
-    // window where the agent could claim the Provision job and
-    // build a blueprint without the password.
-    //
-    // Operators retrieve it via `tcadm meta get --scope instance
-    // --id <id> --key instance/root_pw` or the admin UI's Metadata
-    // tab. `guest_visible=false` keeps it out of IMDS.
-    //
-    // If the meta write fails, the instance stays created -- the
-    // operator can re-set the password manually. Failure is logged
-    // at WARN but doesn't block provisioning, because losing the
-    // auto-generated password to a transient FDB blip is better
-    // than refusing the create.
-    let root_pw = tritond_auth::generate_random_password();
-    let pw_meta = MetaValue {
-        value: serde_json::Value::String(root_pw.expose().to_string()),
-        guest_visible: false,
-        guest_writable: false,
-        updated_by: "system".to_string(),
-        updated_at: chrono::Utc::now(),
+        },
+        Err(err) => {
+            // Saga unwound. The unwind ran (or attempted to run)
+            // each committed action's undo in reverse; zero rows
+            // leak on the happy unwind path. Pull the StoreError
+            // variant out of the failing action's `action_failed`
+            // payload so duplicate-name / not-found etc preserve
+            // their original 4xx status instead of collapsing to
+            // 500 (SG-2 keeps the pre-saga handler's HTTP
+            // semantics). Operators see the full step list via
+            // `tcadm sagas get` (SG-4).
+            let store_kind_msg: Option<(&'static str, String)> = match &err.error_source {
+                tritond_saga::ActionError::ActionFailed { source_error } => {
+                    let kind = crate::sagas::instance_create::decode_store_error_kind(source_error);
+                    let msg = source_error
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    kind.map(|k| (k, msg))
+                }
+                _ => None,
+            };
+            let full_msg = format!(
+                "instance-create saga unwound at node `{:?}`: {:?}",
+                err.error_node_name, err.error_source
+            );
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceCreate,
+                    request_id,
+                    None,
+                    tritond_audit::Outcome::ServerError {
+                        message: full_msg.clone(),
+                    },
+                    serde_json::Value::Null,
+                )
+                .await;
+            return Err(match store_kind_msg {
+                Some(("conflict", msg)) => HttpError::for_client_error(
+                    Some("Conflict".to_string()),
+                    ClientErrorStatusCode::CONFLICT,
+                    msg,
+                ),
+                Some(("not_found", _msg)) => not_found(),
+                _ => HttpError::for_internal_error(full_msg),
+            });
+        }
     };
-    if let Err(e) = ctx
-        .store
-        .set_meta(MetaScope::Instance, instance.id, "instance/root_pw", pw_meta)
-        .await
-    {
-        tracing::warn!(
-            instance_id = %instance.id,
-            error = %e,
-            "auto-generate root_pw: failed to persist meta; operator must set manually"
-        );
-    }
-
-    // Enqueue the provisioning job. The stub provisioner (or
-    // the selected per-CN agent) will pick it up and drive
-    // Pending → Provisioning → Running. The response returns
-    // the instance in `Pending` — clients poll the get endpoint
-    // to observe the transition.
-    if let Err(e) = ctx
-        .store
-        .enqueue_job(NewJob {
-            kind: JobKind::Provision {
-                instance_id: instance.id,
-            },
-            target_cn_uuid,
-        })
-        .await
-    {
-        // Failure to enqueue is operationally bad — the instance
-        // record exists but will never provision. Surface as
-        // 5xx; operators can retry by re-creating with a new
-        // name (Phase 0 doesn't support requeue).
-        ctx.audit
-            .record_mutation(
-                &principal,
-                Action::InstanceCreate,
-                request_id,
-                Some(format!("Instance::\"{}\"", instance.id)),
-                store_error_to_audit_outcome(&e),
-                serde_json::Value::Null,
-            )
-            .await;
-        return Err(store_error_to_http(e));
-    }
 
     ctx.audit
         .record_mutation(
@@ -331,6 +359,7 @@ pub(crate) async fn create_project_instance(
                 "name": instance.name,
                 "image_id": instance.image_id,
                 "primary_subnet_id": instance.primary_subnet_id,
+                "saga_id": saga_id.0,
             }),
         )
         .await;
