@@ -191,6 +191,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_port_blueprint(rqctx, path).await
     }
 
+    async fn agent_peer_resolve(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::AgentPeerResolveQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::AgentPeerResolveResponse>, HttpError> {
+        crate::handlers::agents::agent_peer_resolve(rqctx, query).await
+    }
+
     async fn agent_complete_job(
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentJobPath>,

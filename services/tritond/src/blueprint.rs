@@ -630,6 +630,83 @@ fn derive_local_subnet_seed(route_table_id: Uuid) -> [u8; 32] {
     out
 }
 
+/// Default suggested TTL (seconds) returned with a successful peer
+/// resolve. Mirrors [`proteus_api::DEFAULT_PEER_ENTRY_TTL_SECS`] but
+/// re-declared here so the tritond default can drift independently
+/// (e.g., shorter in dev clusters to surface migration bugs faster).
+const PEER_RESOLVE_DEFAULT_TTL_SECS: u32 = 300;
+
+/// Phase A resolver: find the NIC whose primary IP matches `peer_ip`
+/// inside a VPC with the given VNI, then look up its host CN's
+/// underlay address. Brute-force scan over realized NICs; an index
+/// lands when scale demands it.
+///
+/// Returns `Ok(response)` on success, `Err(404)` when no realized
+/// NIC owns the IP / has a placed host CN with an admin IP. The
+/// agent populates a negative-cache entry on `Err(404)` so the next
+/// guest retry doesn't re-fire the slow path immediately.
+pub(crate) async fn resolve_peer(
+    store: &dyn Store,
+    vni: u32,
+    peer_ip: std::net::IpAddr,
+) -> Result<tritond_api::AgentPeerResolveResponse, HttpError> {
+    // 1. Enumerate every realized NIC. Today: walk approved CNs ->
+    //    their instances -> their NICs. The CN list is small (~100
+    //    in target deployments) and `list_instances_for_cn` /
+    //    `list_nics_for_instance` are O(N) over actual placements,
+    //    so total cost scales with realized-NIC count, not the
+    //    cluster's full configuration surface. An index by
+    //    (vni, ip) -> nic_id lands when scale demands it.
+    let cns = store
+        .list_cns(None)
+        .await
+        .map_err(store_error_to_http)?;
+    for cn in cns {
+        let Some(admin_ip) = cn.admin_ip else {
+            continue;
+        };
+        let instances = match store.list_instances_for_cn(cn.server_uuid).await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        for instance in instances {
+            let nics = match store.list_nics_for_instance(instance.id).await {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            for nic in nics {
+                let nic_matches = match peer_ip {
+                    std::net::IpAddr::V4(v4) => nic.primary_ipv4 == Some(v4),
+                    std::net::IpAddr::V6(v6) => nic.primary_ipv6 == Some(v6),
+                };
+                if !nic_matches {
+                    continue;
+                }
+                // VNI match. We need the VPC's VNI; load the VPC.
+                // Mismatched (vni, ip) pairs return 404 -- v2p
+                // queries are tenant-bounded.
+                let vpc = match store.get_vpc(nic.vpc_id).await {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                if vpc.vni != vni {
+                    continue;
+                }
+                return Ok(tritond_api::AgentPeerResolveResponse {
+                    guest_mac: nic.mac.clone(),
+                    underlay: underlay_v6_from_admin_ip(admin_ip),
+                    ttl_seconds: PEER_RESOLVE_DEFAULT_TTL_SECS,
+                });
+            }
+        }
+    }
+    Err(HttpError::for_client_error(
+        Some("NotFound".to_string()),
+        dropshot::ClientErrorStatusCode::NOT_FOUND,
+        format!("no realized NIC owns peer {peer_ip} in vni {vni}"),
+    ))
+}
+
 /// Enumerate every other realized NIC in the same subnet and emit
 /// one [`PeerIntentV1`] per peer pointing at the host CN's underlay
 /// address. Returns an empty vec on any store error so the rest of

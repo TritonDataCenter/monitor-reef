@@ -157,6 +157,36 @@ pub struct AgentPortBlueprintPath {
     pub port_id: Uuid,
 }
 
+/// Query parameters for `GET /v2/agent/peer`. The endpoint resolves
+/// a single in-VPC peer address to its host CN's underlay address +
+/// guest MAC; the bound CN agent calls this on every cache miss
+/// (the kmod's v2p cache fires a `PeerResolveNeeded` event with the
+/// same shape). See `PROTEUS_PLAN.md` §11.7.1.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AgentPeerResolveQuery {
+    /// VNI of the target VPC. Required so the lookup is bounded to
+    /// one tenant's address space (peers are NOT globally unique).
+    pub vni: u32,
+    /// Peer IP as a string. v4 and v6 both accepted; the resolver
+    /// parses and dispatches by family.
+    pub ip: String,
+}
+
+/// Response body for `GET /v2/agent/peer`. Matches the on-wire
+/// shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay
+/// IPv6) plus a server-suggested TTL the agent should honour when
+/// calling [`proteus_api::peer::AddPeerEntryRequest`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentPeerResolveResponse {
+    /// Resolved peer guest's MAC, `aa:bb:cc:dd:ee:ff`.
+    pub guest_mac: String,
+    /// Host CN underlay IPv6 the kmod uses as the Geneve outer dst.
+    pub underlay: String,
+    /// Suggested cache TTL in seconds. The agent clamps + the kmod
+    /// clamps again; honoured as a soft upper bound.
+    pub ttl_seconds: u32,
+}
+
 /// Optional `?force=true` query parameter on
 /// `DELETE /v2/silos/.../instances/{id}`. Default is `false`,
 /// which preserves the "must be Stopped or Failed first" gate.
@@ -1660,6 +1690,22 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentPortBlueprintPath>,
     ) -> Result<HttpResponseOk<AgentPortBlueprint>, HttpError>;
+
+    /// Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host
+    /// underlay. The bound CN agent calls this on every v2p cache
+    /// miss; tritond walks the NIC table, finds the NIC that owns
+    /// the IP, looks up its host CN, and returns the CN's underlay
+    /// address. Returns 404 when no realized NIC owns the IP.
+    /// See `PROTEUS_PLAN.md` §11.7.1.
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/peer",
+        tags = ["agent"],
+    }]
+    async fn agent_peer_resolve(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<AgentPeerResolveQuery>,
+    ) -> Result<HttpResponseOk<AgentPeerResolveResponse>, HttpError>;
 
     /// Heartbeat from a bound agent. Lightweight ping — empty
     /// body, just bumps `Cn.last_seen`. Auth: requires an API
