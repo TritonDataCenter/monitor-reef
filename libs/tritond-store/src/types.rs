@@ -5436,9 +5436,19 @@ pub fn computed_metadata(
         true,
         at,
     ));
+    // Owner facts as two flat leaves rather than one nested object.
+    // Matches the rest of `triton/system/*` (every key is a single
+    // scalar value) and AWS-style key-path convention; renders
+    // cleanly in any UI without special-casing structured values.
     out.push(entry(
-        "triton/system/owner",
-        serde_json::json!({ "tenant": instance.tenant_id.to_string(), "project": instance.project_id.to_string() }),
+        "triton/system/owner/tenant",
+        serde_json::json!(instance.tenant_id.to_string()),
+        true,
+        at,
+    ));
+    out.push(entry(
+        "triton/system/owner/project",
+        serde_json::json!(instance.project_id.to_string()),
         true,
         at,
     ));
@@ -5558,9 +5568,14 @@ mod computed_meta_tests {
             map["triton/system/memory-mib"].value,
             serde_json::json!(2048)
         );
+        // Owner is two flat leaves, matching the rest of triton/system/*.
         assert_eq!(
-            map["triton/system/owner"].value,
-            serde_json::json!({ "tenant": inst.tenant_id.to_string(), "project": inst.project_id.to_string() })
+            map["triton/system/owner/tenant"].value,
+            serde_json::json!(inst.tenant_id.to_string())
+        );
+        assert_eq!(
+            map["triton/system/owner/project"].value,
+            serde_json::json!(inst.project_id.to_string())
         );
         // cn-uuid present but guest-invisible.
         assert!(map.contains_key("triton/system/cn-uuid"));
