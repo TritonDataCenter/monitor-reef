@@ -25,6 +25,15 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
             msg,
         ),
         StoreError::Backend(msg) => HttpError::for_internal_error(msg),
+        // A saga-issued mutation was fenced out by an adopting SEC
+        // (RFD 00004 D-Sg-8). Surface as 503 with retry semantics:
+        // the operator's request didn't break anything, the
+        // adopting SEC is going to drive the saga forward, and the
+        // caller can poll `/v2/operations/{id}` to follow it.
+        StoreError::FencedOut { saga_id } => HttpError::for_unavail(
+            Some("FencedOut".to_string()),
+            format!("saga {saga_id} adopted by another tritond instance; retry"),
+        ),
     }
 }
 
@@ -40,6 +49,9 @@ pub(crate) fn store_error_to_audit_outcome(err: &StoreError) -> AuditOutcome {
         },
         StoreError::Backend(msg) => AuditOutcome::ServerError {
             message: msg.clone(),
+        },
+        StoreError::FencedOut { saga_id } => AuditOutcome::ServerError {
+            message: format!("fenced out for saga {saga_id}"),
         },
     }
 }

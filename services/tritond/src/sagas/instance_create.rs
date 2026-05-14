@@ -171,7 +171,9 @@ pub fn build_dag(params: &InstanceCreateParams) -> SagaResult<Arc<SagaDag>> {
 // ---------------------------------------------------------------
 
 async fn create_instance_record(ctx: Ctx) -> Result<Instance, ActionError> {
-    let store = ctx.user_data().store().clone();
+    let user_ctx = ctx.user_data();
+    fence_check(user_ctx).await?;
+    let store = user_ctx.store().clone();
     let params: InstanceCreateParams = ctx.saga_params()?;
     let result: InstanceCreateResult = store
         .create_instance(params.tenant_id, params.project_id, params.request)
@@ -192,7 +194,9 @@ async fn create_instance_record_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
 }
 
 async fn pin_host_cn(ctx: Ctx) -> Result<Instance, ActionError> {
-    let store = ctx.user_data().store().clone();
+    let user_ctx = ctx.user_data();
+    fence_check(user_ctx).await?;
+    let store = user_ctx.store().clone();
     let params: InstanceCreateParams = ctx.saga_params()?;
     let instance: Instance = ctx.lookup("instance")?;
     match params.target_cn_uuid {
@@ -222,8 +226,10 @@ async fn pin_host_cn_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
 }
 
 async fn persist_root_pw_meta(ctx: Ctx) -> Result<(), ActionError> {
-    let log = ctx.user_data().log().clone();
-    let store = ctx.user_data().store().clone();
+    let user_ctx = ctx.user_data();
+    fence_check(user_ctx).await?;
+    let log = user_ctx.log().clone();
+    let store = user_ctx.store().clone();
     let instance: Instance = ctx.lookup("instance")?;
     // Auto-generate the initial root password and persist it as
     // `instance/root_pw` at instance scope with `guest_visible=false`.
@@ -258,7 +264,9 @@ async fn persist_root_pw_meta(ctx: Ctx) -> Result<(), ActionError> {
 }
 
 async fn enqueue_provision_job(ctx: Ctx) -> Result<Instance, ActionError> {
-    let store = ctx.user_data().store().clone();
+    let user_ctx = ctx.user_data();
+    fence_check(user_ctx).await?;
+    let store = user_ctx.store().clone();
     let params: InstanceCreateParams = ctx.saga_params()?;
     let instance: Instance = ctx.lookup("instance_after_pin")?;
     let _job: tritond_store::ProvisioningJob = store
@@ -310,6 +318,21 @@ async fn no_op_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+/// RFD 00004 D-Sg-8: best-effort fence check called at the top of
+/// every saga action body before any externally-visible side effect.
+/// If another SEC has adopted the saga since this action's context
+/// was built (heartbeat-driven reassignment, etc.), short-circuit
+/// the action with an `ActionError` so the unwind tail runs in this
+/// process while the adopting SEC drives the saga forward.
+async fn fence_check(ctx: &tritond_saga::SagaContext) -> Result<(), ActionError> {
+    ctx.verify_fence().await.map_err(|e| {
+        ActionError::action_failed(serde_json::json!({
+            "kind": "fenced_out",
+            "message": e.to_string(),
+        }))
+    })
+}
+
 /// Tag a [`StoreError`] into a structured `ActionError` payload the
 /// handler can decode back into the right HTTP status. The handler
 /// uses [`store_error_kind_from_action_error`] (see this module's
@@ -321,6 +344,7 @@ fn store_err_to_action_err(e: tritond_store::StoreError) -> ActionError {
         tritond_store::StoreError::Conflict(_) => "conflict",
         tritond_store::StoreError::NotFound => "not_found",
         tritond_store::StoreError::Backend(_) => "backend",
+        tritond_store::StoreError::FencedOut { .. } => "fenced_out",
     };
     let payload = serde_json::json!({
         "kind": "store_error",

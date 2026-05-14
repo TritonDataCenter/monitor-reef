@@ -123,6 +123,11 @@ fn saga_error_to_http(e: SagaError) -> HttpError {
         SagaError::UnknownVersion { name, version } => HttpError::for_internal_error(format!(
             "saga {name}@{version} has no registered handler"
         )),
+        // Fence violation on a read path is itself a 500: the
+        // operator-visible endpoint only reads, it doesn't write,
+        // so the fence shouldn't trip here. If it does, log it as
+        // an internal error so we notice.
+        SagaError::FencedOut { .. } => HttpError::for_internal_error(e.to_string()),
         SagaError::Steno(msg) | SagaError::Backend(msg) => HttpError::for_internal_error(msg),
     }
 }

@@ -118,9 +118,13 @@ impl SagaExecutor {
 
     /// Build a `SagaContext` pinned to this SEC's `(id, epoch)`,
     /// with `store`/`identity_hmac_key` threaded through if the
-    /// executor was built with them.
+    /// executor was built with them. The context is NOT bound to a
+    /// saga id; callers that run a saga should use
+    /// [`Self::make_context_for_saga`] so action bodies'
+    /// `verify_fence` calls have the right id.
     pub fn make_context(&self) -> SagaContext {
-        let mut ctx = SagaContext::new(self.sec_id, self.sec_epoch, self.log.clone());
+        let mut ctx = SagaContext::new(self.sec_id, self.sec_epoch, self.log.clone())
+            .with_sec_store(self.sec_store.clone());
         if let Some(s) = self.store.clone() {
             ctx = ctx.with_store(s);
         }
@@ -128,6 +132,14 @@ impl SagaExecutor {
             ctx = ctx.with_identity_hmac_key(k);
         }
         ctx
+    }
+
+    /// Build a `SagaContext` bound to a specific saga. Used at the
+    /// `saga_execute` / `saga_resume` entry points; action bodies
+    /// read the saga id back via `SagaContext::saga_id()` (and
+    /// implicitly via `verify_fence`).
+    pub fn make_context_for_saga(&self, saga_id: SagaId) -> SagaContext {
+        self.make_context().with_saga_id(saga_id)
     }
 
     /// Run a saga end-to-end: persist the create, stamp the fence,
@@ -142,7 +154,7 @@ impl SagaExecutor {
         version: u32,
         dag: Arc<SagaDag>,
     ) -> SagaResult<StenoSagaResult> {
-        let ctx = Arc::new(self.make_context());
+        let ctx = Arc::new(self.make_context_for_saga(saga_id));
         // 1. Steno persists the saga (calls our SecStore::saga_create).
         let result_fut = self
             .sec_client
@@ -237,7 +249,7 @@ impl SagaExecutor {
                     continue;
                 }
             }
-            let ctx = Arc::new(self.make_context());
+            let ctx = Arc::new(self.make_context_for_saga(r.record.id));
             let _resume_fut = self
                 .sec_client
                 .saga_resume(

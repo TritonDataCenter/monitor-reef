@@ -177,6 +177,10 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             msg,
         ),
         StoreError::Backend(msg) => HttpError::for_internal_error(msg),
+        StoreError::FencedOut { saga_id } => HttpError::for_unavail(
+            Some("FencedOut".to_string()),
+            format!("saga {saga_id} adopted by another tritond instance; retry"),
+        ),
     }
 }
 

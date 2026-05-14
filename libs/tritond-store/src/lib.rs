@@ -36,16 +36,15 @@ pub use types::{
     CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, ConfigError, ConfigKey,
     DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS, DEFAULT_DHCP_RECONCILE_INTERVAL_SECS,
     DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT, DEFAULT_STALE_CLAIM_THRESHOLD_SECS,
-    DEFAULT_SWEEPER_INTERVAL_SECS, DhcpLease, DhcpOptionRaw,
-    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterInstance,
-    EdgeClusterInstanceState, EdgeClusterKind, EdgeClusterResource, EdgeNicCoord,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FirewallAction, FirewallDirection,
-    FirewallIcmpFilter, FirewallPortRange, FirewallProtocol, FirewallRule, FloatingIp,
-    FloatingIpAttachment, IMDS_HOP_LIMIT_DEFAULT, IMDS_HOP_LIMIT_MAX, IMDS_HOP_LIMIT_MIN,
-    IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, ImdsBindingWire, Instance,
-    InstanceBrand, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus, JobStatusKind,
-    LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind, MAX_META_KEY_BYTES,
-    MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE, MAX_META_VALUE_BYTES,
+    DEFAULT_SWEEPER_INTERVAL_SECS, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk,
+    DiskKind, EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
+    EdgeClusterResource, EdgeNicCoord, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation,
+    FirewallAction, FirewallDirection, FirewallIcmpFilter, FirewallPortRange, FirewallProtocol,
+    FirewallRule, FloatingIp, FloatingIpAttachment, IMDS_HOP_LIMIT_DEFAULT, IMDS_HOP_LIMIT_MAX,
+    IMDS_HOP_LIMIT_MIN, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
+    ImdsBindingWire, Instance, InstanceBrand, InstanceCreateResult, IpCidr, JobKind, JobOutcome,
+    JobStatus, JobStatusKind, LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind,
+    MAX_META_KEY_BYTES, MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE, MAX_META_VALUE_BYTES,
     MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED, META_KEY_IMDS_HOP_LIMIT,
     META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance, MetaScope, MetaValue,
     MetricsBackend, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
@@ -88,6 +87,16 @@ pub enum StoreError {
     /// react to beyond surfacing it.
     #[error("store backend error: {0}")]
     Backend(String),
+
+    /// A saga-issued mutation was rejected because the caller's
+    /// `(sec_id, epoch)` is stale relative to the saga's current
+    /// owner (RFD 00004 D-Sg-8 / Invariant 8). Today this variant
+    /// is surfaced by the catalog-action boundary check in
+    /// `tritond_saga::SagaContext::verify_fence`; a follow-up will
+    /// thread the fence ctx into the per-mutation surface so the
+    /// check rides in the same FDB transaction as the write.
+    #[error("fenced out: saga {saga_id} has been adopted by another SEC")]
+    FencedOut { saga_id: String },
 }
 
 /// A handle to the control-plane state store.
