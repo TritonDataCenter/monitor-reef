@@ -22,8 +22,9 @@ use proteus_api::ids::{
 use triton_vpc::tritond_intent_v1::{
     DhcpOptionRawV1, DhcpOptionsIntentV1, EdgeClusterIntentV1, FirewallActionIntentV1,
     FirewallDirectionIntentV1, FirewallRuleIntentV1, FloatingIpAttachmentIntentV1,
-    FloatingIpIntentV1, L4ProtocolIntentV1, NatGatewayIntentV1, NicIntentV1, PortRangeIntentV1,
-    RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1, VpcIntentV1,
+    FloatingIpIntentV1, L4ProtocolIntentV1, NatGatewayIntentV1, NicIntentV1, PeerIntentV1,
+    PortRangeIntentV1, RouteIntentV1, RouteTargetIntentV1, SubnetIntentV1, TritondPortIntentV1,
+    VpcIntentV1,
 };
 use tritond_api::types::ImdsBindingWire;
 use tritond_api::types::{
@@ -354,6 +355,19 @@ pub(crate) async fn build_port_blueprint(
     // listener address to DNAT into. Both are skipped when IMDS is
     // disabled cluster-wide or per-instance, leaving the dataplane
     // exactly where it was pre-IM-3.
+    // Peer table for intra-VPC cross-CN forwarding. Enumerate every
+    // other realized NIC in the same subnet, look up its host CN, and
+    // emit one PeerIntentV1 per peer pointing at the CN's underlay
+    // address. The plugin compiler turns this into one Geneve push
+    // rule per peer; a single `LocalSubnet` route in the route table
+    // drives the fan-out.
+    //
+    // Failures listing other NICs / CNs degrade to an empty peer
+    // table rather than failing the whole blueprint -- intra-VPC
+    // traffic falls back to the existing behaviour (no encap, no
+    // delivery) but provisioning still succeeds.
+    let peers = build_peers_in_subnet(store, nic.project_id, nic.subnet_id, nic.id).await;
+
     let imds_cfg = ImdsListenerConfig::from_env();
     let imds_enabled = match imds_cfg {
         Some(_) => {
@@ -415,7 +429,13 @@ pub(crate) async fn build_port_blueprint(
         },
         instance_id: instance.id,
         port_id,
-        routes: build_routes_with_imds(&routes, subnet.route_table_id, imds_enabled)?,
+        routes: build_routes_with_imds_and_local_subnet(
+            &routes,
+            subnet.route_table_id,
+            imds_enabled,
+            subnet.ipv4_block.map(|c| c.to_string()),
+            !peers.is_empty(),
+        )?,
         nat_gateways: nat_gateways.iter().map(nat_gateway_intent).collect(),
         floating_ips: floating_ips.iter().map(floating_ip_intent).collect(),
         edge_clusters: edge_clusters
@@ -433,6 +453,7 @@ pub(crate) async fn build_port_blueprint(
             }),
             _ => None,
         },
+        peers,
     };
 
     let plugin_blueprint = intent.compile_blueprint().map_err(|err| {
@@ -563,6 +584,127 @@ fn derive_imds_route_seed(route_table_id: Uuid) -> [u8; 32] {
     out[..16].copy_from_slice(route_table_id.as_bytes());
     out[16..].copy_from_slice(b"imds-v4-magic\0\0\0");
     out
+}
+
+/// Same shape as [`build_routes_with_imds`] but additionally splices
+/// in a synthetic `LocalSubnet` route over the subnet's IPv4 block
+/// when `emit_local_subnet` is true. The plugin overlay compiler
+/// fans this one entry out into per-peer Geneve push rules using
+/// the port's `peer_table`. The route doesn't live in FDB -- it's a
+/// property of the dataplane wire shape -- so we synthesise it on
+/// every blueprint build with a deterministic UUID for bit-identical
+/// re-emits.
+fn build_routes_with_imds_and_local_subnet(
+    stored: &[Route],
+    route_table_id: Uuid,
+    imds_enabled: bool,
+    subnet_ipv4_block: Option<String>,
+    emit_local_subnet: bool,
+) -> Result<Vec<RouteIntentV1>, HttpError> {
+    let mut out = build_routes_with_imds(stored, route_table_id, imds_enabled)?;
+    if emit_local_subnet {
+        if let Some(cidr) = subnet_ipv4_block {
+            let synthetic_id =
+                Uuid::new_v5(&Uuid::NAMESPACE_OID, &derive_local_subnet_seed(route_table_id));
+            out.push(RouteIntentV1 {
+                id: synthetic_id,
+                tenant_id: Uuid::nil(),
+                project_id: Uuid::nil(),
+                vpc_id: Uuid::nil(),
+                route_table_id,
+                name: "local-subnet".to_string(),
+                description: "Synthesized: subnet CIDR -> LocalSubnet (peer_table fan-out)"
+                    .to_string(),
+                destination: cidr,
+                target: RouteTargetIntentV1::LocalSubnet,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn derive_local_subnet_seed(route_table_id: Uuid) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    out[..16].copy_from_slice(route_table_id.as_bytes());
+    out[16..].copy_from_slice(b"local-subnet\0\0\0\0");
+    out
+}
+
+/// Enumerate every other realized NIC in the same subnet and emit
+/// one [`PeerIntentV1`] per peer pointing at the host CN's underlay
+/// address. Returns an empty vec on any store error so the rest of
+/// the blueprint can still ship -- intra-VPC reachability is an
+/// optimisation, not a precondition for provisioning.
+///
+/// Ownership lookup walks `Instance::host_cn_uuid -> Cn`; instances
+/// without an assigned CN, or peers whose CN has no recorded
+/// `admin_ip`, are silently skipped (they aren't reachable from the
+/// dataplane yet).
+async fn build_peers_in_subnet(
+    store: &dyn Store,
+    project_id: Uuid,
+    subnet_id: Uuid,
+    self_nic_id: Uuid,
+) -> Vec<PeerIntentV1> {
+    let instances = match store.list_instances_in_project(project_id).await {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let mut peers = Vec::new();
+    for instance in instances {
+        let Some(host_cn_uuid) = instance.host_cn_uuid else {
+            continue;
+        };
+        let cn = match store.get_cn(host_cn_uuid).await {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let Some(admin_ip) = cn.admin_ip else {
+            continue;
+        };
+        let nics = match store.list_nics_for_instance(instance.id).await {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        for nic in nics {
+            if nic.subnet_id != subnet_id {
+                continue;
+            }
+            if nic.id == self_nic_id {
+                continue;
+            }
+            let Some(addr) = nic.primary_ipv4.map(|v| v.to_string()) else {
+                continue;
+            };
+            peers.push(PeerIntentV1 {
+                addr,
+                guest_mac: nic.mac.clone(),
+                underlay: underlay_v6_from_admin_ip(admin_ip),
+            });
+        }
+    }
+    peers
+}
+
+/// Map a CN's IPv4 admin address into a deterministic IPv6
+/// underlay address inside the ULA range `fd00:cabe::/64`. Until
+/// CNs persist an explicit underlay address at registration, this
+/// gives tritond and the kmod a stable encoding to talk about. The
+/// operator is still responsible for plumbing matching IPv6
+/// addresses on the underlay link via SetUnderlay.
+fn underlay_v6_from_admin_ip(v4: std::net::Ipv4Addr) -> String {
+    let o = v4.octets();
+    std::net::Ipv6Addr::new(
+        0xfd00,
+        0xcabe,
+        0,
+        0,
+        0,
+        0,
+        ((o[0] as u16) << 8) | o[1] as u16,
+        ((o[2] as u16) << 8) | o[3] as u16,
+    )
+    .to_string()
 }
 
 pub(crate) fn route_intent(route: &Route) -> Result<RouteIntentV1, HttpError> {
