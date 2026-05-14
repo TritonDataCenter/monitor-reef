@@ -150,6 +150,29 @@ struct Cli {
         default_value_t = false
     )]
     no_heartbeater: bool,
+
+    /// Disable the v2p lazy-resolver loop. When set, miss events
+    /// fired by the kmod are ignored and forwarding falls back to
+    /// the pre-shipped `peer_table` shipped on each per-port
+    /// blueprint. The kmod-side cache stays installed (it's a no-op
+    /// when nothing populates it); flipping this flag does not
+    /// require restarting VMs or unloading the kmod. Documented
+    /// rollback knob per `PROTEUS_PLAN.md` §11.7.1.
+    #[arg(
+        long = "peer-resolver",
+        env = "TRITONAGENT_PEER_RESOLVER",
+        value_enum,
+        default_value_t = PeerResolverMode::On,
+    )]
+    peer_resolver: PeerResolverMode,
+}
+
+/// Operator-controlled toggle for the v2p lazy resolver. Default
+/// `on`; `off` is the rollback path.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum PeerResolverMode {
+    On,
+    Off,
 }
 
 #[tokio::main]
@@ -221,6 +244,7 @@ async fn main() -> Result<()> {
         console_tls: Some(console_tls),
         imds_listen_addr: cli.imds_listen_addr,
         imds_token_key_bytes: outcome.imds_token_key,
+        peer_resolver_enabled: matches!(cli.peer_resolver, PeerResolverMode::On),
     };
     tritonagent::run(cfg).await
 }

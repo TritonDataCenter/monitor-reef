@@ -164,6 +164,15 @@ pub struct AgentConfig {
     /// the console-ticket key; the registration-side wire is a
     /// follow-up commit.
     pub imds_token_key_bytes: Option<[u8; IMDS_TOKEN_KEY_BYTES]>,
+    /// v2p lazy resolver toggle. `true` (default) drives the loop in
+    /// `dhcp_events::run_loop` to call tritond + AddPeerEntry on
+    /// every `PeerResolveNeeded` event. `false` is the rollback
+    /// path: miss events are silently dropped, the kmod cache stays
+    /// empty, and intra-VPC forwarding falls back to the pre-shipped
+    /// `peer_table` on each per-port blueprint. Documented per
+    /// `PROTEUS_PLAN.md` §11.7.1; no VM/kmod restart required to
+    /// flip.
+    pub peer_resolver_enabled: bool,
 }
 
 impl AgentConfig {
@@ -301,6 +310,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
             Arc::clone(&client),
             cfg.proteus_dev.clone(),
             dhcp_events::DEFAULT_DHCP_EVENT_INTERVAL,
+            cfg.peer_resolver_enabled,
         ))
     } else {
         None
