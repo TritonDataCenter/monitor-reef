@@ -257,10 +257,11 @@ async fn wait_for_snapshot_state(
             return Ok(snapshot);
         }
 
-        // Check for failed state
-        if snapshot.state == SnapshotState::Failed {
+        // Check for terminal failure states
+        if snapshot.state == SnapshotState::Failed || snapshot.state == SnapshotState::Deleted {
             return Err(anyhow::anyhow!(
-                "Snapshot entered failed state while waiting for {}",
+                "Snapshot entered {} state while waiting for {}",
+                crate::output::enum_to_display(&snapshot.state),
                 crate::output::enum_to_display(&target),
             ));
         }
