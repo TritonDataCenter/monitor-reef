@@ -167,6 +167,9 @@ schemars = { version = "0.8", features = ["chrono", "derive", "uuid1"] }
 # Durable workflow engine. See `libs/tritond-saga/` and RFD 00004.
 # 0.4 is the latest as of 2026-05; it's the engine Oxide's Nexus runs.
 steno = "0.4"
+# `NodeIndex` for poking individual saga nodes (abandon flow,
+# D-Sg-12). Same version steno pulls in transitively.
+petgraph = "0.6"
 # Steno emits its own logs via slog. tritond bridges tracing<->slog
 # at the executor build site so saga logs flow into the same stream
 # as the rest of the daemon.

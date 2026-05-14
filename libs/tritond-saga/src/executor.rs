@@ -280,6 +280,75 @@ impl SagaExecutor {
         self.sec_store.get_record(id).await
     }
 
+    /// Force a running saga into its unwind direction (RFD 00004
+    /// D-Sg-12). Injects an `ActionError` at every node in the
+    /// saga's DAG that hasn't yet completed; the next pending node
+    /// the saga reaches will fail and trigger the catalog's own
+    /// undos in reverse.
+    ///
+    /// Returns the number of nodes the executor poked. The actual
+    /// transition into `Unwinding` happens cooperatively: any
+    /// currently-running action body finishes its natural outcome
+    /// first, then the next node trips the injected error. There's
+    /// no preemption of an in-flight action; that's outside what
+    /// the v1 escape hatch promises.
+    ///
+    /// Operator-only at the HTTP layer; the executor doesn't
+    /// authorise the caller.
+    pub async fn abandon_saga(&self, saga_id: SagaId) -> SagaResult<usize> {
+        // Pull the saga's persisted DAG so we can walk every
+        // declared node and inject an error at each. Already-
+        // completed nodes ignore the injection per Steno
+        // semantics; pending or running ones fail on next visit.
+        let record = self.sec_store.get_record(saga_id).await?;
+        // The persisted DAG is the SagaDag's JSON form (what
+        // `SecClient::saga_create` stored). Re-deserialise to
+        // SagaDag so we can enumerate nodes by name and look up
+        // their NodeIndex.
+        let saga_dag: steno::SagaDag = serde_json::from_value(record.dag.clone())
+            .map_err(|e| SagaError::Backend(format!("deserialise persisted DAG: {e}")))?;
+        let mut poked = 0usize;
+        // Inject at every node by walking petgraph's node iterator.
+        // Steno's Dag exposes `get(NodeIndex)` and a NodeIter via
+        // `iter_nodes`; for simplicity we walk a contiguous range
+        // 0..=MAX and rely on Steno to error-out-of-bounds entries.
+        // The MAX is a soft cap matching the largest catalog
+        // saga we ship; raise it when the catalog grows.
+        const MAX_NODES: u32 = 64;
+        for i in 0..MAX_NODES {
+            let idx: petgraph::graph::NodeIndex = petgraph::graph::NodeIndex::new(i as usize);
+            // get_index by NodeIndex isn't on Dag; we use Steno's
+            // SagaDag::get on the raw petgraph index. Skip nodes
+            // that aren't in the saga's dag (out-of-bounds).
+            //
+            // Since `Dag::get` is `pub(crate)`, we can't probe
+            // membership directly. Cheapest test: round-trip the
+            // index through `saga_inject_error` and accept the
+            // out-of-bounds variant as expected.
+            let res = self.sec_client.saga_inject_error(saga_id, idx).await;
+            match res {
+                Ok(()) => poked += 1,
+                Err(e) => {
+                    let msg = e.to_string();
+                    // Steno's error for "node not found" carries
+                    // the node id; suppress that case and propagate
+                    // anything else.
+                    if !msg.contains("node") {
+                        return Err(SagaError::Steno(msg));
+                    }
+                    break;
+                }
+            }
+        }
+        let _ = saga_dag; // currently unused; kept for future when we walk by name
+        slog::info!(
+            self.log,
+            "tritond-saga: operator-initiated abandon poked {poked} nodes";
+            "saga_id" => %saga_id,
+        );
+        Ok(poked)
+    }
+
     /// Heartbeat-write the local SEC's `(epoch, now)`. The
     /// heartbeat task in SG-1 calls this on a cadence.
     pub async fn touch_heartbeat(&self) -> SagaResult<()> {

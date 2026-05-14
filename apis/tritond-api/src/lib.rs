@@ -454,6 +454,18 @@ pub struct OperationPath {
     pub operation_id: Uuid,
 }
 
+/// Response body for `POST /v2/operations/{operation_id}/abandon`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AbandonResponse {
+    /// The operation we abandoned.
+    pub id: Uuid,
+    /// How many of the saga's DAG nodes the executor poked with
+    /// `saga_inject_error`. A higher number means more "future"
+    /// nodes were marked to fail; the actual unwind starts at the
+    /// first one the saga reaches.
+    pub poked_nodes: u64,
+}
+
 /// Query parameters for `GET /v2/operations`. Pagination is
 /// continuation-token style: pass back the `id` of the last entry
 /// from the previous page as `after_id`.
@@ -1565,6 +1577,24 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<OperationPath>,
     ) -> Result<HttpResponseOk<OperationDetail>, HttpError>;
+
+    /// Operator-initiated unwind (RFD 00004 D-Sg-12). Injects an
+    /// error at every pending node of the saga so the next node
+    /// the saga reaches fails, triggering the catalog's own undos
+    /// in reverse. Any currently-running action body completes its
+    /// natural outcome first; there is no preemption of in-flight
+    /// work.
+    ///
+    /// Returns the count of nodes poked. Operator-only.
+    #[endpoint {
+        method = POST,
+        path = "/v2/operations/{operation_id}/abandon",
+        tags = ["operations"],
+    }]
+    async fn abandon_operation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<OperationPath>,
+    ) -> Result<HttpResponseOk<AbandonResponse>, HttpError>;
 
     /// Atomically claim the next Pending provisioning job.
     /// Returns `200 OK` with `{"job": null}` when the queue is

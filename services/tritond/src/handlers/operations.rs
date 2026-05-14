@@ -13,7 +13,8 @@
 
 use dropshot::{HttpError, HttpResponseOk, Path, Query, RequestContext};
 use tritond_api::{
-    ListOperationsQuery, OperationDetail, OperationPath, OperationState, OperationSummary,
+    AbandonResponse, ListOperationsQuery, OperationDetail, OperationPath, OperationState,
+    OperationSummary,
 };
 use tritond_saga::{SagaCachedStatePersist, SagaError, SagaId, SagaRecord};
 
@@ -64,6 +65,27 @@ pub(crate) async fn get_operation(
         .await
         .map_err(saga_error_to_http)?;
     Ok(HttpResponseOk(record_to_detail(record)))
+}
+
+pub(crate) async fn abandon_operation(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<OperationPath>,
+) -> Result<HttpResponseOk<AbandonResponse>, HttpError> {
+    let ctx = rqctx.context();
+    // Operator-only. Re-use AuditList for now; SG-4b adds a
+    // dedicated OperationsAbandon Cedar action.
+    authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::AuditList)
+        .await?;
+    let OperationPath { operation_id } = path.into_inner();
+    let poked = ctx
+        .saga
+        .abandon_saga(SagaId(operation_id))
+        .await
+        .map_err(saga_error_to_http)?;
+    Ok(HttpResponseOk(AbandonResponse {
+        id: operation_id,
+        poked_nodes: poked as u64,
+    }))
 }
 
 fn record_to_summary(r: SagaRecord) -> OperationSummary {

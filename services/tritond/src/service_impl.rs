@@ -163,6 +163,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::operations::get_operation(rqctx, path).await
     }
 
+    async fn abandon_operation(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::OperationPath>,
+    ) -> Result<HttpResponseOk<tritond_api::AbandonResponse>, HttpError> {
+        crate::handlers::operations::abandon_operation(rqctx, path).await
+    }
+
     async fn agent_claim_job(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<ClaimJobRequest>,

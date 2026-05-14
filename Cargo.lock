@@ -5976,6 +5976,7 @@ name = "tritond"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "cedar-policy",
@@ -6172,6 +6173,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "foundationdb",
+ "petgraph 0.6.5",
  "schemars 0.8.22",
  "serde",
  "serde_json",

@@ -344,6 +344,35 @@ pub async fn operations_list(
     Ok(())
 }
 
+/// Abandon (force-unwind) an in-flight operation (RFD 00004 D-Sg-12).
+/// Operator-only; the running action body completes its natural
+/// outcome before the catalog's undos fire.
+pub async fn operations_abandon(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    operation_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let resp = client
+        .abandon_operation()
+        .operation_id(operation_id)
+        .send()
+        .await
+        .context("abandon operation")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+    } else {
+        println!(
+            "abandoned operation {} (poked {} saga nodes; next pending node will trigger unwind)",
+            resp.id, resp.poked_nodes,
+        );
+    }
+    Ok(())
+}
+
 /// Fetch the detail view (summary + persisted DAG) for one operation.
 pub async fn operations_get(
     endpoint_override: Option<String>,

@@ -2091,6 +2091,45 @@
         }
       }
     },
+    "/v2/operations/{operation_id}/abandon": {
+      "post": {
+        "tags": [
+          "operations"
+        ],
+        "summary": "Operator-initiated unwind (RFD 00004 D-Sg-12). Injects an",
+        "description": "error at every pending node of the saga so the next node the saga reaches fails, triggering the catalog's own undos in reverse. Any currently-running action body completes its natural outcome first; there is no preemption of in-flight work.\n\nReturns the count of nodes poked. Operator-only.",
+        "operationId": "abandon_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbandonResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos": {
       "get": {
         "tags": [
@@ -8295,6 +8334,27 @@
   },
   "components": {
     "schemas": {
+      "AbandonResponse": {
+        "description": "Response body for `POST /v2/operations/{operation_id}/abandon`.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "The operation we abandoned.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "poked_nodes": {
+            "description": "How many of the saga's DAG nodes the executor poked with `saga_inject_error`. A higher number means more \"future\" nodes were marked to fail; the actual unwind starts at the first one the saga reaches.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "poked_nodes"
+        ]
+      },
       "Actor": {
         "description": "Who initiated the action.",
         "oneOf": [

@@ -37,6 +37,50 @@ pub mod types {
         }
     }
 
+    #[doc = "Response body for `POST /v2/operations/{operation_id}/abandon`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `POST /v2/operations/{operation_id}/abandon`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"poked_nodes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"The operation we abandoned.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"poked_nodes\": {"]
+    #[doc = "      \"description\": \"How many of the saga's DAG nodes the executor poked with `saga_inject_error`. A higher number means more \\\"future\\\" nodes were marked to fail; the actual unwind starts at the first one the saga reaches.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AbandonResponse {
+        #[doc = "The operation we abandoned."]
+        pub id: ::uuid::Uuid,
+        #[doc = "How many of the saga's DAG nodes the executor poked with `saga_inject_error`. A higher number means more \"future\" nodes were marked to fail; the actual unwind starts at the first one the saga reaches."]
+        pub poked_nodes: u64,
+    }
+
+    impl AbandonResponse {
+        pub fn builder() -> builder::AbandonResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "Who initiated the action."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -10400,6 +10444,65 @@ pub mod types {
 
     #[doc = r" Types for composing complex structures."]
     pub mod builder {
+        #[derive(Clone, Debug)]
+        pub struct AbandonResponse {
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            poked_nodes: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AbandonResponse {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    poked_nodes: Err("no value supplied for poked_nodes".to_string()),
+                }
+            }
+        }
+
+        impl AbandonResponse {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn poked_nodes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.poked_nodes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for poked_nodes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AbandonResponse> for super::AbandonResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AbandonResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    poked_nodes: value.poked_nodes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AbandonResponse> for AbandonResponse {
+            fn from(value: super::AbandonResponse) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    poked_nodes: Ok(value.poked_nodes),
+                }
+            }
+        }
+
         #[derive(Clone, Debug)]
         pub struct AgentPortBlueprint {
             blueprint_postcard_base64:
@@ -22424,6 +22527,11 @@ impl Client {
         builder::GetOperation::new(self)
     }
 
+    #[doc = "Operator-initiated unwind (RFD 00004 D-Sg-12). Injects an\n\nerror at every pending node of the saga so the next node the saga reaches fails, triggering the catalog's own undos in reverse. Any currently-running action body completes its natural outcome first; there is no preemption of in-flight work.\n\nReturns the count of nodes poked. Operator-only.\n\nSends a `POST` request to `/v2/operations/{operation_id}/abandon`\n\n```ignore\nlet response = client.abandon_operation()\n    .operation_id(operation_id)\n    .send()\n    .await;\n```"]
+    pub fn abandon_operation(&self) -> builder::AbandonOperation<'_> {
+        builder::AbandonOperation::new(self)
+    }
+
     #[doc = "List every silo, sorted by `name`. Phase 0 has no per-operator\n\nsilo visibility filter so this returns the full set.\n\nSends a `GET` request to `/v2/silos`\n\n```ignore\nlet response = client.list_silos()\n    .send()\n    .await;\n```"]
     pub fn list_silos(&self) -> builder::ListSilos<'_> {
         builder::ListSilos::new(self)
@@ -27034,6 +27142,80 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "get_operation",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::abandon_operation`]\n\n[`Client::abandon_operation`]: super::Client::abandon_operation"]
+    #[derive(Debug, Clone)]
+    pub struct AbandonOperation<'a> {
+        client: &'a super::Client,
+        operation_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> AbandonOperation<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                operation_id: Err("operation_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn operation_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.operation_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for operation_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/operations/{operation_id}/abandon`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AbandonResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                operation_id,
+            } = self;
+            let operation_id = operation_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/operations/{}/abandon",
+                client.baseurl,
+                encode_path(&operation_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "abandon_operation",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

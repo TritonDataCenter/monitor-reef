@@ -1421,6 +1421,15 @@ enum OperationsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Operator-initiated unwind (RFD 00004 D-Sg-12): inject an
+    /// error at every pending saga node so the next one fails and
+    /// the catalog's own undos run. The currently-running action
+    /// (if any) completes its natural outcome first.
+    Abandon {
+        operation_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1892,6 +1901,9 @@ async fn main() -> Result<()> {
             } => commands::operations_list(cli.endpoint, cli.api_key, after_id, limit, json).await,
             OperationsCommand::Get { operation_id, json } => {
                 commands::operations_get(cli.endpoint, cli.api_key, operation_id, json).await
+            }
+            OperationsCommand::Abandon { operation_id, json } => {
+                commands::operations_abandon(cli.endpoint, cli.api_key, operation_id, json).await
             }
         },
         Commands::Silo { command } => match command {

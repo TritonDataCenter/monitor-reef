@@ -25,6 +25,7 @@ foundationdb = ["dep:foundationdb"]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+petgraph = { workspace = true }
 foundationdb = { workspace = true, optional = true }
 schemars = { workspace = true }
 serde = { workspace = true }
