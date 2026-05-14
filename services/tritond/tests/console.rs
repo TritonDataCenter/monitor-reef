@@ -75,8 +75,9 @@ impl TestServer {
 
         let auth = Arc::new(AuthService::new(JwtKey::generate()).unwrap());
         let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
-        let context =
-            ApiContext::new(Arc::clone(&store), auth, audit).without_in_process_provisioner();
+        let context = ApiContext::new(Arc::clone(&store), auth, audit)
+            .without_in_process_provisioner()
+            .without_saga_wait_for_agent();
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .unwrap();

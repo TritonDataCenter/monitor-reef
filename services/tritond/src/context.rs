@@ -73,6 +73,20 @@ pub struct ApiContext {
     /// [`ApiContext::with_logs`]. Same fail-open behaviour as
     /// `metrics` -- a storage hiccup never 5xx's the agent.
     pub logs: Arc<dyn tritond_logs::LogStore>,
+    /// When `true` (the default), the `instance-create` saga's
+    /// `await_provision_terminal` action waits for the agent to ack
+    /// the Provision job before returning. This is what completes
+    /// SG-2's unwind story (RFD 00004): a Provision-failed agent
+    /// outcome triggers the saga's unwind tail, which enqueues a
+    /// Delete job and tears the instance record back down.
+    ///
+    /// Set to `false` in tests that drive the agent protocol manually
+    /// (e.g. `agent.rs` opts out of the in-process provisioner and
+    /// then issues `claim_next_job`/`agent_complete_job` after the
+    /// `POST .../instances`). Without that opt-out the POST would
+    /// block forever waiting for an agent that the test hasn't yet
+    /// started driving.
+    pub saga_wait_for_agent: bool,
     /// Durable workflow executor (RFD 00004). Every multi-resource
     /// operation that touches more than one FDB resource, or that
     /// enqueues work for any `tritonagent`, runs as a registered
@@ -173,7 +187,18 @@ impl ApiContext {
             metrics: Arc::new(tritond_metrics::store::RingBufferStore::new()),
             logs: Arc::new(tritond_logs::RingBufferLogStore::new()),
             saga,
+            saga_wait_for_agent: true,
         }
+    }
+
+    /// Disable the `await_provision_terminal` action on the
+    /// instance-create saga. Used by test fixtures that drive the
+    /// agent protocol manually after issuing creates (see
+    /// [`Self::saga_wait_for_agent`] doc for the rationale).
+    #[must_use]
+    pub fn without_saga_wait_for_agent(mut self) -> Self {
+        self.saga_wait_for_agent = false;
+        self
     }
 
     /// Install a real metrics store (e.g. ClickHouse). Tests and dev

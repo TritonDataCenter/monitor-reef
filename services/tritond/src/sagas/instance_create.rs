@@ -50,7 +50,8 @@ use tritond_saga::{
     SagaName, SagaResult, TritondSagaType,
 };
 use tritond_store::{
-    Instance, InstanceCreateResult, JobKind, MetaScope, MetaValue, NewInstance, NewJob,
+    Instance, InstanceCreateResult, JobKind, JobStatusKind, MetaScope, MetaValue, NewInstance,
+    NewJob,
 };
 use uuid::Uuid;
 
@@ -61,7 +62,11 @@ pub const SAGA_NAME: &str = "instance-create";
 /// action sequence, action ids, or `Params` shape. The registry
 /// keeps the previous N=2 versions registered so a rolling deploy
 /// and crash recovery against the prior version both work.
-pub const SAGA_VERSION: u32 = 1;
+///
+/// `2` adds the `await_provision_terminal` + `finish` actions and
+/// the `await_provision_terminal: bool` param field (defaults
+/// to `true`).
+pub const SAGA_VERSION: u32 = 2;
 
 /// Parameters the handler hands to `SagaExecutor::saga_execute`.
 /// Carries everything that doesn't change during the saga: the
@@ -84,6 +89,17 @@ pub struct InstanceCreateParams {
     /// SG-4 doesn't bump the saga version.
     #[serde(default)]
     pub idempotency_key: Option<String>,
+    /// Whether the saga should block on the agent acking the
+    /// Provision job's terminal status. `true` in production so a
+    /// Provision-failed outcome triggers the unwind tail; `false`
+    /// in test fixtures that drive the agent protocol manually
+    /// after the create POST returns.
+    #[serde(default = "default_true")]
+    pub await_provision_terminal: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 type Ctx = ActionContext<TritondSagaType>;
@@ -110,6 +126,16 @@ pub fn register(reg: &mut ActionRegistry) {
         "instance_create.enqueue_provision_job",
         enqueue_provision_job,
         enqueue_provision_job_undo,
+    ));
+    reg.register(ActionFunc::new_action(
+        "instance_create.await_provision_terminal",
+        await_provision_terminal,
+        no_op_undo,
+    ));
+    reg.register(ActionFunc::new_action(
+        "instance_create.finish",
+        finish,
+        no_op_undo,
     ));
 }
 
@@ -149,13 +175,27 @@ pub fn build_dag(params: &InstanceCreateParams) -> SagaResult<Arc<SagaDag>> {
         ),
     ));
     b.append(Node::action(
-        "final_instance",
+        "provision_job",
         "enqueue_provision_job",
         &*ActionFunc::new_action(
             "instance_create.enqueue_provision_job",
             enqueue_provision_job,
             enqueue_provision_job_undo,
         ),
+    ));
+    b.append(Node::action(
+        "provisioned",
+        "await_provision_terminal",
+        &*ActionFunc::new_action(
+            "instance_create.await_provision_terminal",
+            await_provision_terminal,
+            no_op_undo,
+        ),
+    ));
+    b.append(Node::action(
+        "final_instance",
+        "finish",
+        &*ActionFunc::new_action("instance_create.finish", finish, no_op_undo),
     ));
 
     let dag = b
@@ -263,13 +303,13 @@ async fn persist_root_pw_meta(ctx: Ctx) -> Result<(), ActionError> {
     }
 }
 
-async fn enqueue_provision_job(ctx: Ctx) -> Result<Instance, ActionError> {
+async fn enqueue_provision_job(ctx: Ctx) -> Result<tritond_store::ProvisioningJob, ActionError> {
     let user_ctx = ctx.user_data();
     fence_check(user_ctx).await?;
     let store = user_ctx.store().clone();
     let params: InstanceCreateParams = ctx.saga_params()?;
     let instance: Instance = ctx.lookup("instance_after_pin")?;
-    let _job: tritond_store::ProvisioningJob = store
+    let job: tritond_store::ProvisioningJob = store
         .enqueue_job(NewJob {
             kind: JobKind::Provision {
                 instance_id: instance.id,
@@ -278,11 +318,7 @@ async fn enqueue_provision_job(ctx: Ctx) -> Result<Instance, ActionError> {
         })
         .await
         .map_err(store_err_to_action_err)?;
-    // The saga returns the just-created Instance to the caller.
-    // The lifecycle is still `Pending`; the agent (or the in-process
-    // stub) drives it forward asynchronously. Callers that need
-    // `Running` poll the get endpoint, exactly as before.
-    Ok(instance)
+    Ok(job)
 }
 
 async fn enqueue_provision_job_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
@@ -312,6 +348,81 @@ async fn enqueue_provision_job_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
         );
     }
     Ok(())
+}
+
+/// Poll the Provision job until it reaches a terminal status, or
+/// short-circuit if the saga's params asked to skip the wait. On
+/// `JobOutcome::Failed`, return an `ActionError` so the saga
+/// unwinds back through the create / pin / record steps (RFD 00004
+/// SG-2 unwind story).
+async fn await_provision_terminal(ctx: Ctx) -> Result<(), ActionError> {
+    let params: InstanceCreateParams = ctx.saga_params()?;
+    if !params.await_provision_terminal {
+        // Tests that drive the agent protocol manually skip the
+        // wait so the POST returns immediately and the test can
+        // then issue claim+complete via the agent client. The
+        // existing fire-and-forget behaviour is preserved.
+        return Ok(());
+    }
+    let user_ctx = ctx.user_data();
+    fence_check(user_ctx).await?;
+    let store = user_ctx.store().clone();
+    let job: tritond_store::ProvisioningJob = ctx.lookup("provision_job")?;
+    let job_id = job.id;
+
+    // Poll cadence: every 50 ms, the stub provisioner's poll
+    // interval. The hard cap is hooked up by D-Sg-9 (per-action
+    // timeout); without it, a wedged agent would hang the POST
+    // forever. SG-2 keeps a generous internal cap so tests pass.
+    const POLL: std::time::Duration = std::time::Duration::from_millis(50);
+    const HARD_CAP: std::time::Duration = std::time::Duration::from_secs(120);
+    let start = std::time::Instant::now();
+    loop {
+        let current = store
+            .get_job(job_id)
+            .await
+            .map_err(store_err_to_action_err)?;
+        match current.status.kind() {
+            JobStatusKind::Completed => return Ok(()),
+            JobStatusKind::Failed => {
+                return Err(ActionError::action_failed(serde_json::json!({
+                    "kind": "provision_failed",
+                    "job_id": job_id.to_string(),
+                    "reason": match &current.status {
+                        tritond_store::JobStatus::Failed { reason } => reason.clone(),
+                        _ => "(no reason)".to_string(),
+                    },
+                })));
+            }
+            _ => {
+                if start.elapsed() > HARD_CAP {
+                    return Err(ActionError::action_failed(serde_json::json!({
+                        "kind": "provision_timeout",
+                        "job_id": job_id.to_string(),
+                        "elapsed_secs": start.elapsed().as_secs(),
+                    })));
+                }
+                tokio::time::sleep(POLL).await;
+            }
+        }
+    }
+}
+
+/// Re-read the just-provisioned instance so the response carries
+/// its current lifecycle (now `Running` after the agent drove
+/// Pending → Provisioning → Running). The saga has no `Instance`
+/// output before this action because action 4's output became the
+/// `ProvisioningJob` once SG-2b added the await step.
+async fn finish(ctx: Ctx) -> Result<Instance, ActionError> {
+    let user_ctx = ctx.user_data();
+    fence_check(user_ctx).await?;
+    let store = user_ctx.store().clone();
+    let instance: Instance = ctx.lookup("instance_after_pin")?;
+    let refreshed: Instance = store
+        .get_instance(instance.id)
+        .await
+        .map_err(store_err_to_action_err)?;
+    Ok(refreshed)
 }
 
 async fn no_op_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {

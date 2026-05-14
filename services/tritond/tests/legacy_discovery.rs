@@ -76,7 +76,8 @@ impl TestServer {
         // signatures for the "managed zone" report path.
         let context = ApiContext::new(Arc::clone(&store), auth, audit)
             .with_identity_hmac_key(Arc::new(IdentityHmacKey::from_bytes(FIXED_HMAC_KEY)))
-            .without_in_process_provisioner();
+            .without_in_process_provisioner()
+            .without_saga_wait_for_agent();
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .unwrap();

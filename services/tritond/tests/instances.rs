@@ -300,9 +300,13 @@ async fn instance_create_settles_at_running_via_queue() {
         .await
         .unwrap()
         .into_inner();
-    // Create handler returns Pending; the stub provisioner drives
-    // Pending → Provisioning → Running asynchronously.
-    assert_eq!(lifecycle_state(&inst.lifecycle), "Pending");
+    // SG-2b: the instance-create saga's `await_provision_terminal`
+    // action blocks the POST until the agent (here, the in-process
+    // stub) acks the Provision job. The create handler now returns
+    // Running directly. The previous Pending-then-poll behaviour is
+    // preserved for tests that opt out via
+    // `without_saga_wait_for_agent`.
+    assert_eq!(lifecycle_state(&inst.lifecycle), "Running");
     assert_eq!(inst.tenant_id, fx.tenant_id);
     assert_eq!(inst.project_id, fx.project_id);
 
@@ -621,17 +625,17 @@ async fn instance_create_appears_on_operations_surface() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(lifecycle_state(&inst.lifecycle), "Pending");
+    assert_eq!(lifecycle_state(&inst.lifecycle), "Running");
 
-    // The saga finishes synchronously inside the handler (SG-2 is
-    // a 4-action chain with no await_terminal); the operation
-    // should land on the listing immediately.
+    // SG-2b: the saga's `await_provision_terminal` waits for the
+    // in-process stub to drive the Provision job to Completed, so
+    // the operation is `done` by the time the POST returns.
     let ops = root.list_operations().send().await.unwrap().into_inner();
     let our_op = ops
         .iter()
         .find(|o| o.kind == "instance-create")
         .expect("instance-create operation must be visible on /v2/operations");
-    assert_eq!(our_op.version, 1);
+    assert_eq!(our_op.version, 2);
     // The saga has run to terminal (Done with Ok); the
     // operations surface maps that to "done".
     let state_str = serde_json::to_value(&our_op.state)

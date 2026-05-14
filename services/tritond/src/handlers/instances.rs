@@ -218,6 +218,7 @@ pub(crate) async fn create_project_instance(
         target_cn_uuid,
         // SG-4 will plumb the Idempotency-Key header here.
         idempotency_key: None,
+        await_provision_terminal: ctx.saga_wait_for_agent,
     };
     let saga_dag = match crate::sagas::instance_create::build_dag(&saga_params) {
         Ok(d) => d,

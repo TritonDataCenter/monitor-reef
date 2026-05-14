@@ -65,7 +65,12 @@ impl TestServer {
         let context = ApiContext::new(Arc::clone(&store), auth, audit)
             // The agent test owns the queue — disable the stub so
             // the real-agent path is the only consumer.
-            .without_in_process_provisioner();
+            .without_in_process_provisioner()
+            // The agent test calls `claim_next_job` + `agent_complete_job`
+            // by hand *after* the create POST returns. Without this
+            // the saga's await_provision_terminal would block the
+            // POST forever waiting for the test's manual ack.
+            .without_saga_wait_for_agent();
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
             .unwrap();
@@ -1557,6 +1562,7 @@ async fn sweeper_reaps_stale_inprogress_job() {
     let audit = Arc::new(AuditService::new(Arc::new(MemChain::new())));
     let context = ApiContext::new(Arc::clone(&store), auth, audit)
         .without_in_process_provisioner()
+        .without_saga_wait_for_agent()
         // Sweep aggressively: every 200ms, anything older than
         // 500ms is stale. The test asserts the sweeper acted
         // within ~3s.
