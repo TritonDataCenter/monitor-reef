@@ -27,7 +27,8 @@ use dropshot::{
     TypedBody,
 };
 use tritond_api::{
-    AgentConfigResponse, AgentJobPath, AgentPortBlueprint, AgentPortBlueprintPath,
+    AgentConfigResponse, AgentJobPath, AgentNetworkAssignments, AgentPortBlueprint,
+    AgentPortBlueprintPath,
     AgentStatusRequest, ApiKeyCreated, ApiKeyPath, ApproveCnRequest, AttachFloatingIpRequest,
     AuditEventList, AuditEventPath, AuditListQuery, AuditVerifyQuery, AuditVerifyResponse,
     ClaimJobRequest, ClaimJobResponse, CnListQuery, CnPath, CompleteJobRequest, ConfigEntry,
@@ -196,6 +197,63 @@ pub(crate) async fn agent_port_blueprint(
     let port_id = path.into_inner().port_id;
     let blueprint = build_port_blueprint(ctx.store.as_ref(), port_id, bound_cn).await?;
     Ok(HttpResponseOk(blueprint))
+}
+
+/// `GET /v2/agent/network/assignments`: enumerate the proteus
+/// port_ids the bound CN should currently own. Used by the agent on
+/// startup to re-realize ports after a reboot — for each id returned,
+/// the agent calls `agent_port_blueprint` and applies via the kmod
+/// `CreatePort` + `ApplyBlueprint` + `StartPort` ioctl sequence.
+///
+/// Source of truth: instances where `host_cn_uuid == bound_cn` and
+/// the lifecycle implies running networking (Provisioning, Running,
+/// Stopping). Each instance's NICs (`Nic.id` == port_id) are
+/// included. Pending instances are excluded — they have no port yet.
+/// Stopped/Failed are excluded — the agent shouldn't recreate ports
+/// the operator explicitly took down. Best-effort: a per-instance
+/// `list_nics_for_instance` failure logs internally but doesn't fail
+/// the whole response (we'd rather return a partial list than 500
+/// the agent's whole startup path).
+pub(crate) async fn agent_network_assignments(
+    rqctx: RequestContext<ApiContext>,
+) -> Result<HttpResponseOk<AgentNetworkAssignments>, HttpError> {
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentBlueprint,
+    )
+    .await?;
+    let bound_cn = require_bound_cn(&principal)?;
+
+    let instances = ctx
+        .store
+        .list_instances_for_cn(bound_cn)
+        .await
+        .map_err(store_error_to_http)?;
+
+    let mut port_ids: Vec<Uuid> = Vec::new();
+    for instance in instances {
+        match instance.lifecycle {
+            LifecycleState::Provisioning | LifecycleState::Running | LifecycleState::Stopping => {}
+            // Pending: pre-claim, NIC may not exist yet.
+            // Stopped / Failed: port intentionally absent.
+            _ => continue,
+        }
+        match ctx.store.list_nics_for_instance(instance.id).await {
+            Ok(nics) => port_ids.extend(nics.into_iter().map(|n| n.id)),
+            Err(e) => tracing::warn!(
+                instance_id = %instance.id,
+                error = %e,
+                "list_nics_for_instance failed while enumerating agent assignments; \
+                 skipping this instance",
+            ),
+        }
+    }
+
+    Ok(HttpResponseOk(AgentNetworkAssignments { port_ids }))
 }
 
 /// Called on every kmod v2p cache miss; 404 lets the agent install a

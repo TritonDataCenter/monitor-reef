@@ -10930,6 +10930,34 @@
         }
       }
     },
+    "/v2/agent/network/assignments": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Enumerate the proteus port_ids the bound CN should currently",
+        "description": "be running. The agent calls this once at startup to figure out what to re-realize after a reboot — for each returned port_id it then calls `agent_port_blueprint` and applies the blueprint to the local kmod. Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]; returns 403 for unbound Agent keys.",
+        "operationId": "agent_network_assignments",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentNetworkAssignments"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/images": {
       "get": {
         "tags": [
@@ -11410,6 +11438,23 @@
         "required": [
           "reservoir_enabled",
           "reservoir_percent"
+        ]
+      },
+      "AgentNetworkAssignments": {
+        "description": "Response body for `GET /v2/agent/network/assignments`. Lists the proteus port_ids (== NIC ids) the bound CN should currently be running. The agent calls this once at startup to enumerate what to re-realize after a reboot (each entry then drives a separate `GET /v2/agent/blueprints/{port_id}` + apply pass).",
+        "type": "object",
+        "properties": {
+          "port_ids": {
+            "description": "Port IDs the bound CN owns, computed from the instance store: instances where `host_cn_uuid == bound_cn` and state implies running networking (Running, Provisioning, Starting, Stopping). Order is unspecified.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "port_ids"
         ]
       },
       "AgentPeerInvalidation": {

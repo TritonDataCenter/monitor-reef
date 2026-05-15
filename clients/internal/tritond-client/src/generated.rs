@@ -647,6 +647,44 @@ pub mod types {
         }
     }
 
+    #[doc = "Response body for `GET /v2/agent/network/assignments`. Lists the proteus port_ids (== NIC ids) the bound CN should currently be running. The agent calls this once at startup to enumerate what to re-realize after a reboot (each entry then drives a separate `GET /v2/agent/blueprints/{port_id}` + apply pass)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v2/agent/network/assignments`. Lists the proteus port_ids (== NIC ids) the bound CN should currently be running. The agent calls this once at startup to enumerate what to re-realize after a reboot (each entry then drives a separate `GET /v2/agent/blueprints/{port_id}` + apply pass).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"port_ids\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"port_ids\": {"]
+    #[doc = "      \"description\": \"Port IDs the bound CN owns, computed from the instance store: instances where `host_cn_uuid == bound_cn` and state implies running networking (Running, Provisioning, Starting, Stopping). Order is unspecified.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AgentNetworkAssignments {
+        #[doc = "Port IDs the bound CN owns, computed from the instance store: instances where `host_cn_uuid == bound_cn` and state implies running networking (Running, Provisioning, Starting, Stopping). Order is unspecified."]
+        pub port_ids: ::std::vec::Vec<::uuid::Uuid>,
+    }
+
+    impl AgentNetworkAssignments {
+        pub fn builder() -> builder::AgentNetworkAssignments {
+            Default::default()
+        }
+    }
+
     #[doc = "One invalidation directive the agent should apply against the kmod's v2p cache. Fired by tritond on NIC teardown / migration. `(vni, peer_ip)` identifies the entry to drop; the agent applies it to every local port that might have cached the peer."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -17764,6 +17802,51 @@ pub mod types {
                 Self {
                     reservoir_enabled: Ok(value.reservoir_enabled),
                     reservoir_percent: Ok(value.reservoir_percent),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AgentNetworkAssignments {
+            port_ids: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AgentNetworkAssignments {
+            fn default() -> Self {
+                Self {
+                    port_ids: Err("no value supplied for port_ids".to_string()),
+                }
+            }
+        }
+
+        impl AgentNetworkAssignments {
+            pub fn port_ids<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.port_ids = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for port_ids: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AgentNetworkAssignments> for super::AgentNetworkAssignments {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AgentNetworkAssignments,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    port_ids: value.port_ids?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AgentNetworkAssignments> for AgentNetworkAssignments {
+            fn from(value: super::AgentNetworkAssignments) -> Self {
+                Self {
+                    port_ids: Ok(value.port_ids),
                 }
             }
         }
@@ -36643,6 +36726,11 @@ impl Client {
     #[doc = "RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces\n\nthe same dependency gate as the legacy /v1/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.\n\nSends a `DELETE` request to `/v1/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_vpc_v1()\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn delete_vpc_v1(&self) -> builder::DeleteVpcV1<'_> {
         builder::DeleteVpcV1::new(self)
+    }
+
+    #[doc = "Enumerate the proteus port_ids the bound CN should currently\n\nbe running. The agent calls this once at startup to figure out what to re-realize after a reboot — for each returned port_id it then calls `agent_port_blueprint` and applies the blueprint to the local kmod. Auth: requires a CN-bound API key with [`tritond_store::ApiKeyScope::Agent`]; returns 403 for unbound Agent keys.\n\nSends a `GET` request to `/v2/agent/network/assignments`\n\n```ignore\nlet response = client.agent_network_assignments()\n    .send()\n    .await;\n```"]
+    pub fn agent_network_assignments(&self) -> builder::AgentNetworkAssignments<'_> {
+        builder::AgentNetworkAssignments::new(self)
     }
 
     #[doc = "Legacy unpaged list. The `/v1/images?scope=public` shape is\n\nthe new surface; this stays for old client callers.\n\nSends a `GET` request to `/v2/images`\n\n```ignore\nlet response = client.list_public_images()\n    .send()\n    .await;\n```"]
@@ -57471,6 +57559,58 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 204u16 => Ok(ResponseValue::empty(response)),
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_network_assignments`]\n\n[`Client::agent_network_assignments`]: super::Client::agent_network_assignments"]
+    #[derive(Debug, Clone)]
+    pub struct AgentNetworkAssignments<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> AgentNetworkAssignments<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/agent/network/assignments`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AgentNetworkAssignments>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v2/agent/network/assignments", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_network_assignments",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

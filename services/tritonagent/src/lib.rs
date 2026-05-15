@@ -430,6 +430,24 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
         None
     };
 
+    // Startup blueprint refresh: ask tritond which port_ids the bound
+    // CN should currently own, then for each id fetch + apply the
+    // current blueprint via the proteus ioctl. Fixes the post-reboot
+    // gap where the kmod loads empty and the existing poll/claim loop
+    // never re-realizes ports for instances that were Running before
+    // (no fresh ProvisionInstance job means no blueprint trigger).
+    //
+    // Gated on the same `spawn_heartbeater` flag as the dhcp_events /
+    // metrics tickers — integration tests run with `--no-heartbeater`
+    // and shouldn't open `/dev/proteus`. Errors are logged and don't
+    // abort the agent: a partial restore is strictly better than a
+    // failed startup that leaves zero ports realized.
+    if cfg.spawn_heartbeater {
+        if let Err(e) = refresh_blueprints_at_startup(&client, &cfg).await {
+            tracing::warn!(error = %e, "startup blueprint refresh failed; agent continues");
+        }
+    }
+
     // One migration data plane per CN (see `migrate_jobs` docs).
     let migration_lane = migrate_jobs::new_lane();
 
@@ -1981,6 +1999,109 @@ where
     }
 
     Ok(started_ports)
+}
+
+/// Startup-time blueprint refresh. Called once from `run()` before
+/// the poll loop, after a successful agent registration. Asks tritond
+/// `GET /v2/agent/network/assignments` for the list of port_ids the
+/// bound CN should own, then for each id fetches the current Proteus
+/// blueprint and applies it (CreatePort + ApplyBlueprint + StartPort)
+/// via the local kmod. Idempotent: a port whose generation already
+/// matches is a no-op on the kmod side.
+///
+/// The function logs progress + per-port failures but always returns
+/// `Ok(())` unless tritond is completely unreachable. A partial
+/// restore is better than failing startup; the poll loop's normal
+/// blueprint-on-job-claim flow will keep papering over any holes once
+/// fresh jobs arrive.
+async fn refresh_blueprints_at_startup(client: &Client, cfg: &AgentConfig) -> Result<()> {
+    let assignments = client
+        .agent_network_assignments()
+        .send()
+        .await
+        .context("fetch agent network assignments at startup")?
+        .into_inner();
+    let port_ids = assignments.port_ids;
+    if port_ids.is_empty() {
+        tracing::info!("startup blueprint refresh: no ports assigned to this CN; nothing to apply");
+        return Ok(());
+    }
+    tracing::info!(
+        port_count = port_ids.len(),
+        "startup blueprint refresh: applying blueprints",
+    );
+
+    let proteus = match open_proteus_lifecycle(&cfg.proteus_dev) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "startup blueprint refresh: cannot open Proteus device; skipping",
+            );
+            return Ok(());
+        }
+    };
+
+    let mut realized = 0usize;
+    let mut failed = 0usize;
+    for port_id in port_ids {
+        match refresh_one_port_at_startup(client, proteus.as_ref(), port_id).await {
+            Ok(()) => realized += 1,
+            Err(e) => {
+                tracing::warn!(
+                    port_id = %port_id,
+                    error = %e,
+                    "startup blueprint refresh: port apply failed; continuing",
+                );
+                failed += 1;
+            }
+        }
+    }
+    tracing::info!(realized, failed, "startup blueprint refresh complete",);
+    Ok(())
+}
+
+/// Fetch + apply one port blueprint at startup. Mirrors the
+/// per-NIC loop body in `realize_provision_ports` but skips the
+/// realization-report leg: tritond already has the realization row
+/// from before the reboot, and re-stamping it on every startup
+/// would generate noise without changing the recorded state. A
+/// fresh `report_network_realization` follows only when the next
+/// regular provision/poll cycle moves the generation forward.
+async fn refresh_one_port_at_startup<S, P>(
+    source: &S,
+    proteus: &P,
+    port_id: uuid::Uuid,
+) -> Result<()>
+where
+    S: PortBlueprintSource + Sync,
+    P: ProteusLifecycle + ?Sized,
+{
+    let port_blueprint = source
+        .fetch_port_blueprint(port_id)
+        .await
+        .with_context(|| format!("fetch Proteus port blueprint for port {port_id}"))?;
+    let link_name = proteus::link_name_for_port(port_blueprint.port_id);
+    let status = proteus
+        .ensure_started(&port_blueprint, &link_name)
+        .with_context(|| format!("ensure_started for port {port_id}"))?;
+    // Best-effort nictagadm registration. Same reasoning as the
+    // provision path: idempotent + non-fatal.
+    if let Err(err) = ensure_proteus_nic_tag(&link_name) {
+        tracing::warn!(
+            port_id = %port_id,
+            link_name = %link_name,
+            error = %err,
+            "nictagadm registration failed on startup refresh",
+        );
+    }
+    tracing::info!(
+        port_id = %port_id,
+        link_name = %link_name,
+        applied_generation = status.generation.applied_generation.0,
+        "startup blueprint refresh: port realized",
+    );
+    Ok(())
 }
 
 async fn report_failed_realization<R>(

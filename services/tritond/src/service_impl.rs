@@ -222,6 +222,12 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::agents::agent_port_blueprint(rqctx, path).await
     }
 
+    async fn agent_network_assignments(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<tritond_api::AgentNetworkAssignments>, HttpError> {
+        crate::handlers::agents::agent_network_assignments(rqctx).await
+    }
+
     async fn agent_peer_resolve(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::AgentPeerResolveQuery>,

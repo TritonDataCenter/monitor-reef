@@ -288,6 +288,20 @@ pub struct AgentPeerInvalidationsResponse {
     pub tail_seq: u64,
 }
 
+/// Response body for `GET /v2/agent/network/assignments`. Lists the
+/// proteus port_ids (== NIC ids) the bound CN should currently be
+/// running. The agent calls this once at startup to enumerate what
+/// to re-realize after a reboot (each entry then drives a separate
+/// `GET /v2/agent/blueprints/{port_id}` + apply pass).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentNetworkAssignments {
+    /// Port IDs the bound CN owns, computed from the instance store:
+    /// instances where `host_cn_uuid == bound_cn` and state implies
+    /// running networking (Running, Provisioning, Starting, Stopping).
+    /// Order is unspecified.
+    pub port_ids: Vec<uuid::Uuid>,
+}
+
 /// Optional `?force=true` query parameter on
 /// `DELETE /v1/silos/.../instances/{id}`. Default is `false`,
 /// which preserves the "must be Stopped or Failed first" gate.
@@ -2430,6 +2444,22 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AgentPortBlueprintPath>,
     ) -> Result<HttpResponseOk<AgentPortBlueprint>, HttpError>;
+
+    /// Enumerate the proteus port_ids the bound CN should currently
+    /// be running. The agent calls this once at startup to figure
+    /// out what to re-realize after a reboot — for each returned
+    /// port_id it then calls `agent_port_blueprint` and applies the
+    /// blueprint to the local kmod. Auth: requires a CN-bound API
+    /// key with [`tritond_store::ApiKeyScope::Agent`]; returns 403
+    /// for unbound Agent keys.
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/network/assignments",
+        tags = ["agent"],
+    }]
+    async fn agent_network_assignments(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<AgentNetworkAssignments>, HttpError>;
 
     /// Resolve one in-VPC peer (`vni`, `ip`) -> guest MAC + host
     /// underlay. The bound CN agent calls this on every v2p cache
