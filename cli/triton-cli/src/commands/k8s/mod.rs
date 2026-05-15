@@ -18,6 +18,7 @@ pub mod create;
 pub mod delete;
 pub mod get;
 pub mod health;
+pub mod images;
 pub mod kube_client;
 pub mod kubeconfig;
 pub mod lb;
@@ -28,6 +29,7 @@ pub mod provisioning;
 pub mod state;
 pub mod talos;
 pub mod upgrade;
+pub mod upgrade_k8s;
 pub mod worker;
 
 #[derive(Subcommand, Clone)]
@@ -67,6 +69,9 @@ pub enum K8sCommand {
     /// Upgrade Talos version on cluster nodes
     Upgrade(upgrade::UpgradeArgs),
 
+    /// Upgrade Kubernetes (control plane + kube-proxy + kubelet)
+    UpgradeK8s(upgrade_k8s::UpgradeK8sArgs),
+
     /// Show comprehensive cluster health status
     Health(health::HealthArgs),
 }
@@ -84,6 +89,7 @@ impl K8sCommand {
             Self::Worker(cmd) => cmd.run(client, json).await,
             Self::Lb(cmd) => cmd.run(client, profile, json).await,
             Self::Upgrade(args) => upgrade::run(args, client, json).await,
+            Self::UpgradeK8s(args) => upgrade_k8s::run(args, client, json).await,
             Self::Health(args) => health::run(args, json).await,
         }
     }
