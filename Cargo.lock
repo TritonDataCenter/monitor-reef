@@ -4730,6 +4730,7 @@ dependencies = [
 name = "triton-api"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dropshot",
  "schemars",
  "serde",
@@ -4741,12 +4742,14 @@ name = "triton-api-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "dropshot",
  "http",
  "secrecy",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

@@ -232,6 +232,141 @@
         }
       }
     },
+    "/v1/k8s/clusters": {
+      "get": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "List the authenticated caller's cluster records.",
+        "description": "Filtered server-side to records owned by the caller's account; no cross-account leakage.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_clusters_list",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClusterList"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "Create a Kelp-managed Kubernetes cluster record.",
+        "description": "Allocates the cluster identifier and stores a record owned by the authenticated caller. No Triton VMs are provisioned by this endpoint — bootstrap (a future endpoint) is responsible for allocating the fabric, provisioning control plane / worker VMs, and delivering Talos machine configs.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_clusters_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClusterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/k8s/clusters/{cluster}": {
+      "get": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "Fetch a single cluster record by identifier.",
+        "description": "Returns 404 if the cluster does not exist or is owned by a different account (the two cases are intentionally indistinguishable to avoid leaking the existence of other accounts' clusters).\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_clusters_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster",
+            "description": "Server-assigned cluster UUID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "Delete a cluster record.",
+        "description": "In Phase 1 this only removes the server-side record; once bootstrap exists, deletion will also tear down provisioned VMs and fabric resources. Returns 404 with the same indistinguishable-not-found semantics as [`Self::k8s_clusters_get`].\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_clusters_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster",
+            "description": "Server-assigned cluster UUID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/ping": {
       "get": {
         "tags": [
@@ -279,6 +414,138 @@
               "unknown"
             ]
           }
+        ]
+      },
+      "Cluster": {
+        "description": "A Kelp-managed Kubernetes cluster record.\n\nThe record exists independent of any provisioned VMs — `Created` state means \"we know about this cluster but have not bootstrapped it yet.\" Bootstrap (a future endpoint) transitions the record through `Provisioning` to `Running`.",
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "description": "Owning Triton account UUID. Derived from the authenticated caller at create time; cannot be set by the client.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "description": "When the record was created.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "description": "Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "kubernetes_version": {
+            "description": "Target Kubernetes version (e.g. `1.30.3`). Compared against the `kubernetes_version -> talos image` map maintained by the service when bootstrap eventually selects an image.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Customer-supplied display name. Not unique across accounts and not used as an identifier.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Lifecycle state of the cluster record.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ClusterState"
+              }
+            ]
+          },
+          "talos_version": {
+            "description": "Target Talos Linux version (e.g. `1.7.6`). Same mapping caveat as `kubernetes_version`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "created_at",
+          "id",
+          "kubernetes_version",
+          "name",
+          "state",
+          "talos_version"
+        ]
+      },
+      "ClusterList": {
+        "description": "Body of `GET /v1/k8s/clusters`.\n\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cluster"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ClusterState": {
+        "description": "Lifecycle state of a [`Cluster`] record.\n\nForward-compatible: clients deserialising an older binary can receive new state names from a newer server and round-trip them through `Unknown` rather than failing.",
+        "oneOf": [
+          {
+            "description": "Record exists, no VMs provisioned. `POST .../bootstrap` (future) transitions out of this state.",
+            "type": "string",
+            "enum": [
+              "created"
+            ]
+          },
+          {
+            "description": "Bootstrap is in progress.",
+            "type": "string",
+            "enum": [
+              "provisioning"
+            ]
+          },
+          {
+            "description": "Bootstrap completed; the cluster is operational.",
+            "type": "string",
+            "enum": [
+              "running"
+            ]
+          },
+          {
+            "description": "Cluster is reachable but at least one node or control-plane component is unhealthy.",
+            "type": "string",
+            "enum": [
+              "degraded"
+            ]
+          },
+          {
+            "description": "Deletion is in progress; the record will disappear when the underlying VMs have been destroyed.",
+            "type": "string",
+            "enum": [
+              "deleting"
+            ]
+          },
+          {
+            "description": "Catch-all for forward compatibility; an unrecognised state name from a newer server.",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "CreateClusterRequest": {
+        "description": "Body of `POST /v1/k8s/clusters`.\n\nThe server assigns `id`, `account_id`, `state`, and `created_at`.",
+        "type": "object",
+        "properties": {
+          "kubernetes_version": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "talos_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kubernetes_version",
+          "name",
+          "talos_version"
         ]
       },
       "Error": {
@@ -591,6 +858,9 @@
   "tags": [
     {
       "name": "auth"
+    },
+    {
+      "name": "k8s"
     },
     {
       "name": "system"

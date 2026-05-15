@@ -7,23 +7,30 @@
 use anyhow::{Context, Result};
 use dropshot::{
     ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError,
-    HttpResponseHeaders, HttpResponseOk, HttpServerStarter, RequestContext, TypedBody,
+    HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk,
+    HttpServerStarter, Path, RequestContext, TypedBody,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::num::NonZeroU64;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
 use triton_api::{
-    ChallengeMethod, Jwk, JwkSet, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
-    LoginVerifyRequest, LogoutResponse, PingResponse, RefreshRequest, RefreshResponse,
-    SessionResponse, TritonApi, UserInfo,
+    ChallengeMethod, Cluster, ClusterList, ClusterPath, ClusterState, CreateClusterRequest, Jwk,
+    JwkSet, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest,
+    LogoutResponse, PingResponse, RefreshRequest, RefreshResponse, SessionResponse, TritonApi,
+    UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
     JwtConfig as SessionJwtConfig, JwtService, LdapConfig as SessionLdapConfig, LdapService,
     MahiService, Role, SessionError, verify_totp,
 };
+use uuid::Uuid;
+
+mod cluster_store;
+use cluster_store::{ClusterStore, FileClusterStore, StoreError};
 
 /// Default request body size limit: 10 MiB.
 const DEFAULT_MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
@@ -49,6 +56,29 @@ struct ApiServerConfig {
     mahi: Option<MahiConfigFile>,
     #[serde(default)]
     jwt: Option<JwtConfigFile>,
+    #[serde(default)]
+    clusters: ClustersConfigFile,
+}
+
+#[derive(Deserialize)]
+struct ClustersConfigFile {
+    /// Directory holding one JSON file per Kelp cluster record.
+    /// Defaults to `./data/clusters` for local dev; production
+    /// deployments should point this at a persistent volume.
+    #[serde(default = "default_clusters_state_dir")]
+    state_dir: PathBuf,
+}
+
+impl Default for ClustersConfigFile {
+    fn default() -> Self {
+        Self {
+            state_dir: default_clusters_state_dir(),
+        }
+    }
+}
+
+fn default_clusters_state_dir() -> PathBuf {
+    PathBuf::from("./data/clusters")
 }
 
 #[derive(Deserialize)]
@@ -108,6 +138,7 @@ impl Default for ApiServerConfig {
             ldap: None,
             mahi: None,
             jwt: None,
+            clusters: ClustersConfigFile::default(),
         }
     }
 }
@@ -140,6 +171,10 @@ struct ApiContext {
     /// local HTTP development, enabled behind haproxy (the production
     /// deployment always terminates TLS in front of tritonapi).
     cookie_secure: bool,
+    /// Persistence for Kelp cluster records. Always present — falls
+    /// back to a file-backed store at `./data/clusters` when no
+    /// `[clusters]` section is provided.
+    cluster_store: Arc<dyn ClusterStore>,
 }
 
 enum TritonApiImpl {}
@@ -449,6 +484,198 @@ impl TritonApi for TritonApiImpl {
                 })
                 .collect(),
         }))
+    }
+
+    async fn k8s_clusters_create(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<CreateClusterRequest>,
+    ) -> Result<HttpResponseCreated<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let req = body.into_inner();
+        let cluster = Cluster {
+            id: Uuid::new_v4(),
+            name: req.name,
+            account_id: caller.account_id,
+            state: ClusterState::Created,
+            kubernetes_version: req.kubernetes_version,
+            talos_version: req.talos_version,
+            created_at: chrono::Utc::now(),
+        };
+        rqctx
+            .context()
+            .cluster_store
+            .create(&cluster)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseCreated(cluster))
+    }
+
+    async fn k8s_clusters_list(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<ClusterList>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let items = rqctx
+            .context()
+            .cluster_store
+            .list_for_account(caller.account_id)
+            .await
+            .map_err(store_error_to_http)?;
+        Ok(HttpResponseOk(ClusterList { items }))
+    }
+
+    async fn k8s_clusters_get(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let id = path.into_inner().cluster;
+        let cluster = rqctx
+            .context()
+            .cluster_store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        // Indistinguishable-not-found: a cluster owned by another
+        // account looks identical to one that never existed, so a
+        // caller probing arbitrary UUIDs can't enumerate other
+        // accounts' resources.
+        if cluster.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        Ok(HttpResponseOk(cluster))
+    }
+
+    async fn k8s_clusters_delete(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let id = path.into_inner().cluster;
+        let store = &rqctx.context().cluster_store;
+        let cluster = store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if cluster.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        let removed = store.delete(id).await.map_err(store_error_to_http)?;
+        if !removed {
+            // Race: someone else deleted between get and delete.
+            // Treat as already gone — the client's view (the cluster
+            // is gone) is correct either way.
+            return Err(cluster_not_found(id));
+        }
+        Ok(HttpResponseDeleted())
+    }
+}
+
+/// Authenticated caller identity for protected `/v1/k8s/*` endpoints.
+struct CallerIdentity {
+    /// UUID of the principal owning resources for this request. For
+    /// Bearer JWTs this is `claims.sub` (account UUID for password /
+    /// account-key logins, sub-user UUID for sub-user SSH logins
+    /// per [`issue_subuser_login_response`]). For HTTP Signature auth
+    /// this is `auth_info.account.uuid` for the account-level form
+    /// or the sub-user's UUID for the sub-user form, matching the
+    /// JWT semantics.
+    account_id: Uuid,
+}
+
+/// Resolve the authenticated caller from a `/v1/k8s/*` request.
+///
+/// Accepts Bearer JWT (from the `Authorization` header or the `auth`
+/// cookie) or HTTP Signature (the same `Authorization: Signature ...`
+/// shape `/v1/auth/login-ssh` accepts). Unauthenticated requests
+/// return 401; malformed credentials return 400 with the same error
+/// codes the dedicated auth endpoints use, so client diagnostics
+/// don't change shape between endpoints.
+async fn resolve_caller(rqctx: &RequestContext<ApiContext>) -> Result<CallerIdentity, HttpError> {
+    let ctx = rqctx.context();
+    let headers = rqctx.request.headers();
+
+    match auth_scheme::classify(headers) {
+        auth_scheme::AuthScheme::Bearer(token) => {
+            let jwt = ctx.jwt.as_ref().ok_or_else(auth_unavailable)?;
+            let claims = jwt.verify_token(&token).map_err(session_error_to_http)?;
+            Ok(CallerIdentity {
+                account_id: claims.user_uuid(),
+            })
+        }
+        auth_scheme::AuthScheme::HttpSignature(auth_params) => {
+            let mahi = ctx.mahi.as_ref().ok_or_else(auth_unavailable)?;
+            let parsed = http_sig::parse_signature_params(&auth_params)
+                .map_err(|e| sig_parse_error(&e.to_string()))?;
+            let parsed_key_id = parse_key_id(&parsed.key_id)?;
+            check_clock_skew(headers)?;
+
+            // Same opaque-failure pattern as auth_login_ssh: don't let
+            // a caller probing with arbitrary keyIds enumerate which
+            // accounts / fingerprints exist.
+            let auth_info = match &parsed_key_id.subuser {
+                None => mahi
+                    .lookup(&parsed_key_id.account)
+                    .await
+                    .map_err(|_| sig_verify_failed())?,
+                Some(user_login) => mahi
+                    .lookup_user(&parsed_key_id.account, user_login)
+                    .await
+                    .map_err(|_| sig_verify_failed())?,
+            };
+            let public_key = extract_public_key(&auth_info, &parsed_key_id)?;
+
+            let path_and_query = rqctx
+                .request
+                .uri()
+                .path_and_query()
+                .map(|p| p.as_str().to_string())
+                .unwrap_or_else(|| "/".to_string());
+            let signing_string = http_sig::build_signing_string(
+                rqctx.request.method().as_str(),
+                &path_and_query,
+                headers,
+                &parsed.headers,
+            )
+            .map_err(|e| sig_parse_error(&e.to_string()))?;
+            http_sig::verify_signature(
+                &public_key,
+                &parsed.algorithm,
+                signing_string.as_bytes(),
+                &parsed.signature,
+            )
+            .map_err(|_| sig_verify_failed())?;
+
+            let account_id = match &parsed_key_id.subuser {
+                None => auth_info.account.uuid,
+                Some(_) => auth_info.user.as_ref().ok_or_else(sig_verify_failed)?.uuid,
+            };
+            Ok(CallerIdentity { account_id })
+        }
+        auth_scheme::AuthScheme::None => Err(unauthorized()),
+    }
+}
+
+fn cluster_not_found(id: Uuid) -> HttpError {
+    HttpError::for_client_error(
+        Some("NotFound".to_string()),
+        ClientErrorStatusCode::NOT_FOUND,
+        format!("cluster {id} not found"),
+    )
+}
+
+fn store_error_to_http(err: StoreError) -> HttpError {
+    match err {
+        StoreError::AlreadyExists(id) => HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            format!("cluster {id} already exists"),
+        ),
+        StoreError::Io(e) => HttpError::for_internal_error(format!("cluster store I/O error: {e}")),
+        StoreError::Serialize(e) => {
+            HttpError::for_internal_error(format!("cluster store serialization error: {e}"))
+        }
     }
 }
 
@@ -926,11 +1153,27 @@ async fn main() -> Result<()> {
     // loopback only, so turning it off there isn't a security hole.
     let cookie_secure = true;
 
+    let cluster_store: Arc<dyn ClusterStore> = Arc::new(
+        FileClusterStore::new(config.clusters.state_dir.clone())
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to initialize cluster store at {}",
+                    config.clusters.state_dir.display()
+                )
+            })?,
+    );
+    info!(
+        "cluster store: file-backed at {}",
+        config.clusters.state_dir.display()
+    );
+
     let context = ApiContext {
         jwt,
         ldap,
         mahi,
         cookie_secure,
+        cluster_store,
     };
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
@@ -972,6 +1215,52 @@ async fn shutdown_signal() {
         _ = sigterm_fut => {},
     }
     info!("shutdown signal received, draining in-flight requests");
+}
+
+#[cfg(test)]
+mod k8s_helper_tests {
+    //! Tests for the helpers the /v1/k8s/clusters/* handlers layer on
+    //! top of `cluster_store` and the shared auth resolver. The store
+    //! itself has direct coverage in `cluster_store::tests`; the auth
+    //! resolver delegates to primitives that are tested in
+    //! `libs/triton-auth` and `libs/triton-auth-session`. Full HTTP
+    //! integration tests are deferred until triton-api-server is
+    //! restructured into a lib + thin binary so a test can drive the
+    //! Dropshot server with a real `ApiContext`; see
+    //! `docs/design/kelp-cluster-storage.md`.
+    use super::*;
+
+    #[test]
+    fn cluster_not_found_uses_404() {
+        let id = Uuid::new_v4();
+        let err = cluster_not_found(id);
+        assert_eq!(err.error_code.as_deref(), Some("NotFound"));
+        assert_eq!(
+            err.status_code,
+            dropshot::ErrorStatusCode::from(ClientErrorStatusCode::NOT_FOUND)
+        );
+        assert!(err.external_message.contains(&id.to_string()));
+    }
+
+    #[test]
+    fn store_error_already_exists_maps_to_409() {
+        let id = Uuid::new_v4();
+        let err = store_error_to_http(StoreError::AlreadyExists(id));
+        assert_eq!(err.error_code.as_deref(), Some("Conflict"));
+        assert_eq!(
+            err.status_code,
+            dropshot::ErrorStatusCode::from(ClientErrorStatusCode::CONFLICT)
+        );
+    }
+
+    #[test]
+    fn store_error_io_maps_to_500() {
+        let io = std::io::Error::other("disk full");
+        let err = store_error_to_http(StoreError::Io(io));
+        // Internal errors don't expose error_code on the wire; only the
+        // status matters here.
+        assert!(err.status_code.as_u16() >= 500);
+    }
 }
 
 #[cfg(test)]

@@ -1047,6 +1047,265 @@ pub mod types {
         }
     }
 
+    #[doc = "A Kelp-managed Kubernetes cluster record.\n\nThe record exists independent of any provisioned VMs — `Created` state means \"we know about this cluster but have not bootstrapped it yet.\" Bootstrap (a future endpoint) transitions the record through `Provisioning` to `Running`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A Kelp-managed Kubernetes cluster record.\\n\\nThe record exists independent of any provisioned VMs — `Created` state means \\\"we know about this cluster but have not bootstrapped it yet.\\\" Bootstrap (a future endpoint) transitions the record through `Provisioning` to `Running`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"account_id\","]
+    #[doc = "    \"created_at\","]
+    #[doc = "    \"id\","]
+    #[doc = "    \"kubernetes_version\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"talos_version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"account_id\": {"]
+    #[doc = "      \"description\": \"Owning Triton account UUID. Derived from the authenticated caller at create time; cannot be set by the client.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"created_at\": {"]
+    #[doc = "      \"description\": \"When the record was created.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"kubernetes_version\": {"]
+    #[doc = "      \"description\": \"Target Kubernetes version (e.g. `1.30.3`). Compared against the `kubernetes_version -> talos image` map maintained by the service when bootstrap eventually selects an image.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Customer-supplied display name. Not unique across accounts and not used as an identifier.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"Lifecycle state of the cluster record.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ClusterState\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"talos_version\": {"]
+    #[doc = "      \"description\": \"Target Talos Linux version (e.g. `1.7.6`). Same mapping caveat as `kubernetes_version`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Cluster {
+        #[doc = "Owning Triton account UUID. Derived from the authenticated caller at create time; cannot be set by the client."]
+        pub account_id: ::uuid::Uuid,
+        #[doc = "When the record was created."]
+        pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`."]
+        pub id: ::uuid::Uuid,
+        #[doc = "Target Kubernetes version (e.g. `1.30.3`). Compared against the `kubernetes_version -> talos image` map maintained by the service when bootstrap eventually selects an image."]
+        pub kubernetes_version: ::std::string::String,
+        #[doc = "Customer-supplied display name. Not unique across accounts and not used as an identifier."]
+        pub name: ::std::string::String,
+        #[doc = "Lifecycle state of the cluster record."]
+        pub state: ClusterState,
+        #[doc = "Target Talos Linux version (e.g. `1.7.6`). Same mapping caveat as `kubernetes_version`."]
+        pub talos_version: ::std::string::String,
+    }
+
+    impl Cluster {
+        pub fn builder() -> builder::Cluster {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body of `GET /v1/k8s/clusters`.\n\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `GET /v1/k8s/clusters`.\\n\\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"items\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"items\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/Cluster\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ClusterList {
+        pub items: ::std::vec::Vec<Cluster>,
+    }
+
+    impl ClusterList {
+        pub fn builder() -> builder::ClusterList {
+            Default::default()
+        }
+    }
+
+    #[doc = "Lifecycle state of a [`Cluster`] record.\n\nForward-compatible: clients deserialising an older binary can receive new state names from a newer server and round-trip them through `Unknown` rather than failing."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Lifecycle state of a [`Cluster`] record.\\n\\nForward-compatible: clients deserialising an older binary can receive new state names from a newer server and round-trip them through `Unknown` rather than failing.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Record exists, no VMs provisioned. `POST .../bootstrap` (future) transitions out of this state.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"created\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Bootstrap is in progress.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"provisioning\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Bootstrap completed; the cluster is operational.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"running\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Cluster is reachable but at least one node or control-plane component is unhealthy.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"degraded\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Deletion is in progress; the record will disappear when the underlying VMs have been destroyed.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"deleting\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Catch-all for forward compatibility; an unrecognised state name from a newer server.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum ClusterState {
+        #[doc = "Record exists, no VMs provisioned. `POST .../bootstrap` (future) transitions out of this state."]
+        #[serde(rename = "created")]
+        Created,
+        #[doc = "Bootstrap is in progress."]
+        #[serde(rename = "provisioning")]
+        Provisioning,
+        #[doc = "Bootstrap completed; the cluster is operational."]
+        #[serde(rename = "running")]
+        Running,
+        #[doc = "Cluster is reachable but at least one node or control-plane component is unhealthy."]
+        #[serde(rename = "degraded")]
+        Degraded,
+        #[doc = "Deletion is in progress; the record will disappear when the underlying VMs have been destroyed."]
+        #[serde(rename = "deleting")]
+        Deleting,
+        #[doc = "Catch-all for forward compatibility; an unrecognised state name from a newer server."]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for ClusterState {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Created => f.write_str("created"),
+                Self::Provisioning => f.write_str("provisioning"),
+                Self::Running => f.write_str("running"),
+                Self::Degraded => f.write_str("degraded"),
+                Self::Deleting => f.write_str("deleting"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for ClusterState {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "created" => Ok(Self::Created),
+                "provisioning" => Ok(Self::Provisioning),
+                "running" => Ok(Self::Running),
+                "degraded" => Ok(Self::Degraded),
+                "deleting" => Ok(Self::Deleting),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for ClusterState {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for ClusterState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for ClusterState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Configuration settings"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1149,6 +1408,48 @@ pub mod types {
 
     impl CreateAccessKeyRequest {
         pub fn builder() -> builder::CreateAccessKeyRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Body of `POST /v1/k8s/clusters`.\n\nThe server assigns `id`, `account_id`, `state`, and `created_at`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters`.\\n\\nThe server assigns `id`, `account_id`, `state`, and `created_at`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kubernetes_version\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"talos_version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kubernetes_version\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"talos_version\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct CreateClusterRequest {
+        pub kubernetes_version: ::std::string::String,
+        pub name: ::std::string::String,
+        pub talos_version: ::std::string::String,
+    }
+
+    impl CreateClusterRequest {
+        pub fn builder() -> builder::CreateClusterRequest {
             Default::default()
         }
     }
@@ -10867,6 +11168,183 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct Cluster {
+            account_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            created_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            kubernetes_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            state: ::std::result::Result<super::ClusterState, ::std::string::String>,
+            talos_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Cluster {
+            fn default() -> Self {
+                Self {
+                    account_id: Err("no value supplied for account_id".to_string()),
+                    created_at: Err("no value supplied for created_at".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                    kubernetes_version: Err("no value supplied for kubernetes_version".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    state: Err("no value supplied for state".to_string()),
+                    talos_version: Err("no value supplied for talos_version".to_string()),
+                }
+            }
+        }
+
+        impl Cluster {
+            pub fn account_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.account_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for account_id: {e}"));
+                self
+            }
+            pub fn created_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn kubernetes_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kubernetes_version = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for kubernetes_version: {e}")
+                });
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ClusterState>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn talos_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.talos_version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for talos_version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Cluster> for super::Cluster {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Cluster,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    account_id: value.account_id?,
+                    created_at: value.created_at?,
+                    id: value.id?,
+                    kubernetes_version: value.kubernetes_version?,
+                    name: value.name?,
+                    state: value.state?,
+                    talos_version: value.talos_version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Cluster> for Cluster {
+            fn from(value: super::Cluster) -> Self {
+                Self {
+                    account_id: Ok(value.account_id),
+                    created_at: Ok(value.created_at),
+                    id: Ok(value.id),
+                    kubernetes_version: Ok(value.kubernetes_version),
+                    name: Ok(value.name),
+                    state: Ok(value.state),
+                    talos_version: Ok(value.talos_version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ClusterList {
+            items: ::std::result::Result<::std::vec::Vec<super::Cluster>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ClusterList {
+            fn default() -> Self {
+                Self {
+                    items: Err("no value supplied for items".to_string()),
+                }
+            }
+        }
+
+        impl ClusterList {
+            pub fn items<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::Cluster>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.items = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for items: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ClusterList> for super::ClusterList {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ClusterList,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    items: value.items?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ClusterList> for ClusterList {
+            fn from(value: super::ClusterList) -> Self {
+                Self {
+                    items: Ok(value.items),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Config {
             default_network:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
@@ -10973,6 +11451,79 @@ pub mod types {
                 Self {
                     description: Ok(value.description),
                     status: Ok(value.status),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct CreateClusterRequest {
+            kubernetes_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            talos_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for CreateClusterRequest {
+            fn default() -> Self {
+                Self {
+                    kubernetes_version: Err("no value supplied for kubernetes_version".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    talos_version: Err("no value supplied for talos_version".to_string()),
+                }
+            }
+        }
+
+        impl CreateClusterRequest {
+            pub fn kubernetes_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kubernetes_version = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for kubernetes_version: {e}")
+                });
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn talos_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.talos_version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for talos_version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<CreateClusterRequest> for super::CreateClusterRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: CreateClusterRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kubernetes_version: value.kubernetes_version?,
+                    name: value.name?,
+                    talos_version: value.talos_version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::CreateClusterRequest> for CreateClusterRequest {
+            fn from(value: super::CreateClusterRequest) -> Self {
+                Self {
+                    kubernetes_version: Ok(value.kubernetes_version),
+                    name: Ok(value.name),
+                    talos_version: Ok(value.talos_version),
                 }
             }
         }
@@ -19601,6 +20152,26 @@ impl Client {
         builder::AuthSession::new(self)
     }
 
+    #[doc = "List the authenticated caller's cluster records\n\nFiltered server-side to records owned by the caller's account; no cross-account leakage.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `GET` request to `/v1/k8s/clusters`\n\n```ignore\nlet response = client.k8s_clusters_list()\n    .send()\n    .await;\n```"]
+    pub fn k8s_clusters_list(&self) -> builder::K8sClustersList<'_> {
+        builder::K8sClustersList::new(self)
+    }
+
+    #[doc = "Create a Kelp-managed Kubernetes cluster record\n\nAllocates the cluster identifier and stores a record owned by the authenticated caller. No Triton VMs are provisioned by this endpoint — bootstrap (a future endpoint) is responsible for allocating the fabric, provisioning control plane / worker VMs, and delivering Talos machine configs.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters`\n\n```ignore\nlet response = client.k8s_clusters_create()\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn k8s_clusters_create(&self) -> builder::K8sClustersCreate<'_> {
+        builder::K8sClustersCreate::new(self)
+    }
+
+    #[doc = "Fetch a single cluster record by identifier\n\nReturns 404 if the cluster does not exist or is owned by a different account (the two cases are intentionally indistinguishable to avoid leaking the existence of other accounts' clusters).\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `GET` request to `/v1/k8s/clusters/{cluster}`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_clusters_get()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
+    pub fn k8s_clusters_get(&self) -> builder::K8sClustersGet<'_> {
+        builder::K8sClustersGet::new(self)
+    }
+
+    #[doc = "Delete a cluster record\n\nIn Phase 1 this only removes the server-side record; once bootstrap exists, deletion will also tear down provisioned VMs and fabric resources. Returns 404 with the same indistinguishable-not-found semantics as [`Self::k8s_clusters_get`].\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `DELETE` request to `/v1/k8s/clusters/{cluster}`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_clusters_delete()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
+    pub fn k8s_clusters_delete(&self) -> builder::K8sClustersDelete<'_> {
+        builder::K8sClustersDelete::new(self)
+    }
+
     #[doc = "Ping\n\nSends a `GET` request to `/v1/ping`\n\n```ignore\nlet response = client.ping()\n    .send()\n    .await;\n```"]
     pub fn ping(&self) -> builder::Ping<'_> {
         builder::Ping::new(self)
@@ -21029,6 +21600,292 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_clusters_list`]\n\n[`Client::k8s_clusters_list`]: super::Client::k8s_clusters_list"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClustersList<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> K8sClustersList<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/k8s/clusters`"]
+        pub async fn send(self) -> Result<ResponseValue<types::ClusterList>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/k8s/clusters", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_clusters_list",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_clusters_create`]\n\n[`Client::k8s_clusters_create`]: super::Client::k8s_clusters_create"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClustersCreate<'a> {
+        client: &'a super::Client,
+        body: Result<types::builder::CreateClusterRequest, String>,
+    }
+
+    impl<'a> K8sClustersCreate<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::CreateClusterRequest>,
+            <V as std::convert::TryInto<types::CreateClusterRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `CreateClusterRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::CreateClusterRequest,
+                ) -> types::builder::CreateClusterRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/k8s/clusters`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self { client, body } = self;
+            let body = body
+                .and_then(|v| types::CreateClusterRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/k8s/clusters", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_clusters_create",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_clusters_get`]\n\n[`Client::k8s_clusters_get`]: super::Client::k8s_clusters_get"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClustersGet<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> K8sClustersGet<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/k8s/clusters/{cluster}`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self { client, cluster } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_clusters_get",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_clusters_delete`]\n\n[`Client::k8s_clusters_delete`]: super::Client::k8s_clusters_delete"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClustersDelete<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> K8sClustersDelete<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/k8s/clusters/{cluster}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, cluster } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_clusters_delete",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

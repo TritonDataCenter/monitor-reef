@@ -9,7 +9,10 @@
 //! This crate defines the API trait for the Triton API service.
 //! It serves as the public-facing HTTP API for the Triton datacenter.
 
-use dropshot::{HttpError, HttpResponseHeaders, HttpResponseOk, RequestContext, TypedBody};
+use dropshot::{
+    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk, Path,
+    RequestContext, TypedBody,
+};
 
 pub mod types;
 pub use types::*;
@@ -140,4 +143,75 @@ pub trait TritonApi {
     async fn auth_jwks(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<JwkSet>, HttpError>;
+
+    /// Create a Kelp-managed Kubernetes cluster record.
+    ///
+    /// Allocates the cluster identifier and stores a record owned by
+    /// the authenticated caller. No Triton VMs are provisioned by this
+    /// endpoint — bootstrap (a future endpoint) is responsible for
+    /// allocating the fabric, provisioning control plane / worker VMs,
+    /// and delivering Talos machine configs.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = POST,
+        path = "/v1/k8s/clusters",
+        tags = ["k8s"],
+    }]
+    async fn k8s_clusters_create(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<CreateClusterRequest>,
+    ) -> Result<HttpResponseCreated<Cluster>, HttpError>;
+
+    /// List the authenticated caller's cluster records.
+    ///
+    /// Filtered server-side to records owned by the caller's account;
+    /// no cross-account leakage.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = GET,
+        path = "/v1/k8s/clusters",
+        tags = ["k8s"],
+    }]
+    async fn k8s_clusters_list(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<ClusterList>, HttpError>;
+
+    /// Fetch a single cluster record by identifier.
+    ///
+    /// Returns 404 if the cluster does not exist or is owned by a
+    /// different account (the two cases are intentionally
+    /// indistinguishable to avoid leaking the existence of other
+    /// accounts' clusters).
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = GET,
+        path = "/v1/k8s/clusters/{cluster}",
+        tags = ["k8s"],
+    }]
+    async fn k8s_clusters_get(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<Cluster>, HttpError>;
+
+    /// Delete a cluster record.
+    ///
+    /// In Phase 1 this only removes the server-side record; once
+    /// bootstrap exists, deletion will also tear down provisioned VMs
+    /// and fabric resources. Returns 404 with the same
+    /// indistinguishable-not-found semantics as
+    /// [`Self::k8s_clusters_get`].
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/k8s/clusters/{cluster}",
+        tags = ["k8s"],
+    }]
+    async fn k8s_clusters_delete(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
 }

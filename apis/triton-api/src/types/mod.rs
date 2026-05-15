@@ -8,6 +8,8 @@
 
 pub mod auth;
 pub mod common;
+pub mod k8s;
 
 pub use auth::*;
 pub use common::*;
+pub use k8s::*;

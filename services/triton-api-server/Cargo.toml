@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 dropshot = { workspace = true }
 http = { workspace = true }
@@ -34,3 +35,6 @@ triton-auth-session = { workspace = true }
 triton-tls = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
