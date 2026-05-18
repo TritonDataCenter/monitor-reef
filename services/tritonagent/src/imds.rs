@@ -119,9 +119,18 @@ fn router(state: ImdsState) -> Router {
         // Guest writeback (only `triton/guest/*` ever accepted; the
         // PUT/DELETE-side authorisation -- writeback enabled? key
         // pinned RO? value within caps? -- lives in the handler).
+        // GET must be re-attached here because this route is more
+        // specific than the `/triton/{tree}/{*key}` rule above; axum
+        // routes GETs against it and returns 405 unless GET is
+        // explicitly listed. The `/triton/guest/{*key}` shape only
+        // has one path param (`guest` is a literal), so it gets its
+        // own handler — `triton_get`'s `Path<(String, String)>`
+        // extractor would fail to bind here.
         .route(
             "/triton/guest/{*key}",
-            put(not_implemented).delete(not_implemented),
+            get(triton_guest_get)
+                .put(not_implemented)
+                .delete(not_implemented),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -447,6 +456,16 @@ async fn triton_get(
     Path((tree, key)): Path<(String, String)>,
 ) -> Response {
     serve_key_for_binding(&state, binding, &format!("{tree}/{key}")).await
+}
+
+/// Variant of [`triton_get`] for the `/triton/guest/{*key}` route,
+/// which has a single path param because `guest` is a literal.
+async fn triton_guest_get(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+    Path(key): Path<String>,
+) -> Response {
+    serve_key_for_binding(&state, binding, &format!("guest/{key}")).await
 }
 
 /// `GET /triton/dynamic/realized` -- the explainability view: the
