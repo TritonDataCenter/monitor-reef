@@ -1582,6 +1582,18 @@ pub struct SetMetaResponse {
     pub generation: u64,
 }
 
+/// Request body for `PUT /v2/agent/instances/{instance_id}/meta`.
+/// The agent-facing variant of [`SetMetaRequest`]; the agent can
+/// only ever write `guest/*` keys at instance scope, so the visibility
+/// + writable flags are fixed server-side (`guest_visible: true`,
+/// `guest_writable: true`) and not under guest control. The agent
+/// (and therefore the guest VM speaking to it) only supplies the
+/// value.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SetGuestMetaRequest {
+    pub value: serde_json::Value,
+}
+
 /// Path parameter for endpoints that operate on the realized view of
 /// one instance (`/v2/meta/instance/{instance_id}/realized`).
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1913,6 +1925,32 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<InstanceRealizedMetaPath>,
     ) -> Result<HttpResponseOk<Vec<RealizedMetaEntry>>, HttpError>;
+
+    /// Agent-facing instance-scoped `guest/*` metadata writeback.
+    /// The IMDSv2 listener in tritonagent forwards a guest VM's
+    /// `PUT /triton/guest/<key>` through this endpoint. The server
+    /// enforces:
+    ///
+    /// * the key must start with `guest/` (no other prefix);
+    /// * scope is always Instance, instance_id is the URL path;
+    /// * `guest_visible` and `guest_writable` are forced true
+    ///   (operator-set entries can flip these via the tenant-facing
+    ///   set_meta surface; the guest never controls them);
+    /// * the calling agent is CN-bound (`Action::AgentBlueprint`);
+    /// * the instance is currently placed on the agent's CN —
+    ///   already enforced by the IMDS dataplane (the request
+    ///   reaches the agent only via that instance's vnic).
+    #[endpoint {
+        method = PUT,
+        path = "/v2/agent/instances/{instance_id}/meta",
+        tags = ["agent"],
+    }]
+    async fn agent_set_instance_guest_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<InstanceRealizedMetaPath>,
+        query: Query<MetaKeyQuery>,
+        body: TypedBody<SetGuestMetaRequest>,
+    ) -> Result<HttpResponseOk<SetMetaResponse>, HttpError>;
 
     /// Heartbeat from a bound agent. Lightweight ping — empty
     /// body, just bumps `Cn.last_seen`. Auth: requires an API

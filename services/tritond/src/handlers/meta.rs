@@ -21,7 +21,9 @@ use dropshot::{
     ClientErrorStatusCode, HttpError, HttpResponseDeleted, HttpResponseOk, Path, Query,
     RequestContext, TypedBody,
 };
-use tritond_api::{MetaEntry, MetaKeyQuery, MetaScopePath, SetMetaRequest, SetMetaResponse};
+use tritond_api::{
+    MetaEntry, MetaKeyQuery, MetaScopePath, SetGuestMetaRequest, SetMetaRequest, SetMetaResponse,
+};
 use tritond_store::{
     MetaError, MetaScope, MetaValue, Store, StoreError, default_guest_visible, validate_meta_entry,
 };
@@ -226,6 +228,130 @@ async fn realized_meta_response(
                 .map(|(key, (value, from))| tritond_api::RealizedMetaEntry { key, value, from })
                 .collect(),
         )),
+        Err(e) => Err(store_error_to_http(e)),
+    }
+}
+
+pub(crate) async fn agent_set_instance_guest_meta(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::InstanceRealizedMetaPath>,
+    query: Query<MetaKeyQuery>,
+    body: TypedBody<SetGuestMetaRequest>,
+) -> Result<HttpResponseOk<SetMetaResponse>, HttpError> {
+    let instance_id = path.into_inner().instance_id;
+    let key = query.into_inner().key;
+    let req = body.into_inner();
+    let ctx = rqctx.context();
+
+    // Agent (CN-bound) authorization. Tenant-member Cedar can't
+    // authorize a CN-bound API key, so this endpoint exists in
+    // parallel to `set_meta` with agent-scoped auth instead.
+    let _principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentBlueprint,
+    )
+    .await?;
+
+    // Walk the realized view to find which scope currently owns
+    // this key. The agent can update **existing** entries that the
+    // operator has marked `guest_writable: true` at *any* scope
+    // (silo / tenant / project / instance) — the write lands at the
+    // scope where the entry already lives, so writes propagate to
+    // every sibling instance sharing that scope.
+    //
+    // Update-only semantics: no create path. The operator must
+    // pre-create the key (with `guest_writable: true`) at the scope
+    // they want guests writing to.
+    let view = crate::build_instance_realized_view(ctx.store.as_ref(), instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let Some((existing_value, provenance)) = view.entries.get(&key) else {
+        return Err(HttpError::for_client_error(
+            None,
+            ClientErrorStatusCode::NOT_FOUND,
+            format!(
+                "agent writeback rejected: no realized entry at key `{key}` for instance {instance_id}"
+            ),
+        ));
+    };
+    if !existing_value.guest_writable {
+        return Err(HttpError::for_client_error(
+            None,
+            ClientErrorStatusCode::FORBIDDEN,
+            format!(
+                "agent writeback rejected: key `{key}` is not guest_writable at the scope it lives in"
+            ),
+        ));
+    }
+
+    // Provenance tells us which scope the entry came from; resolve
+    // the corresponding scope_id for the calling instance's
+    // hierarchy. `System` entries are computed (not stored) so
+    // there's nothing to write back to.
+    let (scope, scope_id) = match provenance {
+        tritond_store::MetaProvenance::Silo => {
+            let instance = ctx
+                .store
+                .get_instance(instance_id)
+                .await
+                .map_err(store_error_to_http)?;
+            let tenant = ctx
+                .store
+                .get_tenant(instance.tenant_id)
+                .await
+                .map_err(store_error_to_http)?;
+            (MetaScope::Silo, tenant.silo_id)
+        }
+        tritond_store::MetaProvenance::Tenant => {
+            let instance = ctx
+                .store
+                .get_instance(instance_id)
+                .await
+                .map_err(store_error_to_http)?;
+            (MetaScope::Tenant, instance.tenant_id)
+        }
+        tritond_store::MetaProvenance::Project => {
+            let instance = ctx
+                .store
+                .get_instance(instance_id)
+                .await
+                .map_err(store_error_to_http)?;
+            (MetaScope::Project, instance.project_id)
+        }
+        tritond_store::MetaProvenance::Instance => (MetaScope::Instance, instance_id),
+        tritond_store::MetaProvenance::System => {
+            return Err(HttpError::for_client_error(
+                None,
+                ClientErrorStatusCode::FORBIDDEN,
+                format!("key `{key}` is a computed System entry and not writable"),
+            ));
+        }
+    };
+
+    validate_meta_entry(scope, &key, &req.value, existing_value.guest_writable)
+        .map_err(meta_error_to_http)?;
+
+    let principal_id = rqctx.request_id.clone();
+    let updated_by = format!("agent:{principal_id}");
+    let entry = MetaValue {
+        value: req.value,
+        // Preserve the operator-set flags. The guest can never
+        // change visibility / writability — those gate-keep what
+        // the guest is allowed to touch in the first place.
+        guest_visible: existing_value.guest_visible,
+        guest_writable: existing_value.guest_writable,
+        updated_by,
+        updated_at: Utc::now(),
+    };
+
+    match ctx.store.set_meta(scope, scope_id, &key, entry.clone()).await {
+        Ok(generation) => Ok(HttpResponseOk(SetMetaResponse {
+            entry: MetaEntry { key, value: entry },
+            generation,
+        })),
         Err(e) => Err(store_error_to_http(e)),
     }
 }
