@@ -8138,7 +8138,14 @@ mod tests {
             .await
             .unwrap();
         store
-            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), [0u8; 32], [0u8; 32], now)
+            .approve_cn(
+                id,
+                Uuid::new_v4(),
+                "tcadm_xxx".into(),
+                [0u8; 32],
+                [0u8; 32],
+                now,
+            )
             .await
             .unwrap();
         // Re-register: should remain Approved, refresh sysinfo + last_seen,
@@ -8207,7 +8214,14 @@ mod tests {
         let id = Uuid::new_v4();
         // Approve before register: NotFound.
         let err = store
-            .approve_cn(id, Uuid::new_v4(), "x".into(), [0u8; 32], [0u8; 32], Utc::now())
+            .approve_cn(
+                id,
+                Uuid::new_v4(),
+                "x".into(),
+                [0u8; 32],
+                [0u8; 32],
+                Utc::now(),
+            )
             .await
             .unwrap_err();
         assert!(matches!(err, StoreError::NotFound));
@@ -8313,7 +8327,14 @@ mod tests {
             .await
             .unwrap();
         store
-            .approve_cn(a.server_uuid, Uuid::new_v4(), "k".into(), [0u8; 32], [0u8; 32], now)
+            .approve_cn(
+                a.server_uuid,
+                Uuid::new_v4(),
+                "k".into(),
+                [0u8; 32],
+                [0u8; 32],
+                now,
+            )
             .await
             .unwrap();
 
