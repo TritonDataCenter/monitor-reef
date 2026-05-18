@@ -130,6 +130,8 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk",
 p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
 pem-rfc7468 = { version = "1.0", features = ["alloc"] }
 pkcs8 = "0.10"
+prost = "0.13"
+prost-types = "0.13"
 predicates = "3.0"
 pretty_assertions = "1.4"
 progenitor = "0.13"
@@ -206,6 +208,8 @@ thiserror = "2.0"
 time = "0.3"
 tokio = { version = "1.48", features = ["full"] }
 tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+tonic = { version = "0.12", default-features = false, features = ["transport", "codegen", "prost"] }
+tower = "0.4"
 toml = "0.8"
 # TOTP / RFC 6238 verification for the password-login 2FA path. We
 # disable default features (none anyway) and avoid `gen_secret` /

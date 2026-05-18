@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package common;
+
+option go_package = "github.com/siderolabs/talos/pkg/machinery/api/common";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/descriptor.proto";
+import "google/rpc/status.proto";
+
+extend google.protobuf.MessageOptions {
+  string remove_deprecated_message = 93117;
+}
+
+extend google.protobuf.FieldOptions {
+  string remove_deprecated_field = 93117;
+}
+
+extend google.protobuf.EnumOptions {
+  string remove_deprecated_enum = 93117;
+}
+
+extend google.protobuf.EnumValueOptions {
+  string remove_deprecated_enum_value = 93117;
+}
+
+extend google.protobuf.MethodOptions {
+  string remove_deprecated_method = 93117;
+}
+
+extend google.protobuf.ServiceOptions {
+  string remove_deprecated_service = 93117;
+}
+
+enum Code {
+  FATAL = 0;
+  LOCKED = 1;
+  CANCELED = 2;
+}
+
+message Error {
+  Code code = 1;
+  string message = 2;
+  repeated google.protobuf.Any details = 3;
+}
+
+message Metadata {
+  string hostname = 1;
+  string error = 2;
+  google.rpc.Status status = 3;
+}
+
+message Data {
+  Metadata metadata = 1;
+  bytes bytes = 2;
+}
+
+message DataResponse {
+  repeated Data messages = 1;
+}
+
+message Empty {
+  Metadata metadata = 1;
+}
+
+message EmptyResponse {
+  repeated Empty messages = 1;
+}
+
+enum ContainerDriver {
+  CONTAINERD = 0;
+  CRI = 1;
+}
+
+enum ContainerdNamespace {
+  NS_UNKNOWN = 0;
+  NS_SYSTEM = 1;
+  NS_CRI = 2;
+}
+
+message URL {
+  string full_path = 1;
+}
+
+message PEMEncodedCertificateAndKey {
+  bytes crt = 1;
+  bytes key = 2;
+}
+
+message PEMEncodedKey {
+  bytes key = 1;
+}
+
+message PEMEncodedCertificate {
+  bytes crt = 1;
+}
+
+message NetIP {
+  bytes ip = 1;
+}
+
+message NetIPPort {
+  bytes ip = 1;
+  int32 port = 2;
+}
+
+message NetIPPrefix {
+  bytes ip = 1;
+  int32 prefix_length = 2;
+}

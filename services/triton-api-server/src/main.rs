@@ -37,6 +37,7 @@ use uuid::Uuid;
 
 mod cluster_store;
 use cluster_store::{ClusterRecord, ClusterStore, FileClusterStore, StoreError};
+mod talos;
 
 mod relay;
 use relay::RelayState;
@@ -1206,7 +1207,9 @@ fn build_ldap_service(cfg: &LdapConfigFile) -> LdapService {
     })
 }
 
-async fn build_cloudapi_client(cfg: Option<&CloudApiConfigFile>) -> Result<Option<Arc<TypedClient>>> {
+async fn build_cloudapi_client(
+    cfg: Option<&CloudApiConfigFile>,
+) -> Result<Option<Arc<TypedClient>>> {
     let Some(cfg) = cfg else {
         return Ok(None);
     };
@@ -1224,7 +1227,10 @@ async fn build_cloudapi_client(cfg: Option<&CloudApiConfigFile>) -> Result<Optio
         .context("failed to build HTTP client for CloudAPI")?;
 
     let client = TypedClient::new_with_http_client(cfg.url.as_str(), auth_config, http_client);
-    info!("CloudAPI operator client: {} account={}", cfg.url, cfg.account);
+    info!(
+        "CloudAPI operator client: {} account={}",
+        cfg.url, cfg.account
+    );
     Ok(Some(Arc::new(client)))
 }
 
