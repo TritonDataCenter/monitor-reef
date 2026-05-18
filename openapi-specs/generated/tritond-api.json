@@ -313,6 +313,63 @@
         }
       }
     },
+    "/v2/agent/instances/{instance_id}/meta": {
+      "put": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent-facing instance-scoped `guest/*` metadata writeback.",
+        "description": "The IMDSv2 listener in tritonagent forwards a guest VM's `PUT /triton/guest/<key>` through this endpoint. The server enforces:\n\n* the key must start with `guest/` (no other prefix); * scope is always Instance, instance_id is the URL path; * `guest_visible` and `guest_writable` are forced true (operator-set entries can flip these via the tenant-facing set_meta surface; the guest never controls them); * the calling agent is CN-bound (`Action::AgentBlueprint`); * the instance is currently placed on the agent's CN — already enforced by the IMDS dataplane (the request reaches the agent only via that instance's vnic).",
+        "operationId": "agent_set_instance_guest_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetGuestMetaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetMetaResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/instances/{instance_id}/realized-meta": {
       "get": {
         "tags": [
@@ -13388,6 +13445,16 @@
           "value": {
             "description": "New value for the key. Must match the key's type; an ill-typed value is rejected with `400`."
           }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "SetGuestMetaRequest": {
+        "description": "Request body for `PUT /v2/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value.",
+        "type": "object",
+        "properties": {
+          "value": {}
         },
         "required": [
           "value"

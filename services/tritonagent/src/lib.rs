@@ -256,6 +256,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
             token_key_bytes,
             bindings: bindings.clone(),
             realized_source,
+            tritond_client: client.clone(),
         };
         if let Err(e) = imds_start(cfg_imds).await {
             warn!(error = %e, "imds: listener failed to start; skipping");

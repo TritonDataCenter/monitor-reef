@@ -79,6 +79,11 @@ pub struct ImdsListenerConfig {
     /// tritond `/v2/instances/{id}/realized-meta` client (later, a
     /// direct restricted FDB read).
     pub realized_source: Arc<dyn RealizedDataSource>,
+    /// Tritond client used by the PUT writeback path
+    /// (`/triton/guest/{*key}`). The realized-source trait carries
+    /// reads; writes go directly through the typed client so the
+    /// agent → tritond contract is enforced at the type level.
+    pub tritond_client: Arc<tritond_client::Client>,
 }
 
 /// Shared listener state passed to every handler.
@@ -88,6 +93,7 @@ struct ImdsState {
     bindings: ImdsBindingTable,
     realized: RealizedViewCache,
     rate_limit: PerInstanceRateLimiter,
+    tritond_client: Arc<tritond_client::Client>,
 }
 
 fn router(state: ImdsState) -> Router {
@@ -129,7 +135,7 @@ fn router(state: ImdsState) -> Router {
         .route(
             "/triton/guest/{*key}",
             get(triton_guest_get)
-                .put(not_implemented)
+                .put(triton_guest_put)
                 .delete(not_implemented),
         )
         .route_layer(middleware::from_fn_with_state(
@@ -325,6 +331,7 @@ pub async fn start(cfg: ImdsListenerConfig) -> Result<()> {
         bindings: cfg.bindings,
         realized: RealizedViewCache::new(cfg.realized_source),
         rate_limit: PerInstanceRateLimiter::new(),
+        tritond_client: cfg.tritond_client,
     };
     let app = router(state);
     let listener = TcpListener::bind(cfg.bind)
@@ -466,6 +473,76 @@ async fn triton_guest_get(
     Path(key): Path<String>,
 ) -> Response {
     serve_key_for_binding(&state, binding, &format!("guest/{key}")).await
+}
+
+/// `PUT /triton/guest/{*key}` — guest-VM-initiated writeback. The
+/// request body is parsed as JSON; if it isn't valid JSON, the raw
+/// UTF-8 body is wrapped as a JSON string (so a guest can `curl -d
+/// hello-world` and get `"hello-world"` stored). The full key
+/// written is `guest/{*key}`.
+///
+/// Server-side rules live in tritond
+/// (`/v2/agent/instances/{id}/meta`): the key must already exist in
+/// the realized view AND the existing entry must be
+/// `guest_writable: true` AND the write lands at whichever scope
+/// the entry already lives in (silo / tenant / project / instance).
+/// No create path; flags are operator-only.
+async fn triton_guest_put(
+    State(state): State<ImdsState>,
+    Extension(binding): Extension<ResolvedBinding>,
+    Path(key): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    let full_key = format!("guest/{key}");
+    let value: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => match std::str::from_utf8(&body) {
+            Ok(s) => serde_json::Value::String(s.to_string()),
+            Err(_) => {
+                return (StatusCode::BAD_REQUEST, "body must be UTF-8\n").into_response();
+            }
+        },
+    };
+
+    let req = tritond_client::types::SetGuestMetaRequest { value };
+    match state
+        .tritond_client
+        .agent_set_instance_guest_meta()
+        .instance_id(binding.instance_id)
+        .key(&full_key)
+        .body(req)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let body = serde_json::to_vec(&resp.into_inner()).unwrap_or_else(|_| b"{}".to_vec());
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                body,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            let lower = msg.to_ascii_lowercase();
+            // Coarse status mapping — progenitor's Error doesn't
+            // expose a stable status-code variant, so we string-match
+            // the Display form (matches what `imds_data.rs` does for
+            // the GET path).
+            let status = if lower.contains("403") || lower.contains("forbidden") {
+                StatusCode::FORBIDDEN
+            } else if lower.contains("404") || lower.contains("not found") {
+                StatusCode::NOT_FOUND
+            } else if lower.contains("400") || lower.contains("bad request") {
+                StatusCode::BAD_REQUEST
+            } else {
+                tracing::warn!(error = %msg, "imds: agent writeback to tritond failed");
+                StatusCode::BAD_GATEWAY
+            };
+            (status, format!("{msg}\n")).into_response()
+        }
+    }
 }
 
 /// `GET /triton/dynamic/realized` -- the explainability view: the
@@ -619,6 +696,11 @@ mod tests {
             bindings: ImdsBindingTable::new(),
             realized: RealizedViewCache::new(Arc::new(EmptySource)),
             rate_limit: PerInstanceRateLimiter::new(),
+            // Bogus base URL — the test router never PUTs, and a
+            // PUT lookup that did fire would error out at send-time
+            // rather than reaching a real server. Keeps the unit
+            // test hermetic.
+            tritond_client: Arc::new(tritond_client::Client::new("http://127.0.0.1:0")),
         }
     }
 

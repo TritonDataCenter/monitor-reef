@@ -8886,6 +8886,36 @@ pub mod types {
         }
     }
 
+    #[doc = "Request body for `PUT /v2/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `PUT /v2/agent/instances/{instance_id}/meta`. The agent-facing variant of [`SetMetaRequest`]; the agent can only ever write `guest/*` keys at instance scope, so the visibility + writable flags are fixed server-side (`guest_visible: true`, `guest_writable: true`) and not under guest control. The agent (and therefore the guest VM speaking to it) only supplies the value.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"value\": {}"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct SetGuestMetaRequest {
+        pub value: ::serde_json::Value,
+    }
+
+    impl SetGuestMetaRequest {
+        pub fn builder() -> builder::SetGuestMetaRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Request body for `PUT /v2/meta/{scope}/{scope_id}/entry`. `value` is required; the two flags are optional and default to the values from [`tritond_store::default_guest_visible`] (and `false` for `guest_writable`)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -20775,6 +20805,51 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct SetGuestMetaRequest {
+            value: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for SetGuestMetaRequest {
+            fn default() -> Self {
+                Self {
+                    value: Err("no value supplied for value".to_string()),
+                }
+            }
+        }
+
+        impl SetGuestMetaRequest {
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::serde_json::Value>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<SetGuestMetaRequest> for super::SetGuestMetaRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: SetGuestMetaRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    value: value.value?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::SetGuestMetaRequest> for SetGuestMetaRequest {
+            fn from(value: super::SetGuestMetaRequest) -> Self {
+                Self {
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct SetMetaRequest {
             guest_visible:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
@@ -23311,6 +23386,11 @@ impl Client {
         builder::AgentHeartbeat::new(self)
     }
 
+    #[doc = "Agent-facing instance-scoped `guest/*` metadata writeback\n\nThe IMDSv2 listener in tritonagent forwards a guest VM's `PUT /triton/guest/<key>` through this endpoint. The server enforces:\n\n* the key must start with `guest/` (no other prefix); * scope is always Instance, instance_id is the URL path; * `guest_visible` and `guest_writable` are forced true (operator-set entries can flip these via the tenant-facing set_meta surface; the guest never controls them); * the calling agent is CN-bound (`Action::AgentBlueprint`); * the instance is currently placed on the agent's CN — already enforced by the IMDS dataplane (the request reaches the agent only via that instance's vnic).\n\nSends a `PUT` request to `/v2/agent/instances/{instance_id}/meta`\n\n```ignore\nlet response = client.agent_set_instance_guest_meta()\n    .instance_id(instance_id)\n    .key(key)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn agent_set_instance_guest_meta(&self) -> builder::AgentSetInstanceGuestMeta<'_> {
+        builder::AgentSetInstanceGuestMeta::new(self)
+    }
+
     #[doc = "Agent-facing realized metadata view for one instance. Same\n\nbody as [`Self::get_instance_realized_meta`] but auth is the CN-bound `Action::AgentBlueprint` scope (matches [`Self::agent_peer_resolve`]). The tenant-facing endpoint requires tenant-member Cedar, which a CN-bound API key cannot satisfy — but tritonagent's IMDS daemon needs to read the realized view to answer guest IMDSv2 requests. The dataplane already enforces locality: the IMDS request arrives via the guest's vnic on this CN, so any instance the agent asks about is one currently placed on the agent's CN.\n\nSends a `GET` request to `/v2/agent/instances/{instance_id}/realized-meta`\n\n```ignore\nlet response = client.agent_get_instance_realized_meta()\n    .instance_id(instance_id)\n    .send()\n    .await;\n```"]
     pub fn agent_get_instance_realized_meta(&self) -> builder::AgentGetInstanceRealizedMeta<'_> {
         builder::AgentGetInstanceRealizedMeta::new(self)
@@ -24725,6 +24805,124 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_heartbeat",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_set_instance_guest_meta`]\n\n[`Client::agent_set_instance_guest_meta`]: super::Client::agent_set_instance_guest_meta"]
+    #[derive(Debug, Clone)]
+    pub struct AgentSetInstanceGuestMeta<'a> {
+        client: &'a super::Client,
+        instance_id: Result<::uuid::Uuid, String>,
+        key: Result<::std::string::String, String>,
+        body: Result<types::builder::SetGuestMetaRequest, String>,
+    }
+
+    impl<'a> AgentSetInstanceGuestMeta<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                instance_id: Err("instance_id was not initialized".to_string()),
+                key: Err("key was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn instance_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.instance_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for instance_id failed".to_string());
+            self
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::SetGuestMetaRequest>,
+            <V as std::convert::TryInto<types::SetGuestMetaRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `SetGuestMetaRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::SetGuestMetaRequest,
+                ) -> types::builder::SetGuestMetaRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `PUT` request to `/v2/agent/instances/{instance_id}/meta`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::SetMetaResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                instance_id,
+                key,
+                body,
+            } = self;
+            let instance_id = instance_id.map_err(Error::InvalidRequest)?;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::SetGuestMetaRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/agent/instances/{}/meta",
+                client.baseurl,
+                encode_path(&instance_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .put(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .query(&progenitor_client::QueryParam::new("key", &key))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_set_instance_guest_meta",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
