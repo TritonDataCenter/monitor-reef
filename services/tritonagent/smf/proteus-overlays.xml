@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+    Copyright 2026 Edgecast Cloud LLC.
+-->
+<service_bundle type="manifest" name="proteus-overlays">
+    <service name="site/proteus-overlays" type="service" version="1">
+
+        <create_default_instance enabled="true" />
+        <single_instance />
+
+        <dependency name="filesystem" grouping="require_all" restart_on="error" type="service">
+            <service_fmri value="svc:/system/filesystem/local" />
+        </dependency>
+
+        <exec_method
+            type="method"
+            name="start"
+            exec="/opt/tritonagent/bin/proteus-overlays.sh start"
+            timeout_seconds="60">
+            <method_context>
+                <method_credential user="root" group="root" />
+            </method_context>
+        </exec_method>
+
+        <exec_method
+            type="method"
+            name="stop"
+            exec="/opt/tritonagent/bin/proteus-overlays.sh stop"
+            timeout_seconds="60" />
+
+        <property_group name="startd" type="framework">
+            <propval name="duration" type="astring" value="transient" />
+        </property_group>
+
+        <stability value="Unstable" />
+
+        <template>
+            <common_name><loctext xml:lang="C">Proteus lofs overlays for VM.js + statechange</loctext></common_name>
+            <description>
+                <loctext xml:lang="C">
+                    Applies the lofs overlays the proteus dataplane needs over
+                    SmartOS platform-image files (VM.js, jcommon/statechange) so
+                    vmadm + zoneadmd accept proteus pseudo-NIC tags. Tritonagent
+                    depends on this so the overlays are guaranteed before any
+                    Provision job runs vmadm create.
+                </loctext>
+            </description>
+        </template>
+
+    </service>
+</service_bundle>

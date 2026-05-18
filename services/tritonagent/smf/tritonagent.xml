@@ -19,6 +19,9 @@
         <dependency name="filesystem" grouping="require_all" restart_on="error" type="service">
             <service_fmri value="svc:/system/filesystem/local" />
         </dependency>
+        <dependency name="proteus-overlays" grouping="require_all" restart_on="none" type="service">
+            <service_fmri value="svc:/site/proteus-overlays:default" />
+        </dependency>
 
         <exec_method
             type="method"
@@ -32,8 +35,18 @@
                     <envvar name="RUST_LOG" value="info" />
                     <envvar name="RUST_BACKTRACE" value="1" />
                     <envvar name="TRITONAGENT_ENDPOINT" value="http://10.199.199.10:8080" />
-                    <envvar name="TRITONAGENT_CREDENTIAL_PATH" value="/var/lib/tritonagent/credentials" />
+                    <envvar name="TRITONAGENT_CREDENTIAL_PATH" value="/var/lib/tritonagent/credentials-m1" />
                     <envvar name="TRITONAGENT_POLL_INTERVAL_SECS" value="5" />
+                    <!--
+                        IMDSv2 listener. Address must match what tritond
+                        distributes in port blueprints (env vars
+                        TRITOND_IMDS_LISTENER_IPV4 / _PORT on tritond).
+                        The per-CN HS256 token key is delivered at CN
+                        approval and persisted to
+                        /var/lib/tritonagent/imds-credentials.json (no
+                        SMF property for it).
+                    -->
+                    <envvar name="TRITONAGENT_IMDS_LISTEN_ADDR" value="169.254.169.253:8051" />
                 </method_environment>
             </method_context>
         </exec_method>
