@@ -40,6 +40,7 @@ pub mod dhcp_events;
 pub mod edge;
 pub mod images;
 pub mod imds;
+pub mod imds_arp;
 pub mod imds_bindings;
 pub mod imds_creds;
 pub mod imds_data;
@@ -164,6 +165,11 @@ pub struct AgentConfig {
     /// the console-ticket key; the registration-side wire is a
     /// follow-up commit.
     pub imds_token_key_bytes: Option<[u8; IMDS_TOKEN_KEY_BYTES]>,
+    /// File the IMDS binding table mirrors to. `Some` opens the
+    /// table via [`ImdsBindingTable::open`] so a tritonagent restart
+    /// recovers existing VMs' bindings before any new provision job
+    /// arrives. `None` keeps the table in-memory only (tests).
+    pub imds_bindings_path: Option<PathBuf>,
     /// v2p lazy resolver toggle. `true` (default) drives the loop in
     /// `dhcp_events::run_loop` to call tritond + AddPeerEntry on
     /// every `PeerResolveNeeded` event. `false` is the rollback
@@ -209,11 +215,30 @@ impl AgentConfig {
 /// Run the agent loop forever. Returns only on a fatal error.
 pub async fn run(cfg: AgentConfig) -> Result<()> {
     let client = Arc::new(cfg.build_client()?);
-    // Per-CN IMDS reverse-lookup table. Empty until the first
-    // Provision blueprint with non-empty `imds_bindings` populates
-    // it. Shared with the IMDS HTTP listener (once that wires in to
-    // main); a clone gives both sides the same Arc.
-    let bindings = ImdsBindingTable::new();
+    // Per-CN IMDS reverse-lookup table. Disk-backed when
+    // `cfg.imds_bindings_path` is set so a tritonagent restart picks
+    // up every existing VM's binding before traffic flows. Falls
+    // back to an empty in-memory table when unconfigured (tests).
+    let bindings = match cfg.imds_bindings_path.clone() {
+        Some(path) => {
+            let table = ImdsBindingTable::open(path.clone());
+            let loaded = table.len();
+            info!(
+                path = %path.display(),
+                loaded,
+                "imds: bindings restored from disk",
+            );
+            // Re-install the static ARP entries on `proteusimds0`
+            // for every restored binding so listener replies route
+            // back through the kmod. Idempotent — `arp -s` of an
+            // existing entry is a no-op.
+            for ip in table.pseudo_srcs() {
+                crate::imds_arp::add(ip);
+            }
+            table
+        }
+        None => ImdsBindingTable::new(),
+    };
 
     // In-VM IMDSv2 listener (`IMDS_DESIGN.md` §3). Skipped when
     // either the bind address or the token key isn't configured --
@@ -637,6 +662,17 @@ async fn drive_job(
             // agent acts on the kind alone. `delete_zone` is
             // idempotent against zone-not-found.
             vmadm::delete_zone(*instance_id).await?;
+            let removed = bindings.remove_by_instance(*instance_id);
+            for ip in &removed {
+                crate::imds_arp::del(*ip);
+            }
+            if !removed.is_empty() {
+                info!(
+                    instance_id = %instance_id,
+                    removed = removed.len(),
+                    "imds: evicted bindings + ARP for deleted instance",
+                );
+            }
         }
         JobKind::EdgeApply {
             edge_cluster_id,

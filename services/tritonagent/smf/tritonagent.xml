@@ -47,6 +47,10 @@
                         SMF property for it).
                     -->
                     <envvar name="TRITONAGENT_IMDS_LISTEN_ADDR" value="169.254.169.253:8051" />
+                    <!-- IMDS reverse-lookup table persisted here so a
+                         tritonagent restart recovers existing VMs'
+                         bindings before traffic flows. -->
+                    <envvar name="TRITONAGENT_IMDS_BINDINGS_PATH" value="/var/lib/tritonagent/imds-bindings.json" />
                 </method_environment>
             </method_context>
         </exec_method>

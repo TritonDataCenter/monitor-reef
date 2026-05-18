@@ -26,14 +26,16 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// One `(port_id, instance_id)` pair recovered from a peer address.
 /// Cheap to clone; the listener passes it down the request stack
 /// instead of re-looking up on every claim check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedBinding {
     pub port_id: Uuid,
     pub instance_id: Uuid,
@@ -43,16 +45,96 @@ pub struct ResolvedBinding {
 /// `Arc<RwLock<HashMap<_, _>>>` so the IMDS listener task and the
 /// proteus apply path can share a snapshot without contention on
 /// the read path (which is the IMDS hot path).
+///
+/// Optionally backed by a JSON file on disk so a tritonagent restart
+/// recovers all existing VMs' bindings before any new provision job
+/// arrives. The serialised shape is a flat `{ "ip-string":
+/// ResolvedBinding }` map written via [`ImdsBindingTable::open`];
+/// subsequent mutations auto-persist.
 #[derive(Clone, Default)]
 pub struct ImdsBindingTable {
-    inner: Arc<RwLock<HashMap<IpAddr, ResolvedBinding>>>,
+    inner: Arc<RwLock<TableState>>,
+}
+
+#[derive(Default)]
+struct TableState {
+    entries: HashMap<IpAddr, ResolvedBinding>,
+    persist_to: Option<PathBuf>,
+}
+
+impl TableState {
+    /// Best-effort persist while the write lock is held. Logs and
+    /// continues on failure — losing one entry to disk is preferable
+    /// to crashing the IMDS path.
+    fn save(&self) {
+        let Some(path) = self.persist_to.as_ref() else {
+            return;
+        };
+        let serialisable: HashMap<String, ResolvedBinding> =
+            self.entries.iter().map(|(ip, b)| (ip.to_string(), *b)).collect();
+        match serde_json::to_string_pretty(&serialisable) {
+            Ok(text) => {
+                if let Err(e) = std::fs::write(path, text) {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "imds: failed to persist binding table"
+                    );
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "imds: bindings serialise failed"),
+        }
+    }
 }
 
 impl ImdsBindingTable {
-    /// New empty table.
+    /// New empty in-memory table. Tests + paths that don't need
+    /// persistence. Production agents go through [`Self::open`].
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Open or create a disk-backed table. Loads existing entries
+    /// from `path` if the file exists; otherwise starts empty. Every
+    /// subsequent mutation (insert / remove / remove_by_port) flushes
+    /// the table back to `path` synchronously. A read or load error
+    /// downgrades to an empty in-memory start; the IMDS path must
+    /// never crash because of a missing/garbled persistence file.
+    #[must_use]
+    pub fn open(path: PathBuf) -> Self {
+        let entries: HashMap<IpAddr, ResolvedBinding> = match std::fs::read_to_string(&path) {
+            Ok(text) => match serde_json::from_str::<HashMap<String, ResolvedBinding>>(&text) {
+                Ok(map) => map
+                    .into_iter()
+                    .filter_map(|(k, v)| k.parse::<IpAddr>().ok().map(|ip| (ip, v)))
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "imds: bindings file unreadable; starting empty"
+                    );
+                    HashMap::new()
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+            Err(e) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "imds: bindings file open failed; starting empty"
+                );
+                HashMap::new()
+            }
+        };
+        let state = TableState {
+            entries,
+            persist_to: Some(path),
+        };
+        Self {
+            inner: Arc::new(RwLock::new(state)),
+        }
     }
 
     /// Resolve `(port_id, instance_id)` from a connection's peer
@@ -68,8 +150,8 @@ impl ImdsBindingTable {
     #[must_use]
     pub fn lookup(&self, peer: IpAddr) -> Option<ResolvedBinding> {
         match self.inner.read() {
-            Ok(g) => g.get(&peer).copied(),
-            Err(poisoned) => poisoned.into_inner().get(&peer).copied(),
+            Ok(g) => g.entries.get(&peer).copied(),
+            Err(poisoned) => poisoned.into_inner().entries.get(&peer).copied(),
         }
     }
 
@@ -91,22 +173,68 @@ impl ImdsBindingTable {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        g.insert(pseudo_src, entry)
+        let prior = g.entries.insert(pseudo_src, entry);
+        g.save();
+        prior
     }
 
-    /// Remove every binding whose `port_id` matches. Used on port
-    /// delete; we'd otherwise leak an entry per gone-away port.
-    ///
-    /// Returns the count removed (debug-only -- the agent doesn't
-    /// branch on it).
-    pub fn remove_by_port(&self, port_id: Uuid) -> usize {
+    /// Remove every binding whose `instance_id` matches. Used on
+    /// `JobKind::Delete` so deletes don't leak entries (especially
+    /// to the persistence file). Returns the pseudo-source addresses
+    /// that were evicted so the caller can also drop their ARP
+    /// entries on `proteusimds0`.
+    pub fn remove_by_instance(&self, instance_id: Uuid) -> Vec<IpAddr> {
         let mut g = match self.inner.write() {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        let before = g.len();
-        g.retain(|_, b| b.port_id != port_id);
-        before - g.len()
+        let mut removed: Vec<IpAddr> = Vec::new();
+        g.entries.retain(|ip, b| {
+            if b.instance_id == instance_id {
+                removed.push(*ip);
+                false
+            } else {
+                true
+            }
+        });
+        if !removed.is_empty() {
+            g.save();
+        }
+        removed
+    }
+
+    /// Remove every binding whose `port_id` matches. Used on port
+    /// delete; we'd otherwise leak an entry per gone-away port.
+    /// Returns the pseudo-source addresses removed so the caller can
+    /// also drop their ARP entries.
+    pub fn remove_by_port(&self, port_id: Uuid) -> Vec<IpAddr> {
+        let mut g = match self.inner.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let mut removed: Vec<IpAddr> = Vec::new();
+        g.entries.retain(|ip, b| {
+            if b.port_id == port_id {
+                removed.push(*ip);
+                false
+            } else {
+                true
+            }
+        });
+        if !removed.is_empty() {
+            g.save();
+        }
+        removed
+    }
+
+    /// Snapshot every `pseudo_src` currently in the table. Used at
+    /// startup to re-add static ARP entries on `proteusimds0` so the
+    /// host IP stack can route listener replies back to the kmod.
+    pub fn pseudo_srcs(&self) -> Vec<IpAddr> {
+        match self.inner.read() {
+            Ok(g) => g.entries.keys().copied().collect(),
+            Err(p) => p.into_inner().entries.keys().copied().collect(),
+        }
     }
 
     /// Drop a single pseudo-source mapping (for the case where the
@@ -117,14 +245,18 @@ impl ImdsBindingTable {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        g.remove(&pseudo_src)
+        let prior = g.entries.remove(&pseudo_src);
+        if prior.is_some() {
+            g.save();
+        }
+        prior
     }
 
     /// Current table size. Diagnostics + tests only.
     pub fn len(&self) -> usize {
         match self.inner.read() {
-            Ok(g) => g.len(),
-            Err(p) => p.into_inner().len(),
+            Ok(g) => g.entries.len(),
+            Err(p) => p.into_inner().entries.len(),
         }
     }
 
@@ -252,6 +384,7 @@ pub fn register_blueprint_bindings(
             }
         };
         table.insert(pseudo, b.port_id, b.instance_id);
+        crate::imds_arp::add(pseudo);
         n += 1;
     }
     n
@@ -260,11 +393,16 @@ pub fn register_blueprint_bindings(
 /// Drop every binding whose `port_id` is in `port_ids`. Used on
 /// port-delete (the Stop/Restart paths leave bindings alone --
 /// the port stays around). Returns the total count removed across
-/// every port.
+/// every port; also drops the matching static ARP entries on
+/// `proteusimds0`.
 pub fn release_imds_bindings_for_ports(table: &ImdsBindingTable, port_ids: &[uuid::Uuid]) -> usize {
     let mut total = 0;
     for &port_id in port_ids {
-        total += table.remove_by_port(port_id);
+        let removed = table.remove_by_port(port_id);
+        for ip in &removed {
+            crate::imds_arp::del(*ip);
+        }
+        total += removed.len();
     }
     total
 }

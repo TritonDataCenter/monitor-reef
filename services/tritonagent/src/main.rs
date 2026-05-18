@@ -131,6 +131,13 @@ struct Cli {
     #[arg(long, env = "TRITONAGENT_IMDS_LISTEN_ADDR")]
     imds_listen_addr: Option<std::net::SocketAddr>,
 
+    /// File the IMDS binding registry mirrors to. `Some` makes the
+    /// table disk-backed so an agent restart recovers every existing
+    /// VM's binding before traffic flows. SMF default is
+    /// `/var/lib/tritonagent/imds-bindings.json`.
+    #[arg(long, env = "TRITONAGENT_IMDS_BINDINGS_PATH")]
+    imds_bindings_path: Option<PathBuf>,
+
     /// When set, skip `vmadm` entirely and mark every claimed
     /// job `Completed`. Useful for transport-only smoke testing
     /// on hosts without SmartOS. Off by default — the production
@@ -244,6 +251,7 @@ async fn main() -> Result<()> {
         console_tls: Some(console_tls),
         imds_listen_addr: cli.imds_listen_addr,
         imds_token_key_bytes: outcome.imds_token_key,
+        imds_bindings_path: cli.imds_bindings_path,
         peer_resolver_enabled: matches!(cli.peer_resolver, PeerResolverMode::On),
     };
     tritonagent::run(cfg).await
