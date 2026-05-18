@@ -11,7 +11,7 @@
 
 use dropshot::{
     HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk, Path,
-    RequestContext, TypedBody,
+    RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
 };
 
 pub mod types;
@@ -214,4 +214,41 @@ pub trait TritonApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<ClusterPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Register a relay agent tunnel.
+    ///
+    /// Called by the gateway-zone agent. The connection is upgraded to
+    /// WebSocket and then to a yamux session (server = agent, client = API
+    /// server). The API server opens yamux streams when bridge clients request
+    /// connections; the agent dials the target on the fabric network and
+    /// bridges bytes.
+    ///
+    /// No authentication in the POC — this is intentional.
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/v1/k8s/relay",
+        tags = ["k8s-relay"],
+    }]
+    async fn k8s_relay_register(
+        rqctx: RequestContext<Self::Context>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
+
+    /// Connect to the relay as a bridge client.
+    ///
+    /// Called by `triton-relay-bridge`. The connection is upgraded to
+    /// WebSocket and then to a yamux session (server = API server, client =
+    /// bridge). For each inbound stream from the bridge the API server opens
+    /// a yamux stream to the registered agent and splices the two together.
+    ///
+    /// No authentication in the POC — this is intentional.
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/v1/k8s/relay/connect",
+        tags = ["k8s-relay"],
+    }]
+    async fn k8s_relay_connect(
+        rqctx: RequestContext<Self::Context>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
 }

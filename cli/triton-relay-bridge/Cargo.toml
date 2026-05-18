@@ -5,7 +5,7 @@
 # Copyright 2026 Edgecast Cloud LLC.
 
 [package]
-name = "triton-api-server"
+name = "triton-relay-bridge"
 version = "0.1.0"
 edition.workspace = true
 
@@ -13,33 +13,18 @@ edition.workspace = true
 workspace = true
 
 [[bin]]
-name = "triton-api-server"
+name = "triton-relay-bridge"
 path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
-chrono = { workspace = true }
-dropshot = { workspace = true }
+clap = { workspace = true }
 futures-util = { workspace = true }
-http = { workspace = true }
-secrecy = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-triton-api = { workspace = true }
-triton-auth = { workspace = true }
-triton-auth-session = { workspace = true }
 triton-relay-protocol = { workspace = true }
-triton-tls = { workspace = true }
-url = { workspace = true }
-uuid = { workspace = true }
 yamux = { workspace = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }

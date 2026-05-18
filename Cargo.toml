@@ -18,6 +18,7 @@ members = [
     "apis/vmapi-api",
     "cli/bugview-cli",
     "cli/triton-cli",
+    "cli/triton-relay-bridge",
     "cli/tritonadm",
     "cli/napi-cli",
     "cli/papi-cli",
@@ -38,6 +39,7 @@ members = [
     "libs/triton-auth",
     "libs/triton-auth-session",
     "libs/triton-pagination",
+    "libs/triton-relay-protocol",
     "libs/triton-tls",
     "client-generator",
     "openapi-manager",
@@ -45,6 +47,7 @@ members = [
     "services/jira-stub-server",
     "services/triton-api-server",
     "services/triton-gateway",
+    "services/triton-relay-agent",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
@@ -106,7 +109,10 @@ dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
 dsa = "0.6"
 ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
-futures-util = "0.3"
+futures = { version = "0.3", features = ["io"] }
+futures-util = { version = "0.3", features = ["io"] }
+yamux = "0.13"
+tokio-util = { version = "0.7", features = ["compat"] }
 getrandom = "0.4"
 hostname = "0.4"
 http = "1"
@@ -239,6 +245,7 @@ sapi-api = { path = "apis/sapi-api" }
 sapi-client = { path = "clients/internal/sapi-client" }
 triton-api = { path = "apis/triton-api" }
 triton-auth = { path = "libs/triton-auth" }
+triton-relay-protocol = { path = "libs/triton-relay-protocol" }
 triton-auth-session = { path = "libs/triton-auth-session" }
 triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
 triton-pagination = { path = "libs/triton-pagination" }

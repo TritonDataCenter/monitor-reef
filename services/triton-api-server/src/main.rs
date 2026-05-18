@@ -8,13 +8,17 @@ use anyhow::{Context, Result};
 use dropshot::{
     ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError,
     HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk,
-    HttpServerStarter, Path, RequestContext, TypedBody,
+    HttpServerStarter, Path, RequestContext, TypedBody, WebsocketChannelResult,
+    WebsocketConnection,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::protocol::Role as WsRole;
+use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tracing::{info, warn};
 use triton_api::{
     ChallengeMethod, Cluster, ClusterList, ClusterPath, ClusterState, CreateClusterRequest, Jwk,
@@ -27,10 +31,14 @@ use triton_auth_session::{
     JwtConfig as SessionJwtConfig, JwtService, LdapConfig as SessionLdapConfig, LdapService,
     MahiService, Role, SessionError, verify_totp,
 };
+use triton_relay_protocol::{WsCompat, bridge, read_connect_target, write_connect_target};
 use uuid::Uuid;
 
 mod cluster_store;
 use cluster_store::{ClusterStore, FileClusterStore, StoreError};
+
+mod relay;
+use relay::RelayState;
 
 /// Default request body size limit: 10 MiB.
 const DEFAULT_MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
@@ -175,6 +183,8 @@ struct ApiContext {
     /// back to a file-backed store at `./data/clusters` when no
     /// `[clusters]` section is provided.
     cluster_store: Arc<dyn ClusterStore>,
+    /// POC relay tunnel registry. Holds at most one agent tunnel at a time.
+    relay: Arc<RelayState>,
 }
 
 enum TritonApiImpl {}
@@ -570,6 +580,88 @@ impl TritonApi for TritonApiImpl {
         }
         Ok(HttpResponseDeleted())
     }
+
+    async fn k8s_relay_register(
+        rqctx: RequestContext<Self::Context>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult {
+        let relay = Arc::clone(&rqctx.context().relay);
+
+        // Wrap the raw HTTP-upgraded connection in a WebSocket frame layer,
+        // then adapt that to the futures::io byte stream that yamux needs.
+        let raw = upgraded.into_inner();
+        let ws =
+            tokio_tungstenite::WebSocketStream::from_raw_socket(raw, WsRole::Server, None).await;
+        let ws_compat = WsCompat::new(ws);
+
+        // The API server is the yamux CLIENT: it opens streams toward the agent.
+        let conn = yamux::Connection::new(ws_compat, yamux::Config::default(), yamux::Mode::Client);
+
+        let (tx, rx) = mpsc::channel(32);
+        relay.register(relay::TunnelHandle { open_stream: tx });
+        info!("relay agent registered");
+
+        // Block until the agent disconnects; the driver clears the handle on exit.
+        relay::run_agent_connection(conn, rx, Arc::clone(&relay)).await;
+
+        info!("relay agent disconnected");
+        Ok(())
+    }
+
+    async fn k8s_relay_connect(
+        rqctx: RequestContext<Self::Context>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult {
+        let relay = Arc::clone(&rqctx.context().relay);
+
+        let raw = upgraded.into_inner();
+        let ws =
+            tokio_tungstenite::WebSocketStream::from_raw_socket(raw, WsRole::Server, None).await;
+        let ws_compat = WsCompat::new(ws);
+
+        // The API server is the yamux SERVER here: it accepts streams from the bridge.
+        let mut conn =
+            yamux::Connection::new(ws_compat, yamux::Config::default(), yamux::Mode::Server);
+
+        loop {
+            let stream = std::future::poll_fn(|cx| conn.poll_next_inbound(cx)).await;
+            match stream {
+                Some(Ok(bridge_stream)) => {
+                    let relay = Arc::clone(&relay);
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_bridge_stream(bridge_stream, relay).await {
+                            warn!("bridge stream error: {e}");
+                        }
+                    });
+                }
+                Some(Err(e)) => {
+                    warn!("yamux error on relay/connect: {e}");
+                    break;
+                }
+                None => {
+                    info!("bridge connection closed");
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+async fn handle_bridge_stream(
+    mut bridge_stream: yamux::Stream,
+    relay: Arc<RelayState>,
+) -> anyhow::Result<()> {
+    let target = read_connect_target(&mut bridge_stream).await?;
+    info!("bridge stream requesting target: {target}");
+    let mut agent_stream = relay.open_stream().await?;
+    write_connect_target(&mut agent_stream, &target).await?;
+    let mut bridge_compat = bridge_stream.compat();
+    let mut agent_compat = agent_stream.compat();
+    let (b_to_a, a_to_b) = bridge(&mut bridge_compat, &mut agent_compat).await?;
+    info!("bridge to {target} closed: {b_to_a} B bridge→agent, {a_to_b} B agent→bridge");
+    Ok(())
 }
 
 /// Authenticated caller identity for protected `/v1/k8s/*` endpoints.
@@ -1174,6 +1266,7 @@ async fn main() -> Result<()> {
         mahi,
         cookie_secure,
         cluster_store,
+        relay: Arc::new(relay::RelayState::new()),
     };
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
