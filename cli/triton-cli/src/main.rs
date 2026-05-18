@@ -18,8 +18,9 @@ mod errors;
 mod output;
 
 use commands::{
-    AccesskeyCommand, AccountCommand, FwruleCommand, ImageCommand, InstanceCommand, KeyCommand,
-    NetworkCommand, PackageCommand, ProfileCommand, RbacCommand, VlanCommand, VolumeCommand,
+    AccesskeyCommand, AccountCommand, FwruleCommand, ImageCommand, InstanceCommand, K8sCommand,
+    KeyCommand, NetworkCommand, PackageCommand, ProfileCommand, RbacCommand, VlanCommand,
+    VolumeCommand,
 };
 use config::profile::Profile;
 use config::resolve_profile;
@@ -199,6 +200,12 @@ enum Commands {
     Rbac {
         #[command(subcommand)]
         command: RbacCommand,
+    },
+
+    /// Manage Kubernetes clusters
+    K8s {
+        #[command(subcommand)]
+        command: K8sCommand,
     },
 
     /// Show account info and resource usage
@@ -560,6 +567,11 @@ async fn main() {
 }
 
 async fn try_main() -> Result<()> {
+    // Install the ring crypto provider globally for rustls. This is required
+    // for libraries like tonic that use rustls but don't specify a crypto
+    // backend in their feature flags.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let cli = Cli::parse();
 
     // Enable emit-payload mode if requested (captures HTTP payloads for
@@ -654,6 +666,10 @@ async fn try_main() -> Result<()> {
         Commands::Rbac { command } => {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
+        }
+        Commands::K8s { command } => {
+            let (client, profile) = cli.build_client().await?;
+            command.clone().run(&client, &profile, cli.json).await
         }
         Commands::Info => {
             let (client, _profile) = cli.build_client().await?;

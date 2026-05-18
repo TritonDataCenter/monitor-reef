@@ -796,18 +796,27 @@ fn transform_create_machine_body(request: &mut reqwest::Request) {
         }
     }
 
-    // Simplify networks: NetworkObjects with only ipv4_uuid (no ipv4_ips,
-    // no primary) become plain UUID strings to match node-triton's wire format.
-    // Objects with additional fields are kept as-is.
+    // Simplify networks: if ALL entries are NetworkObjects with only ipv4_uuid
+    // (no ipv4_ips, no primary), convert them to plain UUID strings to match
+    // node-triton's wire format. If any entry has additional fields, keep ALL
+    // entries as objects — CloudAPI requires networks to be uniformly strings
+    // or uniformly objects, not a mix.
     if let Some(networks) = map.get_mut("networks")
         && let Some(arr) = networks.as_array_mut()
     {
-        for entry in arr.iter_mut() {
-            if let Some(obj) = entry.as_object()
-                && obj.len() == 1
-                && let Some(uuid_val) = obj.get("ipv4_uuid")
-            {
-                *entry = uuid_val.clone();
+        let all_simple = arr.iter().all(|entry| {
+            entry
+                .as_object()
+                .is_some_and(|obj| obj.len() == 1 && obj.contains_key("ipv4_uuid"))
+        });
+
+        if all_simple {
+            for entry in arr.iter_mut() {
+                if let Some(obj) = entry.as_object()
+                    && let Some(uuid_val) = obj.get("ipv4_uuid")
+                {
+                    *entry = uuid_val.clone();
+                }
             }
         }
     }

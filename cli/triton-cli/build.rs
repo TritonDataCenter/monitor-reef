@@ -5,8 +5,6 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 fn main() {
-    // build-data 0.3+ returns Result from these; treat errors as non-fatal
-    // (we fall through to whatever cargo defaults to).
     let _ = build_data::set_GIT_COMMIT_SHORT();
 
     // Check git dirty status directly and emit a human-friendly suffix

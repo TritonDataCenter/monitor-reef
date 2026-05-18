@@ -22,3 +22,7 @@ images/*/bits/
 images/*/proto/
 images/*/make_stamps/
 images/*/*.tar.gz
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db

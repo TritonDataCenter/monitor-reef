@@ -219,6 +219,10 @@ urlencoding = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 webpki-roots = "1"
 
+# Kubernetes client (native API access, replacing kubectl shell-outs)
+kube = { version = "0.98", default-features = false, features = ["client", "config", "rustls-tls"] }
+k8s-openapi = { version = "0.24", features = ["v1_32"] }
+
 #
 # Internal workspace crates.
 #
@@ -250,16 +254,8 @@ triton-auth-session = { path = "libs/triton-auth-session" }
 triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
 triton-pagination = { path = "libs/triton-pagination" }
 triton-tls = { path = "libs/triton-tls" }
-# `flate2` and `tar` are needed by the SmartOS fetch path, where the
-# upstream artifact is a gzipped tarball of a VMware VM directory
-# (descriptor .vmdk + raw .img extent) rather than a standalone disk
-# image. Pure-Rust to keep the build hermetic; the `flate2` default
-# `miniz_oxide` backend is already in the dep tree via libs/qcow.
 flate2 = "1"
 tar = "0.4"
-# Vendored fork at libs/vmdk that drops the upstream s3 / foyer-cache /
-# CLI layers, keeping just the file-backed disk reader. See
-# libs/vmdk/Cargo.toml for the full rationale.
 vmdk-rs = { path = "libs/vmdk" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

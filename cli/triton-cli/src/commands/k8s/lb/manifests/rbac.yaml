@@ -1,0 +1,59 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+#
+# RBAC configuration for the Triton LoadBalancer controller.
+# This file is embedded into the triton-cli binary at compile time.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: triton-lb-controller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: triton-lb-controller
+rules:
+  # Services - watch, update status
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services/status"]
+    verbs: ["get", "update", "patch"]
+  # Events - for recording events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Nodes - for topology awareness and health checks
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # Endpoints - for service endpoint management
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # ConfigMaps - for leader election
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Leases - for leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: triton-lb-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: triton-lb-controller
+subjects:
+  - kind: ServiceAccount
+    name: triton-lb-controller
+    namespace: kube-system
