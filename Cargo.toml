@@ -233,6 +233,7 @@ k8s-openapi = { version = "0.24", features = ["v1_32"] }
 bugview-api = { path = "apis/bugview-api" }
 bugview-client = { path = "clients/internal/bugview-client" }
 cloudapi-api = { path = "apis/cloudapi-api" }
+cloudapi-client = { path = "clients/internal/cloudapi-client" }
 imgapi-api = { path = "apis/imgapi-api" }
 imgapi-client = { path = "clients/internal/imgapi-client" }
 jira-api = { path = "apis/jira-api" }

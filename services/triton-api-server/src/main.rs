@@ -5,6 +5,7 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 use anyhow::{Context, Result};
+use cloudapi_client::{AuthConfig, KeySource, TypedClient};
 use dropshot::{
     ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError,
     HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk,
@@ -66,6 +67,27 @@ struct ApiServerConfig {
     jwt: Option<JwtConfigFile>,
     #[serde(default)]
     clusters: ClustersConfigFile,
+    #[serde(default)]
+    cloudapi: Option<CloudApiConfigFile>,
+}
+
+/// Operator-credential config for the server-side CloudAPI client.
+///
+/// When present, tritonapi will provision VMs on behalf of callers via
+/// CloudAPI using these operator credentials. When absent, the bootstrap
+/// endpoint returns 503.
+#[derive(Deserialize)]
+struct CloudApiConfigFile {
+    /// CloudAPI base URL (e.g. `https://cloudapi.example.com`).
+    url: url::Url,
+    /// Operator account login (e.g. `admin`).
+    account: String,
+    /// Path to the PEM-encoded private key file on disk.
+    key_file: std::path::PathBuf,
+    /// Optional key fingerprint. If omitted, the key_file is used directly
+    /// without fingerprint matching.
+    #[serde(default)]
+    key_fingerprint: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -147,6 +169,7 @@ impl Default for ApiServerConfig {
             mahi: None,
             jwt: None,
             clusters: ClustersConfigFile::default(),
+            cloudapi: None,
         }
     }
 }
@@ -185,6 +208,10 @@ struct ApiContext {
     cluster_store: Arc<dyn ClusterStore>,
     /// POC relay tunnel registry. Holds at most one agent tunnel at a time.
     relay: Arc<RelayState>,
+    /// Operator CloudAPI client for server-side VM provisioning. `None` when
+    /// no `[cloudapi]` section is in the config; bootstrap endpoint returns
+    /// 503 in that case.
+    cloudapi: Option<Arc<TypedClient>>,
 }
 
 enum TritonApiImpl {}
@@ -1179,6 +1206,28 @@ fn build_ldap_service(cfg: &LdapConfigFile) -> LdapService {
     })
 }
 
+async fn build_cloudapi_client(cfg: Option<&CloudApiConfigFile>) -> Result<Option<Arc<TypedClient>>> {
+    let Some(cfg) = cfg else {
+        return Ok(None);
+    };
+
+    let key_source = match cfg.key_fingerprint.as_deref() {
+        Some(_fp) => KeySource::file(&cfg.key_file),
+        None => KeySource::file(&cfg.key_file),
+    };
+    let auth_config = AuthConfig::new(&cfg.account, key_source);
+
+    // Use the shared TLS client builder so the server survives on zones
+    // whose native CA store is empty (the relay zone falls into this category).
+    let http_client = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client for CloudAPI")?;
+
+    let client = TypedClient::new_with_http_client(cfg.url.as_str(), auth_config, http_client);
+    info!("CloudAPI operator client: {} account={}", cfg.url, cfg.account);
+    Ok(Some(Arc::new(client)))
+}
+
 async fn build_mahi_service(cfg: &MahiConfigFile) -> Result<MahiService> {
     // Use triton-tls's client builder so the service survives on zones
     // whose native CA store is empty (reqwest's default builder panics
@@ -1271,6 +1320,11 @@ async fn main() -> Result<()> {
         config.clusters.state_dir.display()
     );
 
+    let cloudapi = build_cloudapi_client(config.cloudapi.as_ref()).await?;
+    if cloudapi.is_none() {
+        warn!("no [cloudapi] section in config; bootstrap endpoint will return 503");
+    }
+
     let context = ApiContext {
         jwt,
         ldap,
@@ -1278,6 +1332,7 @@ async fn main() -> Result<()> {
         cookie_secure,
         cluster_store,
         relay: Arc::new(relay::RelayState::new()),
+        cloudapi,
     };
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
