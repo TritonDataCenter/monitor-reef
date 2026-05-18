@@ -1893,6 +1893,27 @@ pub trait TritondApi {
         query: Query<AgentPeerInvalidationsQuery>,
     ) -> Result<HttpResponseOk<AgentPeerInvalidationsResponse>, HttpError>;
 
+    /// Agent-facing realized metadata view for one instance. Same
+    /// body as [`Self::get_instance_realized_meta`] but auth is
+    /// the CN-bound `Action::AgentBlueprint` scope (matches
+    /// [`Self::agent_peer_resolve`]). The tenant-facing endpoint
+    /// requires tenant-member Cedar, which a CN-bound API key
+    /// cannot satisfy — but tritonagent's IMDS daemon needs to
+    /// read the realized view to answer guest IMDSv2 requests.
+    /// The dataplane already enforces locality: the IMDS request
+    /// arrives via the guest's vnic on this CN, so any instance
+    /// the agent asks about is one currently placed on the
+    /// agent's CN.
+    #[endpoint {
+        method = GET,
+        path = "/v2/agent/instances/{instance_id}/realized-meta",
+        tags = ["agent"],
+    }]
+    async fn agent_get_instance_realized_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<InstanceRealizedMetaPath>,
+    ) -> Result<HttpResponseOk<Vec<RealizedMetaEntry>>, HttpError>;
+
     /// Heartbeat from a bound agent. Lightweight ping — empty
     /// body, just bumps `Cn.last_seen`. Auth: requires an API
     /// key with [`tritond_store::ApiKeyScope::Agent`] AND a

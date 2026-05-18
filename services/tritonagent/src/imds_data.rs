@@ -85,9 +85,15 @@ impl TritondRealizedDataSource {
 #[async_trait]
 impl RealizedDataSource for TritondRealizedDataSource {
     async fn get(&self, instance_id: Uuid) -> Result<Vec<RealizedMetaEntry>, RealizedFetchError> {
+        // Agent-scoped endpoint: the tenant-facing
+        // `get_instance_realized_meta` is gated by a tenant-member
+        // Cedar rule that a CN-bound agent API key can't satisfy.
+        // The agent variant authorizes on `Action::AgentBlueprint`
+        // and serves the same body. See tritond
+        // `apis/tritond-api/src/lib.rs::agent_get_instance_realized_meta`.
         let response = self
             .client
-            .get_instance_realized_meta()
+            .agent_get_instance_realized_meta()
             .instance_id(instance_id)
             .send()
             .await

@@ -659,6 +659,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::meta::get_instance_realized_meta(rqctx, path).await
     }
 
+    async fn agent_get_instance_realized_meta(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::InstanceRealizedMetaPath>,
+    ) -> Result<HttpResponseOk<Vec<tritond_api::RealizedMetaEntry>>, HttpError> {
+        crate::handlers::meta::agent_get_instance_realized_meta(rqctx, path).await
+    }
+
     async fn list_public_images(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<Vec<Image>>, HttpError> {

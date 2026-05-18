@@ -313,6 +313,49 @@
         }
       }
     },
+    "/v2/agent/instances/{instance_id}/realized-meta": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent-facing realized metadata view for one instance. Same",
+        "description": "body as [`Self::get_instance_realized_meta`] but auth is the CN-bound `Action::AgentBlueprint` scope (matches [`Self::agent_peer_resolve`]). The tenant-facing endpoint requires tenant-member Cedar, which a CN-bound API key cannot satisfy — but tritonagent's IMDS daemon needs to read the realized view to answer guest IMDSv2 requests. The dataplane already enforces locality: the IMDS request arrives via the guest's vnic on this CN, so any instance the agent asks about is one currently placed on the agent's CN.",
+        "operationId": "agent_get_instance_realized_meta",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_RealizedMetaEntry",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RealizedMetaEntry"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/agent/jobs/{job_id}/blueprint": {
       "get": {
         "tags": [
@@ -12025,6 +12068,13 @@
               }
             ]
           },
+          "steps": {
+            "description": "One entry per Action node in the DAG, in DAG order. Carries each step's status, output JSON (on success), error JSON (on failure), and the unwind state if a compensation ran. The adminUI Operations detail panel renders this directly. RFD 00004 SG-4 debug surface.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationStep"
+            }
+          },
           "stuck_reason": {
             "nullable": true,
             "description": "Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable.",
@@ -12058,6 +12108,7 @@
           "kind",
           "progress",
           "state",
+          "steps",
           "time_created",
           "version"
         ]
@@ -12146,6 +12197,66 @@
               "done"
             ]
           }
+        ]
+      },
+      "OperationStep": {
+        "description": "One forward-or-undo event in a step's lifecycle, surfaced for operators who need to see the exact JSON Steno persisted (output value on Succeeded, structured ActionError on Failed). RFD 00004 SG-4 debug surface.",
+        "type": "object",
+        "properties": {
+          "action_name": {
+            "description": "Fully-qualified action identifier (catalog's `action_name`, e.g. `\"instance_create.create_record\"`).",
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "description": "Structured error JSON from a `Failed` event, if any. Carries whatever the action body packed into `ActionError` — typically `{ \"kind\": \"...\", \"message\": \"...\" }` for our catalog (e.g. `decode_store_error_kind` in `instance_create`).",
+            "default": null
+          },
+          "error_message": {
+            "nullable": true,
+            "description": "Short human message extracted from `error` so the row can render without an expanded JSON view. `None` when the step hasn't failed.",
+            "default": null,
+            "type": "string"
+          },
+          "index": {
+            "description": "Node index in the persisted DAG (`graph.nodes[index]`).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "label": {
+            "description": "Human-friendly label (catalog's `label`, e.g. `\"create_instance_record\"`).",
+            "type": "string"
+          },
+          "name": {
+            "description": "Internal node name (the `name` field on the catalog declaration — e.g. `\"instance\"`, `\"final_instance\"`).",
+            "type": "string"
+          },
+          "output": {
+            "nullable": true,
+            "description": "Output JSON from a `Succeeded` event, if any. Opaque to the adminUI; rendered as `<pre>` for operators.",
+            "default": null
+          },
+          "status": {
+            "description": "Projected lifecycle state for this node.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StepStatus"
+              }
+            ]
+          },
+          "undo_error": {
+            "nullable": true,
+            "description": "Structured UndoFailed error JSON, if any. Only set when `status == UndoFailed`.",
+            "default": null
+          }
+        },
+        "required": [
+          "action_name",
+          "index",
+          "label",
+          "name",
+          "status"
         ]
       },
       "OperationSummary": {
@@ -13508,6 +13619,60 @@
             "required": [
               "kind",
               "user_id"
+            ]
+          }
+        ]
+      },
+      "StepStatus": {
+        "description": "Per-step status used in [`OperationStep::status`]. Lifecycle: `pending → running → (succeeded | failed)`. If the saga unwinds, each prior-Succeeded step transitions `succeeded → undo_running → (undone | undo_failed)`. A `succeeded` step that didn't need to be unwound (the saga succeeded overall) stays `succeeded`.",
+        "oneOf": [
+          {
+            "description": "No events for this node yet.",
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          {
+            "description": "`Started` event observed; no terminal counterpart yet.",
+            "type": "string",
+            "enum": [
+              "running"
+            ]
+          },
+          {
+            "description": "Forward action returned Ok.",
+            "type": "string",
+            "enum": [
+              "succeeded"
+            ]
+          },
+          {
+            "description": "Forward action returned Err. The saga is unwinding or terminal-failed.",
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          },
+          {
+            "description": "`UndoStarted` for a previously-Succeeded node; the undo is running.",
+            "type": "string",
+            "enum": [
+              "undo_running"
+            ]
+          },
+          {
+            "description": "`UndoFinished` — the compensation completed cleanly.",
+            "type": "string",
+            "enum": [
+              "undone"
+            ]
+          },
+          {
+            "description": "`UndoFailed` — the compensation itself errored. Saga is terminal-stuck on this node.",
+            "type": "string",
+            "enum": [
+              "undo_failed"
             ]
           }
         ]

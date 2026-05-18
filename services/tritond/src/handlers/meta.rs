@@ -10,7 +10,8 @@
 //! to those calls and does the per-scope RBAC dance.
 
 use crate::auth::{
-    Action, authenticate_and_authorize_in_silo, authenticate_and_authorize_in_tenant,
+    Action, authenticate_and_authorize, authenticate_and_authorize_in_silo,
+    authenticate_and_authorize_in_tenant,
 };
 use crate::context::ApiContext;
 use crate::error::store_error_to_http;
@@ -185,6 +186,38 @@ pub(crate) async fn get_instance_realized_meta(
     // RBAC: anyone in the instance's owning tenant can read the
     // realized view (mirrors the per-key MetaList/MetaGet grants).
     authorize_meta(&rqctx, MetaScope::Instance, instance_id, Action::MetaList).await?;
+    realized_meta_response(&rqctx, instance_id).await
+}
+
+/// Agent-facing variant: same body shape as
+/// [`get_instance_realized_meta`], but the caller is a CN-bound
+/// agent API key (matches the auth shape of `/v2/agent/peer` /
+/// `/v2/agent/blueprints`). tritonagent's IMDS daemon calls this
+/// to answer guest IMDSv2 requests — the tenant-member Cedar rule
+/// can't authorize a CN-bound key. The dataplane already enforces
+/// locality: the IMDS request arrives via the guest's vnic on
+/// this CN.
+pub(crate) async fn agent_get_instance_realized_meta(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::InstanceRealizedMetaPath>,
+) -> Result<HttpResponseOk<Vec<tritond_api::RealizedMetaEntry>>, HttpError> {
+    let instance_id = path.into_inner().instance_id;
+    let ctx = rqctx.context();
+    let _principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::AgentBlueprint,
+    )
+    .await?;
+    realized_meta_response(&rqctx, instance_id).await
+}
+
+async fn realized_meta_response(
+    rqctx: &RequestContext<ApiContext>,
+    instance_id: Uuid,
+) -> Result<HttpResponseOk<Vec<tritond_api::RealizedMetaEntry>>, HttpError> {
     let ctx = rqctx.context();
     match crate::build_instance_realized_view(ctx.store.as_ref(), instance_id).await {
         Ok(view) => Ok(HttpResponseOk(
