@@ -280,6 +280,29 @@ impl SagaExecutor {
         self.sec_store.get_record(id).await
     }
 
+    /// Operator-facing event-log fetch for one saga. Returns the
+    /// persisted Steno node-event log in node-id order. Used by
+    /// `GET /v2/operations/{id}` to project per-step progress
+    /// (RFD 00004 D-Sg-13).
+    pub async fn get_saga_events(
+        &self,
+        id: steno::SagaId,
+    ) -> SagaResult<Vec<steno::SagaNodeEvent>> {
+        self.sec_store.load_events(id).await
+    }
+
+    /// Sweeper hook: drop every terminal saga whose `time_done` is
+    /// older than `before`. Returns the number pruned. RFD 00004
+    /// SG-4 retention pass; see the corresponding SecStore method
+    /// for what gets deleted and what is left alone (Stuck sagas
+    /// are intentionally preserved).
+    pub async fn prune_terminal_sagas_older_than(
+        &self,
+        before: DateTime<Utc>,
+    ) -> SagaResult<usize> {
+        self.sec_store.prune_terminal_sagas_older_than(before).await
+    }
+
     /// Force a running saga into its unwind direction (RFD 00004
     /// D-Sg-12). Injects an `ActionError` at every node in the
     /// saga's DAG that hasn't yet completed; the next pending node

@@ -449,22 +449,52 @@ pub struct AuditEventPath {
 // Operations / sagas (RFD 00004 SG-4)
 // ---------------------------------------------------------------------
 
-/// Public state of a long-running operation. Maps from Steno's
-/// `SagaCachedState` + the saga's `stuck_reason` so operators can
-/// distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one
-/// field. The string values are stable on the wire and match the
-/// RFD 00004 D-Sg-13 enum.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+/// Public state of a long-running operation (RFD 00004 D-Sg-13).
+/// String values are stable on the wire.
+///
+/// The list endpoint (`GET /v2/operations`) projects coarse state —
+/// Pending / Running / Unwinding / Done / Stuck — derived from the
+/// saga record alone (cheap). The detail endpoint
+/// (`GET /v2/operations/{id}`) refines `Done` into one of
+/// `Succeeded` / `Failed` / `Unwound` by walking the persisted
+/// node-event log. Operators reading a row in the list see the
+/// coarse view; expanding the row reveals the refined outcome.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OperationState {
-    /// Saga is in the forward direction.
+    /// Saga has been created and the record is durable, but no
+    /// action body has reported a `started` event yet. Brief
+    /// window between `saga_create` and the first action's first
+    /// log line.
+    Pending,
+    /// Saga is in the forward direction with at least one action
+    /// having started.
     Running,
-    /// At least one undo errored or the saga's persisted version is
-    /// no longer registered. Operator action needed.
+    /// Saga has decided to unwind. Some forward action failed; the
+    /// undo of each committed action is now running in reverse.
+    /// Distinct from `Running` so SDKs and operators can see "this
+    /// is going to fail, the compensations are running" without a
+    /// log dive (D-Sg-13).
+    Unwinding,
+    /// Forward chain ran to completion with no failures. Terminal.
+    Succeeded,
+    /// A forward action failed but no committed actions existed to
+    /// compensate, so no undo ran. Terminal.
+    Failed,
+    /// A forward action failed and one or more committed actions
+    /// were compensated by their undos in reverse. Terminal — the
+    /// saga's net effect is "nothing happened" if every undo ran
+    /// cleanly.
+    Unwound,
+    /// At least one undo errored or the saga's persisted version
+    /// is no longer registered. Terminal in the "operator action
+    /// needed" sense — automatic recovery does not retry these.
     Stuck,
-    /// Saga reached the `Done` cached state. Use [`OperationDetail`]
-    /// to see whether the result was Ok or Err (the latter means a
-    /// full unwind).
+    /// Coarse "saga reached Done" used by the list projection
+    /// before events are walked. The detail endpoint never returns
+    /// this — it refines to one of Succeeded / Failed / Unwound.
+    /// Kept on the wire so old clients see a familiar value during
+    /// the staged rollout of D-Sg-13.
     Done,
 }
 
@@ -511,6 +541,109 @@ pub struct OperationDetail {
     /// The persisted Steno `SagaDag` JSON. Opaque to clients; the
     /// adminUI surfaces it for operators who need the structure.
     pub dag: serde_json::Value,
+    /// Step-by-step progress derived from the DAG (total action
+    /// nodes) and the node-event log (which have completed, which
+    /// is in flight). Computed server-side from the persisted log,
+    /// so this value survives `tritond` restarts. RFD 00004
+    /// D-Sg-13.
+    pub progress: OperationProgress,
+    /// One entry per Action node in the DAG, in DAG order. Carries
+    /// each step's status, output JSON (on success), error JSON
+    /// (on failure), and the unwind state if a compensation ran.
+    /// The adminUI Operations detail panel renders this directly.
+    /// RFD 00004 SG-4 debug surface.
+    pub steps: Vec<OperationStep>,
+}
+
+/// Step-by-step progress of an operation. Stable across `tritond`
+/// restarts because both inputs (the DAG and the node-event log)
+/// are persisted by the SEC.
+///
+/// * `total_steps` — count of Action nodes in the DAG (Start / End
+///   markers are excluded; an operator who wants to count them
+///   should walk the raw `dag` themselves).
+/// * `completed_steps` — count of Action nodes whose log carries a
+///   terminal event (`succeeded` or `failed`). Counts the forward
+///   pass only; undos don't push this number up.
+/// * `current_step` — label of the action that is currently in
+///   flight (a `started` event with no terminal counterpart), or
+///   `None` when the saga is terminal or has not started any
+///   action yet. The label is the catalog's `label` field, not the
+///   internal node name.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct OperationProgress {
+    pub completed_steps: u32,
+    pub total_steps: u32,
+    #[serde(default)]
+    pub current_step: Option<String>,
+}
+
+/// Per-step status used in [`OperationStep::status`]. Lifecycle:
+/// `pending → running → (succeeded | failed)`. If the saga unwinds,
+/// each prior-Succeeded step transitions
+/// `succeeded → undo_running → (undone | undo_failed)`. A
+/// `succeeded` step that didn't need to be unwound (the saga
+/// succeeded overall) stays `succeeded`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus {
+    /// No events for this node yet.
+    Pending,
+    /// `Started` event observed; no terminal counterpart yet.
+    Running,
+    /// Forward action returned Ok.
+    Succeeded,
+    /// Forward action returned Err. The saga is unwinding or
+    /// terminal-failed.
+    Failed,
+    /// `UndoStarted` for a previously-Succeeded node; the undo is
+    /// running.
+    UndoRunning,
+    /// `UndoFinished` — the compensation completed cleanly.
+    Undone,
+    /// `UndoFailed` — the compensation itself errored. Saga is
+    /// terminal-stuck on this node.
+    UndoFailed,
+}
+
+/// One forward-or-undo event in a step's lifecycle, surfaced for
+/// operators who need to see the exact JSON Steno persisted (output
+/// value on Succeeded, structured ActionError on Failed). RFD 00004
+/// SG-4 debug surface.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct OperationStep {
+    /// Node index in the persisted DAG (`graph.nodes[index]`).
+    pub index: u32,
+    /// Internal node name (the `name` field on the catalog
+    /// declaration — e.g. `"instance"`, `"final_instance"`).
+    pub name: String,
+    /// Human-friendly label (catalog's `label`, e.g.
+    /// `"create_instance_record"`).
+    pub label: String,
+    /// Fully-qualified action identifier (catalog's `action_name`,
+    /// e.g. `"instance_create.create_record"`).
+    pub action_name: String,
+    /// Projected lifecycle state for this node.
+    pub status: StepStatus,
+    /// Output JSON from a `Succeeded` event, if any. Opaque to the
+    /// adminUI; rendered as `<pre>` for operators.
+    #[serde(default)]
+    pub output: Option<serde_json::Value>,
+    /// Structured error JSON from a `Failed` event, if any. Carries
+    /// whatever the action body packed into `ActionError` —
+    /// typically `{ "kind": "...", "message": "..." }` for our
+    /// catalog (e.g. `decode_store_error_kind` in `instance_create`).
+    #[serde(default)]
+    pub error: Option<serde_json::Value>,
+    /// Short human message extracted from `error` so the row can
+    /// render without an expanded JSON view. `None` when the step
+    /// hasn't failed.
+    #[serde(default)]
+    pub error_message: Option<String>,
+    /// Structured UndoFailed error JSON, if any. Only set when
+    /// `status == UndoFailed`.
+    #[serde(default)]
+    pub undo_error: Option<serde_json::Value>,
 }
 
 /// Path parameters for `/v2/operations/{operation_id}`.

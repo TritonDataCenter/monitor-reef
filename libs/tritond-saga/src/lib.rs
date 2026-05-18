@@ -71,6 +71,6 @@ pub use types::{
 // the `steno` crate directly.
 pub use steno::{
     ActionContext, ActionError, ActionFunc, ActionFuncResult, ActionResult, Dag, DagBuilder, Node,
-    NodeName, SagaCachedState, SagaDag, SagaId, SagaName, SagaNodeEvent, SagaResult as StenoResult,
-    SagaResultErr, SagaResultOk, UndoResult,
+    NodeName, SagaCachedState, SagaDag, SagaId, SagaName, SagaNodeEvent, SagaNodeEventType,
+    SagaNodeId, SagaResult as StenoResult, SagaResultErr, SagaResultOk, UndoResult,
 };

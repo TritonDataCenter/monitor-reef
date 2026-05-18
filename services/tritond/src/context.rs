@@ -191,6 +191,10 @@ pub struct ApiContext {
 pub struct SweeperConfig {
     pub interval: std::time::Duration,
     pub stale_after: std::time::Duration,
+    /// How long terminal sagas are kept before the retention pass
+    /// deletes them. Default 30 days (RFD 00004 SG-4). Stuck sagas
+    /// are exempt and stay until human cleanup.
+    pub saga_retention: std::time::Duration,
 }
 
 /// Build a default `SagaExecutor` over an in-memory SecStore, with

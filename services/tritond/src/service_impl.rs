@@ -1741,6 +1741,7 @@ pub async fn start_server_with_context(
             Arc::clone(&context.saga),
             sw.interval,
             sw.stale_after,
+            sw.saga_retention,
         );
     }
 

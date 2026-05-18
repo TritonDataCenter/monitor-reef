@@ -12009,6 +12009,14 @@
             "description": "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.",
             "type": "string"
           },
+          "progress": {
+            "description": "Step-by-step progress derived from the DAG (total action nodes) and the node-event log (which have completed, which is in flight). Computed server-side from the persisted log, so this value survives `tritond` restarts. RFD 00004 D-Sg-13.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperationProgress"
+              }
+            ]
+          },
           "state": {
             "description": "Public state (see [`OperationState`]).",
             "allOf": [
@@ -12048,30 +12056,91 @@
           "dag",
           "id",
           "kind",
+          "progress",
           "state",
           "time_created",
           "version"
         ]
       },
+      "OperationProgress": {
+        "description": "Step-by-step progress of an operation. Stable across `tritond` restarts because both inputs (the DAG and the node-event log) are persisted by the SEC.\n\n* `total_steps` — count of Action nodes in the DAG (Start / End markers are excluded; an operator who wants to count them should walk the raw `dag` themselves). * `completed_steps` — count of Action nodes whose log carries a terminal event (`succeeded` or `failed`). Counts the forward pass only; undos don't push this number up. * `current_step` — label of the action that is currently in flight (a `started` event with no terminal counterpart), or `None` when the saga is terminal or has not started any action yet. The label is the catalog's `label` field, not the internal node name.",
+        "type": "object",
+        "properties": {
+          "completed_steps": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "current_step": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "total_steps": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "completed_steps",
+          "total_steps"
+        ]
+      },
       "OperationState": {
-        "description": "Public state of a long-running operation. Maps from Steno's `SagaCachedState` + the saga's `stuck_reason` so operators can distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one field. The string values are stable on the wire and match the RFD 00004 D-Sg-13 enum.",
+        "description": "Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\n\nThe list endpoint (`GET /v2/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v2/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome.",
         "oneOf": [
           {
-            "description": "Saga is in the forward direction.",
+            "description": "Saga has been created and the record is durable, but no action body has reported a `started` event yet. Brief window between `saga_create` and the first action's first log line.",
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          {
+            "description": "Saga is in the forward direction with at least one action having started.",
             "type": "string",
             "enum": [
               "running"
             ]
           },
           {
-            "description": "At least one undo errored or the saga's persisted version is no longer registered. Operator action needed.",
+            "description": "Saga has decided to unwind. Some forward action failed; the undo of each committed action is now running in reverse. Distinct from `Running` so SDKs and operators can see \"this is going to fail, the compensations are running\" without a log dive (D-Sg-13).",
+            "type": "string",
+            "enum": [
+              "unwinding"
+            ]
+          },
+          {
+            "description": "Forward chain ran to completion with no failures. Terminal.",
+            "type": "string",
+            "enum": [
+              "succeeded"
+            ]
+          },
+          {
+            "description": "A forward action failed but no committed actions existed to compensate, so no undo ran. Terminal.",
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          },
+          {
+            "description": "A forward action failed and one or more committed actions were compensated by their undos in reverse. Terminal — the saga's net effect is \"nothing happened\" if every undo ran cleanly.",
+            "type": "string",
+            "enum": [
+              "unwound"
+            ]
+          },
+          {
+            "description": "At least one undo errored or the saga's persisted version is no longer registered. Terminal in the \"operator action needed\" sense — automatic recovery does not retry these.",
             "type": "string",
             "enum": [
               "stuck"
             ]
           },
           {
-            "description": "Saga reached the `Done` cached state. Use [`OperationDetail`] to see whether the result was Ok or Err (the latter means a full unwind).",
+            "description": "Coarse \"saga reached Done\" used by the list projection before events are walked. The detail endpoint never returns this — it refines to one of Succeeded / Failed / Unwound. Kept on the wire so old clients see a familiar value during the staged rollout of D-Sg-13.",
             "type": "string",
             "enum": [
               "done"

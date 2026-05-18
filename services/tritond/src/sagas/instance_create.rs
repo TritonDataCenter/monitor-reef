@@ -102,6 +102,20 @@ fn default_true() -> bool {
     true
 }
 
+/// Per-action timeouts (RFD 00004 D-Sg-9 / Invariant 9). Each
+/// catalog action wraps its body in `with_action_timeout`; expiry
+/// surfaces as an `ActionError` with kind=`action_timeout` and
+/// triggers the saga's unwind tail.
+///
+/// The `await` action's cap matches the existing
+/// `TRITOND_STALE_CLAIM_THRESHOLD_SECS` default (600 s) so a
+/// wedged agent claim and the saga awaiting it fail together.
+/// The other actions are short store mutations; 30 s is far
+/// outside what any of them should ever take in practice but
+/// catches a wedged FDB / hanging metadata write.
+const ACTION_TIMEOUT_STORE: std::time::Duration = std::time::Duration::from_secs(30);
+const ACTION_TIMEOUT_AWAIT_PROVISION: std::time::Duration = std::time::Duration::from_secs(600);
+
 type Ctx = ActionContext<TritondSagaType>;
 
 /// Register every action in this saga onto the executor's
@@ -211,15 +225,22 @@ pub fn build_dag(params: &InstanceCreateParams) -> SagaResult<Arc<SagaDag>> {
 // ---------------------------------------------------------------
 
 async fn create_instance_record(ctx: Ctx) -> Result<Instance, ActionError> {
-    let user_ctx = ctx.user_data();
-    fence_check(user_ctx).await?;
-    let store = user_ctx.store().clone();
-    let params: InstanceCreateParams = ctx.saga_params()?;
-    let result: InstanceCreateResult = store
-        .create_instance(params.tenant_id, params.project_id, params.request)
-        .await
-        .map_err(store_err_to_action_err)?;
-    Ok(result.instance)
+    crate::sagas::with_action_timeout(
+        "instance_create.create_record",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: InstanceCreateParams = ctx.saga_params()?;
+            let result: InstanceCreateResult = store
+                .create_instance(params.tenant_id, params.project_id, params.request)
+                .await
+                .map_err(store_err_to_action_err)?;
+            Ok(result.instance)
+        },
+    )
+    .await
 }
 
 async fn create_instance_record_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
@@ -234,21 +255,28 @@ async fn create_instance_record_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
 }
 
 async fn pin_host_cn(ctx: Ctx) -> Result<Instance, ActionError> {
-    let user_ctx = ctx.user_data();
-    fence_check(user_ctx).await?;
-    let store = user_ctx.store().clone();
-    let params: InstanceCreateParams = ctx.saga_params()?;
-    let instance: Instance = ctx.lookup("instance")?;
-    match params.target_cn_uuid {
-        Some(cn) => {
-            let updated: Instance = store
-                .set_instance_host_cn(instance.id, Some(cn))
-                .await
-                .map_err(store_err_to_action_err)?;
-            Ok(updated)
-        }
-        None => Ok(instance),
-    }
+    crate::sagas::with_action_timeout(
+        "instance_create.pin_host_cn",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: InstanceCreateParams = ctx.saga_params()?;
+            let instance: Instance = ctx.lookup("instance")?;
+            match params.target_cn_uuid {
+                Some(cn) => {
+                    let updated: Instance = store
+                        .set_instance_host_cn(instance.id, Some(cn))
+                        .await
+                        .map_err(store_err_to_action_err)?;
+                    Ok(updated)
+                }
+                None => Ok(instance),
+            }
+        },
+    )
+    .await
 }
 
 async fn pin_host_cn_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
@@ -266,59 +294,73 @@ async fn pin_host_cn_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
 }
 
 async fn persist_root_pw_meta(ctx: Ctx) -> Result<(), ActionError> {
-    let user_ctx = ctx.user_data();
-    fence_check(user_ctx).await?;
-    let log = user_ctx.log().clone();
-    let store = user_ctx.store().clone();
-    let instance: Instance = ctx.lookup("instance")?;
-    // Auto-generate the initial root password and persist it as
-    // `instance/root_pw` at instance scope with `guest_visible=false`.
-    // See the original handler comment block for the full rationale.
-    let pw = generate_random_password();
-    let meta = MetaValue {
-        value: serde_json::Value::String(pw.expose().to_string()),
-        guest_visible: false,
-        guest_writable: false,
-        updated_by: "system".to_string(),
-        updated_at: chrono::Utc::now(),
-    };
-    match store
-        .set_meta(MetaScope::Instance, instance.id, "instance/root_pw", meta)
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            // Mirror the original "WARN, don't fail" behaviour: a
-            // transient FDB blip writing the meta should not roll
-            // the entire create back. Log and move on; operator can
-            // re-set the password manually via `tcadm meta set`.
-            slog::warn!(
-                log,
-                "instance-create: failed to persist auto-generated root_pw; operator must set manually";
-                "instance_id" => %instance.id,
-                "error" => %e,
-            );
-            Ok(())
-        }
-    }
+    crate::sagas::with_action_timeout(
+        "instance_create.persist_root_pw_meta",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let log = user_ctx.log().clone();
+            let store = user_ctx.store().clone();
+            let instance: Instance = ctx.lookup("instance")?;
+            // Auto-generate the initial root password and persist it as
+            // `instance/root_pw` at instance scope with `guest_visible=false`.
+            // See the original handler comment block for the full rationale.
+            let pw = generate_random_password();
+            let meta = MetaValue {
+                value: serde_json::Value::String(pw.expose().to_string()),
+                guest_visible: false,
+                guest_writable: false,
+                updated_by: "system".to_string(),
+                updated_at: chrono::Utc::now(),
+            };
+            match store
+                .set_meta(MetaScope::Instance, instance.id, "instance/root_pw", meta)
+                .await
+            {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    // Mirror the original "WARN, don't fail" behaviour: a
+                    // transient FDB blip writing the meta should not roll
+                    // the entire create back. Log and move on; operator can
+                    // re-set the password manually via `tcadm meta set`.
+                    slog::warn!(
+                        log,
+                        "instance-create: failed to persist auto-generated root_pw; operator must set manually";
+                        "instance_id" => %instance.id,
+                        "error" => %e,
+                    );
+                    Ok(())
+                }
+            }
+        },
+    )
+    .await
 }
 
 async fn enqueue_provision_job(ctx: Ctx) -> Result<tritond_store::ProvisioningJob, ActionError> {
-    let user_ctx = ctx.user_data();
-    fence_check(user_ctx).await?;
-    let store = user_ctx.store().clone();
-    let params: InstanceCreateParams = ctx.saga_params()?;
-    let instance: Instance = ctx.lookup("instance_after_pin")?;
-    let job: tritond_store::ProvisioningJob = store
-        .enqueue_job(NewJob {
-            kind: JobKind::Provision {
-                instance_id: instance.id,
-            },
-            target_cn_uuid: params.target_cn_uuid,
-        })
-        .await
-        .map_err(store_err_to_action_err)?;
-    Ok(job)
+    crate::sagas::with_action_timeout(
+        "instance_create.enqueue_provision_job",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: InstanceCreateParams = ctx.saga_params()?;
+            let instance: Instance = ctx.lookup("instance_after_pin")?;
+            let job: tritond_store::ProvisioningJob = store
+                .enqueue_job(NewJob {
+                    kind: JobKind::Provision {
+                        instance_id: instance.id,
+                    },
+                    target_cn_uuid: params.target_cn_uuid,
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            Ok(job)
+        },
+    )
+    .await
 }
 
 async fn enqueue_provision_job_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
@@ -364,48 +406,44 @@ async fn await_provision_terminal(ctx: Ctx) -> Result<(), ActionError> {
         // existing fire-and-forget behaviour is preserved.
         return Ok(());
     }
-    let user_ctx = ctx.user_data();
-    fence_check(user_ctx).await?;
-    let store = user_ctx.store().clone();
-    let job: tritond_store::ProvisioningJob = ctx.lookup("provision_job")?;
-    let job_id = job.id;
-
-    // Poll cadence: every 50 ms, the stub provisioner's poll
-    // interval. The hard cap is hooked up by D-Sg-9 (per-action
-    // timeout); without it, a wedged agent would hang the POST
-    // forever. SG-2 keeps a generous internal cap so tests pass.
-    const POLL: std::time::Duration = std::time::Duration::from_millis(50);
-    const HARD_CAP: std::time::Duration = std::time::Duration::from_secs(120);
-    let start = std::time::Instant::now();
-    loop {
-        let current = store
-            .get_job(job_id)
-            .await
-            .map_err(store_err_to_action_err)?;
-        match current.status.kind() {
-            JobStatusKind::Completed => return Ok(()),
-            JobStatusKind::Failed => {
-                return Err(ActionError::action_failed(serde_json::json!({
-                    "kind": "provision_failed",
-                    "job_id": job_id.to_string(),
-                    "reason": match &current.status {
-                        tritond_store::JobStatus::Failed { reason } => reason.clone(),
-                        _ => "(no reason)".to_string(),
-                    },
-                })));
-            }
-            _ => {
-                if start.elapsed() > HARD_CAP {
-                    return Err(ActionError::action_failed(serde_json::json!({
-                        "kind": "provision_timeout",
-                        "job_id": job_id.to_string(),
-                        "elapsed_secs": start.elapsed().as_secs(),
-                    })));
+    // D-Sg-9: the outer timeout wraps the entire poll loop. When
+    // it fires the saga unwinds and the existing enqueue-Delete
+    // undo cleans up the half-started instance. The poll cadence
+    // itself stays short (50 ms) so the in-process stub provisioner
+    // doesn't run integration tests slowly.
+    crate::sagas::with_action_timeout(
+        "instance_create.await_provision_terminal",
+        ACTION_TIMEOUT_AWAIT_PROVISION,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let job: tritond_store::ProvisioningJob = ctx.lookup("provision_job")?;
+            let job_id = job.id;
+            const POLL: std::time::Duration = std::time::Duration::from_millis(50);
+            loop {
+                let current = store
+                    .get_job(job_id)
+                    .await
+                    .map_err(store_err_to_action_err)?;
+                match current.status.kind() {
+                    JobStatusKind::Completed => return Ok(()),
+                    JobStatusKind::Failed => {
+                        return Err(ActionError::action_failed(serde_json::json!({
+                            "kind": "provision_failed",
+                            "job_id": job_id.to_string(),
+                            "reason": match &current.status {
+                                tritond_store::JobStatus::Failed { reason } => reason.clone(),
+                                _ => "(no reason)".to_string(),
+                            },
+                        })));
+                    }
+                    _ => tokio::time::sleep(POLL).await,
                 }
-                tokio::time::sleep(POLL).await;
             }
-        }
-    }
+        },
+    )
+    .await
 }
 
 /// Re-read the just-provisioned instance so the response carries
@@ -414,15 +452,22 @@ async fn await_provision_terminal(ctx: Ctx) -> Result<(), ActionError> {
 /// output before this action because action 4's output became the
 /// `ProvisioningJob` once SG-2b added the await step.
 async fn finish(ctx: Ctx) -> Result<Instance, ActionError> {
-    let user_ctx = ctx.user_data();
-    fence_check(user_ctx).await?;
-    let store = user_ctx.store().clone();
-    let instance: Instance = ctx.lookup("instance_after_pin")?;
-    let refreshed: Instance = store
-        .get_instance(instance.id)
-        .await
-        .map_err(store_err_to_action_err)?;
-    Ok(refreshed)
+    crate::sagas::with_action_timeout(
+        "instance_create.finish",
+        ACTION_TIMEOUT_STORE,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let instance: Instance = ctx.lookup("instance_after_pin")?;
+            let refreshed: Instance = store
+                .get_instance(instance.id)
+                .await
+                .map_err(store_err_to_action_err)?;
+            Ok(refreshed)
+        },
+    )
+    .await
 }
 
 async fn no_op_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {

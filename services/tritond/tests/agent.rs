@@ -1569,6 +1569,9 @@ async fn sweeper_reaps_stale_inprogress_job() {
         .with_sweeper(SweeperConfig {
             interval: Duration::from_millis(200),
             stale_after: Duration::from_millis(500),
+            // Retention pass is irrelevant to this test; pick a
+            // value far longer than any test runtime.
+            saga_retention: Duration::from_secs(86_400),
         });
     let server = start_server_with_context("127.0.0.1:0", context)
         .await

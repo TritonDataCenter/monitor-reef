@@ -33,8 +33,13 @@
 //!   wakes (default 60).
 //! * `TRITOND_STALE_CLAIM_THRESHOLD_SECS` — how old a claim must
 //!   be before it's considered stale (default 600 = 10 min).
+//! * `TRITOND_SAGA_RETENTION_SECS` — how long a terminal saga is
+//!   kept in FDB before the retention pass deletes it (default
+//!   `30 * 86400` = 30 days). RFD 00004 SG-4. Stuck sagas are
+//!   exempt from retention — `stuck_reason` is operator-actionable
+//!   and never expires automatically.
 //!
-//! Both env-driven so deployments tighten or loosen without a
+//! All env-driven so deployments tighten or loosen without a
 //! rebuild.
 
 use std::sync::Arc;
@@ -68,8 +73,9 @@ pub fn spawn(
     saga: Arc<SagaExecutor>,
     interval: Duration,
     threshold: Duration,
+    saga_retention: Duration,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(run(store, audit, saga, interval, threshold))
+    tokio::spawn(run(store, audit, saga, interval, threshold, saga_retention))
 }
 
 async fn run(
@@ -78,10 +84,12 @@ async fn run(
     saga: Arc<SagaExecutor>,
     interval: Duration,
     threshold: Duration,
+    saga_retention: Duration,
 ) {
     info!(
         interval_secs = interval.as_secs(),
         threshold_secs = threshold.as_secs(),
+        saga_retention_secs = saga_retention.as_secs(),
         "stale-claim sweeper starting",
     );
     loop {
@@ -119,6 +127,24 @@ async fn run(
             Ok(n) => info!(adopted = n, "tritond-saga: adopted stale-SEC sagas"),
             Err(e) => {
                 warn!(error = %e, "tritond-saga: reassign_stale_sec_sagas failed; will retry next interval")
+            }
+        }
+        // RFD 00004 SG-4 retention pass: drop every terminal saga
+        // whose `time_done` is older than `saga_retention`. Stuck
+        // sagas are exempt — those carry an operator-actionable
+        // `stuck_reason` and stay until human cleanup.
+        let saga_retention_cutoff = match chrono::Duration::from_std(saga_retention) {
+            Ok(d) => Utc::now() - d,
+            Err(e) => {
+                warn!(error = %e, "saga retention doesn't fit chrono::Duration; skipping retention sweep");
+                continue;
+            }
+        };
+        match saga.prune_terminal_sagas_older_than(saga_retention_cutoff).await {
+            Ok(0) => debug!("no aged-out terminal sagas this sweep"),
+            Ok(n) => info!(pruned = n, "tritond-saga: pruned aged-out terminal sagas"),
+            Err(e) => {
+                warn!(error = %e, "tritond-saga: prune_terminal_sagas_older_than failed; will retry next interval")
             }
         }
     }

@@ -77,6 +77,26 @@ use crate::VERSION;
 use crate::context::ApiContext;
 use crate::scope::{image_visible_to, ssh_key_visible_to};
 
+/// Maximum allowed length for an `Idempotency-Key` header value.
+/// Stripe uses 255 (the de-facto upper bound for an HTTP header
+/// value clients are likely to honour); we mirror that. A longer
+/// value is treated as absent rather than rejecting the request —
+/// idempotency is best-effort metadata, not a precondition.
+const MAX_IDEMPOTENCY_KEY_LEN: usize = 255;
+
+/// Read the `Idempotency-Key` request header (case-insensitive),
+/// trim whitespace, drop empty / oversize values. Returns `None`
+/// when the header is absent or unusable so the saga records "no
+/// key" rather than a malformed string.
+fn idempotency_key_from_headers(rqctx: &RequestContext<ApiContext>) -> Option<String> {
+    let raw = rqctx.request.headers().get("idempotency-key")?;
+    let s = raw.to_str().ok()?.trim();
+    if s.is_empty() || s.len() > MAX_IDEMPOTENCY_KEY_LEN {
+        return None;
+    }
+    Some(s.to_string())
+}
+
 pub(crate) async fn list_project_instances(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectPath>,
@@ -211,13 +231,18 @@ pub(crate) async fn create_project_instance(
     // / Disk / DhcpLease rows). See
     // `services/tritond/src/sagas/instance_create.rs` for the chain
     // and the unwind matrix; the RFD is 00004 SG-2.
+    // RFD 00004 D-Sg-5 / SG-4: the `Idempotency-Key` request header
+    // rides into the saga's Params so a future request whose key
+    // matches an in-flight or completed saga can be projected back
+    // to the original operation handle (store-side dedup is the
+    // 202-conversion piece; for now the key is captured durably on
+    // the saga record so operators can correlate retries).
     let saga_params = crate::sagas::instance_create::InstanceCreateParams {
         tenant_id,
         project_id,
         request: req,
         target_cn_uuid,
-        // SG-4 will plumb the Idempotency-Key header here.
-        idempotency_key: None,
+        idempotency_key: idempotency_key_from_headers(&rqctx),
         await_provision_terminal: ctx.saga_wait_for_agent,
     };
     let saga_dag = match crate::sagas::instance_create::build_dag(&saga_params) {

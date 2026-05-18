@@ -337,6 +337,100 @@ pub mod types {
         No { reason: ::std::string::String },
     }
 
+    #[doc = "One invalidation directive the agent should apply against the kmod's v2p cache. Fired by tritond on NIC teardown / migration. `(vni, peer_ip)` identifies the entry to drop; the agent applies it to every local port that might have cached the peer."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One invalidation directive the agent should apply against the kmod's v2p cache. Fired by tritond on NIC teardown / migration. `(vni, peer_ip)` identifies the entry to drop; the agent applies it to every local port that might have cached the peer.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"peer_ip\","]
+    #[doc = "    \"seq\","]
+    #[doc = "    \"vni\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"peer_ip\": {"]
+    #[doc = "      \"description\": \"Peer IP (v4 or v6) as a string. Family inferred at parse time on the agent.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"seq\": {"]
+    #[doc = "      \"description\": \"Monotonic per-tritond sequence number. The agent's `since` cursor uses this to dedup on retry / agent restart.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"vni\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AgentPeerInvalidation {
+        #[doc = "Peer IP (v4 or v6) as a string. Family inferred at parse time on the agent."]
+        pub peer_ip: ::std::string::String,
+        #[doc = "Monotonic per-tritond sequence number. The agent's `since` cursor uses this to dedup on retry / agent restart."]
+        pub seq: u64,
+        pub vni: u32,
+    }
+
+    impl AgentPeerInvalidation {
+        pub fn builder() -> builder::AgentPeerInvalidation {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `GET /v2/agent/peer-invalidations`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v2/agent/peer-invalidations`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"invalidations\","]
+    #[doc = "    \"tail_seq\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"invalidations\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/AgentPeerInvalidation\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"tail_seq\": {"]
+    #[doc = "      \"description\": \"Highest sequence number returned; the agent passes this as `since` on its next poll.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AgentPeerInvalidationsResponse {
+        pub invalidations: ::std::vec::Vec<AgentPeerInvalidation>,
+        #[doc = "Highest sequence number returned; the agent passes this as `since` on its next poll."]
+        pub tail_seq: u64,
+    }
+
+    impl AgentPeerInvalidationsResponse {
+        pub fn builder() -> builder::AgentPeerInvalidationsResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "Response body for `GET /v2/agent/peer`. Matches the on-wire shape of [`proteus_api::peer::PeerEntry`] (guest MAC + underlay IPv6) plus a server-suggested TTL the agent should honour when calling [`proteus_api::peer::AddPeerEntryRequest`]."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6644,6 +6738,7 @@ pub mod types {
     #[doc = "    \"dag\","]
     #[doc = "    \"id\","]
     #[doc = "    \"kind\","]
+    #[doc = "    \"progress\","]
     #[doc = "    \"state\","]
     #[doc = "    \"time_created\","]
     #[doc = "    \"version\""]
@@ -6682,6 +6777,14 @@ pub mod types {
     #[doc = "    \"kind\": {"]
     #[doc = "      \"description\": \"Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.\","]
     #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"progress\": {"]
+    #[doc = "      \"description\": \"Step-by-step progress derived from the DAG (total action nodes) and the node-event log (which have completed, which is in flight). Computed server-side from the persisted log, so this value survives `tritond` restarts. RFD 00004 D-Sg-13.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/OperationProgress\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Public state (see [`OperationState`]).\","]
@@ -6739,6 +6842,8 @@ pub mod types {
         pub id: ::uuid::Uuid,
         #[doc = "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab."]
         pub kind: ::std::string::String,
+        #[doc = "Step-by-step progress derived from the DAG (total action nodes) and the node-event log (which have completed, which is in flight). Computed server-side from the persisted log, so this value survives `tritond` restarts. RFD 00004 D-Sg-13."]
+        pub progress: OperationProgress,
         #[doc = "Public state (see [`OperationState`])."]
         pub state: OperationState,
         #[doc = "Set when the saga ends `Stuck` (Done-with-undo-error or missing-version). Human-readable."]
@@ -6759,30 +6864,114 @@ pub mod types {
         }
     }
 
-    #[doc = "Public state of a long-running operation. Maps from Steno's `SagaCachedState` + the saga's `stuck_reason` so operators can distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one field. The string values are stable on the wire and match the RFD 00004 D-Sg-13 enum."]
+    #[doc = "Step-by-step progress of an operation. Stable across `tritond` restarts because both inputs (the DAG and the node-event log) are persisted by the SEC.\n\n* `total_steps` — count of Action nodes in the DAG (Start / End markers are excluded; an operator who wants to count them should walk the raw `dag` themselves). * `completed_steps` — count of Action nodes whose log carries a terminal event (`succeeded` or `failed`). Counts the forward pass only; undos don't push this number up. * `current_step` — label of the action that is currently in flight (a `started` event with no terminal counterpart), or `None` when the saga is terminal or has not started any action yet. The label is the catalog's `label` field, not the internal node name."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Public state of a long-running operation. Maps from Steno's `SagaCachedState` + the saga's `stuck_reason` so operators can distinguish `Running` / `Unwinding` / `Done` / `Stuck` from one field. The string values are stable on the wire and match the RFD 00004 D-Sg-13 enum.\","]
+    #[doc = "  \"description\": \"Step-by-step progress of an operation. Stable across `tritond` restarts because both inputs (the DAG and the node-event log) are persisted by the SEC.\\n\\n* `total_steps` — count of Action nodes in the DAG (Start / End markers are excluded; an operator who wants to count them should walk the raw `dag` themselves). * `completed_steps` — count of Action nodes whose log carries a terminal event (`succeeded` or `failed`). Counts the forward pass only; undos don't push this number up. * `current_step` — label of the action that is currently in flight (a `started` event with no terminal counterpart), or `None` when the saga is terminal or has not started any action yet. The label is the catalog's `label` field, not the internal node name.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"completed_steps\","]
+    #[doc = "    \"total_steps\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"completed_steps\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"current_step\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"total_steps\": {"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct OperationProgress {
+        pub completed_steps: u32,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub current_step: ::std::option::Option<::std::string::String>,
+        pub total_steps: u32,
+    }
+
+    impl OperationProgress {
+        pub fn builder() -> builder::OperationProgress {
+            Default::default()
+        }
+    }
+
+    #[doc = "Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\n\nThe list endpoint (`GET /v2/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v2/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Public state of a long-running operation (RFD 00004 D-Sg-13). String values are stable on the wire.\\n\\nThe list endpoint (`GET /v2/operations`) projects coarse state — Pending / Running / Unwinding / Done / Stuck — derived from the saga record alone (cheap). The detail endpoint (`GET /v2/operations/{id}`) refines `Done` into one of `Succeeded` / `Failed` / `Unwound` by walking the persisted node-event log. Operators reading a row in the list see the coarse view; expanding the row reveals the refined outcome.\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"Saga is in the forward direction.\","]
+    #[doc = "      \"description\": \"Saga has been created and the record is durable, but no action body has reported a `started` event yet. Brief window between `saga_create` and the first action's first log line.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"pending\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Saga is in the forward direction with at least one action having started.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
     #[doc = "        \"running\""]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"At least one undo errored or the saga's persisted version is no longer registered. Operator action needed.\","]
+    #[doc = "      \"description\": \"Saga has decided to unwind. Some forward action failed; the undo of each committed action is now running in reverse. Distinct from `Running` so SDKs and operators can see \\\"this is going to fail, the compensations are running\\\" without a log dive (D-Sg-13).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unwinding\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Forward chain ran to completion with no failures. Terminal.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"succeeded\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A forward action failed but no committed actions existed to compensate, so no undo ran. Terminal.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"failed\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"A forward action failed and one or more committed actions were compensated by their undos in reverse. Terminal — the saga's net effect is \\\"nothing happened\\\" if every undo ran cleanly.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unwound\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"At least one undo errored or the saga's persisted version is no longer registered. Terminal in the \\\"operator action needed\\\" sense — automatic recovery does not retry these.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
     #[doc = "        \"stuck\""]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    {"]
-    #[doc = "      \"description\": \"Saga reached the `Done` cached state. Use [`OperationDetail`] to see whether the result was Ok or Err (the latter means a full unwind).\","]
+    #[doc = "      \"description\": \"Coarse \\\"saga reached Done\\\" used by the list projection before events are walked. The detail endpoint never returns this — it refines to one of Succeeded / Failed / Unwound. Kept on the wire so old clients see a familiar value during the staged rollout of D-Sg-13.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
     #[doc = "        \"done\""]
@@ -6806,13 +6995,28 @@ pub mod types {
         schemars :: JsonSchema,
     )]
     pub enum OperationState {
-        #[doc = "Saga is in the forward direction."]
+        #[doc = "Saga has been created and the record is durable, but no action body has reported a `started` event yet. Brief window between `saga_create` and the first action's first log line."]
+        #[serde(rename = "pending")]
+        Pending,
+        #[doc = "Saga is in the forward direction with at least one action having started."]
         #[serde(rename = "running")]
         Running,
-        #[doc = "At least one undo errored or the saga's persisted version is no longer registered. Operator action needed."]
+        #[doc = "Saga has decided to unwind. Some forward action failed; the undo of each committed action is now running in reverse. Distinct from `Running` so SDKs and operators can see \"this is going to fail, the compensations are running\" without a log dive (D-Sg-13)."]
+        #[serde(rename = "unwinding")]
+        Unwinding,
+        #[doc = "Forward chain ran to completion with no failures. Terminal."]
+        #[serde(rename = "succeeded")]
+        Succeeded,
+        #[doc = "A forward action failed but no committed actions existed to compensate, so no undo ran. Terminal."]
+        #[serde(rename = "failed")]
+        Failed,
+        #[doc = "A forward action failed and one or more committed actions were compensated by their undos in reverse. Terminal — the saga's net effect is \"nothing happened\" if every undo ran cleanly."]
+        #[serde(rename = "unwound")]
+        Unwound,
+        #[doc = "At least one undo errored or the saga's persisted version is no longer registered. Terminal in the \"operator action needed\" sense — automatic recovery does not retry these."]
         #[serde(rename = "stuck")]
         Stuck,
-        #[doc = "Saga reached the `Done` cached state. Use [`OperationDetail`] to see whether the result was Ok or Err (the latter means a full unwind)."]
+        #[doc = "Coarse \"saga reached Done\" used by the list projection before events are walked. The detail endpoint never returns this — it refines to one of Succeeded / Failed / Unwound. Kept on the wire so old clients see a familiar value during the staged rollout of D-Sg-13."]
         #[serde(rename = "done")]
         Done,
     }
@@ -6820,7 +7024,12 @@ pub mod types {
     impl ::std::fmt::Display for OperationState {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
+                Self::Pending => f.write_str("pending"),
                 Self::Running => f.write_str("running"),
+                Self::Unwinding => f.write_str("unwinding"),
+                Self::Succeeded => f.write_str("succeeded"),
+                Self::Failed => f.write_str("failed"),
+                Self::Unwound => f.write_str("unwound"),
                 Self::Stuck => f.write_str("stuck"),
                 Self::Done => f.write_str("done"),
             }
@@ -6831,7 +7040,12 @@ pub mod types {
         type Err = self::error::ConversionError;
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
+                "pending" => Ok(Self::Pending),
                 "running" => Ok(Self::Running),
+                "unwinding" => Ok(Self::Unwinding),
+                "succeeded" => Ok(Self::Succeeded),
+                "failed" => Ok(Self::Failed),
+                "unwound" => Ok(Self::Unwound),
                 "stuck" => Ok(Self::Stuck),
                 "done" => Ok(Self::Done),
                 _ => Err("invalid value".into()),
@@ -10549,6 +10763,145 @@ pub mod types {
                 Self {
                     id: Ok(value.id),
                     poked_nodes: Ok(value.poked_nodes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AgentPeerInvalidation {
+            peer_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
+            seq: ::std::result::Result<u64, ::std::string::String>,
+            vni: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AgentPeerInvalidation {
+            fn default() -> Self {
+                Self {
+                    peer_ip: Err("no value supplied for peer_ip".to_string()),
+                    seq: Err("no value supplied for seq".to_string()),
+                    vni: Err("no value supplied for vni".to_string()),
+                }
+            }
+        }
+
+        impl AgentPeerInvalidation {
+            pub fn peer_ip<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.peer_ip = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for peer_ip: {e}"));
+                self
+            }
+            pub fn seq<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.seq = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for seq: {e}"));
+                self
+            }
+            pub fn vni<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.vni = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for vni: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AgentPeerInvalidation> for super::AgentPeerInvalidation {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AgentPeerInvalidation,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    peer_ip: value.peer_ip?,
+                    seq: value.seq?,
+                    vni: value.vni?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AgentPeerInvalidation> for AgentPeerInvalidation {
+            fn from(value: super::AgentPeerInvalidation) -> Self {
+                Self {
+                    peer_ip: Ok(value.peer_ip),
+                    seq: Ok(value.seq),
+                    vni: Ok(value.vni),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AgentPeerInvalidationsResponse {
+            invalidations: ::std::result::Result<
+                ::std::vec::Vec<super::AgentPeerInvalidation>,
+                ::std::string::String,
+            >,
+            tail_seq: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AgentPeerInvalidationsResponse {
+            fn default() -> Self {
+                Self {
+                    invalidations: Err("no value supplied for invalidations".to_string()),
+                    tail_seq: Err("no value supplied for tail_seq".to_string()),
+                }
+            }
+        }
+
+        impl AgentPeerInvalidationsResponse {
+            pub fn invalidations<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::AgentPeerInvalidation>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.invalidations = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for invalidations: {e}"));
+                self
+            }
+            pub fn tail_seq<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tail_seq = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tail_seq: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AgentPeerInvalidationsResponse>
+            for super::AgentPeerInvalidationsResponse
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AgentPeerInvalidationsResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    invalidations: value.invalidations?,
+                    tail_seq: value.tail_seq?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AgentPeerInvalidationsResponse>
+            for AgentPeerInvalidationsResponse
+        {
+            fn from(value: super::AgentPeerInvalidationsResponse) -> Self {
+                Self {
+                    invalidations: Ok(value.invalidations),
+                    tail_seq: Ok(value.tail_seq),
                 }
             }
         }
@@ -17651,6 +18004,7 @@ pub mod types {
             dag: ::std::result::Result<::serde_json::Value, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             kind: ::std::result::Result<::std::string::String, ::std::string::String>,
+            progress: ::std::result::Result<super::OperationProgress, ::std::string::String>,
             state: ::std::result::Result<super::OperationState, ::std::string::String>,
             stuck_reason: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -17677,6 +18031,7 @@ pub mod types {
                     dag: Err("no value supplied for dag".to_string()),
                     id: Err("no value supplied for id".to_string()),
                     kind: Err("no value supplied for kind".to_string()),
+                    progress: Err("no value supplied for progress".to_string()),
                     state: Err("no value supplied for state".to_string()),
                     stuck_reason: Ok(Default::default()),
                     time_created: Err("no value supplied for time_created".to_string()),
@@ -17757,6 +18112,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for kind: {e}"));
                 self
             }
+            pub fn progress<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::OperationProgress>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.progress = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for progress: {e}"));
+                self
+            }
             pub fn state<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::OperationState>,
@@ -17824,6 +18189,7 @@ pub mod types {
                     dag: value.dag?,
                     id: value.id?,
                     kind: value.kind?,
+                    progress: value.progress?,
                     state: value.state?,
                     stuck_reason: value.stuck_reason?,
                     time_created: value.time_created?,
@@ -17843,11 +18209,88 @@ pub mod types {
                     dag: Ok(value.dag),
                     id: Ok(value.id),
                     kind: Ok(value.kind),
+                    progress: Ok(value.progress),
                     state: Ok(value.state),
                     stuck_reason: Ok(value.stuck_reason),
                     time_created: Ok(value.time_created),
                     time_done: Ok(value.time_done),
                     version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct OperationProgress {
+            completed_steps: ::std::result::Result<u32, ::std::string::String>,
+            current_step: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            total_steps: ::std::result::Result<u32, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for OperationProgress {
+            fn default() -> Self {
+                Self {
+                    completed_steps: Err("no value supplied for completed_steps".to_string()),
+                    current_step: Ok(Default::default()),
+                    total_steps: Err("no value supplied for total_steps".to_string()),
+                }
+            }
+        }
+
+        impl OperationProgress {
+            pub fn completed_steps<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.completed_steps = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for completed_steps: {e}")
+                });
+                self
+            }
+            pub fn current_step<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.current_step = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for current_step: {e}"));
+                self
+            }
+            pub fn total_steps<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.total_steps = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for total_steps: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<OperationProgress> for super::OperationProgress {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: OperationProgress,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    completed_steps: value.completed_steps?,
+                    current_step: value.current_step?,
+                    total_steps: value.total_steps?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::OperationProgress> for OperationProgress {
+            fn from(value: super::OperationProgress) -> Self {
+                Self {
+                    completed_steps: Ok(value.completed_steps),
+                    current_step: Ok(value.current_step),
+                    total_steps: Ok(value.total_steps),
                 }
             }
         }
@@ -22455,6 +22898,11 @@ impl Client {
         builder::AgentPeerResolve::new(self)
     }
 
+    #[doc = "Pull pending v2p invalidations for this CN, strictly after\n\nthe supplied `since` cursor. The bound CN agent polls this on a fixed cadence (default ~10s) and applies each entry via `InvalidatePeerEntry` on every local port that might have cached it. Phase A v1: tritond broadcasts NIC-teardown invalidations to all CNs; Phase B adds per-CN filtering by tracking which CNs have queried `/v2/agent/peer`. See `PROTEUS_PLAN.md` §11.7.1.\n\nSends a `GET` request to `/v2/agent/peer-invalidations`\n\nArguments:\n- `since`: Last sequence number the agent has applied. `0` on first call after agent start.\n```ignore\nlet response = client.agent_peer_invalidations()\n    .since(since)\n    .send()\n    .await;\n```"]
+    pub fn agent_peer_invalidations(&self) -> builder::AgentPeerInvalidations<'_> {
+        builder::AgentPeerInvalidations::new(self)
+    }
+
     #[doc = "Self-register a compute node. Anonymous endpoint (no API\n\nkey needed) — the agent has none until approval completes. Tritond creates a [`CnState::Pending`] record with a fresh claim code unless the global auto-approve window is open, in which case the record is created directly Approved and the agent will retrieve its API key on the very next `/register/status` long-poll.\n\nIdempotent on `server_uuid`: re-registration of a Pending record rotates the claim code; re-registration of an Approved record refreshes sysinfo without re-minting credentials.\n\nSends a `POST` request to `/v2/agent/register`\n\n```ignore\nlet response = client.agent_register()\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn agent_register(&self) -> builder::AgentRegister<'_> {
         builder::AgentRegister::new(self)
@@ -24302,6 +24750,76 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "agent_peer_resolve",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::agent_peer_invalidations`]\n\n[`Client::agent_peer_invalidations`]: super::Client::agent_peer_invalidations"]
+    #[derive(Debug, Clone)]
+    pub struct AgentPeerInvalidations<'a> {
+        client: &'a super::Client,
+        since: Result<Option<u64>, String>,
+    }
+
+    impl<'a> AgentPeerInvalidations<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                since: Ok(None),
+            }
+        }
+
+        pub fn since<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<u64>,
+        {
+            self.since = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `u64` for since failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/agent/peer-invalidations`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AgentPeerInvalidationsResponse>, Error<types::Error>>
+        {
+            let Self { client, since } = self;
+            let since = since.map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v2/agent/peer-invalidations", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("since", &since))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "agent_peer_invalidations",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

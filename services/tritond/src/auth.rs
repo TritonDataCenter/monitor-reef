@@ -405,6 +405,11 @@ pub enum Action {
     AuditList,
     AuditFetch,
     AuditVerify,
+    /// RFD 00004 D-Sg-12. Operator-initiated saga abandon (forces
+    /// the unwind direction at the current node). Operator-only by
+    /// the root-allows-all Cedar rule; no per-silo or per-tenant
+    /// principal can drive an unwind.
+    OperationsAbandon,
     TenantIdpSet,
     TenantIdpGet,
     TenantIdpDelete,
@@ -668,6 +673,7 @@ impl Action {
             Action::AuditList => "audit_list",
             Action::AuditFetch => "audit_fetch",
             Action::AuditVerify => "audit_verify",
+            Action::OperationsAbandon => "operations_abandon",
             Action::TenantIdpSet => "tenant_idp_set",
             Action::TenantIdpGet => "tenant_idp_get",
             Action::TenantIdpDelete => "tenant_idp_delete",
@@ -1469,6 +1475,9 @@ fn is_read_action(action: Action) -> bool {
         // Layered instance metadata (IMDS).
         Action::MetaGet | Action::MetaList => true,
         Action::MetaSet | Action::MetaDelete => false,
+        // Saga abandon is operator-only by Cedar; a ReadOnly key
+        // must never reach it.
+        Action::OperationsAbandon => false,
     }
 }
 

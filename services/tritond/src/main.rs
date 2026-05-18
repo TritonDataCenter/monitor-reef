@@ -159,14 +159,17 @@ async fn serve(boot: BootstrapConfig) -> Result<()> {
 
     let sweeper_interval = Duration::from_secs(resolved.sweeper_interval_secs);
     let stale_after = Duration::from_secs(resolved.stale_claim_threshold_secs);
+    let saga_retention = Duration::from_secs(resolved.saga_retention_secs);
     info!(
         sweeper_interval_secs = sweeper_interval.as_secs(),
         stale_after_secs = stale_after.as_secs(),
+        saga_retention_secs = saga_retention.as_secs(),
         "enabling stale-claim sweeper",
     );
     context = context.with_sweeper(SweeperConfig {
         interval: sweeper_interval,
         stale_after,
+        saga_retention,
     });
 
     let dhcp_reconcile_interval = Duration::from_secs(resolved.dhcp_reconcile_interval_secs);

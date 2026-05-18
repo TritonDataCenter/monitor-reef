@@ -31,6 +31,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
+use foundationdb::options::StreamingMode;
 use foundationdb::{Database, FdbBindingError, KeySelector, RangeOption};
 use steno::{SagaCachedState, SagaCreateParams, SagaId, SagaNodeEvent, SagaNodeEventType};
 
@@ -397,6 +398,7 @@ impl TritondSecStore for FdbSecStore {
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(begin),
                         end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -458,6 +460,7 @@ impl TritondSecStore for FdbSecStore {
                         let opt = RangeOption {
                             begin: KeySelector::first_greater_or_equal(begin),
                             end: KeySelector::first_greater_or_equal(end),
+                            mode: StreamingMode::WantAll,
                             ..RangeOption::default()
                         };
                         let kvs = tr.get_range(&opt, 1, false).await?;
@@ -563,6 +566,7 @@ impl TritondSecStore for FdbSecStore {
                     let opt = RangeOption {
                         begin: KeySelector::first_greater_or_equal(begin),
                         end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -610,6 +614,83 @@ impl TritondSecStore for FdbSecStore {
             .map_err(backend)
     }
 
+    async fn load_events(&self, saga_id: SagaId) -> SagaResult<Vec<SagaNodeEvent>> {
+        self.load_events_paged(saga_id).await
+    }
+
+    async fn prune_terminal_sagas_older_than(
+        &self,
+        before: DateTime<Utc>,
+    ) -> SagaResult<usize> {
+        // Step 1: scan `saga/by_id/<*>` and collect ids that meet
+        // the prune criteria. WantAll so the scan returns the full
+        // set rather than the iteration-1 batch.
+        let prefix = Self::by_id_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let raws: Vec<Vec<u8>> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok::<Vec<Vec<u8>>, FdbBindingError>(
+                        kvs.iter().map(|kv| kv.value().to_vec()).collect(),
+                    )
+                }
+            })
+            .await
+            .map_err(backend)?;
+        let mut to_prune: Vec<(SagaId, SecId)> = Vec::new();
+        for raw in &raws {
+            if let Ok(rec) = deser_record(raw) {
+                let terminal_done = matches!(rec.state, SagaCachedStatePersist::Done)
+                    && rec.stuck_reason.is_none();
+                let aged_out = rec.time_done.is_some_and(|t| t < before);
+                if terminal_done && aged_out {
+                    to_prune.push((rec.id, rec.current_sec));
+                }
+            }
+        }
+
+        // Step 2: for each prunable saga, delete the by_id record,
+        // every event under saga/event/<id>/, and the by_sec
+        // marker. One FDB transaction per saga keeps each delete
+        // independently safe to retry on conflict.
+        let mut pruned = 0usize;
+        for (saga_id, sec) in to_prune {
+            let by_id_key = Self::by_id_key(saga_id);
+            let by_sec_key = Self::by_sec_key(sec, saga_id);
+            let event_prefix = Self::events_prefix(saga_id);
+            let (ev_begin, ev_end) = prefix_range(&event_prefix);
+            let result: Result<(), FdbBindingError> = self
+                .db
+                .run(|tr, _| {
+                    let by_id_key = by_id_key.clone();
+                    let by_sec_key = by_sec_key.clone();
+                    let ev_begin = ev_begin.clone();
+                    let ev_end = ev_end.clone();
+                    async move {
+                        tr.clear(&by_id_key);
+                        tr.clear(&by_sec_key);
+                        tr.clear_range(&ev_begin, &ev_end);
+                        Ok::<(), FdbBindingError>(())
+                    }
+                })
+                .await;
+            if result.is_ok() {
+                pruned += 1;
+            }
+        }
+        Ok(pruned)
+    }
+
     async fn list_sagas(
         &self,
         marker: Option<SagaId>,
@@ -634,6 +715,7 @@ impl TritondSecStore for FdbSecStore {
                         begin: KeySelector::first_greater_or_equal(begin),
                         end: KeySelector::first_greater_or_equal(end),
                         limit: Some(limit),
+                        mode: StreamingMode::WantAll,
                         ..RangeOption::default()
                     };
                     let kvs = tr.get_range(&opt, 1, false).await?;
@@ -675,6 +757,7 @@ impl FdbSecStore {
                             begin: KeySelector::first_greater_or_equal(begin),
                             end: KeySelector::first_greater_or_equal(end),
                             limit: Some(PAGE),
+                            mode: StreamingMode::WantAll,
                             ..RangeOption::default()
                         };
                         let kvs = tr.get_range(&opt, 1, false).await?;

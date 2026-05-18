@@ -86,6 +86,9 @@ fn apply_env_overrides(mut s: Settings, env: impl Fn(&str) -> Option<String>) ->
     if let Some(v) = u64v(env_str_key(ConfigKey::ImdsHopLimitDefault)) {
         s.imds_hop_limit_default = v;
     }
+    if let Some(v) = u64v(env_str_key(ConfigKey::SagaRetentionSecs)) {
+        s.saga_retention_secs = v;
+    }
     s
 }
 

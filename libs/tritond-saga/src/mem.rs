@@ -253,6 +253,33 @@ impl TritondSecStore for MemSecStore {
         Ok(())
     }
 
+    async fn load_events(&self, saga_id: SagaId) -> SagaResult<Vec<SagaNodeEvent>> {
+        let g = self.inner.read().await;
+        Ok(g.events.get(&saga_id).cloned().unwrap_or_default())
+    }
+
+    async fn prune_terminal_sagas_older_than(
+        &self,
+        before: DateTime<Utc>,
+    ) -> SagaResult<usize> {
+        let mut g = self.inner.write().await;
+        let to_prune: Vec<SagaId> = g
+            .sagas
+            .iter()
+            .filter(|(_, r)| {
+                matches!(r.state, SagaCachedStatePersist::Done)
+                    && r.stuck_reason.is_none()
+                    && r.time_done.is_some_and(|t| t < before)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &to_prune {
+            g.sagas.remove(id);
+            g.events.remove(id);
+        }
+        Ok(to_prune.len())
+    }
+
     async fn list_sagas(
         &self,
         marker: Option<SagaId>,

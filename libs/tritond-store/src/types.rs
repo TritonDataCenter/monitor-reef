@@ -2725,6 +2725,12 @@ pub const DEFAULT_DHCP_RECONCILE_INTERVAL_SECS: u64 = 300;
 /// Default `now - last_activity` (seconds) before a DHCP lease is GC-eligible.
 pub const DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS: u64 = 7 * 24 * 60 * 60;
 
+/// Default retention (seconds) for terminal sagas in FDB before the
+/// sweeper's retention pass prunes them. 30 days; tunable per
+/// [`Settings::saga_retention_secs`] / `TRITOND_SAGA_RETENTION_SECS`.
+/// RFD 00004 SG-4.
+pub const DEFAULT_SAGA_RETENTION_SECS: u64 = 30 * 24 * 60 * 60;
+
 /// Which metrics backend `tritond` stores timeseries in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -2790,6 +2796,12 @@ pub struct Settings {
     /// (1) for SSRF-relay safety.
     #[serde(rename = "imds.hop_limit_default")]
     pub imds_hop_limit_default: u64,
+    /// How long terminal sagas are kept in FDB before the sweeper's
+    /// retention pass deletes the record + event log. Default 30
+    /// days (`30 * 86400 = 2_592_000`). Stuck sagas are exempt and
+    /// stay until human cleanup. RFD 00004 SG-4.
+    #[serde(rename = "saga.retention_secs")]
+    pub saga_retention_secs: u64,
 }
 
 impl Default for Settings {
@@ -2804,6 +2816,7 @@ impl Default for Settings {
             metrics_clickhouse_url: None,
             imds_enabled_default: DEFAULT_IMDS_ENABLED,
             imds_hop_limit_default: DEFAULT_IMDS_HOP_LIMIT,
+            saga_retention_secs: DEFAULT_SAGA_RETENTION_SECS,
         }
     }
 }
@@ -2874,11 +2887,13 @@ pub enum ConfigKey {
     ImdsEnabledDefault,
     /// [`Settings::imds_hop_limit_default`]
     ImdsHopLimitDefault,
+    /// [`Settings::saga_retention_secs`]
+    SagaRetentionSecs,
 }
 
 impl ConfigKey {
     /// Every key, in the order `tcadm config list` displays them.
-    pub const ALL: [ConfigKey; 9] = [
+    pub const ALL: [ConfigKey; 10] = [
         ConfigKey::ProvisionerInprocessDisabled,
         ConfigKey::SweeperIntervalSecs,
         ConfigKey::StaleClaimThresholdSecs,
@@ -2888,6 +2903,7 @@ impl ConfigKey {
         ConfigKey::MetricsClickhouseUrl,
         ConfigKey::ImdsEnabledDefault,
         ConfigKey::ImdsHopLimitDefault,
+        ConfigKey::SagaRetentionSecs,
     ];
 
     /// Dotted wire name. Must exactly equal the `#[serde(rename = ...)]`
@@ -2903,6 +2919,7 @@ impl ConfigKey {
             ConfigKey::MetricsClickhouseUrl => "metrics.clickhouse_url",
             ConfigKey::ImdsEnabledDefault => "imds.enabled_default",
             ConfigKey::ImdsHopLimitDefault => "imds.hop_limit_default",
+            ConfigKey::SagaRetentionSecs => "saga.retention_secs",
         }
     }
 
@@ -2937,6 +2954,9 @@ impl ConfigKey {
             ConfigKey::ImdsHopLimitDefault => {
                 "cluster default for config/imds/hop-limit when no scope pins one (1..64)"
             }
+            ConfigKey::SagaRetentionSecs => {
+                "how long terminal sagas stay in FDB before the retention pass deletes them (seconds)"
+            }
         }
     }
 
@@ -2962,6 +2982,7 @@ impl ConfigKey {
             ConfigKey::MetricsClickhouseUrl => "TRITOND_METRICS_CLICKHOUSE_URL",
             ConfigKey::ImdsEnabledDefault => "TRITOND_IMDS_ENABLED_DEFAULT",
             ConfigKey::ImdsHopLimitDefault => "TRITOND_IMDS_HOP_LIMIT_DEFAULT",
+            ConfigKey::SagaRetentionSecs => "TRITOND_SAGA_RETENTION_SECS",
         })
     }
 }
@@ -5154,9 +5175,7 @@ impl RealizedMeta {
             .get(META_KEY_IMDS_HOP_LIMIT)
             .and_then(|(v, _)| v.value.as_u64())
             .map(|n| n.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
-            .unwrap_or_else(|| {
-                default_hop_limit.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX)
-            })
+            .unwrap_or_else(|| default_hop_limit.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
     }
 }
 
@@ -5265,7 +5284,10 @@ mod realized_meta_tests {
         let empty = RealizedMeta::default();
         assert!(empty.imds_enabled(DEFAULT_IMDS_ENABLED));
         assert!(!empty.imds_enabled(false), "default flips with caller");
-        assert_eq!(empty.imds_hop_limit(IMDS_HOP_LIMIT_DEFAULT), IMDS_HOP_LIMIT_DEFAULT);
+        assert_eq!(
+            empty.imds_hop_limit(IMDS_HOP_LIMIT_DEFAULT),
+            IMDS_HOP_LIMIT_DEFAULT
+        );
         assert_eq!(empty.imds_hop_limit(3), 3, "default flips with caller");
 
         // Set at tenant, overridden at project.
@@ -5788,9 +5810,7 @@ impl RealizedView {
             .get(META_KEY_IMDS_HOP_LIMIT)
             .and_then(|(v, _)| v.value.as_u64())
             .map(|n| n.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
-            .unwrap_or_else(|| {
-                default_hop_limit.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX)
-            })
+            .unwrap_or_else(|| default_hop_limit.clamp(IMDS_HOP_LIMIT_MIN, IMDS_HOP_LIMIT_MAX))
     }
 }
 

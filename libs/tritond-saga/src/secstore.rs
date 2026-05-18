@@ -29,7 +29,7 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use steno::SagaId;
+use steno::{SagaId, SagaNodeEvent};
 
 use crate::error::SagaResult;
 use crate::types::{RecoverableSaga, SagaRecord, SecEpoch, SecHeartbeat, SecId};
@@ -116,4 +116,27 @@ pub trait TritondSecStore: steno::SecStore {
     /// across implementations.
     async fn list_sagas(&self, marker: Option<SagaId>, limit: usize)
     -> SagaResult<Vec<SagaRecord>>;
+
+    /// Read every node event recorded for a saga, in node-id order
+    /// (then by event_kind for ties). Implementations are expected
+    /// to paginate internally so they don't exceed the FDB single-
+    /// transaction limit (see `load_events_paged` in the FDB impl).
+    /// Used by the operator-visible `/v2/operations/{id}` surface
+    /// to project step-by-step progress (RFD 00004 D-Sg-13).
+    async fn load_events(&self, saga_id: SagaId) -> SagaResult<Vec<SagaNodeEvent>>;
+
+    /// Retention GC: delete every saga record + its event log + its
+    /// `by_sec` marker for sagas that are terminal (state == Done)
+    /// and whose `time_done` is older than `before`. Returns the
+    /// number of sagas pruned. Idempotent — re-running the same
+    /// sweep is a no-op. RFD 00004 SG-4 retention pass.
+    ///
+    /// Implementations must skip sagas whose state is non-terminal
+    /// (a slow Done write may still be in flight) and must not
+    /// touch the `Stuck` set — `stuck_reason` is operator-actionable
+    /// and never expires.
+    async fn prune_terminal_sagas_older_than(
+        &self,
+        before: DateTime<Utc>,
+    ) -> SagaResult<usize>;
 }

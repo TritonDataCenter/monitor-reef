@@ -33,9 +33,35 @@
 //! calls its `register(reg)` to populate the
 //! [`tritond_saga::ActionRegistry`].
 
-use tritond_saga::ActionRegistry;
+use std::future::Future;
+use std::time::Duration;
+
+use tritond_saga::{ActionError, ActionRegistry};
 
 pub mod instance_create;
+
+/// RFD 00004 D-Sg-9 / Invariant 9: per-action timeout. Catalog
+/// actions wrap their body in `with_action_timeout` so a wedged
+/// agent / store / external call surfaces as `ActionError` instead
+/// of hanging the saga forever. Per-saga deadlines are an upcoming
+/// follow-up; for now each action gets its own cap.
+///
+/// The returned error's payload is structured so the handler's
+/// unwind path can distinguish timeout from other failure modes.
+pub async fn with_action_timeout<T>(
+    action: &'static str,
+    duration: Duration,
+    fut: impl Future<Output = Result<T, ActionError>>,
+) -> Result<T, ActionError> {
+    match tokio::time::timeout(duration, fut).await {
+        Ok(result) => result,
+        Err(_) => Err(ActionError::action_failed(serde_json::json!({
+            "kind": "action_timeout",
+            "action": action,
+            "duration_secs": duration.as_secs(),
+        }))),
+    }
+}
 
 /// Register every catalog action and version stamp onto the given
 /// registry. Called once at server-start before the
