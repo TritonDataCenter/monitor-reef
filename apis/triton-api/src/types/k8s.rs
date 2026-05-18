@@ -6,30 +6,28 @@
 
 //! Types for the `/v1/k8s/*` endpoints (Kelp managed Kubernetes).
 //!
-//! Phase 1 only covers cluster CRUD: enough surface for higher-level
-//! operations (bootstrap, kubeconfig, health, scaling) to have a
-//! server-side cluster record to operate on. Node inventory, network
-//! configuration, and in-cluster component state are deferred until
-//! the bootstrap endpoint lands and they have something to track.
+//! Phase 1 covers cluster CRUD: a lean public `Cluster` type for API
+//! responses, backed by a richer internal `ClusterRecord` in the server
+//! that accumulates node inventory, credentials, and orchestration state
+//! as the bootstrap endpoint fills it in.
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A Kelp-managed Kubernetes cluster record.
+/// A Kelp-managed Kubernetes cluster record (public API view).
 ///
 /// The record exists independent of any provisioned VMs — `Created`
 /// state means "we know about this cluster but have not bootstrapped
-/// it yet." Bootstrap (a future endpoint) transitions the record
-/// through `Provisioning` to `Running`.
+/// it yet." Bootstrap transitions the record through `Provisioning`
+/// to `Running`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Cluster {
     /// Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`.
     pub id: Uuid,
 
-    /// Customer-supplied display name. Not unique across accounts and
-    /// not used as an identifier.
+    /// Customer-supplied display name.
     pub name: String,
 
     /// Owning Triton account UUID. Derived from the authenticated
@@ -39,14 +37,30 @@ pub struct Cluster {
     /// Lifecycle state of the cluster record.
     pub state: ClusterState,
 
-    /// Target Kubernetes version (e.g. `1.30.3`). Compared against the
-    /// `kubernetes_version -> talos image` map maintained by the
-    /// service when bootstrap eventually selects an image.
-    pub kubernetes_version: String,
+    /// Optional customer-supplied description.
+    pub description: Option<String>,
 
-    /// Target Talos Linux version (e.g. `1.7.6`). Same mapping
-    /// caveat as `kubernetes_version`.
-    pub talos_version: String,
+    /// Triton fabric network the cluster nodes are provisioned on.
+    /// `None` until set at bootstrap time.
+    pub fabric_network_id: Option<Uuid>,
+
+    /// Target Kubernetes version (e.g. `1.30.3`). `None` until bootstrap
+    /// begins selecting images.
+    pub kubernetes_version: Option<String>,
+
+    /// Target Talos Linux version (e.g. `1.7.6`). `None` until bootstrap
+    /// begins.
+    pub talos_version: Option<String>,
+
+    /// Kubernetes API server endpoint URL. `None` until the control
+    /// plane is operational.
+    pub endpoint: Option<String>,
+
+    /// Number of control-plane nodes currently tracked.
+    pub control_plane_count: u32,
+
+    /// Number of worker nodes currently tracked.
+    pub worker_count: u32,
 
     /// When the record was created.
     pub created_at: DateTime<Utc>,
@@ -87,11 +101,12 @@ pub enum ClusterState {
 /// Body of `POST /v1/k8s/clusters`.
 ///
 /// The server assigns `id`, `account_id`, `state`, and `created_at`.
+/// Version selection and network assignment happen at bootstrap time.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateClusterRequest {
     pub name: String,
-    pub kubernetes_version: String,
-    pub talos_version: String,
+    pub description: Option<String>,
+    pub fabric_network_id: Option<Uuid>,
 }
 
 /// Path parameters for `/v1/k8s/clusters/{cluster}`.
@@ -101,7 +116,7 @@ pub struct ClusterPath {
     pub cluster: Uuid,
 }
 
-/// Body of `GET /v1/k8s/clusters`.
+/// Response body for `GET /v1/k8s/clusters`.
 ///
 /// A wrapper struct (rather than a bare `Vec<Cluster>`) so future
 /// pagination metadata can be added without breaking the wire shape.

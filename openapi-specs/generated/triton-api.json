@@ -367,6 +367,48 @@
         }
       }
     },
+    "/v1/k8s/relay": {
+      "get": {
+        "tags": [
+          "k8s-relay"
+        ],
+        "summary": "Register a relay agent tunnel.",
+        "description": "Called by the gateway-zone agent. The connection is upgraded to WebSocket and then to a yamux session (server = agent, client = API server). The API server opens yamux streams when bridge clients request connections; the agent dials the target on the fabric network and bridges bytes.\n\nNo authentication in the POC — this is intentional.",
+        "operationId": "k8s_relay_register",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-dropshot-websocket": {}
+      }
+    },
+    "/v1/k8s/relay/connect": {
+      "get": {
+        "tags": [
+          "k8s-relay"
+        ],
+        "summary": "Connect to the relay as a bridge client.",
+        "description": "Called by `triton-relay-bridge`. The connection is upgraded to WebSocket and then to a yamux session (server = API server, client = bridge). For each inbound stream from the bridge the API server opens a yamux stream to the registered agent and splices the two together.\n\nNo authentication in the POC — this is intentional.",
+        "operationId": "k8s_relay_connect",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-dropshot-websocket": {}
+      }
+    },
     "/v1/ping": {
       "get": {
         "tags": [
@@ -417,7 +459,7 @@
         ]
       },
       "Cluster": {
-        "description": "A Kelp-managed Kubernetes cluster record.\n\nThe record exists independent of any provisioned VMs — `Created` state means \"we know about this cluster but have not bootstrapped it yet.\" Bootstrap (a future endpoint) transitions the record through `Provisioning` to `Running`.",
+        "description": "A Kelp-managed Kubernetes cluster record (public API view).\n\nThe record exists independent of any provisioned VMs — `Created` state means \"we know about this cluster but have not bootstrapped it yet.\" Bootstrap transitions the record through `Provisioning` to `Running`.",
         "type": "object",
         "properties": {
           "account_id": {
@@ -425,10 +467,32 @@
             "type": "string",
             "format": "uuid"
           },
+          "control_plane_count": {
+            "description": "Number of control-plane nodes currently tracked.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
           "created_at": {
             "description": "When the record was created.",
             "type": "string",
             "format": "date-time"
+          },
+          "description": {
+            "nullable": true,
+            "description": "Optional customer-supplied description.",
+            "type": "string"
+          },
+          "endpoint": {
+            "nullable": true,
+            "description": "Kubernetes API server endpoint URL. `None` until the control plane is operational.",
+            "type": "string"
+          },
+          "fabric_network_id": {
+            "nullable": true,
+            "description": "Triton fabric network the cluster nodes are provisioned on. `None` until set at bootstrap time.",
+            "type": "string",
+            "format": "uuid"
           },
           "id": {
             "description": "Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`.",
@@ -436,11 +500,12 @@
             "format": "uuid"
           },
           "kubernetes_version": {
-            "description": "Target Kubernetes version (e.g. `1.30.3`). Compared against the `kubernetes_version -> talos image` map maintained by the service when bootstrap eventually selects an image.",
+            "nullable": true,
+            "description": "Target Kubernetes version (e.g. `1.30.3`). `None` until bootstrap begins selecting images.",
             "type": "string"
           },
           "name": {
-            "description": "Customer-supplied display name. Not unique across accounts and not used as an identifier.",
+            "description": "Customer-supplied display name.",
             "type": "string"
           },
           "state": {
@@ -452,22 +517,29 @@
             ]
           },
           "talos_version": {
-            "description": "Target Talos Linux version (e.g. `1.7.6`). Same mapping caveat as `kubernetes_version`.",
+            "nullable": true,
+            "description": "Target Talos Linux version (e.g. `1.7.6`). `None` until bootstrap begins.",
             "type": "string"
+          },
+          "worker_count": {
+            "description": "Number of worker nodes currently tracked.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
           }
         },
         "required": [
           "account_id",
+          "control_plane_count",
           "created_at",
           "id",
-          "kubernetes_version",
           "name",
           "state",
-          "talos_version"
+          "worker_count"
         ]
       },
       "ClusterList": {
-        "description": "Body of `GET /v1/k8s/clusters`.\n\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape.",
+        "description": "Response body for `GET /v1/k8s/clusters`.\n\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape.",
         "type": "object",
         "properties": {
           "items": {
@@ -529,23 +601,24 @@
         ]
       },
       "CreateClusterRequest": {
-        "description": "Body of `POST /v1/k8s/clusters`.\n\nThe server assigns `id`, `account_id`, `state`, and `created_at`.",
+        "description": "Body of `POST /v1/k8s/clusters`.\n\nThe server assigns `id`, `account_id`, `state`, and `created_at`. Version selection and network assignment happen at bootstrap time.",
         "type": "object",
         "properties": {
-          "kubernetes_version": {
+          "description": {
+            "nullable": true,
             "type": "string"
+          },
+          "fabric_network_id": {
+            "nullable": true,
+            "type": "string",
+            "format": "uuid"
           },
           "name": {
-            "type": "string"
-          },
-          "talos_version": {
             "type": "string"
           }
         },
         "required": [
-          "kubernetes_version",
-          "name",
-          "talos_version"
+          "name"
         ]
       },
       "Error": {
@@ -861,6 +934,9 @@
     },
     {
       "name": "k8s"
+    },
+    {
+      "name": "k8s-relay"
     },
     {
       "name": "system"

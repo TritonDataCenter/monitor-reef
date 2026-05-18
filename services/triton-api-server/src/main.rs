@@ -35,7 +35,7 @@ use triton_relay_protocol::{WsCompat, bridge, read_connect_target, write_connect
 use uuid::Uuid;
 
 mod cluster_store;
-use cluster_store::{ClusterStore, FileClusterStore, StoreError};
+use cluster_store::{ClusterRecord, ClusterStore, FileClusterStore, StoreError};
 
 mod relay;
 use relay::RelayState;
@@ -502,34 +502,42 @@ impl TritonApi for TritonApiImpl {
     ) -> Result<HttpResponseCreated<Cluster>, HttpError> {
         let caller = resolve_caller(&rqctx).await?;
         let req = body.into_inner();
-        let cluster = Cluster {
+        let record = ClusterRecord {
             id: Uuid::new_v4(),
             name: req.name,
             account_id: caller.account_id,
             state: ClusterState::Created,
-            kubernetes_version: req.kubernetes_version,
-            talos_version: req.talos_version,
+            description: req.description,
+            fabric_network_id: req.fabric_network_id,
+            control_plane_config: None,
+            worker_config: None,
+            nodes: std::collections::HashMap::new(),
+            last_fabric_ip_offset: None,
+            talosconfig_yaml: None,
+            kubeconfig_yaml: None,
+            secrets_yaml: None,
             created_at: chrono::Utc::now(),
         };
         rqctx
             .context()
             .cluster_store
-            .create(&cluster)
+            .create(&record)
             .await
             .map_err(store_error_to_http)?;
-        Ok(HttpResponseCreated(cluster))
+        Ok(HttpResponseCreated(Cluster::from(&record)))
     }
 
     async fn k8s_clusters_list(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<ClusterList>, HttpError> {
         let caller = resolve_caller(&rqctx).await?;
-        let items = rqctx
+        let records = rqctx
             .context()
             .cluster_store
             .list_for_account(caller.account_id)
             .await
             .map_err(store_error_to_http)?;
+        let items = records.iter().map(Cluster::from).collect();
         Ok(HttpResponseOk(ClusterList { items }))
     }
 
@@ -539,7 +547,7 @@ impl TritonApi for TritonApiImpl {
     ) -> Result<HttpResponseOk<Cluster>, HttpError> {
         let caller = resolve_caller(&rqctx).await?;
         let id = path.into_inner().cluster;
-        let cluster = rqctx
+        let record = rqctx
             .context()
             .cluster_store
             .get(id)
@@ -550,10 +558,10 @@ impl TritonApi for TritonApiImpl {
         // account looks identical to one that never existed, so a
         // caller probing arbitrary UUIDs can't enumerate other
         // accounts' resources.
-        if cluster.account_id != caller.account_id {
+        if record.account_id != caller.account_id {
             return Err(cluster_not_found(id));
         }
-        Ok(HttpResponseOk(cluster))
+        Ok(HttpResponseOk(Cluster::from(&record)))
     }
 
     async fn k8s_clusters_delete(
@@ -563,12 +571,12 @@ impl TritonApi for TritonApiImpl {
         let caller = resolve_caller(&rqctx).await?;
         let id = path.into_inner().cluster;
         let store = &rqctx.context().cluster_store;
-        let cluster = store
+        let record = store
             .get(id)
             .await
             .map_err(store_error_to_http)?
             .ok_or_else(|| cluster_not_found(id))?;
-        if cluster.account_id != caller.account_id {
+        if record.account_id != caller.account_id {
             return Err(cluster_not_found(id));
         }
         let removed = store.delete(id).await.map_err(store_error_to_http)?;
@@ -764,6 +772,9 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             ClientErrorStatusCode::CONFLICT,
             format!("cluster {id} already exists"),
         ),
+        StoreError::NotFound(id) => {
+            HttpError::for_internal_error(format!("cluster {id} missing during update (race)"))
+        }
         StoreError::Io(e) => HttpError::for_internal_error(format!("cluster store I/O error: {e}")),
         StoreError::Serialize(e) => {
             HttpError::for_internal_error(format!("cluster store serialization error: {e}"))
@@ -1344,6 +1355,13 @@ mod k8s_helper_tests {
             err.status_code,
             dropshot::ErrorStatusCode::from(ClientErrorStatusCode::CONFLICT)
         );
+    }
+
+    #[test]
+    fn store_error_not_found_maps_to_500() {
+        let id = Uuid::new_v4();
+        let err = store_error_to_http(StoreError::NotFound(id));
+        assert!(err.status_code.as_u16() >= 500);
     }
 
     #[test]

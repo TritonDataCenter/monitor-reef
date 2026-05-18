@@ -6,30 +6,137 @@
 
 //! Persistence layer for Kelp cluster records.
 //!
+//! The store splits into two layers:
+//! - [`ClusterRecord`]: the full internal orchestration state (credentials,
+//!   node inventory, YAML blobs). This is what the store persists.
+//! - `Cluster` (from `triton_api`): the lean public API view derived from
+//!   `ClusterRecord` via `From<&ClusterRecord>`. Handlers always convert
+//!   before returning to callers.
+//!
 //! Phase 1 uses a file-backed JSON store: one file per cluster at
 //! `<state_dir>/<cluster_uuid>.json`. The store is hidden behind the
 //! [`ClusterStore`] trait so the eventual moray-backed implementation
-//! drops in without touching the endpoint handlers. See
-//! `docs/design/kelp-cluster-storage.md` for the migration plan.
+//! drops in without touching the endpoint handlers.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
-use triton_api::Cluster;
+use triton_api::{Cluster, ClusterState};
 use uuid::Uuid;
+
+/// Role of a node within a cluster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeRole {
+    Control,
+    Worker,
+}
+
+/// Inventory record for a single cluster node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub instance_id: Uuid,
+    pub primary_ip: String,
+    pub fabric_ip: String,
+    pub role: NodeRole,
+}
+
+/// Configuration baked into the control-plane nodes at bootstrap time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlPlaneConfig {
+    /// Kubernetes API server endpoint URL (e.g. `https://10.0.0.1:6443`).
+    pub endpoint: String,
+    pub cns_suffix: String,
+    pub package_id: Uuid,
+    pub image_id: Uuid,
+    pub talos_version: String,
+    pub kubernetes_version: String,
+}
+
+/// Configuration for worker nodes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkerConfig {
+    pub package_id: Uuid,
+    pub image_id: Uuid,
+}
+
+/// Full internal cluster record — the complete orchestration state.
+///
+/// The public `Cluster` API type is derived from this via
+/// `From<&ClusterRecord>`. Credential fields (`talosconfig_yaml`,
+/// `kubeconfig_yaml`, `secrets_yaml`) are not exposed to callers directly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClusterRecord {
+    pub id: Uuid,
+    pub name: String,
+    pub account_id: Uuid,
+    pub state: ClusterState,
+    pub description: Option<String>,
+    pub fabric_network_id: Option<Uuid>,
+    pub control_plane_config: Option<ControlPlaneConfig>,
+    pub worker_config: Option<WorkerConfig>,
+    /// Instance UUID (as string) → node info. The key mirrors
+    /// `NodeInfo::instance_id` and is stored redundantly for fast keyed
+    /// access.
+    pub nodes: HashMap<String, NodeInfo>,
+    /// Offset of the last assigned fabric IP within the subnet. Incremented
+    /// by the bootstrap endpoint as nodes are provisioned.
+    pub last_fabric_ip_offset: Option<u32>,
+    pub talosconfig_yaml: Option<String>,
+    pub kubeconfig_yaml: Option<String>,
+    pub secrets_yaml: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<&ClusterRecord> for Cluster {
+    fn from(r: &ClusterRecord) -> Self {
+        let cp = r.control_plane_config.as_ref();
+        let control_plane_count = r
+            .nodes
+            .values()
+            .filter(|n| n.role == NodeRole::Control)
+            .count() as u32;
+        let worker_count = r
+            .nodes
+            .values()
+            .filter(|n| n.role == NodeRole::Worker)
+            .count() as u32;
+        Cluster {
+            id: r.id,
+            name: r.name.clone(),
+            account_id: r.account_id,
+            state: r.state,
+            description: r.description.clone(),
+            fabric_network_id: r.fabric_network_id,
+            kubernetes_version: cp.map(|c| c.kubernetes_version.clone()),
+            talos_version: cp.map(|c| c.talos_version.clone()),
+            endpoint: cp.map(|c| c.endpoint.clone()),
+            control_plane_count,
+            worker_count,
+            created_at: r.created_at,
+        }
+    }
+}
 
 /// Errors returned by [`ClusterStore`] implementations.
 ///
 /// Mapped to HTTP responses by the endpoint handlers — `AlreadyExists`
-/// becomes 409, I/O and serialization failures become 500.
+/// becomes 409, `NotFound` becomes 500 (a server-side race condition),
+/// I/O and serialization failures become 500.
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("cluster {0} already exists")]
     AlreadyExists(Uuid),
+
+    #[error("cluster {0} not found (cannot update)")]
+    NotFound(Uuid),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -38,24 +145,26 @@ pub enum StoreError {
     Serialize(#[from] serde_json::Error),
 }
 
-/// Storage abstraction for [`Cluster`] records.
+/// Storage abstraction for [`ClusterRecord`]s.
 ///
 /// Implementations must be safe for concurrent use behind an `Arc`.
-/// The trait is deliberately narrow — Phase 1 only needs CRUD on whole
-/// records. Bootstrap and other future endpoints will add operations
-/// for state transitions and partial updates.
 #[async_trait]
 pub trait ClusterStore: Send + Sync {
-    /// Persist a new cluster record. Fails with
-    /// [`StoreError::AlreadyExists`] if the id is already in use.
-    async fn create(&self, cluster: &Cluster) -> Result<(), StoreError>;
+    /// Persist a new cluster record. Fails with [`StoreError::AlreadyExists`]
+    /// if the id is already in use.
+    async fn create(&self, record: &ClusterRecord) -> Result<(), StoreError>;
 
     /// Fetch a cluster by id, or `None` if no such record exists.
-    async fn get(&self, id: Uuid) -> Result<Option<Cluster>, StoreError>;
+    async fn get(&self, id: Uuid) -> Result<Option<ClusterRecord>, StoreError>;
 
     /// Return every cluster owned by the given account. Order is
     /// unspecified; callers that care should sort client-side.
-    async fn list_for_account(&self, account_id: Uuid) -> Result<Vec<Cluster>, StoreError>;
+    async fn list_for_account(&self, account_id: Uuid) -> Result<Vec<ClusterRecord>, StoreError>;
+
+    /// Overwrite an existing cluster record. Fails with [`StoreError::NotFound`]
+    /// if the record does not exist (a race condition the bootstrap endpoint
+    /// must handle).
+    async fn update(&self, record: &ClusterRecord) -> Result<(), StoreError>;
 
     /// Delete a cluster by id. Returns `true` if a record was removed,
     /// `false` if it did not exist.
@@ -69,10 +178,10 @@ pub trait ClusterStore: Send + Sync {
 /// written and fsynced, then renamed over the destination — so a
 /// crash mid-write never leaves a half-written record on disk.
 ///
-/// `list_for_account` reads the directory and deserialises each
-/// entry, which is fine for the cluster counts we expect during the
-/// prototype phase. The eventual moray-backed store will use a
-/// secondary index on `account_id` instead.
+/// `list_for_account` reads the directory and deserialises each entry,
+/// which is fine for the cluster counts we expect during the prototype
+/// phase. The eventual moray-backed store will use a secondary index on
+/// `account_id` instead.
 pub struct FileClusterStore {
     state_dir: PathBuf,
 }
@@ -92,29 +201,29 @@ impl FileClusterStore {
 
 #[async_trait]
 impl ClusterStore for FileClusterStore {
-    async fn create(&self, cluster: &Cluster) -> Result<(), StoreError> {
-        let final_path = self.cluster_path(cluster.id);
+    async fn create(&self, record: &ClusterRecord) -> Result<(), StoreError> {
+        let final_path = self.cluster_path(record.id);
         if fs::try_exists(&final_path).await? {
-            return Err(StoreError::AlreadyExists(cluster.id));
+            return Err(StoreError::AlreadyExists(record.id));
         }
-        let bytes = serde_json::to_vec_pretty(cluster)?;
+        let bytes = serde_json::to_vec_pretty(record)?;
         write_atomic(&final_path, &bytes).await?;
         Ok(())
     }
 
-    async fn get(&self, id: Uuid) -> Result<Option<Cluster>, StoreError> {
+    async fn get(&self, id: Uuid) -> Result<Option<ClusterRecord>, StoreError> {
         let path = self.cluster_path(id);
         match fs::read(&path).await {
             Ok(bytes) => {
-                let cluster = serde_json::from_slice(&bytes)?;
-                Ok(Some(cluster))
+                let record = serde_json::from_slice(&bytes)?;
+                Ok(Some(record))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
-    async fn list_for_account(&self, account_id: Uuid) -> Result<Vec<Cluster>, StoreError> {
+    async fn list_for_account(&self, account_id: Uuid) -> Result<Vec<ClusterRecord>, StoreError> {
         let mut out = Vec::new();
         let mut entries = fs::read_dir(&self.state_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
@@ -129,18 +238,28 @@ impl ClusterStore for FileClusterStore {
             };
             // A corrupt record shouldn't make list_for_account fail entirely
             // — log and skip so a single bad file doesn't break the API.
-            let cluster: Cluster = match serde_json::from_slice(&bytes) {
-                Ok(c) => c,
+            let record: ClusterRecord = match serde_json::from_slice(&bytes) {
+                Ok(r) => r,
                 Err(e) => {
                     warn!(?path, error = %e, "skipping unparseable cluster record");
                     continue;
                 }
             };
-            if cluster.account_id == account_id {
-                out.push(cluster);
+            if record.account_id == account_id {
+                out.push(record);
             }
         }
         Ok(out)
+    }
+
+    async fn update(&self, record: &ClusterRecord) -> Result<(), StoreError> {
+        let final_path = self.cluster_path(record.id);
+        if !fs::try_exists(&final_path).await? {
+            return Err(StoreError::NotFound(record.id));
+        }
+        let bytes = serde_json::to_vec_pretty(record)?;
+        write_atomic(&final_path, &bytes).await?;
+        Ok(())
     }
 
     async fn delete(&self, id: Uuid) -> Result<bool, StoreError> {
@@ -190,18 +309,24 @@ async fn write_atomic(final_path: &Path, bytes: &[u8]) -> Result<(), std::io::Er
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use tempfile::TempDir;
     use triton_api::ClusterState;
 
-    fn sample_cluster(id: Uuid, account_id: Uuid, name: &str) -> Cluster {
-        Cluster {
+    fn sample_record(id: Uuid, account_id: Uuid, name: &str) -> ClusterRecord {
+        ClusterRecord {
             id,
             name: name.to_string(),
             account_id,
             state: ClusterState::Created,
-            kubernetes_version: "1.30.3".to_string(),
-            talos_version: "1.7.6".to_string(),
+            description: None,
+            fabric_network_id: None,
+            control_plane_config: None,
+            worker_config: None,
+            nodes: HashMap::new(),
+            last_fabric_ip_offset: None,
+            talosconfig_yaml: None,
+            kubeconfig_yaml: None,
+            secrets_yaml: None,
             created_at: Utc::now(),
         }
     }
@@ -219,14 +344,16 @@ mod tests {
         let (_dir, store) = fresh_store().await;
         let id = Uuid::new_v4();
         let account = Uuid::new_v4();
-        let cluster = sample_cluster(id, account, "prod");
-        store.create(&cluster).await.expect("create");
+        let record = sample_record(id, account, "prod");
+        store.create(&record).await.expect("create");
 
         let got = store.get(id).await.expect("get").expect("present");
         assert_eq!(got.id, id);
         assert_eq!(got.account_id, account);
         assert_eq!(got.name, "prod");
         assert_eq!(got.state, ClusterState::Created);
+        assert!(got.description.is_none());
+        assert!(got.nodes.is_empty());
     }
 
     #[tokio::test]
@@ -234,10 +361,10 @@ mod tests {
         let (_dir, store) = fresh_store().await;
         let id = Uuid::new_v4();
         let account = Uuid::new_v4();
-        let cluster = sample_cluster(id, account, "first");
-        store.create(&cluster).await.expect("create");
+        let record = sample_record(id, account, "first");
+        store.create(&record).await.expect("create");
 
-        let dup = sample_cluster(id, account, "second");
+        let dup = sample_record(id, account, "second");
         let err = store.create(&dup).await.expect_err("should reject");
         match err {
             StoreError::AlreadyExists(eid) => assert_eq!(eid, id),
@@ -257,9 +384,9 @@ mod tests {
         let (_dir, store) = fresh_store().await;
         let account_a = Uuid::new_v4();
         let account_b = Uuid::new_v4();
-        let a1 = sample_cluster(Uuid::new_v4(), account_a, "a1");
-        let a2 = sample_cluster(Uuid::new_v4(), account_a, "a2");
-        let b1 = sample_cluster(Uuid::new_v4(), account_b, "b1");
+        let a1 = sample_record(Uuid::new_v4(), account_a, "a1");
+        let a2 = sample_record(Uuid::new_v4(), account_a, "a2");
+        let b1 = sample_record(Uuid::new_v4(), account_b, "b1");
         store.create(&a1).await.expect("create a1");
         store.create(&a2).await.expect("create a2");
         store.create(&b1).await.expect("create b1");
@@ -276,11 +403,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn update_existing_record() {
+        let (_dir, store) = fresh_store().await;
+        let id = Uuid::new_v4();
+        let account = Uuid::new_v4();
+        let record = sample_record(id, account, "prod");
+        store.create(&record).await.expect("create");
+
+        let mut updated = record.clone();
+        updated.state = ClusterState::Provisioning;
+        store.update(&updated).await.expect("update");
+
+        let got = store.get(id).await.expect("get").expect("present");
+        assert_eq!(got.state, ClusterState::Provisioning);
+    }
+
+    #[tokio::test]
+    async fn update_missing_returns_not_found() {
+        let (_dir, store) = fresh_store().await;
+        let record = sample_record(Uuid::new_v4(), Uuid::new_v4(), "ghost");
+        let err = store.update(&record).await.expect_err("should fail");
+        match err {
+            StoreError::NotFound(id) => assert_eq!(id, record.id),
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn delete_existing_returns_true() {
         let (_dir, store) = fresh_store().await;
         let id = Uuid::new_v4();
-        let cluster = sample_cluster(id, Uuid::new_v4(), "doomed");
-        store.create(&cluster).await.expect("create");
+        let record = sample_record(id, Uuid::new_v4(), "doomed");
+        store.create(&record).await.expect("create");
         assert!(store.delete(id).await.expect("delete"));
         assert!(store.get(id).await.expect("get").is_none());
     }
@@ -294,7 +448,7 @@ mod tests {
     #[tokio::test]
     async fn corrupt_file_is_skipped_by_list() {
         let (dir, store) = fresh_store().await;
-        let good = sample_cluster(Uuid::new_v4(), Uuid::new_v4(), "good");
+        let good = sample_record(Uuid::new_v4(), Uuid::new_v4(), "good");
         store.create(&good).await.expect("create good");
 
         // Drop a non-JSON file in the state dir.
@@ -316,8 +470,47 @@ mod tests {
             .await
             .expect("create nested");
         assert!(nested.is_dir());
-        // And the store works once constructed.
-        let cluster = sample_cluster(Uuid::new_v4(), Uuid::new_v4(), "x");
-        store.create(&cluster).await.expect("create");
+        let record = sample_record(Uuid::new_v4(), Uuid::new_v4(), "x");
+        store.create(&record).await.expect("create");
+    }
+
+    #[tokio::test]
+    async fn from_cluster_record_counts_nodes_by_role() {
+        let id = Uuid::new_v4();
+        let account = Uuid::new_v4();
+        let mut record = sample_record(id, account, "multi-node");
+        record.nodes.insert(
+            "cp-1".to_string(),
+            NodeInfo {
+                instance_id: Uuid::new_v4(),
+                primary_ip: "10.0.0.1".to_string(),
+                fabric_ip: "192.168.1.1".to_string(),
+                role: NodeRole::Control,
+            },
+        );
+        record.nodes.insert(
+            "worker-1".to_string(),
+            NodeInfo {
+                instance_id: Uuid::new_v4(),
+                primary_ip: "10.0.0.2".to_string(),
+                fabric_ip: "192.168.1.2".to_string(),
+                role: NodeRole::Worker,
+            },
+        );
+        record.nodes.insert(
+            "worker-2".to_string(),
+            NodeInfo {
+                instance_id: Uuid::new_v4(),
+                primary_ip: "10.0.0.3".to_string(),
+                fabric_ip: "192.168.1.3".to_string(),
+                role: NodeRole::Worker,
+            },
+        );
+
+        let cluster = Cluster::from(&record);
+        assert_eq!(cluster.control_plane_count, 1);
+        assert_eq!(cluster.worker_count, 2);
+        assert!(cluster.kubernetes_version.is_none());
+        assert!(cluster.endpoint.is_none());
     }
 }
