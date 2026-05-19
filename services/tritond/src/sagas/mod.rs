@@ -38,7 +38,15 @@ use std::time::Duration;
 
 use tritond_saga::{ActionError, ActionRegistry};
 
+pub mod common;
+pub mod designate;
+pub mod floating_ip;
+pub mod image_import;
 pub mod instance_create;
+pub mod instance_delete;
+pub mod instance_lifecycle;
+pub mod nat_gateway;
+pub mod node_join;
 
 /// RFD 00004 D-Sg-9 / Invariant 9: per-action timeout. Catalog
 /// actions wrap their body in `with_action_timeout` so a wedged
@@ -70,7 +78,14 @@ pub async fn with_action_timeout<T>(
 /// SG-2 ships only `instance-create`; subsequent slices register
 /// more modules here.
 pub fn register_all_actions(reg: &mut ActionRegistry) {
+    designate::register(reg);
     instance_create::register(reg);
+    instance_delete::register(reg);
+    instance_lifecycle::register(reg);
+    floating_ip::register(reg);
+    nat_gateway::register(reg);
+    node_join::register(reg);
+    image_import::register(reg);
 }
 
 /// `(name, version)` pairs for every saga registered above. The
@@ -78,5 +93,27 @@ pub fn register_all_actions(reg: &mut ActionRegistry) {
 /// can reject sagas whose persisted version is no longer in the
 /// registry (RFD 00004 D-Sg-10).
 pub fn registered_versions() -> Vec<(&'static str, u32)> {
-    vec![(instance_create::SAGA_NAME, instance_create::SAGA_VERSION)]
+    vec![
+        (instance_create::SAGA_NAME, instance_create::SAGA_VERSION),
+        (instance_delete::SAGA_NAME, instance_delete::SAGA_VERSION),
+        (
+            instance_lifecycle::SAGA_NAME_START,
+            instance_lifecycle::SAGA_VERSION,
+        ),
+        (
+            instance_lifecycle::SAGA_NAME_STOP,
+            instance_lifecycle::SAGA_VERSION,
+        ),
+        (
+            instance_lifecycle::SAGA_NAME_RESTART,
+            instance_lifecycle::SAGA_VERSION,
+        ),
+        (floating_ip::SAGA_NAME_ALLOCATE, floating_ip::SAGA_VERSION),
+        (floating_ip::SAGA_NAME_ATTACH, floating_ip::SAGA_VERSION),
+        (floating_ip::SAGA_NAME_DETACH, floating_ip::SAGA_VERSION),
+        (nat_gateway::SAGA_NAME_CREATE, nat_gateway::SAGA_VERSION),
+        (nat_gateway::SAGA_NAME_DELETE, nat_gateway::SAGA_VERSION),
+        (node_join::SAGA_NAME, node_join::SAGA_VERSION),
+        (image_import::SAGA_NAME, image_import::SAGA_VERSION),
+    ]
 }
