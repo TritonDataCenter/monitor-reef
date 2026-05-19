@@ -28,6 +28,7 @@ members = [
     "libs/tritond-image-manifest",
     "libs/tritond-logs",
     "libs/tritond-metrics",
+    "libs/tritond-placement",
     "libs/tritond-saga",
     "libs/tritond-store",
     "client-generator",
@@ -234,6 +235,7 @@ tritond-cn-platform = { path = "libs/tritond-cn-platform" }
 tritond-image-manifest = { path = "libs/tritond-image-manifest" }
 tritond-logs = { path = "libs/tritond-logs" }
 tritond-metrics = { path = "libs/tritond-metrics" }
+tritond-placement = { path = "libs/tritond-placement" }
 tritond-saga = { path = "libs/tritond-saga" }
 tritond-store = { path = "libs/tritond-store" }
 tritonagent = { path = "services/tritonagent" }

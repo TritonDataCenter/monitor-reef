@@ -1,0 +1,36 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritond-placement"
+version = "0.1.0"
+edition.workspace = true
+description = "VM placement engine for the Triton Cloud control plane: Filter / Scorer traits, the chain runner, the ExplainReport. See RFD 00005."
+license = "MPL-2.0"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# The load materialiser pulls in the ClickHouse client crate the
+# metrics pipeline already uses. Off by default so unit tests and
+# `make docker-up` builds stay lean. PL-6 turns this on inside
+# `tritond` to start the materialiser task. PL-1 ships the feature
+# flag; the materialiser module body lands in PL-6.
+materializer = []
+
+[dependencies]
+chrono = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

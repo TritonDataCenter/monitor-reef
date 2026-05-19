@@ -6342,6 +6342,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tritond-placement"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "tritond-saga"
 version = "0.1.0"
 dependencies = [
