@@ -127,25 +127,41 @@ pub struct ClusterList {
 
 /// Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.
 ///
-/// The server generates all Talos PKI and machine configs internally.
-/// Each listed node must already have the relay agent running and reachable
-/// through the registered relay tunnel.
+/// The server provisions VMs via the operator CloudAPI client, generates
+/// all Talos PKI and machine configs, applies them through the relay tunnel,
+/// and retrieves the kubeconfig — all asynchronously.
 ///
-/// The server applies configs, bootstraps etcd, and retrieves the kubeconfig
-/// asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until
-/// `state == "running"`.
+/// Poll `GET /v1/k8s/clusters/{cluster}` until `state == "running"`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BootstrapClusterRequest {
-    /// Nodes to configure, in order. The first `control_plane` entry becomes
-    /// the etcd bootstrap leader; remaining nodes join it.
-    pub nodes: Vec<NodeBootstrapSpec>,
+    /// Number of control-plane nodes to provision. Must be at least 1.
+    /// Use 3 for a highly-available control plane.
+    pub control_plane_count: u32,
+    /// Number of worker nodes to provision. May be 0.
+    #[serde(default)]
+    pub worker_count: u32,
+    /// CloudAPI package name or UUID for each node VM.
+    /// Defaults to `"sample-2G"`.
+    #[serde(default = "default_package")]
+    pub package: String,
+    /// CloudAPI image name or UUID (must be a Talos nocloud image).
+    /// Defaults to `"talos-1.12-nocloud"`.
+    #[serde(default = "default_image")]
+    pub image: String,
     /// Talos installer image tag, e.g. `"v1.12.7"`. Defaults to `"v1.12.7"`.
     #[serde(default)]
     pub talos_version: Option<String>,
-    /// Disk to install Talos onto on each node, e.g. `"/dev/sda"`.
-    /// Defaults to `"/dev/sda"`.
+    /// Disk to install Talos onto on each node. Defaults to `"/dev/sda"`.
     #[serde(default)]
     pub install_disk: Option<String>,
+}
+
+fn default_package() -> String {
+    "sample-2G".to_string()
+}
+
+fn default_image() -> String {
+    "talos-1.12-nocloud".to_string()
 }
 
 /// Specification for a single node during cluster bootstrap or scale-out.

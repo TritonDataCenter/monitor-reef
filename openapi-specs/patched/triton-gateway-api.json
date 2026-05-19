@@ -330,30 +330,46 @@
         "type": "string"
       },
       "BootstrapClusterRequest": {
-        "description": "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe server generates all Talos PKI and machine configs internally. Each listed node must already have the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.",
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe server provisions VMs via the operator CloudAPI client, generates all Talos PKI and machine configs, applies them through the relay tunnel, and retrieves the kubeconfig — all asynchronously.\n\nPoll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.",
         "properties": {
+          "control_plane_count": {
+            "description": "Number of control-plane nodes to provision. Must be at least 1. Use 3 for a highly-available control plane.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "image": {
+            "default": "talos-1.12-nocloud",
+            "description": "CloudAPI image name or UUID (must be a Talos nocloud image). Defaults to `\"talos-1.12-nocloud\"`.",
+            "type": "string"
+          },
           "install_disk": {
             "default": null,
-            "description": "Disk to install Talos onto on each node, e.g. `\"/dev/sda\"`. Defaults to `\"/dev/sda\"`.",
+            "description": "Disk to install Talos onto on each node. Defaults to `\"/dev/sda\"`.",
             "nullable": true,
             "type": "string"
           },
-          "nodes": {
-            "description": "Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it.",
-            "items": {
-              "$ref": "#/components/schemas/NodeBootstrapSpec"
-            },
-            "type": "array"
+          "package": {
+            "default": "sample-2G",
+            "description": "CloudAPI package name or UUID for each node VM. Defaults to `\"sample-2G\"`.",
+            "type": "string"
           },
           "talos_version": {
             "default": null,
             "description": "Talos installer image tag, e.g. `\"v1.12.7\"`. Defaults to `\"v1.12.7\"`.",
             "nullable": true,
             "type": "string"
+          },
+          "worker_count": {
+            "default": 0,
+            "description": "Number of worker nodes to provision. May be 0.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
-          "nodes"
+          "control_plane_count"
         ],
         "type": "object"
       },

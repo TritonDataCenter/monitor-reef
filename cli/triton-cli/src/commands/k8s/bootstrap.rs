@@ -9,7 +9,7 @@
 use anyhow::Result;
 use clap::Args;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::{BootstrapClusterRequest, NodeBootstrapRole, NodeBootstrapSpec};
+use triton_gateway_client::types::BootstrapClusterRequest;
 
 use crate::output::json;
 
@@ -18,13 +18,21 @@ pub struct BootstrapArgs {
     /// Cluster UUID, short ID prefix, or name
     pub cluster: String,
 
-    /// Fabric IP of a control-plane node (repeat for multiple)
-    #[arg(long = "control-plane", value_name = "IP")]
-    pub control_planes: Vec<String>,
+    /// Number of control-plane nodes to provision
+    #[arg(long, default_value = "1")]
+    pub control_plane_count: u32,
 
-    /// Fabric IP of a worker node (repeat for multiple)
-    #[arg(long = "worker", value_name = "IP")]
-    pub workers: Vec<String>,
+    /// Number of worker nodes to provision
+    #[arg(long, default_value = "0")]
+    pub worker_count: u32,
+
+    /// CloudAPI package name or UUID for each node VM
+    #[arg(long, default_value = "sample-2G")]
+    pub package: String,
+
+    /// CloudAPI image name or UUID (must be a Talos nocloud image)
+    #[arg(long, default_value = "talos-1.12-nocloud")]
+    pub image: String,
 
     /// Talos installer image tag, e.g. "v1.12.7"
     #[arg(long)]
@@ -36,27 +44,17 @@ pub struct BootstrapArgs {
 }
 
 pub async fn run(args: BootstrapArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    if args.control_planes.is_empty() {
-        anyhow::bail!("at least one --control-plane <ip> is required");
+    if args.control_plane_count == 0 {
+        anyhow::bail!("--control-plane-count must be at least 1");
     }
 
     let cluster = super::resolve_cluster(&args.cluster, client).await?;
 
-    let mut nodes: Vec<NodeBootstrapSpec> = args
-        .control_planes
-        .iter()
-        .map(|ip| NodeBootstrapSpec {
-            fabric_ip: ip.clone(),
-            role: NodeBootstrapRole::ControlPlane,
-        })
-        .collect();
-    nodes.extend(args.workers.iter().map(|ip| NodeBootstrapSpec {
-        fabric_ip: ip.clone(),
-        role: NodeBootstrapRole::Worker,
-    }));
-
     let body = BootstrapClusterRequest {
-        nodes,
+        control_plane_count: args.control_plane_count,
+        worker_count: args.worker_count,
+        package: args.package,
+        image: args.image,
         talos_version: args.talos_version,
         install_disk: args.install_disk,
     };

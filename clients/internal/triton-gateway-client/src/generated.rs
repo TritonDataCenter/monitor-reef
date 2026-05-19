@@ -812,31 +812,40 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe server generates all Talos PKI and machine configs internally. Each listed node must already have the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`."]
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe server provisions VMs via the operator CloudAPI client, generates all Talos PKI and machine configs, applies them through the relay tunnel, and retrieves the kubeconfig — all asynchronously.\n\nPoll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\\n\\nThe server generates all Talos PKI and machine configs internally. Each listed node must already have the relay agent running and reachable through the registered relay tunnel.\\n\\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \\\"running\\\"`.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\\n\\nThe server provisions VMs via the operator CloudAPI client, generates all Talos PKI and machine configs, applies them through the relay tunnel, and retrieves the kubeconfig — all asynchronously.\\n\\nPoll `GET /v1/k8s/clusters/{cluster}` until `state == \\\"running\\\"`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"nodes\""]
+    #[doc = "    \"control_plane_count\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"control_plane_count\": {"]
+    #[doc = "      \"description\": \"Number of control-plane nodes to provision. Must be at least 1. Use 3 for a highly-available control plane.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"image\": {"]
+    #[doc = "      \"description\": \"CloudAPI image name or UUID (must be a Talos nocloud image). Defaults to `\\\"talos-1.12-nocloud\\\"`.\","]
+    #[doc = "      \"default\": \"talos-1.12-nocloud\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
     #[doc = "    \"install_disk\": {"]
-    #[doc = "      \"description\": \"Disk to install Talos onto on each node, e.g. `\\\"/dev/sda\\\"`. Defaults to `\\\"/dev/sda\\\"`.\","]
+    #[doc = "      \"description\": \"Disk to install Talos onto on each node. Defaults to `\\\"/dev/sda\\\"`.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"nodes\": {"]
-    #[doc = "      \"description\": \"Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it.\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"$ref\": \"#/components/schemas/NodeBootstrapSpec\""]
-    #[doc = "      }"]
+    #[doc = "    \"package\": {"]
+    #[doc = "      \"description\": \"CloudAPI package name or UUID for each node VM. Defaults to `\\\"sample-2G\\\"`.\","]
+    #[doc = "      \"default\": \"sample-2G\","]
+    #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"talos_version\": {"]
     #[doc = "      \"description\": \"Talos installer image tag, e.g. `\\\"v1.12.7\\\"`. Defaults to `\\\"v1.12.7\\\"`.\","]
@@ -844,6 +853,13 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"worker_count\": {"]
+    #[doc = "      \"description\": \"Number of worker nodes to provision. May be 0.\","]
+    #[doc = "      \"default\": 0,"]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -853,14 +869,23 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct BootstrapClusterRequest {
-        #[doc = "Disk to install Talos onto on each node, e.g. `\"/dev/sda\"`. Defaults to `\"/dev/sda\"`."]
+        #[doc = "Number of control-plane nodes to provision. Must be at least 1. Use 3 for a highly-available control plane."]
+        pub control_plane_count: u32,
+        #[doc = "CloudAPI image name or UUID (must be a Talos nocloud image). Defaults to `\"talos-1.12-nocloud\"`."]
+        #[serde(default = "defaults::bootstrap_cluster_request_image")]
+        pub image: ::std::string::String,
+        #[doc = "Disk to install Talos onto on each node. Defaults to `\"/dev/sda\"`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub install_disk: ::std::option::Option<::std::string::String>,
-        #[doc = "Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it."]
-        pub nodes: ::std::vec::Vec<NodeBootstrapSpec>,
+        #[doc = "CloudAPI package name or UUID for each node VM. Defaults to `\"sample-2G\"`."]
+        #[serde(default = "defaults::bootstrap_cluster_request_package")]
+        pub package: ::std::string::String,
         #[doc = "Talos installer image tag, e.g. `\"v1.12.7\"`. Defaults to `\"v1.12.7\"`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub talos_version: ::std::option::Option<::std::string::String>,
+        #[doc = "Number of worker nodes to provision. May be 0."]
+        #[serde(default)]
+        pub worker_count: u32,
     }
 
     impl BootstrapClusterRequest {
@@ -11510,31 +11535,56 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct BootstrapClusterRequest {
+            control_plane_count: ::std::result::Result<u32, ::std::string::String>,
+            image: ::std::result::Result<::std::string::String, ::std::string::String>,
             install_disk: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            nodes: ::std::result::Result<
-                ::std::vec::Vec<super::NodeBootstrapSpec>,
-                ::std::string::String,
-            >,
+            package: ::std::result::Result<::std::string::String, ::std::string::String>,
             talos_version: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            worker_count: ::std::result::Result<u32, ::std::string::String>,
         }
 
         impl ::std::default::Default for BootstrapClusterRequest {
             fn default() -> Self {
                 Self {
+                    control_plane_count: Err(
+                        "no value supplied for control_plane_count".to_string()
+                    ),
+                    image: Ok(super::defaults::bootstrap_cluster_request_image()),
                     install_disk: Ok(Default::default()),
-                    nodes: Err("no value supplied for nodes".to_string()),
+                    package: Ok(super::defaults::bootstrap_cluster_request_package()),
                     talos_version: Ok(Default::default()),
+                    worker_count: Ok(Default::default()),
                 }
             }
         }
 
         impl BootstrapClusterRequest {
+            pub fn control_plane_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.control_plane_count = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for control_plane_count: {e}")
+                });
+                self
+            }
+            pub fn image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.image = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for image: {e}"));
+                self
+            }
             pub fn install_disk<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -11545,14 +11595,14 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for install_disk: {e}"));
                 self
             }
-            pub fn nodes<T>(mut self, value: T) -> Self
+            pub fn package<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<super::NodeBootstrapSpec>>,
+                T: ::std::convert::TryInto<::std::string::String>,
                 T::Error: ::std::fmt::Display,
             {
-                self.nodes = value
+                self.package = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for nodes: {e}"));
+                    .map_err(|e| format!("error converting supplied value for package: {e}"));
                 self
             }
             pub fn talos_version<T>(mut self, value: T) -> Self
@@ -11565,6 +11615,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for talos_version: {e}"));
                 self
             }
+            pub fn worker_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.worker_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for worker_count: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<BootstrapClusterRequest> for super::BootstrapClusterRequest {
@@ -11573,9 +11633,12 @@ pub mod types {
                 value: BootstrapClusterRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    control_plane_count: value.control_plane_count?,
+                    image: value.image?,
                     install_disk: value.install_disk?,
-                    nodes: value.nodes?,
+                    package: value.package?,
                     talos_version: value.talos_version?,
+                    worker_count: value.worker_count?,
                 })
             }
         }
@@ -11583,9 +11646,12 @@ pub mod types {
         impl ::std::convert::From<super::BootstrapClusterRequest> for BootstrapClusterRequest {
             fn from(value: super::BootstrapClusterRequest) -> Self {
                 Self {
+                    control_plane_count: Ok(value.control_plane_count),
+                    image: Ok(value.image),
                     install_disk: Ok(value.install_disk),
-                    nodes: Ok(value.nodes),
+                    package: Ok(value.package),
                     talos_version: Ok(value.talos_version),
+                    worker_count: Ok(value.worker_count),
                 }
             }
         }
@@ -20763,6 +20829,14 @@ pub mod types {
 
     #[doc = r" Generation of default values for serde."]
     pub mod defaults {
+        pub(super) fn bootstrap_cluster_request_image() -> ::std::string::String {
+            "talos-1.12-nocloud".to_string()
+        }
+
+        pub(super) fn bootstrap_cluster_request_package() -> ::std::string::String {
+            "sample-2G".to_string()
+        }
+
         pub(super) fn image_requirements() -> super::ImageRequirements {
             super::ImageRequirements {
                 bootrom: Default::default(),

@@ -221,8 +221,9 @@ struct ApiContext {
     /// Operator CloudAPI client for server-side VM provisioning. `None` when
     /// no `[cloudapi]` section is in the config; bootstrap endpoint returns
     /// 503 in that case.
-    #[allow(dead_code)]
     cloudapi: Option<Arc<TypedClient>>,
+    /// CloudAPI account login for the operator client (e.g. `"admin"`).
+    cloudapi_account: Option<String>,
     /// Dev bypass: unauthenticated requests are treated as this account UUID.
     /// Never set in production.
     dev_account_uuid: Option<Uuid>,
@@ -779,24 +780,31 @@ impl TritonApi for TritonApiImpl {
         }
 
         let req = body.into_inner();
-        if req.nodes.is_empty() {
+        if req.control_plane_count == 0 {
             return Err(HttpError::for_client_error(
                 Some("InvalidInput".to_string()),
                 ClientErrorStatusCode::BAD_REQUEST,
-                "nodes list must not be empty".to_string(),
+                "control_plane_count must be at least 1".to_string(),
             ));
         }
-        if !req
-            .nodes
-            .iter()
-            .any(|n| n.role == NodeBootstrapRole::ControlPlane)
-        {
-            return Err(HttpError::for_client_error(
+        let fabric_network_id = record.fabric_network_id.ok_or_else(|| {
+            HttpError::for_client_error(
                 Some("InvalidInput".to_string()),
                 ClientErrorStatusCode::BAD_REQUEST,
-                "at least one control-plane node is required".to_string(),
-            ));
-        }
+                "cluster has no fabric_network_id; set one via update before bootstrapping"
+                    .to_string(),
+            )
+        })?;
+        let cloudapi = ctx.cloudapi.clone().ok_or_else(|| {
+            HttpError::for_unavail(
+                Some("ServiceUnavailable".to_string()),
+                "CloudAPI operator client is not configured on this tritonapi instance".to_string(),
+            )
+        })?;
+        let cloudapi_account = ctx
+            .cloudapi_account
+            .clone()
+            .expect("cloudapi_account is always Some when cloudapi is Some");
 
         record.state = ClusterState::Provisioning;
         store.update(&record).await.map_err(store_error_to_http)?;
@@ -804,7 +812,17 @@ impl TritonApi for TritonApiImpl {
         let relay = Arc::clone(&ctx.relay);
         let cluster_view = Cluster::from(&record);
         tokio::spawn(async move {
-            if let Err(e) = run_bootstrap(store, relay, record, req).await {
+            if let Err(e) = run_bootstrap(
+                store,
+                relay,
+                cloudapi,
+                cloudapi_account,
+                fabric_network_id,
+                record,
+                req,
+            )
+            .await
+            {
                 tracing::error!(cluster = %id, error = %e, "bootstrap failed");
             }
         });
@@ -895,9 +913,134 @@ async fn handle_bridge_stream(
     Ok(())
 }
 
+struct ProvisionedNode {
+    fabric_ip: String,
+    role: NodeRole,
+}
+
+/// Resolve an image name or UUID string to a CloudAPI image UUID.
+async fn resolve_image_uuid(
+    cloudapi: &TypedClient,
+    account: &str,
+    image: &str,
+) -> anyhow::Result<Uuid> {
+    if let Ok(uuid) = Uuid::parse_str(image) {
+        return Ok(uuid);
+    }
+    let images = cloudapi
+        .inner()
+        .list_images()
+        .account(account)
+        .name(image)
+        .send()
+        .await
+        .with_context(|| format!("list images with name={image}"))?
+        .into_inner();
+    images
+        .into_iter()
+        .next()
+        .map(|img| img.id)
+        .ok_or_else(|| anyhow::anyhow!("no image found with name {:?}", image))
+}
+
+/// Provision a single VM via CloudAPI and return its fabric IP.
+async fn provision_vm(
+    cloudapi: &TypedClient,
+    account: &str,
+    name: &str,
+    image_uuid: Uuid,
+    package: &str,
+    fabric_network_id: Uuid,
+) -> anyhow::Result<String> {
+    use cloudapi_client::types::{CreateMachineRequest, MachineState, NetworkObject};
+
+    let body = CreateMachineRequest {
+        name: Some(name.to_string()),
+        image: image_uuid,
+        package: package.to_string(),
+        networks: Some(vec![NetworkObject {
+            ipv4_uuid: fabric_network_id,
+            ipv4_ips: None,
+            primary: Some(true),
+        }]),
+        affinity: None,
+        locality: None,
+        metadata: None,
+        tags: None,
+        firewall_enabled: None,
+        deletion_protection: None,
+        brand: None,
+        volumes: None,
+        disks: None,
+        delegate_dataset: None,
+        encrypted: None,
+        allow_shared_images: None,
+    };
+
+    let machine = cloudapi
+        .inner()
+        .create_machine()
+        .account(account)
+        .body(body)
+        .send()
+        .await
+        .with_context(|| format!("create machine {name}"))?
+        .into_inner();
+
+    let machine_id = machine.id;
+    tracing::info!(name = %name, machine = %machine_id, "VM created, waiting for running");
+
+    // Poll until running (max 10 minutes).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+    loop {
+        if std::time::Instant::now() > deadline {
+            anyhow::bail!("timed out waiting for machine {machine_id} to reach running state");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+        let m = cloudapi
+            .inner()
+            .get_machine()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await
+            .with_context(|| format!("poll machine {machine_id}"))?
+            .into_inner();
+
+        match m.state {
+            MachineState::Running => break,
+            MachineState::Failed => anyhow::bail!("machine {machine_id} entered failed state"),
+            _ => {}
+        }
+    }
+    tracing::info!(name = %name, machine = %machine_id, "VM running, fetching fabric NIC");
+
+    // Find the NIC on the fabric network to get the fabric IP.
+    let nics = cloudapi
+        .inner()
+        .list_nics()
+        .account(account)
+        .machine(machine_id)
+        .send()
+        .await
+        .with_context(|| format!("list NICs for machine {machine_id}"))?
+        .into_inner();
+
+    nics.into_iter()
+        .find(|n| n.network == fabric_network_id)
+        .map(|n| n.ip)
+        .ok_or_else(|| {
+            anyhow::anyhow!("machine {machine_id} has no NIC on fabric network {fabric_network_id}")
+        })
+}
+
 async fn run_bootstrap(
     store: Arc<dyn ClusterStore>,
     relay: Arc<RelayState>,
+    cloudapi: Arc<TypedClient>,
+    cloudapi_account: String,
+    fabric_network_id: Uuid,
     mut record: ClusterRecord,
     req: BootstrapClusterRequest,
 ) -> anyhow::Result<()> {
@@ -911,14 +1054,57 @@ async fn run_bootstrap(
         .as_deref()
         .unwrap_or(talos_config::DEFAULT_INSTALL_DISK);
 
-    let first_cp_ip = req
-        .nodes
-        .iter()
-        .find(|n| n.role == NodeBootstrapRole::ControlPlane)
-        .map(|n| n.fabric_ip.clone())
-        .ok_or_else(|| anyhow::anyhow!("no control-plane node in request"))?;
+    // Phase 0: resolve image and provision VMs.
+    let image_uuid = resolve_image_uuid(&cloudapi, &cloudapi_account, &req.image).await?;
+    tracing::info!(cluster = %cluster_id, image = %image_uuid, "resolved image UUID");
 
-    // Generate Talos PKI and machine configs server-side.
+    let mut provisioned: Vec<ProvisionedNode> = Vec::new();
+
+    for i in 0..req.control_plane_count {
+        let name = format!("{}-cp-{i}", record.name);
+        let fabric_ip = provision_vm(
+            &cloudapi,
+            &cloudapi_account,
+            &name,
+            image_uuid,
+            &req.package,
+            fabric_network_id,
+        )
+        .await
+        .with_context(|| format!("provision control-plane node {name}"))?;
+        tracing::info!(cluster = %cluster_id, node = %name, ip = %fabric_ip, "control-plane VM ready");
+        provisioned.push(ProvisionedNode {
+            fabric_ip,
+            role: NodeRole::Control,
+        });
+    }
+
+    for i in 0..req.worker_count {
+        let name = format!("{}-w-{i}", record.name);
+        let fabric_ip = provision_vm(
+            &cloudapi,
+            &cloudapi_account,
+            &name,
+            image_uuid,
+            &req.package,
+            fabric_network_id,
+        )
+        .await
+        .with_context(|| format!("provision worker node {name}"))?;
+        tracing::info!(cluster = %cluster_id, node = %name, ip = %fabric_ip, "worker VM ready");
+        provisioned.push(ProvisionedNode {
+            fabric_ip,
+            role: NodeRole::Worker,
+        });
+    }
+
+    let first_cp_ip = provisioned
+        .iter()
+        .find(|n| n.role == NodeRole::Control)
+        .map(|n| n.fabric_ip.clone())
+        .expect("at least one control-plane node was provisioned");
+
+    // Phase 1: generate Talos PKI and machine configs server-side.
     let secrets =
         talos_config::SecretsBundle::generate().context("generate Talos secrets bundle")?;
     let configs = talos_config::generate_machine_configs(
@@ -941,12 +1127,12 @@ async fn run_bootstrap(
     record.talos_key_pem =
         Some(String::from_utf8(configs.key_pem_raw.clone()).context("key PEM utf8")?);
 
-    // Phase 1: apply machine configs to all nodes in maintenance mode.
-    for node in &req.nodes {
+    // Phase 2: apply machine configs to all nodes in maintenance mode.
+    for node in &provisioned {
         let target = format!("{}:50000", node.fabric_ip);
         let machine_config = match node.role {
-            NodeBootstrapRole::ControlPlane => configs.controlplane_yaml.as_bytes().to_vec(),
-            NodeBootstrapRole::Worker => configs.worker_yaml.as_bytes().to_vec(),
+            NodeRole::Control => configs.controlplane_yaml.as_bytes().to_vec(),
+            NodeRole::Worker => configs.worker_yaml.as_bytes().to_vec(),
         };
         let mut client = talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target)
             .await
@@ -959,11 +1145,7 @@ async fn run_bootstrap(
     }
 
     // Record node inventory and persist (including generated PKI) before sleeping.
-    for node in &req.nodes {
-        let role = match node.role {
-            NodeBootstrapRole::ControlPlane => NodeRole::Control,
-            NodeBootstrapRole::Worker => NodeRole::Worker,
-        };
+    for node in &provisioned {
         let node_id = Uuid::new_v4();
         record.nodes.insert(
             node_id.to_string(),
@@ -971,7 +1153,7 @@ async fn run_bootstrap(
                 instance_id: node_id,
                 primary_ip: node.fabric_ip.clone(),
                 fabric_ip: node.fabric_ip.clone(),
-                role,
+                role: node.role,
             },
         );
     }
@@ -980,11 +1162,11 @@ async fn run_bootstrap(
         .await
         .with_context(|| format!("persist node inventory for cluster {cluster_id}"))?;
 
-    // Phase 2: wait for nodes to reboot into full Talos mode.
+    // Phase 3: wait for nodes to reboot into full Talos mode.
     tracing::info!(cluster = %cluster_id, "waiting 90s for nodes to reboot");
     tokio::time::sleep(std::time::Duration::from_secs(90)).await;
 
-    // Phase 3: bootstrap etcd on the first control-plane node.
+    // Phase 4: bootstrap etcd on the first control-plane node.
     let cp_target = format!("{first_cp_ip}:50000");
     let mut client = talos::TalosClient::connect_authenticated(
         Arc::clone(&relay),
@@ -1001,11 +1183,11 @@ async fn run_bootstrap(
         .with_context(|| format!("bootstrap etcd on {cp_target}"))?;
     tracing::info!(cluster = %cluster_id, cp = %cp_target, "etcd bootstrapped");
 
-    // Phase 4: wait for the Kubernetes API to come up.
+    // Phase 5: wait for the Kubernetes API to come up.
     tracing::info!(cluster = %cluster_id, "waiting 120s for Kubernetes API");
     tokio::time::sleep(std::time::Duration::from_secs(120)).await;
 
-    // Phase 5: retrieve kubeconfig.
+    // Phase 6: retrieve kubeconfig.
     let mut client = talos::TalosClient::connect_authenticated(
         Arc::clone(&relay),
         &cp_target,
@@ -1838,7 +2020,9 @@ async fn main() -> Result<()> {
     }
 
     if config.dev_account_uuid.is_some() {
-        warn!("dev_account_uuid is set; unauthenticated requests will bypass auth — do not use in production");
+        warn!(
+            "dev_account_uuid is set; unauthenticated requests will bypass auth — do not use in production"
+        );
     }
 
     let context = ApiContext {
@@ -1849,6 +2033,7 @@ async fn main() -> Result<()> {
         cluster_store,
         relay: Arc::new(relay::RelayState::new()),
         cloudapi,
+        cloudapi_account: config.cloudapi.as_ref().map(|c| c.account.clone()),
         dev_account_uuid: config.dev_account_uuid,
     };
 
