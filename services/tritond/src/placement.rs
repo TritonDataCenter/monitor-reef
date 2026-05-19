@@ -16,18 +16,22 @@
 //! store, and the store never takes one on the placement crate, so
 //! the directional dep tree stays a leaf-leaf shape.
 
+use std::sync::Arc;
+
+use chrono::Utc;
 use tritond_placement::types::DeviceReservation as PlacementDeviceReservation;
 use tritond_placement::{
     AssignedInstanceView, CapacityView, ChainContext, ChainRunner, CnLoadSummaryView, CnRoleView,
-    CnStateView, CnView, DeviceKind as PlacementDeviceKind, DeviceView, NumaNodeView,
-    OverprovisionDefaults, PlacementPolicyView, PlacementRequest, ReservationView,
+    CnStateView, CnView, DeviceKind as PlacementDeviceKind, DeviceView, ExplainReport,
+    NumaNodeView, OverprovisionDefaults, PlacementPolicyView, PlacementRequest, ReservationView,
     SiblingInstanceView, Strategy, StrategyWeights, UnderlayCapability, ZpoolView,
     default_filter_chain, default_scorer_chain, resolved_weights,
 };
 use tritond_store::{
-    CnPickSnapshot, CnRole, CnState, DeviceKind as StoreDeviceKind, StorageTier,
-    TenantInstanceProjection,
+    CnPickSnapshot, CnReservation, CnRole, CnState, DeviceKind as StoreDeviceKind, StorageTier,
+    Store, StoreError, TenantInstanceProjection,
 };
+use uuid::Uuid;
 
 /// Default heartbeat-staleness threshold for the
 /// `cn-approved-and-live` filter. PL-7 will move this to the
@@ -123,6 +127,209 @@ pub fn build_chain_context<'a>(
         agent_heartbeat_threshold_secs: DEFAULT_AGENT_HEARTBEAT_THRESHOLD_SECS,
         strategy_weights,
         sibling_instances,
+    }
+}
+
+/// What [`pick`] writes when `commit == Commit::Yes`.
+#[derive(Debug, Clone)]
+pub struct PickCommit {
+    /// `CnReservation` row inserted under `cn_reservation/<server_uuid>/<saga_id>`.
+    pub reservation: CnReservation,
+    /// Instance row after `set_instance_host_cn` lands.
+    pub instance: tritond_store::Instance,
+}
+
+/// What [`pick`] returns. `chosen` is `Some` when a CN passed
+/// every filter; the report names every CN's verdict either way.
+/// `committed` is `Some` when `commit == Commit::Yes` and a CN
+/// was chosen.
+#[derive(Debug, Clone)]
+pub struct PickOutcome {
+    pub chosen: Option<Uuid>,
+    pub report: ExplainReport,
+    pub committed: Option<PickCommit>,
+}
+
+/// Whether [`pick`] should write the reservation + Instance pin
+/// after a successful pick.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum Commit {
+    /// Dry-run: produce the explain report without touching state.
+    /// Backs the `POST /v2/placement/pick?dry-run=true` endpoint
+    /// (PL-5d) and the simulator panel in adminui (PL-9).
+    No,
+    /// Insert the `CnReservation` and call
+    /// `Store::set_instance_host_cn`. Backs the `designate` saga
+    /// action body (PL-5d).
+    Yes {
+        /// `steno::SagaId.0` -- stored on the reservation row so
+        /// `undesignate` can find it.
+        saga_id: Uuid,
+        /// `tritond_saga::SecId.0` -- written for audit per
+        /// RFD 00004 D-Sg-8.
+        sec_id: Uuid,
+        /// `tritond_saga::SecEpoch.0`.
+        sec_epoch: u64,
+    },
+}
+
+/// Errors `pick` can fail with.
+#[derive(Debug, thiserror::Error)]
+pub enum PickError {
+    /// No CN passed every filter in the chain. The
+    /// `ExplainReport` carried alongside names every rejected
+    /// CN's filter verdicts.
+    #[error("no eligible CN")]
+    NoEligibleCn { report: Box<ExplainReport> },
+    /// The store reported an error; surface it.
+    #[error("store: {0}")]
+    Store(#[from] StoreError),
+}
+
+/// Run the placement chain end to end against a live store.
+///
+/// 1. List every `Approved` CN.
+/// 2. For each, fetch the joined `CnPickSnapshot` and project to
+///    `CnView`.
+/// 3. Fetch the tenant's sibling instances + join the host CN's
+///    fault domain.
+/// 4. Build the default `ChainRunner` for the chosen strategy.
+/// 5. Run `pick`.
+/// 6. If a CN was chosen *and* `commit == Yes`, insert the
+///    reservation row and pin `Instance.host_cn_uuid` (two
+///    separate `Store` calls -- PL-5d adds the single-FDB-txn
+///    wrapper).
+///
+/// Returns the outcome (`chosen` + `report` + optional commit
+/// record). Failing the filter chain surfaces as
+/// `PickError::NoEligibleCn { report }` so the caller can
+/// decide whether to retry / surface the explain to the user /
+/// fail the saga.
+pub async fn pick(
+    store: &Arc<dyn Store>,
+    request: PlacementRequest,
+    commit: Commit,
+) -> Result<PickOutcome, PickError> {
+    // 1. List approved CNs. Pending / Disabled rows are invisible
+    //    to placement; the `cn-approved-and-live` filter would
+    //    reject them anyway, but pre-filtering here keeps the
+    //    snapshot loop tight on large fleets.
+    let cns = store.list_cns(Some(CnState::Approved)).await?;
+
+    // 2. Build CnView projections for each. Skip CNs whose
+    //    snapshot read fails (e.g. the row was concurrently
+    //    deleted between list and read); the report will not
+    //    contain them, which is intended -- a placement run does
+    //    not have to span every momentary fleet shape.
+    let mut cn_views: Vec<CnView> = Vec::with_capacity(cns.len());
+    for cn in &cns {
+        match store.get_cn_pick_snapshot(cn.server_uuid).await {
+            Ok(snap) => cn_views.push(snapshot_to_cn_view(snap)),
+            Err(StoreError::NotFound) => continue,
+            Err(e) => return Err(PickError::Store(e)),
+        }
+    }
+
+    // 3. Tenant sibling slice + host_fault_domain join.
+    let siblings_raw = store
+        .list_tenant_instance_projections(request.tenant_uuid)
+        .await?;
+    let siblings: Vec<SiblingInstanceView> = siblings_raw
+        .into_iter()
+        .map(projection_to_sibling_view)
+        .collect();
+
+    // 4. + 5. Runner + chain context, then pick.
+    let strategy = request.strategy_override.unwrap_or(Strategy::Spread);
+    let runner = build_default_runner(strategy);
+    let weights = resolved_weights(strategy);
+    let ctx = build_chain_context(Utc::now(), &weights, &siblings);
+    let (chosen, report) = runner.pick(&cn_views, &request, &ctx);
+
+    // 6. Commit if asked. The reservation + Instance pin run as
+    //    two sequential writes for PL-5c (MemStore behind one
+    //    lock; FdbStore writes are independent transactions);
+    //    PL-5d wraps them in a single FDB transaction.
+    let committed = match (chosen, commit) {
+        (
+            Some(cn_uuid),
+            Commit::Yes {
+                saga_id,
+                sec_id,
+                sec_epoch,
+            },
+        ) => {
+            let reservation = CnReservation {
+                server_uuid: cn_uuid,
+                saga_id,
+                instance_id: request.instance_id,
+                cpu_units: request.cpu_units,
+                ram_mb: request.ram_mb,
+                disk: request.disk.clone(),
+                devices: request
+                    .required_devices
+                    .iter()
+                    .map(|d| tritond_store::DeviceReservation {
+                        kind: store_device_kind(d.kind),
+                        model: d.model.clone(),
+                        count: d.count,
+                    })
+                    .collect(),
+                created_at: Utc::now(),
+                expires_at: request.deadline,
+                created_by_sec_id: sec_id,
+                created_at_epoch: sec_epoch,
+            };
+            store.reserve_cn_capacity(reservation.clone()).await?;
+            let instance = store
+                .set_instance_host_cn(request.instance_id, Some(cn_uuid))
+                .await?;
+            Some(PickCommit {
+                reservation,
+                instance,
+            })
+        }
+        (None, Commit::Yes { .. }) => {
+            return Err(PickError::NoEligibleCn {
+                report: Box::new(report),
+            });
+        }
+        _ => None,
+    };
+
+    Ok(PickOutcome {
+        chosen,
+        report,
+        committed,
+    })
+}
+
+/// Release a reservation written by [`pick`] with `Commit::Yes`.
+/// Used by the `undesignate` compensation in the saga action
+/// (PL-5d). Idempotent in the same shape as
+/// `Store::release_cn_reservation`: `Ok(())` when the row was
+/// deleted, `Ok(())` on `NotFound` (already released by a
+/// concurrent unwind).
+pub async fn release_reservation(
+    store: &Arc<dyn Store>,
+    server_uuid: Uuid,
+    saga_id: Uuid,
+    instance_id: Uuid,
+) -> Result<(), StoreError> {
+    match store.release_cn_reservation(server_uuid, saga_id).await {
+        Ok(()) | Err(StoreError::NotFound) => {}
+        Err(e) => return Err(e),
+    }
+    match store.set_instance_host_cn(instance_id, None).await {
+        Ok(_) | Err(StoreError::NotFound) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+fn store_device_kind(k: PlacementDeviceKind) -> StoreDeviceKind {
+    match k {
+        PlacementDeviceKind::Gpu => StoreDeviceKind::Gpu,
+        PlacementDeviceKind::SrIovVf => StoreDeviceKind::SrIovVf,
     }
 }
 
@@ -447,4 +654,169 @@ mod tests {
         assert_eq!(report.per_cn[0].filter_results.len(), 18);
         assert_eq!(report.per_cn[0].scorer_results.len(), 12);
     }
+
+    // ---------------------------------------------------------------------
+    // pick() end-to-end tests
+    // ---------------------------------------------------------------------
+
+    use tritond_store::{MemStore, NewSilo, NewTenant};
+
+    fn make_placement_request(tenant: Uuid) -> PlacementRequest {
+        let id = Uuid::new_v4();
+        PlacementRequest {
+            instance_id: id,
+            silo_uuid: Uuid::nil(),
+            tenant_uuid: tenant,
+            project_uuid: Uuid::nil(),
+            role: CnRoleView::Tenant,
+            cpu_units: 100,
+            ram_mb: 2_048,
+            disk: BTreeMap::new(),
+            required_traits: BTreeMap::new(),
+            required_nic_tags: Vec::new(),
+            required_underlay: UnderlayCapability {
+                ipv4: true,
+                ipv6: false,
+            },
+            required_devices: Vec::new(),
+            needs_hvm: false,
+            min_platform: None,
+            affinity: tritond_store::InstanceAffinity::empty(id, tenant, Utc::now()),
+            strategy_override: None,
+            force_cn: None,
+            ignore_scope_pin: false,
+            deadline: Utc::now() + chrono::Duration::minutes(5),
+        }
+    }
+
+    async fn make_store_with_one_approved_cn() -> (Arc<dyn Store>, Uuid) {
+        let mem = MemStore::new();
+        let _silo = mem
+            .create_silo(NewSilo {
+                name: "s".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let server_uuid = Uuid::new_v4();
+        mem.register_cn(
+            server_uuid,
+            "cn-1".into(),
+            None,
+            serde_json::json!({}),
+            Utc::now(),
+        )
+        .await
+        .unwrap();
+        // Force the CN into Approved by minting + attaching a key
+        // -- the existing `approve_cn` flow needs a bound key, but
+        // for the placement test we just need state == Approved
+        // with a recent last_seen and a CnCapacity row.
+        {
+            let inner_field_writer = &mem;
+            // Use the public approve_cn API.
+            inner_field_writer
+                .approve_cn(
+                    server_uuid,
+                    Uuid::new_v4(),
+                    "pwd".into(),
+                    [0u8; 32],
+                    [0u8; 32],
+                    Utc::now(),
+                )
+                .await
+                .unwrap();
+        }
+        // Publish capacity.
+        mem.put_cn_capacity(tritond_store::CnCapacity {
+            server_uuid,
+            cpu_cores_physical: 8,
+            cpu_threads_logical: 16,
+            numa_nodes: vec![NumaNode {
+                node_id: 0,
+                cores: 8,
+                ram_mb: 65_536,
+            }],
+            ram_total_mb: 65_536,
+            zpools: vec![ZpoolCapacity {
+                name: "zones".into(),
+                total_bytes: 1_000_000_000_000,
+                free_bytes: 800_000_000_000,
+                tier: StorageTier::Ssd,
+            }],
+            nic_tags: vec!["admin".into()],
+            underlay: StoreUnderlay {
+                ipv4: true,
+                ipv6: false,
+            },
+            devices: Vec::new(),
+            platform_version: "20260501T000000Z".into(),
+            hvm_supported: true,
+            reported_at: Utc::now(),
+        })
+        .await
+        .unwrap();
+        (Arc::new(mem) as Arc<dyn Store>, server_uuid)
+    }
+
+    #[tokio::test]
+    async fn pick_picks_the_only_approved_cn_dry_run() {
+        let (store, cn) = make_store_with_one_approved_cn().await;
+        let req = make_placement_request(Uuid::new_v4());
+        let out = pick(&store, req, Commit::No).await.unwrap();
+        assert_eq!(out.chosen, Some(cn));
+        assert!(out.committed.is_none());
+        // No reservation should have landed.
+        let reservations = store.list_cn_reservations(None).await.unwrap();
+        assert!(reservations.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pick_no_eligible_cn_returns_explain_report() {
+        // Empty fleet: pick must surface NoEligibleCn with a
+        // report carrying zero per-CN rows when Commit::Yes is
+        // asked (an empty fleet is a failure on the commit path).
+        let store: Arc<dyn Store> = Arc::new(MemStore::new());
+        let req = make_placement_request(Uuid::new_v4());
+        match pick(
+            &store,
+            req,
+            Commit::Yes {
+                saga_id: Uuid::new_v4(),
+                sec_id: Uuid::new_v4(),
+                sec_epoch: 0,
+            },
+        )
+        .await
+        {
+            Err(PickError::NoEligibleCn { report }) => {
+                assert!(report.chosen.is_none());
+                assert_eq!(report.per_cn.len(), 0);
+            }
+            other => panic!("expected NoEligibleCn, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn pick_no_eligible_cn_dry_run_returns_outcome_without_error() {
+        // Same empty fleet, but Commit::No surfaces a no-pick
+        // outcome rather than an error -- the simulator panel
+        // (PL-9) renders the empty report cleanly without a
+        // 5xx.
+        let store: Arc<dyn Store> = Arc::new(MemStore::new());
+        let req = make_placement_request(Uuid::new_v4());
+        let out = pick(&store, req, Commit::No).await.unwrap();
+        assert!(out.chosen.is_none());
+        assert!(out.committed.is_none());
+        assert_eq!(out.report.per_cn.len(), 0);
+    }
+
+    // The "pick + commit" tests that wire through to a real
+    // Instance row + set_instance_host_cn live in an integration
+    // test fixture that the bin-packer-removal slice (PL-5d)
+    // brings online (it needs the full create-instance plumbing
+    // -- silo / tenant / project / image / subnet -- which the
+    // store unit tests do not exercise as a tree). The reserve_
+    // cn_capacity + set_instance_host_cn paths individually are
+    // verified by tests in tritond-store.
 }
