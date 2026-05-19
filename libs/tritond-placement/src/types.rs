@@ -122,6 +122,12 @@ pub struct ChainContext<'a> {
     /// and the explain report names the skip.
     pub load_staleness_secs: u64,
 
+    /// Seconds beyond which a `cn.last_seen` heartbeat marks the
+    /// CN as not-live for the `cn-approved-and-live` filter. The
+    /// agent heartbeats every ~5 s (Slice D); the placement
+    /// threshold is a multiple to absorb transient gaps.
+    pub agent_heartbeat_threshold_secs: u64,
+
     /// Resolved weights for the active strategy. The runner consults
     /// this on every scorer call; switching strategy rebuilds the
     /// runner with a different vector.
@@ -244,8 +250,14 @@ pub struct PlacementRequest {
     #[serde(default)]
     pub min_platform: Option<String>,
 
+    /// Affinity / anti-affinity / topology-spread rules for the
+    /// instance being placed. The `cn-affinity-required` filter
+    /// reads the hard half; the `score-affinity-preferred` scorer
+    /// (PL-4) reads the soft half.
+    pub affinity: tritond_store::InstanceAffinity,
+
     /// Per-request strategy override. `None` means "use cluster
-    /// default" — the runner resolves this at the top of `pick`.
+    /// default" - the runner resolves this at the top of `pick`.
     #[serde(default)]
     pub strategy_override: Option<Strategy>,
 
@@ -328,12 +340,27 @@ pub struct CnView {
     /// case and the `ExplainReport` notes the skip.
     pub load_summary: Option<CnLoadSummaryView>,
 
-    /// `Instance.id`s already host-bound to this CN. Used by the
-    /// `score-fewer-cotenant-zones` scorer + the `cn-affinity-
-    /// required` filter. PL-2's Store method populates this from
-    /// the existing instance index.
+    /// Instances already host-bound to this CN. Carries enough per
+    /// instance for the resource filters (cpu_units + ram_mb sum
+    /// into the residual) and for the cotenant / affinity scorers
+    /// (silo_uuid + tenant_uuid). PL-5's Store join populates this
+    /// from the existing `instance/in_host_cn` membership index.
     #[serde(default)]
-    pub assigned_instances: Vec<Uuid>,
+    pub assigned_instances: Vec<AssignedInstanceView>,
+}
+
+/// Projection of one `Instance` row already host-bound to a CN.
+/// Only the fields the filters and scorers need; the join from the
+/// canonical `tritond_store::Instance` row happens at PL-5's
+/// `get_cn_view_for_pick`.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AssignedInstanceView {
+    pub instance_id: Uuid,
+    pub silo_uuid: Uuid,
+    pub tenant_uuid: Uuid,
+    /// 1 vCPU = 100 cpu_units (legacy DAPI's `cpu_cap` convention).
+    pub cpu_units: u32,
+    pub ram_mb: u64,
 }
 
 /// Mirror of `tritond_store::CnState` so the placement crate doesn't
@@ -457,7 +484,19 @@ pub struct DeviceView {
     pub free_count: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum DeviceKind {
     Gpu,

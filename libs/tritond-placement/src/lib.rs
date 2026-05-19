@@ -61,8 +61,15 @@ pub use config::{
     MaterialiserConfig, OverprovisionDefaults, PlacementConfig, ScorerConfig, strategy_weights,
 };
 pub use engine::{ChainRunner, ExplainPerCn, ExplainReport, ScorerContribution};
+pub use filter::{
+    CnAffinityRequired, CnApprovedAndLive, CnCapacityPresent, CnCpuAvailable, CnDeviceAvailable,
+    CnHvmSupported, CnLoadNotOverheating, CnNicTags, CnNotCordoned, CnNotEvacuating, CnNotReserved,
+    CnNumaFits, CnPlatformMin, CnRamAvailable, CnRoleMatches, CnScopeMatch, CnTraitsRequired,
+    CnUnderlay, CnZpoolHasSpace, default_filter_chain,
+};
 pub use types::{
-    CapacityView, ChainContext, CnLoadSummaryView, CnRoleView, CnStateView, CnView, DeviceKind,
-    DeviceView, Filter, NumaNodeView, PlacementPolicyView, PlacementRequest, ReservationView,
-    Scorer, SiblingInstanceView, Strategy, StrategyWeights, UnderlayCapability, Verdict, ZpoolView,
+    AssignedInstanceView, CapacityView, ChainContext, CnLoadSummaryView, CnRoleView, CnStateView,
+    CnView, DeviceKind, DeviceView, Filter, NumaNodeView, PlacementPolicyView, PlacementRequest,
+    ReservationView, Scorer, SiblingInstanceView, Strategy, StrategyWeights, UnderlayCapability,
+    Verdict, ZpoolView,
 };

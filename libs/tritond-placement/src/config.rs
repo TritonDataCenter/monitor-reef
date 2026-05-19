@@ -63,17 +63,28 @@ pub struct ScorerConfig {
 
 /// Cluster-default overprovision ratios. Per-CN overrides on
 /// `PlacementPolicyView` take precedence when set (D-Pl-3).
+///
+/// The ratio is a multiplier: 1.0 == no oversubscription;
+/// >1.0 == oversubscribe; <1.0 == conservative safety margin.
+/// Effective capacity for placement = total * ratio.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct OverprovisionDefaults {
     pub cpu: f32,
     pub ram: f32,
+    pub disk: f32,
 }
 
 impl Default for OverprovisionDefaults {
-    /// 1.0 == "no overprovision". Operators bump this on packed
-    /// clusters; the default never silently overprovisions.
+    /// Cluster defaults: CPU oversubscription 4.0 (matches legacy
+    /// DAPI's typical deployment), RAM 1.0 (no oversubscription
+    /// -- can't physically over-commit memory on this platform),
+    /// disk 1.0. Operators bump these via cluster settings.
     fn default() -> Self {
-        Self { cpu: 1.0, ram: 1.0 }
+        Self {
+            cpu: 4.0,
+            ram: 1.0,
+            disk: 1.0,
+        }
     }
 }
 

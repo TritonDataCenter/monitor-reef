@@ -6,12 +6,12 @@
 
 //! The chain runner and the [`ExplainReport`].
 //!
-//! PL-1 ships a trivial passthrough [`ChainRunner::pick`] that
-//! returns the first eligible CN — eligibility at PL-1 is just
-//! "[`crate::CnView::state`] == Approved and a non-`None`
-//! [`crate::CnView::capacity`]". PL-3 + PL-4 replace this with the
-//! full filter / scorer loop. The trait surface and the
-//! [`ExplainReport`] shape PL-1 freezes will not change.
+//! PL-3 replaces PL-1's "first eligible" baseline with a
+//! purely-filter-driven model: an empty runner accepts every CN,
+//! and a runner with the default-chain ([`crate::filter::default_chain`])
+//! registered enforces the seventeen built-ins from RFD 00005
+//! doc 02. Scorers (PL-4) layer on top. The trait surface and the
+//! [`ExplainReport`] shape PL-1 froze are unchanged.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -21,9 +21,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{
-    ChainContext, CnStateView, CnView, Filter, PlacementRequest, Scorer, Strategy, Verdict,
-};
+use crate::types::{ChainContext, CnView, Filter, PlacementRequest, Scorer, Strategy, Verdict};
 
 /// The placement engine. Owned by `tritond`; rebuilt on every
 /// cluster-settings change.
@@ -76,16 +74,15 @@ impl ChainRunner {
     /// passed every filter; the report still names every CN with
     /// its reject reasons.
     ///
-    /// PL-1 stub behaviour:
-    ///
-    /// * If any filters are registered, they run normally and the
-    ///   first remaining CN (by ascending `server_uuid`) wins —
-    ///   scorers are ignored. This is enough to exercise the chain
-    ///   wiring without committing to scoring semantics.
-    /// * If no filters are registered, every CN passes the filter
-    ///   phase. A "first eligible" predicate (state == Approved,
-    ///   capacity present) breaks the tie so a synthetic
-    ///   single-CN test passes deterministically.
+    /// **Force-place semantics (D-Pl-8):** when `req.force_cn` is
+    /// `Some(cn)`, the chain is restricted to the scope-pin filter
+    /// (`cn-scope-match`) only -- every other filter is skipped
+    /// from the chain for that pick. The reservation is still
+    /// taken in the same FDB transaction by the saga action at
+    /// PL-5; this runner enforces only the filter-side of the
+    /// invariant. Filters not in the force-place set produce no
+    /// `ExplainReport` entry on the force path (the report names
+    /// the bypass via a synthetic `force-place` entry instead).
     pub fn pick(
         &self,
         cns: &[CnView],
@@ -94,27 +91,37 @@ impl ChainRunner {
     ) -> (Option<Uuid>, ExplainReport) {
         let started = Instant::now();
         let mut per_cn: Vec<ExplainPerCn> = Vec::with_capacity(cns.len());
+        let force = req.force_cn;
 
         // Filter phase.
         for cn in cns {
             let mut filter_results: Vec<FilterVerdict> = Vec::with_capacity(self.filters.len());
             let mut accepted = true;
 
-            // PL-1 baseline eligibility: state == Approved and a
-            // non-`None` capacity row. Filters in PL-3 will subsume
-            // this — at that point the baseline goes away.
-            let baseline_ok = matches!(cn.state, CnStateView::Approved) && cn.capacity.is_some();
-            if self.filters.is_empty() && !baseline_ok {
-                accepted = false;
-                let reason = if !matches!(cn.state, CnStateView::Approved) {
-                    "cn-state not approved (PL-1 baseline)".to_string()
+            // Force-place narrows the chain to the scope-pin
+            // filter only (D-Pl-8). Every other filter is skipped
+            // and the report names it.
+            if let Some(forced_cn) = force {
+                if forced_cn != cn.server_uuid {
+                    accepted = false;
+                    filter_results.push(FilterVerdict::new(
+                        "force-place",
+                        Verdict::reject(format!(
+                            "force_cn=Some({forced_cn}) targets a different CN"
+                        )),
+                    ));
                 } else {
-                    "cn-capacity row absent (PL-1 baseline)".to_string()
-                };
-                filter_results.push(FilterVerdict::new("pl1-baseline", Verdict::reject(reason)));
+                    filter_results.push(FilterVerdict::new("force-place", Verdict::Accept));
+                }
             }
 
             for f in &self.filters {
+                if force.is_some() && f.name() != "cn-scope-match" {
+                    // Other filters are bypassed on the force-place
+                    // path; the report notes the skip.
+                    filter_results.push(FilterVerdict::new(f.name(), Verdict::Skip));
+                    continue;
+                }
                 let v = f.evaluate(cn, req, ctx);
                 if matches!(v, Verdict::Reject { .. }) {
                     accepted = false;
@@ -335,8 +342,8 @@ mod tests {
     use super::*;
     use crate::config::OverprovisionDefaults;
     use crate::types::{
-        CapacityView, CnRoleView, NumaNodeView, PlacementPolicyView, StorageTier, StrategyWeights,
-        UnderlayCapability, ZpoolView,
+        CapacityView, CnRoleView, CnStateView, NumaNodeView, PlacementPolicyView, StorageTier,
+        StrategyWeights, UnderlayCapability, ZpoolView,
     };
     use std::collections::BTreeMap;
 
@@ -388,8 +395,9 @@ mod tests {
     }
 
     fn make_request() -> PlacementRequest {
+        let instance_id = Uuid::new_v4();
         PlacementRequest {
-            instance_id: Uuid::new_v4(),
+            instance_id,
             silo_uuid: nil_uuid(),
             tenant_uuid: nil_uuid(),
             project_uuid: nil_uuid(),
@@ -406,6 +414,7 @@ mod tests {
             required_devices: Vec::new(),
             needs_hvm: false,
             min_platform: None,
+            affinity: tritond_store::InstanceAffinity::empty(instance_id, nil_uuid(), Utc::now()),
             strategy_override: None,
             force_cn: None,
             ignore_scope_pin: false,
@@ -413,31 +422,41 @@ mod tests {
         }
     }
 
+    fn default_runner() -> ChainRunner {
+        let mut r = ChainRunner::empty(Strategy::Spread);
+        for f in crate::filter::default_filter_chain() {
+            r = r.with_filter(f);
+        }
+        r
+    }
+
     #[test]
-    fn passthrough_picks_first_eligible_cn() {
+    fn default_chain_picks_first_eligible_cn() {
         let weights = StrategyWeights::new();
         let ctx = ChainContext {
             now: Utc::now(),
             cluster_overprovision: OverprovisionDefaults::default(),
             load_staleness_secs: 180,
+            agent_heartbeat_threshold_secs: 60,
             strategy_weights: &weights,
             sibling_instances: &[],
         };
-        let runner = ChainRunner::empty(Strategy::Spread);
+        let runner = default_runner();
 
         let a = Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
         let b = Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
         let c = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
         let cns = vec![
             make_cn(b, CnStateView::Approved, true),
-            make_cn(a, CnStateView::Pending, true), // not approved → filtered
-            make_cn(c, CnStateView::Approved, false), // no capacity → filtered
+            make_cn(a, CnStateView::Pending, true), // rejected by cn-approved-and-live
+            make_cn(c, CnStateView::Approved, false), // rejected by cn-capacity-present
         ];
 
         let req = make_request();
         let (chosen, report) = runner.pick(&cns, &req, &ctx);
 
-        // Only `b` is eligible (`a` pending, `c` missing capacity).
+        // Only `b` survives the default chain (`a` pending,
+        // `c` no capacity row).
         assert_eq!(chosen, Some(b));
         assert_eq!(report.per_cn.len(), 3);
 
@@ -460,10 +479,11 @@ mod tests {
             now: Utc::now(),
             cluster_overprovision: OverprovisionDefaults::default(),
             load_staleness_secs: 180,
+            agent_heartbeat_threshold_secs: 60,
             strategy_weights: &weights,
             sibling_instances: &[],
         };
-        let runner = ChainRunner::empty(Strategy::Spread);
+        let runner = default_runner();
 
         let cns = vec![make_cn(Uuid::new_v4(), CnStateView::Pending, true)];
         let req = make_request();
@@ -481,10 +501,11 @@ mod tests {
             now: Utc::now(),
             cluster_overprovision: OverprovisionDefaults::default(),
             load_staleness_secs: 180,
+            agent_heartbeat_threshold_secs: 60,
             strategy_weights: &weights,
             sibling_instances: &[],
         };
-        let runner = ChainRunner::empty(Strategy::Spread);
+        let runner = default_runner();
         let cns = vec![
             make_cn(Uuid::new_v4(), CnStateView::Pending, true),
             make_cn(Uuid::new_v4(), CnStateView::Pending, false),
@@ -492,9 +513,10 @@ mod tests {
         let (chosen, report) = runner.pick(&cns, &make_request(), &ctx);
         assert!(chosen.is_none());
         let audit = report.bounded_for_audit();
-        // Both CNs rejected by the PL-1 baseline filter; the audit
-        // projection collapses that into one entry with count 2.
-        assert_eq!(audit.reject_counts.get("pl1-baseline"), Some(&2));
+        // Both CNs are pending, so both get rejected by
+        // `cn-approved-and-live` -- the audit projection
+        // collapses that into one entry with count 2.
+        assert_eq!(audit.reject_counts.get("cn-approved-and-live"), Some(&2));
         assert!(audit.chosen.is_none());
         assert!(audit.chosen_breakdown.is_empty());
     }

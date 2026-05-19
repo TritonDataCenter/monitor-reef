@@ -30,6 +30,13 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+# RFD 00005 PL-3+: filters/scorers read the canonical store row
+# shapes (InstanceAffinity, AffinityRule, ...) directly. The
+# projection types in src/types.rs (CapacityView, ...) remain as
+# the engine's projection over CnCapacity / CnPlacement / ...; the
+# join from raw rows to projection happens at PL-5's
+# get_cn_view_for_pick helper.
+tritond-store = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
