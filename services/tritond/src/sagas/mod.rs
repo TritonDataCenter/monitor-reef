@@ -94,6 +94,10 @@ pub fn register_all_actions(reg: &mut ActionRegistry) {
 /// registry (RFD 00004 D-Sg-10).
 pub fn registered_versions() -> Vec<(&'static str, u32)> {
     vec![
+        (
+            designate::STANDALONE_SAGA_NAME,
+            designate::STANDALONE_SAGA_VERSION,
+        ),
         (instance_create::SAGA_NAME, instance_create::SAGA_VERSION),
         (instance_delete::SAGA_NAME, instance_delete::SAGA_VERSION),
         (
