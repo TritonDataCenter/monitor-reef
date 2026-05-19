@@ -99,6 +99,9 @@ pub struct ClusterRecord {
     pub talos_crt_pem: Option<String>,
     /// Talos operator client private key (PEM). Sensitive; do not log.
     pub talos_key_pem: Option<String>,
+    /// Talos version currently running on the cluster (e.g. `1.7.6`).
+    /// Set by the upgrade endpoint; `None` until the first upgrade completes.
+    pub talos_version: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -123,7 +126,9 @@ impl From<&ClusterRecord> for Cluster {
             description: r.description.clone(),
             fabric_network_id: r.fabric_network_id,
             kubernetes_version: cp.map(|c| c.kubernetes_version.clone()),
-            talos_version: cp.map(|c| c.talos_version.clone()),
+            talos_version: cp
+                .map(|c| c.talos_version.clone())
+                .or_else(|| r.talos_version.clone()),
             endpoint: cp.map(|c| c.endpoint.clone()),
             control_plane_count,
             worker_count,
@@ -337,6 +342,7 @@ mod tests {
             talos_ca_pem: None,
             talos_crt_pem: None,
             talos_key_pem: None,
+            talos_version: None,
             created_at: Utc::now(),
         }
     }

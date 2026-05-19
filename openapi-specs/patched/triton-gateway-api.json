@@ -3932,6 +3932,24 @@
         "title": "UpdateVolumeRequest",
         "type": "object"
       },
+      "UpgradeClusterRequest": {
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/upgrade`.\n\nTriggers a rolling Talos OS upgrade across all nodes in the cluster. Control-plane nodes are upgraded first (one at a time to maintain etcd quorum), then worker nodes.",
+        "properties": {
+          "preserve": {
+            "default": false,
+            "description": "Preserve the ephemeral data partition across the upgrade. Default: `false` (data partition is wiped — correct for most upgrades).",
+            "type": "boolean"
+          },
+          "talos_image": {
+            "description": "Talos installer image to upgrade to, e.g. `ghcr.io/siderolabs/talos:v1.8.0`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "talos_image"
+        ],
+        "type": "object"
+      },
       "User": {
         "description": "User information",
         "properties": {
@@ -4758,6 +4776,56 @@
           }
         },
         "summary": "Add nodes to a running cluster.",
+        "tags": [
+          "k8s"
+        ]
+      }
+    },
+    "/v1/k8s/clusters/{cluster}/upgrade": {
+      "post": {
+        "description": "The cluster must be in `running` state. Control-plane nodes are upgraded first (sequentially to preserve etcd quorum), then worker nodes. The `talos_version` field in the cluster record is updated once all nodes have been upgraded.\n\nReturns 202 Accepted immediately. Poll `GET /v1/k8s/clusters/{cluster}` to observe the updated `talos_version` when the upgrade completes.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_upgrade",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpgradeClusterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            },
+            "description": "successfully enqueued operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Trigger a rolling Talos OS upgrade across all cluster nodes.",
         "tags": [
           "k8s"
         ]

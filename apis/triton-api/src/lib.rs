@@ -256,6 +256,29 @@ pub trait TritonApi {
         body: TypedBody<AddNodesRequest>,
     ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
 
+    /// Trigger a rolling Talos OS upgrade across all cluster nodes.
+    ///
+    /// The cluster must be in `running` state. Control-plane nodes are
+    /// upgraded first (sequentially to preserve etcd quorum), then worker
+    /// nodes. The `talos_version` field in the cluster record is updated
+    /// once all nodes have been upgraded.
+    ///
+    /// Returns 202 Accepted immediately. Poll
+    /// `GET /v1/k8s/clusters/{cluster}` to observe the updated
+    /// `talos_version` when the upgrade completes.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = POST,
+        path = "/v1/k8s/clusters/{cluster}/upgrade",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_upgrade(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<UpgradeClusterRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
+
     /// Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve
     /// kubeconfig.
     ///

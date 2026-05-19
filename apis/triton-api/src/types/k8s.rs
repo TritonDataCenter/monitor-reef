@@ -171,6 +171,22 @@ pub enum NodeBootstrapRole {
     Worker,
 }
 
+/// Body of `POST /v1/k8s/clusters/{cluster}/upgrade`.
+///
+/// Triggers a rolling Talos OS upgrade across all nodes in the cluster.
+/// Control-plane nodes are upgraded first (one at a time to maintain etcd
+/// quorum), then worker nodes.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UpgradeClusterRequest {
+    /// Talos installer image to upgrade to, e.g.
+    /// `ghcr.io/siderolabs/talos:v1.8.0`.
+    pub talos_image: String,
+    /// Preserve the ephemeral data partition across the upgrade.
+    /// Default: `false` (data partition is wiped — correct for most upgrades).
+    #[serde(default)]
+    pub preserve: bool,
+}
+
 /// Body of `POST /v1/k8s/clusters/{cluster}/nodes`.
 ///
 /// Each node must already have the relay agent running. The server

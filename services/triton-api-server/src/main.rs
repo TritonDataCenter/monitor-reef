@@ -26,7 +26,7 @@ use triton_api::{
     ClusterState, CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse, LoginChallenge,
     LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse,
     NodeBootstrapRole, NodeBootstrapSpec, PingResponse, RefreshRequest, RefreshResponse,
-    SessionResponse, TritonApi, UserInfo,
+    SessionResponse, TritonApi, UpgradeClusterRequest, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -550,6 +550,7 @@ impl TritonApi for TritonApiImpl {
             talos_ca_pem: None,
             talos_crt_pem: None,
             talos_key_pem: None,
+            talos_version: None,
             created_at: chrono::Utc::now(),
         };
         rqctx
@@ -647,6 +648,52 @@ impl TritonApi for TritonApiImpl {
             )
         })?;
         Ok(HttpResponseOk(KubeconfigResponse { kubeconfig }))
+    }
+
+    async fn k8s_cluster_upgrade(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<UpgradeClusterRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let id = path.into_inner().cluster;
+        let ctx = rqctx.context();
+        let store = Arc::clone(&ctx.cluster_store);
+
+        let record = store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        if record.state != ClusterState::Running {
+            return Err(HttpError::for_client_error(
+                Some("InvalidState".to_string()),
+                ClientErrorStatusCode::CONFLICT,
+                format!("cluster {id} must be in `running` state to upgrade"),
+            ));
+        }
+
+        let req = body.into_inner();
+        if req.talos_image.is_empty() {
+            return Err(HttpError::for_client_error(
+                Some("InvalidInput".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "talos_image must not be empty".to_string(),
+            ));
+        }
+
+        let relay = Arc::clone(&ctx.relay);
+        let cluster_view = Cluster::from(&record);
+        tokio::spawn(async move {
+            if let Err(e) = run_upgrade(store, relay, record, req).await {
+                tracing::error!(cluster = %id, error = %e, "upgrade failed");
+            }
+        });
+
+        Ok(HttpResponseAccepted(cluster_view))
     }
 
     async fn k8s_cluster_nodes_add(
@@ -938,6 +985,87 @@ async fn run_bootstrap(
         .await
         .with_context(|| format!("update cluster {cluster_id} to Running"))?;
     tracing::info!(cluster = %cluster_id, "cluster bootstrap complete, state=Running");
+    Ok(())
+}
+
+async fn run_upgrade(
+    store: Arc<dyn ClusterStore>,
+    relay: Arc<RelayState>,
+    mut record: ClusterRecord,
+    req: UpgradeClusterRequest,
+) -> anyhow::Result<()> {
+    let cluster_id = record.id;
+
+    let ca_pem = record
+        .talos_ca_pem
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no stored Talos credentials"))?
+        .as_bytes()
+        .to_vec();
+    let crt_pem = record
+        .talos_crt_pem
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no stored Talos credentials"))?
+        .as_bytes()
+        .to_vec();
+    let key_pem = record
+        .talos_key_pem
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no stored Talos credentials"))?
+        .as_bytes()
+        .to_vec();
+
+    // Control-plane nodes first (maintain etcd quorum), then workers.
+    let targets: Vec<String> = record
+        .nodes
+        .values()
+        .filter(|n| n.role == NodeRole::Control)
+        .map(|n| format!("{}:50000", n.fabric_ip))
+        .chain(
+            record
+                .nodes
+                .values()
+                .filter(|n| n.role == NodeRole::Worker)
+                .map(|n| format!("{}:50000", n.fabric_ip)),
+        )
+        .collect();
+
+    for target in &targets {
+        tracing::info!(cluster = %cluster_id, target = %target, image = %req.talos_image, "upgrading node");
+        let mut client = talos::TalosClient::connect_authenticated(
+            Arc::clone(&relay),
+            target,
+            &ca_pem,
+            &crt_pem,
+            &key_pem,
+        )
+        .await
+        .with_context(|| format!("authenticated connect to {target}"))?;
+        client
+            .upgrade(&req.talos_image, req.preserve)
+            .await
+            .with_context(|| format!("upgrade {target}"))?;
+        tracing::info!(cluster = %cluster_id, target = %target, "upgrade triggered, waiting for reboot");
+        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+    }
+
+    // Extract version from the image tag (e.g. "…:v1.8.0" → "1.8.0").
+    let new_version = req
+        .talos_image
+        .rsplit(':')
+        .next()
+        .map(|v| v.trim_start_matches('v').to_string());
+
+    record.talos_version = new_version.clone();
+    if let (Some(cp), Some(v)) = (record.control_plane_config.as_mut(), new_version) {
+        cp.talos_version = v;
+    }
+
+    store
+        .update(&record)
+        .await
+        .with_context(|| format!("update cluster {cluster_id} after upgrade"))?;
+    tracing::info!(cluster = %cluster_id, image = %req.talos_image, "cluster upgrade complete");
     Ok(())
 }
 

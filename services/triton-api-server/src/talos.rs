@@ -322,6 +322,27 @@ impl TalosClient {
             .map_err(|s| anyhow::anyhow!("Bootstrap: {s}"))
     }
 
+    /// Upgrade the Talos OS on this node to the given installer image.
+    ///
+    /// Triggers an immediate reboot into the new image. The caller should
+    /// wait for the node to come back before upgrading the next node.
+    /// Set `preserve = true` to keep the ephemeral data partition (usual for
+    /// in-place upgrades; omit for a fresh wipe-and-reinstall).
+    pub async fn upgrade(&mut self, image: &str, preserve: bool) -> Result<()> {
+        let req = proto::machine::UpgradeRequest {
+            image: image.to_string(),
+            preserve,
+            stage: false,
+            force: false,
+            reboot_mode: 0, // DEFAULT
+        };
+        self.inner
+            .upgrade(req)
+            .await
+            .map(|_| ())
+            .map_err(|s| anyhow::anyhow!("Upgrade: {s}"))
+    }
+
     /// Retrieve the kubeconfig from the control-plane node.
     ///
     /// The RPC is server-streaming; this method collects all data chunks into
