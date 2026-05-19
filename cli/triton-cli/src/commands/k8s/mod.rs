@@ -2,95 +2,129 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Kubernetes cluster management commands
 
 use anyhow::Result;
 use clap::Subcommand;
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::Cluster;
 
-use crate::config::profile::Profile;
-
+pub mod add_nodes;
 pub mod bootstrap;
-pub mod control;
 pub mod create;
 pub mod delete;
 pub mod get;
-pub mod health;
-pub mod images;
-pub mod kube_client;
 pub mod kubeconfig;
-pub mod lb;
 pub mod list;
-pub mod logging;
-pub mod network;
-pub mod provisioning;
-pub mod state;
-pub mod talos;
 pub mod upgrade;
-pub mod upgrade_k8s;
-pub mod worker;
 
 #[derive(Subcommand, Clone)]
 pub enum K8sCommand {
-    /// Create a new cluster (metadata only, no provisioning)
+    /// Create a new cluster record
     Create(create::CreateArgs),
-
-    /// Bootstrap cluster nodes (provision and configure)
-    Bootstrap(bootstrap::BootstrapArgs),
-
-    /// List all clusters
+    /// List all cluster records
     #[command(visible_alias = "ls")]
     List(list::ListArgs),
-
-    /// Get cluster details
+    /// Get a cluster record
     Get(get::GetArgs),
-
-    /// Delete a cluster
+    /// Delete a cluster record
     #[command(visible_alias = "rm")]
     Delete(delete::DeleteArgs),
-
-    /// Output kubeconfig for a cluster
+    /// Print the kubeconfig for a running cluster
     Kubeconfig(kubeconfig::KubeconfigArgs),
-
-    /// Manage control plane nodes
-    #[command(subcommand)]
-    Control(control::ControlCommand),
-
-    /// Manage worker nodes
-    #[command(subcommand)]
-    Worker(worker::WorkerCommand),
-
-    /// Manage LoadBalancer controller
-    #[command(subcommand, visible_alias = "loadbalancer")]
-    Lb(lb::LbCommand),
-
-    /// Upgrade Talos version on cluster nodes
+    /// Bootstrap a cluster (apply Talos configs, bootstrap etcd, retrieve kubeconfig)
+    Bootstrap(bootstrap::BootstrapArgs),
+    /// Add nodes to a running cluster
+    #[command(name = "add-nodes")]
+    AddNodes(add_nodes::AddNodesArgs),
+    /// Upgrade Talos on all cluster nodes
     Upgrade(upgrade::UpgradeArgs),
-
-    /// Upgrade Kubernetes (control plane + kube-proxy + kubelet)
-    UpgradeK8s(upgrade_k8s::UpgradeK8sArgs),
-
-    /// Show comprehensive cluster health status
-    Health(health::HealthArgs),
 }
 
 impl K8sCommand {
-    pub async fn run(self, client: &TypedClient, profile: &Profile, json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, json: bool) -> Result<()> {
         match self {
             Self::Create(args) => create::run(args, client, json).await,
-            Self::Bootstrap(args) => bootstrap::run(args, client, json).await,
-            Self::List(args) => list::run(args, json).await,
+            Self::List(args) => list::run(args, client, json).await,
             Self::Get(args) => get::run(args, client, json).await,
             Self::Delete(args) => delete::run(args, client).await,
-            Self::Kubeconfig(args) => kubeconfig::run(args).await,
-            Self::Control(cmd) => cmd.run(client, json).await,
-            Self::Worker(cmd) => cmd.run(client, json).await,
-            Self::Lb(cmd) => cmd.run(client, profile, json).await,
+            Self::Kubeconfig(args) => kubeconfig::run(args, client).await,
+            Self::Bootstrap(args) => bootstrap::run(args, client, json).await,
+            Self::AddNodes(args) => add_nodes::run(args, client, json).await,
             Self::Upgrade(args) => upgrade::run(args, client, json).await,
-            Self::UpgradeK8s(args) => upgrade_k8s::run(args, client, json).await,
-            Self::Health(args) => health::run(args, json).await,
+        }
+    }
+}
+
+/// Resolve a cluster name, short UUID prefix, or full UUID to a `Cluster`.
+///
+/// Resolution order:
+/// 1. If the input parses as a full UUID, call GET directly.
+/// 2. Otherwise, list all clusters and search by exact name or 8-char ID prefix.
+pub async fn resolve_cluster(input: &str, client: &TypedClient) -> Result<Cluster> {
+    // Try parsing as a full UUID first.
+    if let Ok(uuid) = uuid::Uuid::parse_str(input) {
+        let cluster = client
+            .inner()
+            .k8s_clusters_get()
+            .cluster(uuid)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("cluster not found: {}", e))?
+            .into_inner();
+        return Ok(cluster);
+    }
+
+    // Fall back to listing and searching by name or prefix.
+    let list = client
+        .inner()
+        .k8s_clusters_list()
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to list clusters: {}", e))?
+        .into_inner();
+
+    // Exact name match first.
+    let by_name: Vec<&Cluster> = list.items.iter().filter(|c| c.name == input).collect();
+    if by_name.len() == 1 {
+        return Ok(by_name[0].clone());
+    }
+    if by_name.len() > 1 {
+        let ids: Vec<String> = by_name
+            .iter()
+            .map(|c| c.id.to_string()[..8].to_string())
+            .collect();
+        anyhow::bail!(
+            "ambiguous cluster name '{}' matches multiple clusters: {}",
+            input,
+            ids.join(", ")
+        );
+    }
+
+    // Short ID prefix match.
+    let by_prefix: Vec<&Cluster> = list
+        .items
+        .iter()
+        .filter(|c| c.id.to_string().starts_with(input))
+        .collect();
+    match by_prefix.len() {
+        1 => Ok(by_prefix[0].clone()),
+        0 => Err(
+            crate::errors::ResourceNotFoundError(format!("cluster not found: {}", input)).into(),
+        ),
+        n => {
+            let ids: Vec<String> = by_prefix
+                .iter()
+                .map(|c| c.id.to_string()[..8].to_string())
+                .collect();
+            anyhow::bail!(
+                "ambiguous short ID '{}' matches {} clusters: {}",
+                input,
+                n,
+                ids.join(", ")
+            )
         }
     }
 }

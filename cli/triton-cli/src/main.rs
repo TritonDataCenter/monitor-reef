@@ -668,8 +668,8 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::K8s { command } => {
-            let (client, profile) = cli.build_client().await?;
-            command.clone().run(&client, &profile, cli.json).await
+            let (client, _profile) = cli.build_client().await?;
+            command.clone().run(&client, cli.json).await
         }
         Commands::Info => {
             let (client, _profile) = cli.build_client().await?;

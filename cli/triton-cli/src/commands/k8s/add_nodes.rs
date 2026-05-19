@@ -4,58 +4,53 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Bootstrap a Kubernetes cluster
+//! Add nodes to a running Kubernetes cluster
 
 use anyhow::{Context, Result};
 use clap::Args;
 use std::path::PathBuf;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::BootstrapClusterRequest;
+use triton_gateway_client::types::AddNodesRequest;
 
 use crate::output::json;
 
 #[derive(Args, Clone)]
-pub struct BootstrapArgs {
+pub struct AddNodesArgs {
     /// Cluster UUID, short ID prefix, or name
     pub cluster: String,
 
-    /// Path to a JSON file containing BootstrapClusterRequest
-    /// (ca_pem, crt_pem, key_pem, nodes)
+    /// Path to a JSON file containing AddNodesRequest (nodes array)
     #[arg(long)]
     pub config: PathBuf,
 }
 
-pub async fn run(args: BootstrapArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(args: AddNodesArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let cluster = super::resolve_cluster(&args.cluster, client).await?;
 
-    // Read and deserialize the bootstrap request body.
+    // Read and deserialize the add-nodes request body.
     let raw = std::fs::read_to_string(&args.config)
         .with_context(|| format!("failed to read config file {}", args.config.display()))?;
-    let body: BootstrapClusterRequest = serde_json::from_str(&raw).with_context(|| {
+    let body: AddNodesRequest = serde_json::from_str(&raw).with_context(|| {
         format!(
-            "failed to parse config file {} as BootstrapClusterRequest",
+            "failed to parse config file {} as AddNodesRequest",
             args.config.display()
         )
     })?;
 
     let result = client
         .inner()
-        .k8s_cluster_bootstrap()
+        .k8s_cluster_nodes_add()
         .cluster(cluster.id)
         .body(body)
         .send()
         .await
-        .map_err(|e| anyhow::anyhow!("failed to bootstrap cluster: {}", e))?
+        .map_err(|e| anyhow::anyhow!("failed to add nodes: {}", e))?
         .into_inner();
 
     if use_json {
         json::print_json(&result)?;
     } else {
-        println!(
-            "Bootstrap started. Cluster is now in `provisioning` state. \
-             Poll `triton k8s get {}` until state is `running`.",
-            &cluster.id.to_string()[..8]
-        );
+        println!("Node configs submitted.");
     }
 
     Ok(())

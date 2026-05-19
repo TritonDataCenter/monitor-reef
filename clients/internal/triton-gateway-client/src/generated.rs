@@ -626,6 +626,41 @@ pub mod types {
         }
     }
 
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/nodes`.\n\nEach node must already have the relay agent running. The server applies the supplied Talos machine config in maintenance mode and triggers a reboot; the node then joins the existing cluster automatically."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/nodes`.\\n\\nEach node must already have the relay agent running. The server applies the supplied Talos machine config in maintenance mode and triggers a reboot; the node then joins the existing cluster automatically.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"nodes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"nodes\": {"]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NodeBootstrapSpec\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AddNodesRequest {
+        pub nodes: ::std::vec::Vec<NodeBootstrapSpec>,
+    }
+
+    impl AddNodesRequest {
+        pub fn builder() -> builder::AddNodesRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Audit entry for a machine"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -774,6 +809,64 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe caller is responsible for generating Talos machine configs (e.g. via `talosctl gen config`) and for ensuring each listed node already has the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\\n\\nThe caller is responsible for generating Talos machine configs (e.g. via `talosctl gen config`) and for ensuring each listed node already has the relay agent running and reachable through the registered relay tunnel.\\n\\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \\\"running\\\"`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ca_pem\","]
+    #[doc = "    \"crt_pem\","]
+    #[doc = "    \"key_pem\","]
+    #[doc = "    \"nodes\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ca_pem\": {"]
+    #[doc = "      \"description\": \"Talos CA certificate in PEM format (from the generated talosconfig). Used by the server to verify node identity in post-bootstrap mTLS.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"crt_pem\": {"]
+    #[doc = "      \"description\": \"Operator client certificate in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"key_pem\": {"]
+    #[doc = "      \"description\": \"Operator client private key in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"nodes\": {"]
+    #[doc = "      \"description\": \"Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NodeBootstrapSpec\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct BootstrapClusterRequest {
+        #[doc = "Talos CA certificate in PEM format (from the generated talosconfig). Used by the server to verify node identity in post-bootstrap mTLS."]
+        pub ca_pem: ::std::string::String,
+        #[doc = "Operator client certificate in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes."]
+        pub crt_pem: ::std::string::String,
+        #[doc = "Operator client private key in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes."]
+        pub key_pem: ::std::string::String,
+        #[doc = "Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it."]
+        pub nodes: ::std::vec::Vec<NodeBootstrapSpec>,
+    }
+
+    impl BootstrapClusterRequest {
+        pub fn builder() -> builder::BootstrapClusterRequest {
+            Default::default()
         }
     }
 
@@ -1047,22 +1140,22 @@ pub mod types {
         }
     }
 
-    #[doc = "A Kelp-managed Kubernetes cluster record.\n\nThe record exists independent of any provisioned VMs — `Created` state means \"we know about this cluster but have not bootstrapped it yet.\" Bootstrap (a future endpoint) transitions the record through `Provisioning` to `Running`."]
+    #[doc = "A Kelp-managed Kubernetes cluster record (public API view).\n\nThe record exists independent of any provisioned VMs — `Created` state means \"we know about this cluster but have not bootstrapped it yet.\" Bootstrap transitions the record through `Provisioning` to `Running`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"A Kelp-managed Kubernetes cluster record.\\n\\nThe record exists independent of any provisioned VMs — `Created` state means \\\"we know about this cluster but have not bootstrapped it yet.\\\" Bootstrap (a future endpoint) transitions the record through `Provisioning` to `Running`.\","]
+    #[doc = "  \"description\": \"A Kelp-managed Kubernetes cluster record (public API view).\\n\\nThe record exists independent of any provisioned VMs — `Created` state means \\\"we know about this cluster but have not bootstrapped it yet.\\\" Bootstrap transitions the record through `Provisioning` to `Running`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"account_id\","]
+    #[doc = "    \"control_plane_count\","]
     #[doc = "    \"created_at\","]
     #[doc = "    \"id\","]
-    #[doc = "    \"kubernetes_version\","]
     #[doc = "    \"name\","]
     #[doc = "    \"state\","]
-    #[doc = "    \"talos_version\""]
+    #[doc = "    \"worker_count\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"account_id\": {"]
@@ -1070,10 +1163,38 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
+    #[doc = "    \"control_plane_count\": {"]
+    #[doc = "      \"description\": \"Number of control-plane nodes currently tracked.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
     #[doc = "    \"created_at\": {"]
     #[doc = "      \"description\": \"When the record was created.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"Optional customer-supplied description.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"endpoint\": {"]
+    #[doc = "      \"description\": \"Kubernetes API server endpoint URL. `None` until the control plane is operational.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"fabric_network_id\": {"]
+    #[doc = "      \"description\": \"Triton fabric network the cluster nodes are provisioned on. `None` until set at bootstrap time.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
     #[doc = "      \"description\": \"Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`.\","]
@@ -1081,11 +1202,14 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"kubernetes_version\": {"]
-    #[doc = "      \"description\": \"Target Kubernetes version (e.g. `1.30.3`). Compared against the `kubernetes_version -> talos image` map maintained by the service when bootstrap eventually selects an image.\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Target Kubernetes version (e.g. `1.30.3`). `None` until bootstrap begins selecting images.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
-    #[doc = "      \"description\": \"Customer-supplied display name. Not unique across accounts and not used as an identifier.\","]
+    #[doc = "      \"description\": \"Customer-supplied display name.\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
@@ -1097,8 +1221,17 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"talos_version\": {"]
-    #[doc = "      \"description\": \"Target Talos Linux version (e.g. `1.7.6`). Same mapping caveat as `kubernetes_version`.\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Target Talos Linux version (e.g. `1.7.6`). `None` until bootstrap begins.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"worker_count\": {"]
+    #[doc = "      \"description\": \"Number of worker nodes currently tracked.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1110,18 +1243,33 @@ pub mod types {
     pub struct Cluster {
         #[doc = "Owning Triton account UUID. Derived from the authenticated caller at create time; cannot be set by the client."]
         pub account_id: ::uuid::Uuid,
+        #[doc = "Number of control-plane nodes currently tracked."]
+        pub control_plane_count: u32,
         #[doc = "When the record was created."]
         pub created_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Optional customer-supplied description."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "Kubernetes API server endpoint URL. `None` until the control plane is operational."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub endpoint: ::std::option::Option<::std::string::String>,
+        #[doc = "Triton fabric network the cluster nodes are provisioned on. `None` until set at bootstrap time."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub fabric_network_id: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Server-assigned identifier. Used in `/v1/k8s/clusters/{cluster}`."]
         pub id: ::uuid::Uuid,
-        #[doc = "Target Kubernetes version (e.g. `1.30.3`). Compared against the `kubernetes_version -> talos image` map maintained by the service when bootstrap eventually selects an image."]
-        pub kubernetes_version: ::std::string::String,
-        #[doc = "Customer-supplied display name. Not unique across accounts and not used as an identifier."]
+        #[doc = "Target Kubernetes version (e.g. `1.30.3`). `None` until bootstrap begins selecting images."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub kubernetes_version: ::std::option::Option<::std::string::String>,
+        #[doc = "Customer-supplied display name."]
         pub name: ::std::string::String,
         #[doc = "Lifecycle state of the cluster record."]
         pub state: ClusterState,
-        #[doc = "Target Talos Linux version (e.g. `1.7.6`). Same mapping caveat as `kubernetes_version`."]
-        pub talos_version: ::std::string::String,
+        #[doc = "Target Talos Linux version (e.g. `1.7.6`). `None` until bootstrap begins."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub talos_version: ::std::option::Option<::std::string::String>,
+        #[doc = "Number of worker nodes currently tracked."]
+        pub worker_count: u32,
     }
 
     impl Cluster {
@@ -1130,13 +1278,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `GET /v1/k8s/clusters`.\n\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape."]
+    #[doc = "Response body for `GET /v1/k8s/clusters`.\n\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `GET /v1/k8s/clusters`.\\n\\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape.\","]
+    #[doc = "  \"description\": \"Response body for `GET /v1/k8s/clusters`.\\n\\nA wrapper struct (rather than a bare `Vec<Cluster>`) so future pagination metadata can be added without breaking the wire shape.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"items\""]
@@ -1412,27 +1560,32 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `POST /v1/k8s/clusters`.\n\nThe server assigns `id`, `account_id`, `state`, and `created_at`."]
+    #[doc = "Body of `POST /v1/k8s/clusters`.\n\nThe server assigns `id`, `account_id`, `state`, and `created_at`. Version selection and network assignment happen at bootstrap time."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters`.\\n\\nThe server assigns `id`, `account_id`, `state`, and `created_at`.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters`.\\n\\nThe server assigns `id`, `account_id`, `state`, and `created_at`. Version selection and network assignment happen at bootstrap time.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"kubernetes_version\","]
-    #[doc = "    \"name\","]
-    #[doc = "    \"talos_version\""]
+    #[doc = "    \"name\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"kubernetes_version\": {"]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"fabric_network_id\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"talos_version\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -1443,9 +1596,11 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct CreateClusterRequest {
-        pub kubernetes_version: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub fabric_network_id: ::std::option::Option<::uuid::Uuid>,
         pub name: ::std::string::String,
-        pub talos_version: ::std::string::String,
     }
 
     impl CreateClusterRequest {
@@ -4396,6 +4551,40 @@ pub mod types {
         }
     }
 
+    #[doc = "Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.\n\nThe `kubeconfig` field is a complete YAML kubeconfig document. Callers can write it to `~/.kube/config` or merge it with an existing config via `kubectl config view --merge`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.\\n\\nThe `kubeconfig` field is a complete YAML kubeconfig document. Callers can write it to `~/.kube/config` or merge it with an existing config via `kubectl config view --merge`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"kubeconfig\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"kubeconfig\": {"]
+    #[doc = "      \"description\": \"Kubeconfig YAML.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct KubeconfigResponse {
+        #[doc = "Kubeconfig YAML."]
+        pub kubeconfig: ::std::string::String,
+    }
+
+    impl KubeconfigResponse {
+        pub fn builder() -> builder::KubeconfigResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "Outcome of `POST /v1/auth/login`.\n\nTagged on the wire by the `outcome` field. The common case is `complete`: the password verified, no second factor is enrolled, and the response carries the same fields a non-2FA `LoginResponse` always has. Users enrolled in 2FA receive `challenge_required`, must read a code from their authenticator, and post it together with the `challenge_token` to `/v1/auth/login/verify` to obtain a `LoginResponse`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6981,6 +7170,138 @@ pub mod types {
         }
     }
 
+    #[doc = "Role a node plays within a Kelp cluster."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Role a node plays within a Kelp cluster.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"control_plane\","]
+    #[doc = "    \"worker\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum NodeBootstrapRole {
+        #[serde(rename = "control_plane")]
+        ControlPlane,
+        #[serde(rename = "worker")]
+        Worker,
+    }
+
+    impl ::std::fmt::Display for NodeBootstrapRole {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::ControlPlane => f.write_str("control_plane"),
+                Self::Worker => f.write_str("worker"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for NodeBootstrapRole {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "control_plane" => Ok(Self::ControlPlane),
+                "worker" => Ok(Self::Worker),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for NodeBootstrapRole {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for NodeBootstrapRole {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for NodeBootstrapRole {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Specification for a single node during cluster bootstrap."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Specification for a single node during cluster bootstrap.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"fabric_ip\","]
+    #[doc = "    \"machine_config\","]
+    #[doc = "    \"role\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"fabric_ip\": {"]
+    #[doc = "      \"description\": \"Fabric IP of an already-running node that has the relay agent active. Example: `\\\"10.0.0.5\\\"`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"machine_config\": {"]
+    #[doc = "      \"description\": \"Pre-generated Talos machine config YAML for this node (e.g. the `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"role\": {"]
+    #[doc = "      \"description\": \"Role this node will play in the cluster.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/NodeBootstrapRole\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NodeBootstrapSpec {
+        #[doc = "Fabric IP of an already-running node that has the relay agent active. Example: `\"10.0.0.5\"`."]
+        pub fabric_ip: ::std::string::String,
+        #[doc = "Pre-generated Talos machine config YAML for this node (e.g. the `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`)."]
+        pub machine_config: ::std::string::String,
+        #[doc = "Role this node will play in the cluster."]
+        pub role: NodeBootstrapRole,
+    }
+
+    impl NodeBootstrapSpec {
+        pub fn builder() -> builder::NodeBootstrapSpec {
+            Default::default()
+        }
+    }
+
     #[doc = "Package information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -9452,6 +9773,48 @@ pub mod types {
         }
     }
 
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/upgrade`.\n\nTriggers a rolling Talos OS upgrade across all nodes in the cluster. Control-plane nodes are upgraded first (one at a time to maintain etcd quorum), then worker nodes."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/upgrade`.\\n\\nTriggers a rolling Talos OS upgrade across all nodes in the cluster. Control-plane nodes are upgraded first (one at a time to maintain etcd quorum), then worker nodes.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"talos_image\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"preserve\": {"]
+    #[doc = "      \"description\": \"Preserve the ephemeral data partition across the upgrade. Default: `false` (data partition is wiped — correct for most upgrades).\","]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"talos_image\": {"]
+    #[doc = "      \"description\": \"Talos installer image to upgrade to, e.g. `ghcr.io/siderolabs/talos:v1.8.0`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct UpgradeClusterRequest {
+        #[doc = "Preserve the ephemeral data partition across the upgrade. Default: `false` (data partition is wiped — correct for most upgrades)."]
+        #[serde(default)]
+        pub preserve: bool,
+        #[doc = "Talos installer image to upgrade to, e.g. `ghcr.io/siderolabs/talos:v1.8.0`."]
+        pub talos_image: ::std::string::String,
+    }
+
+    impl UpgradeClusterRequest {
+        pub fn builder() -> builder::UpgradeClusterRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "User information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -11010,6 +11373,54 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct AddNodesRequest {
+            nodes: ::std::result::Result<
+                ::std::vec::Vec<super::NodeBootstrapSpec>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for AddNodesRequest {
+            fn default() -> Self {
+                Self {
+                    nodes: Err("no value supplied for nodes".to_string()),
+                }
+            }
+        }
+
+        impl AddNodesRequest {
+            pub fn nodes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NodeBootstrapSpec>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nodes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nodes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AddNodesRequest> for super::AddNodesRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AddNodesRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    nodes: value.nodes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AddNodesRequest> for AddNodesRequest {
+            fn from(value: super::AddNodesRequest) -> Self {
+                Self {
+                    nodes: Ok(value.nodes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct AuditEntry {
             action: ::std::result::Result<::std::string::String, ::std::string::String>,
             caller: ::std::result::Result<
@@ -11106,6 +11517,96 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct BootstrapClusterRequest {
+            ca_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
+            crt_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
+            key_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
+            nodes: ::std::result::Result<
+                ::std::vec::Vec<super::NodeBootstrapSpec>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for BootstrapClusterRequest {
+            fn default() -> Self {
+                Self {
+                    ca_pem: Err("no value supplied for ca_pem".to_string()),
+                    crt_pem: Err("no value supplied for crt_pem".to_string()),
+                    key_pem: Err("no value supplied for key_pem".to_string()),
+                    nodes: Err("no value supplied for nodes".to_string()),
+                }
+            }
+        }
+
+        impl BootstrapClusterRequest {
+            pub fn ca_pem<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ca_pem = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ca_pem: {e}"));
+                self
+            }
+            pub fn crt_pem<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.crt_pem = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for crt_pem: {e}"));
+                self
+            }
+            pub fn key_pem<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key_pem = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key_pem: {e}"));
+                self
+            }
+            pub fn nodes<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NodeBootstrapSpec>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nodes = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nodes: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<BootstrapClusterRequest> for super::BootstrapClusterRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: BootstrapClusterRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ca_pem: value.ca_pem?,
+                    crt_pem: value.crt_pem?,
+                    key_pem: value.key_pem?,
+                    nodes: value.nodes?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::BootstrapClusterRequest> for BootstrapClusterRequest {
+            fn from(value: super::BootstrapClusterRequest) -> Self {
+                Self {
+                    ca_pem: Ok(value.ca_pem),
+                    crt_pem: Ok(value.crt_pem),
+                    key_pem: Ok(value.key_pem),
+                    nodes: Ok(value.nodes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ChangePasswordRequest {
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
             password_confirmation:
@@ -11170,27 +11671,52 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Cluster {
             account_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            control_plane_count: ::std::result::Result<u32, ::std::string::String>,
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
                 ::std::string::String,
             >,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            endpoint: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            fabric_network_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            kubernetes_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            kubernetes_version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::ClusterState, ::std::string::String>,
-            talos_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            talos_version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            worker_count: ::std::result::Result<u32, ::std::string::String>,
         }
 
         impl ::std::default::Default for Cluster {
             fn default() -> Self {
                 Self {
                     account_id: Err("no value supplied for account_id".to_string()),
+                    control_plane_count: Err(
+                        "no value supplied for control_plane_count".to_string()
+                    ),
                     created_at: Err("no value supplied for created_at".to_string()),
+                    description: Ok(Default::default()),
+                    endpoint: Ok(Default::default()),
+                    fabric_network_id: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
-                    kubernetes_version: Err("no value supplied for kubernetes_version".to_string()),
+                    kubernetes_version: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     state: Err("no value supplied for state".to_string()),
-                    talos_version: Err("no value supplied for talos_version".to_string()),
+                    talos_version: Ok(Default::default()),
+                    worker_count: Err("no value supplied for worker_count".to_string()),
                 }
             }
         }
@@ -11206,6 +11732,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for account_id: {e}"));
                 self
             }
+            pub fn control_plane_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.control_plane_count = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for control_plane_count: {e}")
+                });
+                self
+            }
             pub fn created_at<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
@@ -11214,6 +11750,36 @@ pub mod types {
                 self.created_at = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for created_at: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn endpoint<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.endpoint = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for endpoint: {e}"));
+                self
+            }
+            pub fn fabric_network_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.fabric_network_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for fabric_network_id: {e}")
+                });
                 self
             }
             pub fn id<T>(mut self, value: T) -> Self
@@ -11228,7 +11794,7 @@ pub mod types {
             }
             pub fn kubernetes_version<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.kubernetes_version = value.try_into().map_err(|e| {
@@ -11258,12 +11824,22 @@ pub mod types {
             }
             pub fn talos_version<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.talos_version = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for talos_version: {e}"));
+                self
+            }
+            pub fn worker_count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.worker_count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for worker_count: {e}"));
                 self
             }
         }
@@ -11275,12 +11851,17 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     account_id: value.account_id?,
+                    control_plane_count: value.control_plane_count?,
                     created_at: value.created_at?,
+                    description: value.description?,
+                    endpoint: value.endpoint?,
+                    fabric_network_id: value.fabric_network_id?,
                     id: value.id?,
                     kubernetes_version: value.kubernetes_version?,
                     name: value.name?,
                     state: value.state?,
                     talos_version: value.talos_version?,
+                    worker_count: value.worker_count?,
                 })
             }
         }
@@ -11289,12 +11870,17 @@ pub mod types {
             fn from(value: super::Cluster) -> Self {
                 Self {
                     account_id: Ok(value.account_id),
+                    control_plane_count: Ok(value.control_plane_count),
                     created_at: Ok(value.created_at),
+                    description: Ok(value.description),
+                    endpoint: Ok(value.endpoint),
+                    fabric_network_id: Ok(value.fabric_network_id),
                     id: Ok(value.id),
                     kubernetes_version: Ok(value.kubernetes_version),
                     name: Ok(value.name),
                     state: Ok(value.state),
                     talos_version: Ok(value.talos_version),
+                    worker_count: Ok(value.worker_count),
                 }
             }
         }
@@ -11457,29 +12043,43 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct CreateClusterRequest {
-            kubernetes_version: ::std::result::Result<::std::string::String, ::std::string::String>,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            fabric_network_id:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            talos_version: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
         impl ::std::default::Default for CreateClusterRequest {
             fn default() -> Self {
                 Self {
-                    kubernetes_version: Err("no value supplied for kubernetes_version".to_string()),
+                    description: Ok(Default::default()),
+                    fabric_network_id: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
-                    talos_version: Err("no value supplied for talos_version".to_string()),
                 }
             }
         }
 
         impl CreateClusterRequest {
-            pub fn kubernetes_version<T>(mut self, value: T) -> Self
+            pub fn description<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.kubernetes_version = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for kubernetes_version: {e}")
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn fabric_network_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.fabric_network_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for fabric_network_id: {e}")
                 });
                 self
             }
@@ -11493,16 +12093,6 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for name: {e}"));
                 self
             }
-            pub fn talos_version<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.talos_version = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for talos_version: {e}"));
-                self
-            }
         }
 
         impl ::std::convert::TryFrom<CreateClusterRequest> for super::CreateClusterRequest {
@@ -11511,9 +12101,9 @@ pub mod types {
                 value: CreateClusterRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    kubernetes_version: value.kubernetes_version?,
+                    description: value.description?,
+                    fabric_network_id: value.fabric_network_id?,
                     name: value.name?,
-                    talos_version: value.talos_version?,
                 })
             }
         }
@@ -11521,9 +12111,9 @@ pub mod types {
         impl ::std::convert::From<super::CreateClusterRequest> for CreateClusterRequest {
             fn from(value: super::CreateClusterRequest) -> Self {
                 Self {
-                    kubernetes_version: Ok(value.kubernetes_version),
+                    description: Ok(value.description),
+                    fabric_network_id: Ok(value.fabric_network_id),
                     name: Ok(value.name),
-                    talos_version: Ok(value.talos_version),
                 }
             }
         }
@@ -14483,6 +15073,51 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct KubeconfigResponse {
+            kubeconfig: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for KubeconfigResponse {
+            fn default() -> Self {
+                Self {
+                    kubeconfig: Err("no value supplied for kubeconfig".to_string()),
+                }
+            }
+        }
+
+        impl KubeconfigResponse {
+            pub fn kubeconfig<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.kubeconfig = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for kubeconfig: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<KubeconfigResponse> for super::KubeconfigResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: KubeconfigResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    kubeconfig: value.kubeconfig?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::KubeconfigResponse> for KubeconfigResponse {
+            fn from(value: super::KubeconfigResponse) -> Self {
+                Self {
+                    kubeconfig: Ok(value.kubeconfig),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct LoginRequest {
             password: ::std::result::Result<::std::string::String, ::std::string::String>,
             username: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -16535,6 +17170,79 @@ pub mod types {
                     network: Ok(value.network),
                     primary: Ok(value.primary),
                     state: Ok(value.state),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NodeBootstrapSpec {
+            fabric_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
+            machine_config: ::std::result::Result<::std::string::String, ::std::string::String>,
+            role: ::std::result::Result<super::NodeBootstrapRole, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NodeBootstrapSpec {
+            fn default() -> Self {
+                Self {
+                    fabric_ip: Err("no value supplied for fabric_ip".to_string()),
+                    machine_config: Err("no value supplied for machine_config".to_string()),
+                    role: Err("no value supplied for role".to_string()),
+                }
+            }
+        }
+
+        impl NodeBootstrapSpec {
+            pub fn fabric_ip<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.fabric_ip = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for fabric_ip: {e}"));
+                self
+            }
+            pub fn machine_config<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.machine_config = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for machine_config: {e}")
+                });
+                self
+            }
+            pub fn role<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::NodeBootstrapRole>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.role = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for role: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NodeBootstrapSpec> for super::NodeBootstrapSpec {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NodeBootstrapSpec,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    fabric_ip: value.fabric_ip?,
+                    machine_config: value.machine_config?,
+                    role: value.role?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NodeBootstrapSpec> for NodeBootstrapSpec {
+            fn from(value: super::NodeBootstrapSpec) -> Self {
+                Self {
+                    fabric_ip: Ok(value.fabric_ip),
+                    machine_config: Ok(value.machine_config),
+                    role: Ok(value.role),
                 }
             }
         }
@@ -19383,6 +20091,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct UpgradeClusterRequest {
+            preserve: ::std::result::Result<bool, ::std::string::String>,
+            talos_image: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for UpgradeClusterRequest {
+            fn default() -> Self {
+                Self {
+                    preserve: Ok(Default::default()),
+                    talos_image: Err("no value supplied for talos_image".to_string()),
+                }
+            }
+        }
+
+        impl UpgradeClusterRequest {
+            pub fn preserve<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.preserve = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for preserve: {e}"));
+                self
+            }
+            pub fn talos_image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.talos_image = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for talos_image: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<UpgradeClusterRequest> for super::UpgradeClusterRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UpgradeClusterRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    preserve: value.preserve?,
+                    talos_image: value.talos_image?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::UpgradeClusterRequest> for UpgradeClusterRequest {
+            fn from(value: super::UpgradeClusterRequest) -> Self {
+                Self {
+                    preserve: Ok(value.preserve),
+                    talos_image: Ok(value.talos_image),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct User {
             company_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -20170,6 +20937,36 @@ impl Client {
     #[doc = "Delete a cluster record\n\nIn Phase 1 this only removes the server-side record; once bootstrap exists, deletion will also tear down provisioned VMs and fabric resources. Returns 404 with the same indistinguishable-not-found semantics as [`Self::k8s_clusters_get`].\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `DELETE` request to `/v1/k8s/clusters/{cluster}`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_clusters_delete()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
     pub fn k8s_clusters_delete(&self) -> builder::K8sClustersDelete<'_> {
         builder::K8sClustersDelete::new(self)
+    }
+
+    #[doc = "Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve\n\nkubeconfig.\n\nThe cluster must be in `created` state. Nodes listed in the request must already be running the relay agent so the server can reach them through the registered relay tunnel.\n\nReturns 202 Accepted with the cluster record in `provisioning` state. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters/{cluster}/bootstrap`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n- `body`\n```ignore\nlet response = client.k8s_cluster_bootstrap()\n    .cluster(cluster)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_bootstrap(&self) -> builder::K8sClusterBootstrap<'_> {
+        builder::K8sClusterBootstrap::new(self)
+    }
+
+    #[doc = "Retrieve the kubeconfig for a running cluster\n\nReturns 404 if the cluster does not exist, is owned by a different account, or has not yet completed bootstrap (kubeconfig not yet available — the cluster is still `provisioning`).\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `GET` request to `/v1/k8s/clusters/{cluster}/kubeconfig`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_cluster_kubeconfig()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_kubeconfig(&self) -> builder::K8sClusterKubeconfig<'_> {
+        builder::K8sClusterKubeconfig::new(self)
+    }
+
+    #[doc = "Add nodes to a running cluster\n\nEach node must already have the relay agent active. The server applies the supplied Talos machine config in maintenance mode and triggers a reboot; the node then joins the existing cluster automatically. Control-plane joiner configs and worker configs are both accepted — role assignment is determined by the config content, not enforced server-side.\n\nReturns 202 Accepted immediately. The node inventory in the cluster record is updated once configs have been applied.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters/{cluster}/nodes`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n- `body`\n```ignore\nlet response = client.k8s_cluster_nodes_add()\n    .cluster(cluster)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_nodes_add(&self) -> builder::K8sClusterNodesAdd<'_> {
+        builder::K8sClusterNodesAdd::new(self)
+    }
+
+    #[doc = "Trigger a rolling Talos OS upgrade across all cluster nodes\n\nThe cluster must be in `running` state. Control-plane nodes are upgraded first (sequentially to preserve etcd quorum), then worker nodes. The `talos_version` field in the cluster record is updated once all nodes have been upgraded.\n\nReturns 202 Accepted immediately. Poll `GET /v1/k8s/clusters/{cluster}` to observe the updated `talos_version` when the upgrade completes.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters/{cluster}/upgrade`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n- `body`\n```ignore\nlet response = client.k8s_cluster_upgrade()\n    .cluster(cluster)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_upgrade(&self) -> builder::K8sClusterUpgrade<'_> {
+        builder::K8sClusterUpgrade::new(self)
+    }
+
+    #[doc = "Register a relay agent tunnel\n\nCalled by the gateway-zone agent. The connection is upgraded to WebSocket and then to a yamux session (server = agent, client = API server). The API server opens yamux streams when bridge clients request connections; the agent dials the target on the fabric network and bridges bytes.\n\nNo authentication in the POC — this is intentional.\n\nSends a `GET` request to `/v1/k8s/relay`\n\n```ignore\nlet response = client.k8s_relay_register()\n    .send()\n    .await;\n```"]
+    pub fn k8s_relay_register(&self) -> builder::K8sRelayRegister<'_> {
+        builder::K8sRelayRegister::new(self)
+    }
+
+    #[doc = "Connect to the relay as a bridge client\n\nCalled by `triton-relay-bridge`. The connection is upgraded to WebSocket and then to a yamux session (server = API server, client = bridge). For each inbound stream from the bridge the API server opens a yamux stream to the registered agent and splices the two together.\n\nNo authentication in the POC — this is intentional.\n\nSends a `GET` request to `/v1/k8s/relay/connect`\n\n```ignore\nlet response = client.k8s_relay_connect()\n    .send()\n    .await;\n```"]
+    pub fn k8s_relay_connect(&self) -> builder::K8sRelayConnect<'_> {
+        builder::K8sRelayConnect::new(self)
     }
 
     #[doc = "Ping\n\nSends a `GET` request to `/v1/ping`\n\n```ignore\nlet response = client.ping()\n    .send()\n    .await;\n```"]
@@ -21892,6 +22689,514 @@ pub mod builder {
                 500u16..=599u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_bootstrap`]\n\n[`Client::k8s_cluster_bootstrap`]: super::Client::k8s_cluster_bootstrap"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterBootstrap<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::BootstrapClusterRequest, String>,
+    }
+
+    impl<'a> K8sClusterBootstrap<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::BootstrapClusterRequest>,
+            <V as std::convert::TryInto<types::BootstrapClusterRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `BootstrapClusterRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::BootstrapClusterRequest,
+                ) -> types::builder::BootstrapClusterRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/k8s/clusters/{cluster}/bootstrap`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self {
+                client,
+                cluster,
+                body,
+            } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| {
+                    types::BootstrapClusterRequest::try_from(v).map_err(|e| e.to_string())
+                })
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/bootstrap",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_bootstrap",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_kubeconfig`]\n\n[`Client::k8s_cluster_kubeconfig`]: super::Client::k8s_cluster_kubeconfig"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterKubeconfig<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> K8sClusterKubeconfig<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/k8s/clusters/{cluster}/kubeconfig`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::KubeconfigResponse>, Error<types::Error>> {
+            let Self { client, cluster } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/kubeconfig",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_kubeconfig",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_nodes_add`]\n\n[`Client::k8s_cluster_nodes_add`]: super::Client::k8s_cluster_nodes_add"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterNodesAdd<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::AddNodesRequest, String>,
+    }
+
+    impl<'a> K8sClusterNodesAdd<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::AddNodesRequest>,
+            <V as std::convert::TryInto<types::AddNodesRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `AddNodesRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::AddNodesRequest) -> types::builder::AddNodesRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/k8s/clusters/{cluster}/nodes`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self {
+                client,
+                cluster,
+                body,
+            } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::AddNodesRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/nodes",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_nodes_add",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_upgrade`]\n\n[`Client::k8s_cluster_upgrade`]: super::Client::k8s_cluster_upgrade"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterUpgrade<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::UpgradeClusterRequest, String>,
+    }
+
+    impl<'a> K8sClusterUpgrade<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::UpgradeClusterRequest>,
+            <V as std::convert::TryInto<types::UpgradeClusterRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value.try_into().map(From::from).map_err(|s| {
+                format!(
+                    "conversion to `UpgradeClusterRequest` for body failed: {}",
+                    s
+                )
+            });
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::UpgradeClusterRequest,
+                ) -> types::builder::UpgradeClusterRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/k8s/clusters/{cluster}/upgrade`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self {
+                client,
+                cluster,
+                body,
+            } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::UpgradeClusterRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/upgrade",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_upgrade",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_relay_register`]\n\n[`Client::k8s_relay_register`]: super::Client::k8s_relay_register"]
+    #[derive(Debug, Clone)]
+    pub struct K8sRelayRegister<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> K8sRelayRegister<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/k8s/relay`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<reqwest::Upgraded>, Error<reqwest::Upgraded>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/k8s/relay", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .headers(header_map)
+                .header(::reqwest::header::CONNECTION, "Upgrade")
+                .header(::reqwest::header::UPGRADE, "websocket")
+                .header(::reqwest::header::SEC_WEBSOCKET_VERSION, "13")
+                .header(
+                    ::reqwest::header::SEC_WEBSOCKET_KEY,
+                    ::base64::Engine::encode(
+                        &::base64::engine::general_purpose::STANDARD,
+                        ::rand::random::<[u8; 16]>(),
+                    ),
+                )
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_relay_register",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                101u16 => ResponseValue::upgrade(response).await,
+                200..=299 => ResponseValue::upgrade(response).await,
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_relay_connect`]\n\n[`Client::k8s_relay_connect`]: super::Client::k8s_relay_connect"]
+    #[derive(Debug, Clone)]
+    pub struct K8sRelayConnect<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> K8sRelayConnect<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/k8s/relay/connect`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<reqwest::Upgraded>, Error<reqwest::Upgraded>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/k8s/relay/connect", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .headers(header_map)
+                .header(::reqwest::header::CONNECTION, "Upgrade")
+                .header(::reqwest::header::UPGRADE, "websocket")
+                .header(::reqwest::header::SEC_WEBSOCKET_VERSION, "13")
+                .header(
+                    ::reqwest::header::SEC_WEBSOCKET_KEY,
+                    ::base64::Engine::encode(
+                        &::base64::engine::general_purpose::STANDARD,
+                        ::rand::random::<[u8; 16]>(),
+                    ),
+                )
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_relay_connect",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                101u16 => ResponseValue::upgrade(response).await,
+                200..=299 => ResponseValue::upgrade(response).await,
                 _ => Err(Error::UnexpectedResponse(response)),
             }
         }
