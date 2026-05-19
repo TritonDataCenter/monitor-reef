@@ -23,9 +23,9 @@ use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tracing::{info, warn};
 use triton_api::{
     BootstrapClusterRequest, ChallengeMethod, Cluster, ClusterList, ClusterPath, ClusterState,
-    CreateClusterRequest, Jwk, JwkSet, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
-    LoginVerifyRequest, LogoutResponse, NodeBootstrapRole, PingResponse, RefreshRequest,
-    RefreshResponse, SessionResponse, TritonApi, UserInfo,
+    CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse, LoginChallenge, LoginOutcome,
+    LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse, NodeBootstrapRole,
+    PingResponse, RefreshRequest, RefreshResponse, SessionResponse, TritonApi, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -620,6 +620,32 @@ impl TritonApi for TritonApiImpl {
             return Err(cluster_not_found(id));
         }
         Ok(HttpResponseDeleted())
+    }
+
+    async fn k8s_cluster_kubeconfig(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<KubeconfigResponse>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let id = path.into_inner().cluster;
+        let record = rqctx
+            .context()
+            .cluster_store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        let kubeconfig = record.kubeconfig_yaml.ok_or_else(|| {
+            HttpError::for_client_error(
+                Some("NotFound".to_string()),
+                ClientErrorStatusCode::NOT_FOUND,
+                format!("kubeconfig for cluster {id} is not yet available"),
+            )
+        })?;
+        Ok(HttpResponseOk(KubeconfigResponse { kubeconfig }))
     }
 
     async fn k8s_cluster_bootstrap(

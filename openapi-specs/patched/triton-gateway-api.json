@@ -1787,6 +1787,19 @@
         ],
         "type": "object"
       },
+      "KubeconfigResponse": {
+        "description": "Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.\n\nThe `kubeconfig` field is a complete YAML kubeconfig document. Callers can write it to `~/.kube/config` or merge it with an existing config via `kubectl config view --merge`.",
+        "properties": {
+          "kubeconfig": {
+            "description": "Kubeconfig YAML.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kubeconfig"
+        ],
+        "type": "object"
+      },
       "LoginOutcome": {
         "description": "Outcome of `POST /v1/auth/login`.\n\nTagged on the wire by the `outcome` field. The common case is `complete`: the password verified, no second factor is enrolled, and the response carries the same fields a non-2FA `LoginResponse` always has. Users enrolled in 2FA receive `challenge_required`, must read a code from their authenticator, and post it together with the `challenge_token` to `/v1/auth/login/verify` to obtain a `LoginResponse`.",
         "oneOf": [
@@ -4640,6 +4653,46 @@
           }
         },
         "summary": "Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve",
+        "tags": [
+          "k8s"
+        ]
+      }
+    },
+    "/v1/k8s/clusters/{cluster}/kubeconfig": {
+      "get": {
+        "description": "Returns 404 if the cluster does not exist, is owned by a different account, or has not yet completed bootstrap (kubeconfig not yet available — the cluster is still `provisioning`).\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_kubeconfig",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeconfigResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Retrieve the kubeconfig for a running cluster.",
         "tags": [
           "k8s"
         ]

@@ -215,6 +215,23 @@ pub trait TritonApi {
         path: Path<ClusterPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// Retrieve the kubeconfig for a running cluster.
+    ///
+    /// Returns 404 if the cluster does not exist, is owned by a different
+    /// account, or has not yet completed bootstrap (kubeconfig not yet
+    /// available — the cluster is still `provisioning`).
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = GET,
+        path = "/v1/k8s/clusters/{cluster}/kubeconfig",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_kubeconfig(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<KubeconfigResponse>, HttpError>;
+
     /// Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve
     /// kubeconfig.
     ///

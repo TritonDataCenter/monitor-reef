@@ -170,3 +170,14 @@ pub enum NodeBootstrapRole {
     ControlPlane,
     Worker,
 }
+
+/// Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.
+///
+/// The `kubeconfig` field is a complete YAML kubeconfig document. Callers
+/// can write it to `~/.kube/config` or merge it with an existing config
+/// via `kubectl config view --merge`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct KubeconfigResponse {
+    /// Kubeconfig YAML.
+    pub kubeconfig: String,
+}

@@ -417,6 +417,46 @@
         }
       }
     },
+    "/v1/k8s/clusters/{cluster}/kubeconfig": {
+      "get": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "Retrieve the kubeconfig for a running cluster.",
+        "description": "Returns 404 if the cluster does not exist, is owned by a different account, or has not yet completed bootstrap (kubeconfig not yet available — the cluster is still `provisioning`).\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_kubeconfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster",
+            "description": "Server-assigned cluster UUID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeconfigResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/k8s/relay": {
       "get": {
         "tags": [
@@ -772,6 +812,19 @@
         },
         "required": [
           "keys"
+        ]
+      },
+      "KubeconfigResponse": {
+        "description": "Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.\n\nThe `kubeconfig` field is a complete YAML kubeconfig document. Callers can write it to `~/.kube/config` or merge it with an existing config via `kubectl config view --merge`.",
+        "type": "object",
+        "properties": {
+          "kubeconfig": {
+            "description": "Kubeconfig YAML.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kubeconfig"
         ]
       },
       "LoginOutcome": {
