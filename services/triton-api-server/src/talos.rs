@@ -29,6 +29,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tonic::transport::{Channel, Endpoint};
 use tower::service_fn;
+use triton_relay_protocol::write_connect_target;
 
 use crate::relay::RelayState;
 
@@ -205,34 +206,42 @@ impl TalosClient {
     ///
     /// Talos nodes in maintenance mode serve a self-signed certificate and
     /// accept any client connection before a machine config is applied.
-    pub async fn connect_maintenance(relay: Arc<RelayState>) -> Result<Self> {
+    /// `target` is the relay routing address written as the first line of each
+    /// yamux stream, e.g. `"10.0.0.5:50000"`. The relay agent dials this
+    /// address on the fabric network.
+    pub async fn connect_maintenance(relay: Arc<RelayState>, target: &str) -> Result<Self> {
         let tls_config = maintenance_tls_config()?;
-        Self::connect_with_tls(relay, tls_config).await
+        Self::connect_with_tls(relay, tls_config, target).await
     }
 
     /// Connect with mutual TLS using talosconfig credentials.
     ///
     /// Used after bootstrap when the node has a full machine config. The
-    /// Talos CA, client cert, and client key come from the talosconfig YAML
-    /// stored in the cluster record.
+    /// Talos CA, client cert, and client key come from the talosconfig stored
+    /// in the cluster record.
+    ///
+    /// `target` is the relay routing address, e.g. `"10.0.0.5:50000"`.
     pub async fn connect_authenticated(
         relay: Arc<RelayState>,
+        target: &str,
         ca_pem: &[u8],
         cert_pem: &[u8],
         key_pem: &[u8],
     ) -> Result<Self> {
         let tls_config = mtls_config(ca_pem, cert_pem, key_pem)?;
-        Self::connect_with_tls(relay, tls_config).await
+        Self::connect_with_tls(relay, tls_config, target).await
     }
 
     async fn connect_with_tls(
         relay: Arc<RelayState>,
         tls_config: rustls::ClientConfig,
+        target: &str,
     ) -> Result<Self> {
         let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
         // "talos" is the SNI name; Talos ignores SNI in maintenance mode and
         // validates it against the cert's SAN in authenticated mode.
         let sni = ServerName::try_from("talos").map_err(|e| anyhow::anyhow!("invalid SNI: {e}"))?;
+        let target = target.to_string();
 
         // The dummy URI is passed to our connector but ignored — we always
         // route through the relay. The http:// scheme tells tonic to use h2c
@@ -244,10 +253,16 @@ impl TalosClient {
                 let relay = relay.clone();
                 let connector = connector.clone();
                 let sni = sni.clone();
+                let target = target.clone();
                 async move {
-                    let stream = relay.open_stream().await.map_err(|e| {
+                    let mut stream = relay.open_stream().await.map_err(|e| {
                         io::Error::new(io::ErrorKind::ConnectionRefused, e.to_string())
                     })?;
+                    // Write the relay routing header so the agent knows which
+                    // fabric endpoint to dial for this stream.
+                    write_connect_target(&mut stream, &target)
+                        .await
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
                     let compat = stream.compat();
                     let tls = connector.connect(sni, compat).await?;
                     Ok::<_, io::Error>(RelayIo(TokioIo::new(tls)))
@@ -267,21 +282,16 @@ impl TalosClient {
 
     /// Apply a Talos machine config to the node.
     ///
-    /// `config_bytes` is the YAML machine configuration. `no_reboot` should
-    /// be `true` when applying during initial bootstrap (maintenance mode
-    /// always uses `NO_REBOOT` semantics internally, but setting it explicitly
-    /// avoids unintended reboots on subsequent applies).
+    /// Set `reboot = true` for initial bootstrap so the node reboots into the
+    /// new config; `false` stages the config for the next boot without
+    /// triggering a reboot.
     pub async fn apply_configuration(
         &mut self,
         config_bytes: Vec<u8>,
-        no_reboot: bool,
+        reboot: bool,
     ) -> Result<proto::machine::ApplyConfigurationResponse> {
         use proto::machine::apply_configuration_request::Mode;
-        let mode = if no_reboot {
-            Mode::NoReboot
-        } else {
-            Mode::Auto
-        };
+        let mode = if reboot { Mode::Reboot } else { Mode::NoReboot };
         let req = ApplyConfigurationRequest {
             data: config_bytes,
             mode: mode as i32,

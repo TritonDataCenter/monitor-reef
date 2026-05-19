@@ -10,8 +10,8 @@
 //! It serves as the public-facing HTTP API for the Triton datacenter.
 
 use dropshot::{
-    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk, Path,
-    RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
+    HttpError, HttpResponseAccepted, HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders,
+    HttpResponseOk, Path, RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
 };
 
 pub mod types;
@@ -214,6 +214,28 @@ pub trait TritonApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<ClusterPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve
+    /// kubeconfig.
+    ///
+    /// The cluster must be in `created` state. Nodes listed in the request
+    /// must already be running the relay agent so the server can reach them
+    /// through the registered relay tunnel.
+    ///
+    /// Returns 202 Accepted with the cluster record in `provisioning` state.
+    /// Poll `GET /v1/k8s/clusters/{cluster}` until `state == "running"`.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = POST,
+        path = "/v1/k8s/clusters/{cluster}/bootstrap",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_bootstrap(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<BootstrapClusterRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
 
     /// Register a relay agent tunnel.
     ///

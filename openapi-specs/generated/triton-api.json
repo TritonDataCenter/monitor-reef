@@ -367,6 +367,56 @@
         }
       }
     },
+    "/v1/k8s/clusters/{cluster}/bootstrap": {
+      "post": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve",
+        "description": "kubeconfig.\n\nThe cluster must be in `created` state. Nodes listed in the request must already be running the relay agent so the server can reach them through the registered relay tunnel.\n\nReturns 202 Accepted with the cluster record in `provisioning` state. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_bootstrap",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster",
+            "description": "Server-assigned cluster UUID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapClusterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/k8s/relay": {
       "get": {
         "tags": [
@@ -439,6 +489,37 @@
   },
   "components": {
     "schemas": {
+      "BootstrapClusterRequest": {
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe caller is responsible for generating Talos machine configs (e.g. via `talosctl gen config`) and for ensuring each listed node already has the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.",
+        "type": "object",
+        "properties": {
+          "ca_pem": {
+            "description": "Talos CA certificate in PEM format (from the generated talosconfig). Used by the server to verify node identity in post-bootstrap mTLS.",
+            "type": "string"
+          },
+          "crt_pem": {
+            "description": "Operator client certificate in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.",
+            "type": "string"
+          },
+          "key_pem": {
+            "description": "Operator client private key in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.",
+            "type": "string"
+          },
+          "nodes": {
+            "description": "Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeBootstrapSpec"
+            }
+          }
+        },
+        "required": [
+          "ca_pem",
+          "crt_pem",
+          "key_pem",
+          "nodes"
+        ]
+      },
       "ChallengeMethod": {
         "description": "Second-factor authentication method offered for a login challenge.\n\nForward-compatible: clients deserialising an older binary can receive new method names from a newer server and round-trip them through `Unknown` rather than failing.",
         "oneOf": [
@@ -821,6 +902,41 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "NodeBootstrapRole": {
+        "description": "Role a node plays within a Kelp cluster.",
+        "type": "string",
+        "enum": [
+          "control_plane",
+          "worker"
+        ]
+      },
+      "NodeBootstrapSpec": {
+        "description": "Specification for a single node during cluster bootstrap.",
+        "type": "object",
+        "properties": {
+          "fabric_ip": {
+            "description": "Fabric IP of an already-running node that has the relay agent active. Example: `\"10.0.0.5\"`.",
+            "type": "string"
+          },
+          "machine_config": {
+            "description": "Pre-generated Talos machine config YAML for this node (e.g. the `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`).",
+            "type": "string"
+          },
+          "role": {
+            "description": "Role this node will play in the cluster.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NodeBootstrapRole"
+              }
+            ]
+          }
+        },
+        "required": [
+          "fabric_ip",
+          "machine_config",
+          "role"
         ]
       },
       "PingResponse": {

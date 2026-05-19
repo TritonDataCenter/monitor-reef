@@ -8,8 +8,8 @@ use anyhow::{Context, Result};
 use cloudapi_client::{AuthConfig, KeySource, TypedClient};
 use dropshot::{
     ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError,
-    HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders, HttpResponseOk,
-    HttpServerStarter, Path, RequestContext, TypedBody, WebsocketChannelResult,
+    HttpResponseAccepted, HttpResponseCreated, HttpResponseDeleted, HttpResponseHeaders,
+    HttpResponseOk, HttpServerStarter, Path, RequestContext, TypedBody, WebsocketChannelResult,
     WebsocketConnection,
 };
 use secrecy::SecretString;
@@ -22,10 +22,10 @@ use tokio_tungstenite::tungstenite::protocol::Role as WsRole;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tracing::{info, warn};
 use triton_api::{
-    ChallengeMethod, Cluster, ClusterList, ClusterPath, ClusterState, CreateClusterRequest, Jwk,
-    JwkSet, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest,
-    LogoutResponse, PingResponse, RefreshRequest, RefreshResponse, SessionResponse, TritonApi,
-    UserInfo,
+    BootstrapClusterRequest, ChallengeMethod, Cluster, ClusterList, ClusterPath, ClusterState,
+    CreateClusterRequest, Jwk, JwkSet, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
+    LoginVerifyRequest, LogoutResponse, NodeBootstrapRole, PingResponse, RefreshRequest,
+    RefreshResponse, SessionResponse, TritonApi, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -36,7 +36,9 @@ use triton_relay_protocol::{WsCompat, bridge, read_connect_target, write_connect
 use uuid::Uuid;
 
 mod cluster_store;
-use cluster_store::{ClusterRecord, ClusterStore, FileClusterStore, StoreError};
+use cluster_store::{
+    ClusterRecord, ClusterStore, FileClusterStore, NodeInfo, NodeRole, StoreError,
+};
 mod talos;
 
 mod relay;
@@ -544,6 +546,9 @@ impl TritonApi for TritonApiImpl {
             talosconfig_yaml: None,
             kubeconfig_yaml: None,
             secrets_yaml: None,
+            talos_ca_pem: None,
+            talos_crt_pem: None,
+            talos_key_pem: None,
             created_at: chrono::Utc::now(),
         };
         rqctx
@@ -615,6 +620,69 @@ impl TritonApi for TritonApiImpl {
             return Err(cluster_not_found(id));
         }
         Ok(HttpResponseDeleted())
+    }
+
+    async fn k8s_cluster_bootstrap(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<BootstrapClusterRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let id = path.into_inner().cluster;
+        let ctx = rqctx.context();
+        let store = Arc::clone(&ctx.cluster_store);
+
+        let mut record = store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        if record.state != ClusterState::Created {
+            return Err(HttpError::for_client_error(
+                Some("InvalidState".to_string()),
+                ClientErrorStatusCode::CONFLICT,
+                format!("cluster {id} must be in `created` state to bootstrap"),
+            ));
+        }
+
+        let req = body.into_inner();
+        if req.nodes.is_empty() {
+            return Err(HttpError::for_client_error(
+                Some("InvalidInput".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "nodes list must not be empty".to_string(),
+            ));
+        }
+        if !req
+            .nodes
+            .iter()
+            .any(|n| n.role == NodeBootstrapRole::ControlPlane)
+        {
+            return Err(HttpError::for_client_error(
+                Some("InvalidInput".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "at least one control-plane node is required".to_string(),
+            ));
+        }
+
+        record.state = ClusterState::Provisioning;
+        record.talos_ca_pem = Some(req.ca_pem.clone());
+        record.talos_crt_pem = Some(req.crt_pem.clone());
+        record.talos_key_pem = Some(req.key_pem.clone());
+        store.update(&record).await.map_err(store_error_to_http)?;
+
+        let relay = Arc::clone(&ctx.relay);
+        let cluster_view = Cluster::from(&record);
+        tokio::spawn(async move {
+            if let Err(e) = run_bootstrap(store, relay, record, req).await {
+                tracing::error!(cluster = %id, error = %e, "bootstrap failed");
+            }
+        });
+
+        Ok(HttpResponseAccepted(cluster_view))
     }
 
     async fn k8s_relay_register(
@@ -697,6 +765,106 @@ async fn handle_bridge_stream(
     let mut agent_compat = agent_stream.compat();
     let (b_to_a, a_to_b) = bridge(&mut bridge_compat, &mut agent_compat).await?;
     info!("bridge to {target} closed: {b_to_a} B bridge→agent, {a_to_b} B agent→bridge");
+    Ok(())
+}
+
+async fn run_bootstrap(
+    store: Arc<dyn ClusterStore>,
+    relay: Arc<RelayState>,
+    mut record: ClusterRecord,
+    req: BootstrapClusterRequest,
+) -> anyhow::Result<()> {
+    let cluster_id = record.id;
+    let ca_pem = req.ca_pem.as_bytes().to_vec();
+    let crt_pem = req.crt_pem.as_bytes().to_vec();
+    let key_pem = req.key_pem.as_bytes().to_vec();
+
+    let first_cp_ip = req
+        .nodes
+        .iter()
+        .find(|n| n.role == NodeBootstrapRole::ControlPlane)
+        .map(|n| n.fabric_ip.clone())
+        .ok_or_else(|| anyhow::anyhow!("no control-plane node in request"))?;
+
+    // Phase 1: apply machine configs to all nodes in maintenance mode.
+    for node in &req.nodes {
+        let target = format!("{}:50000", node.fabric_ip);
+        let mut client = talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target)
+            .await
+            .with_context(|| format!("maintenance connect to {target}"))?;
+        client
+            .apply_configuration(node.machine_config.as_bytes().to_vec(), true)
+            .await
+            .with_context(|| format!("apply config to {target}"))?;
+        tracing::info!(cluster = %cluster_id, target = %target, "applied machine config");
+    }
+
+    // Record node inventory and persist before sleeping.
+    for node in &req.nodes {
+        let role = match node.role {
+            NodeBootstrapRole::ControlPlane => NodeRole::Control,
+            NodeBootstrapRole::Worker => NodeRole::Worker,
+        };
+        let node_id = Uuid::new_v4();
+        record.nodes.insert(
+            node_id.to_string(),
+            NodeInfo {
+                instance_id: node_id,
+                primary_ip: node.fabric_ip.clone(),
+                fabric_ip: node.fabric_ip.clone(),
+                role,
+            },
+        );
+    }
+    store
+        .update(&record)
+        .await
+        .with_context(|| format!("persist node inventory for cluster {cluster_id}"))?;
+
+    // Phase 2: wait for nodes to reboot into full Talos mode.
+    tracing::info!(cluster = %cluster_id, "waiting 90s for nodes to reboot");
+    tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+
+    // Phase 3: bootstrap etcd on the first control-plane node.
+    let cp_target = format!("{first_cp_ip}:50000");
+    let mut client = talos::TalosClient::connect_authenticated(
+        Arc::clone(&relay),
+        &cp_target,
+        &ca_pem,
+        &crt_pem,
+        &key_pem,
+    )
+    .await
+    .with_context(|| format!("authenticated connect to {cp_target}"))?;
+    client
+        .bootstrap()
+        .await
+        .with_context(|| format!("bootstrap etcd on {cp_target}"))?;
+    tracing::info!(cluster = %cluster_id, cp = %cp_target, "etcd bootstrapped");
+
+    // Phase 4: wait for the Kubernetes API to come up.
+    tracing::info!(cluster = %cluster_id, "waiting 120s for Kubernetes API");
+    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+
+    // Phase 5: retrieve kubeconfig.
+    let mut client = talos::TalosClient::connect_authenticated(
+        Arc::clone(&relay),
+        &cp_target,
+        &ca_pem,
+        &crt_pem,
+        &key_pem,
+    )
+    .await
+    .with_context(|| format!("authenticated connect to {cp_target} for kubeconfig"))?;
+    let kubeconfig_bytes = client.kubeconfig().await.context("retrieve kubeconfig")?;
+
+    record.kubeconfig_yaml = Some(String::from_utf8_lossy(&kubeconfig_bytes).into_owned());
+    record.state = ClusterState::Running;
+    store
+        .update(&record)
+        .await
+        .with_context(|| format!("update cluster {cluster_id} to Running"))?;
+    tracing::info!(cluster = %cluster_id, "cluster bootstrap complete, state=Running");
     Ok(())
 }
 

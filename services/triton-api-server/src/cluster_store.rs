@@ -92,6 +92,13 @@ pub struct ClusterRecord {
     pub talosconfig_yaml: Option<String>,
     pub kubeconfig_yaml: Option<String>,
     pub secrets_yaml: Option<String>,
+    /// Talos CA certificate (PEM). Stored after bootstrap to authenticate
+    /// subsequent operator connections to the cluster.
+    pub talos_ca_pem: Option<String>,
+    /// Talos operator client certificate (PEM).
+    pub talos_crt_pem: Option<String>,
+    /// Talos operator client private key (PEM). Sensitive; do not log.
+    pub talos_key_pem: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -327,6 +334,9 @@ mod tests {
             talosconfig_yaml: None,
             kubeconfig_yaml: None,
             secrets_yaml: None,
+            talos_ca_pem: None,
+            talos_crt_pem: None,
+            talos_key_pem: None,
             created_at: Utc::now(),
         }
     }
