@@ -6196,6 +6196,7 @@ dependencies = [
  "tritond-image-manifest",
  "tritond-logs",
  "tritond-metrics",
+ "tritond-placement",
  "tritond-saga",
  "tritond-store",
  "urlencoding",
@@ -6352,6 +6353,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "tritond-store",
  "uuid",
 ]
 

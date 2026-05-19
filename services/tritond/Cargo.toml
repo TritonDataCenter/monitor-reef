@@ -67,6 +67,7 @@ tritond-auth = { workspace = true }
 tritond-image-manifest = { workspace = true }
 tritond-logs = { workspace = true }
 tritond-metrics = { workspace = true, features = ["clickhouse"] }
+tritond-placement = { workspace = true }
 tritond-saga = { workspace = true }
 slog = { workspace = true }
 tritond-store = { workspace = true }

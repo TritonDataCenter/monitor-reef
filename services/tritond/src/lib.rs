@@ -26,6 +26,7 @@ pub mod dhcp_reconciler;
 pub mod edge;
 pub mod legacy_classify;
 pub mod peer_invalidations;
+pub mod placement;
 pub mod provisioner;
 pub mod rate_limit;
 pub mod sagas;
