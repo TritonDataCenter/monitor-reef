@@ -1389,6 +1389,11 @@ struct CallerIdentity {
 /// don't change shape between endpoints.
 async fn resolve_caller(rqctx: &RequestContext<ApiContext>) -> Result<CallerIdentity, HttpError> {
     let ctx = rqctx.context();
+
+    if let Some(uuid) = ctx.dev_account_uuid {
+        return Ok(CallerIdentity { account_id: uuid });
+    }
+
     let headers = rqctx.request.headers();
 
     match auth_scheme::classify(headers) {
@@ -1448,12 +1453,7 @@ async fn resolve_caller(rqctx: &RequestContext<ApiContext>) -> Result<CallerIden
             };
             Ok(CallerIdentity { account_id })
         }
-        auth_scheme::AuthScheme::None => {
-            if let Some(uuid) = rqctx.context().dev_account_uuid {
-                return Ok(CallerIdentity { account_id: uuid });
-            }
-            Err(unauthorized())
-        }
+        auth_scheme::AuthScheme::None => Err(unauthorized()),
     }
 }
 
