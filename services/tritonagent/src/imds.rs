@@ -515,6 +515,11 @@ async fn triton_guest_put(
         .await
     {
         Ok(resp) => {
+            // Bust the cached realized view for this instance so the
+            // very next GET refetches and sees the write. Without
+            // this, the read-after-write window is the realized-view
+            // cache's TTL (30s default).
+            state.realized.invalidate(binding.instance_id).await;
             let body = serde_json::to_vec(&resp.into_inner()).unwrap_or_else(|_| b"{}".to_vec());
             (
                 StatusCode::OK,
