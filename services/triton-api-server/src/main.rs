@@ -216,6 +216,7 @@ struct ApiContext {
     /// Operator CloudAPI client for server-side VM provisioning. `None` when
     /// no `[cloudapi]` section is in the config; bootstrap endpoint returns
     /// 503 in that case.
+    #[allow(dead_code)]
     cloudapi: Option<Arc<TypedClient>>,
 }
 

@@ -40,15 +40,18 @@ use crate::relay::RelayState;
 pub mod proto {
     pub mod google {
         pub mod rpc {
+            #![allow(dead_code, unused_imports, clippy::all)]
             tonic::include_proto!("google.rpc");
         }
     }
 
     pub mod common {
+        #![allow(dead_code, unused_imports, clippy::all)]
         tonic::include_proto!("common");
     }
 
     pub mod machine {
+        #![allow(dead_code, unused_imports, clippy::all)]
         tonic::include_proto!("machine");
     }
 }
