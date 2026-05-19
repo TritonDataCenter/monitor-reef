@@ -1728,6 +1728,7 @@ mod tests {
             tenant_uuid: nil(),
             project_uuid: nil(),
             host_cn_uuid: None,
+            host_fault_domain: None,
         };
         let weights = StrategyWeights::new();
         let mut ctx = make_ctx(&weights);

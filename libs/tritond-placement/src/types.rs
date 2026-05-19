@@ -594,4 +594,12 @@ pub struct SiblingInstanceView {
     /// `None` if the instance is mid-saga and not yet pinned.
     #[serde(default)]
     pub host_cn_uuid: Option<Uuid>,
+
+    /// `CnPlacement.fault_domain` of the host CN, if any.
+    /// Populated by the saga step that builds the slice (PL-5);
+    /// the `score-spread-by-fault-domain` and
+    /// `score-pack-by-fault-domain` scorers compare it against
+    /// the candidate CN's fault_domain.
+    #[serde(default)]
+    pub host_fault_domain: Option<String>,
 }

@@ -67,6 +67,12 @@ pub use filter::{
     CnNumaFits, CnPlatformMin, CnRamAvailable, CnRoleMatches, CnScopeMatch, CnTraitsRequired,
     CnUnderlay, CnZpoolHasSpace, default_filter_chain,
 };
+pub use scorer::{
+    ScoreAffinityPreferred, ScoreAvoidHotNow, ScoreAvoidPeaky, ScoreDiskHeadroom, ScoreDiurnalFit,
+    ScoreFewerCotenantZones, ScorePackByFaultDomain, ScorePlatformCurrent, ScorePreferLowBaseline,
+    ScoreRamHeadroom, ScoreSpreadByFaultDomain, ScoreUniformRandom, default_scorer_chain,
+    resolved_weights, strategy_overrides,
+};
 pub use types::{
     AssignedInstanceView, CapacityView, ChainContext, CnLoadSummaryView, CnRoleView, CnStateView,
     CnView, DeviceKind, DeviceView, Filter, NumaNodeView, PlacementPolicyView, PlacementRequest,
