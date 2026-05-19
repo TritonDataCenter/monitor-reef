@@ -97,6 +97,9 @@ struct CloudApiConfigFile {
     /// without fingerprint matching.
     #[serde(default)]
     key_fingerprint: Option<String>,
+    /// Set to true to skip TLS certificate verification (self-signed certs).
+    #[serde(default)]
+    insecure: bool,
 }
 
 #[derive(Deserialize)]
@@ -1894,7 +1897,7 @@ async fn build_cloudapi_client(
 
     // Use the shared TLS client builder so the server survives on zones
     // whose native CA store is empty (the relay zone falls into this category).
-    let http_client = triton_tls::build_http_client(false)
+    let http_client = triton_tls::build_http_client(cfg.insecure)
         .await
         .context("failed to build HTTP client for CloudAPI")?;
 
