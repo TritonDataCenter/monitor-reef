@@ -232,6 +232,30 @@ pub trait TritonApi {
         path: Path<ClusterPath>,
     ) -> Result<HttpResponseOk<KubeconfigResponse>, HttpError>;
 
+    /// Add nodes to a running cluster.
+    ///
+    /// Each node must already have the relay agent active. The server
+    /// applies the supplied Talos machine config in maintenance mode and
+    /// triggers a reboot; the node then joins the existing cluster
+    /// automatically. Control-plane joiner configs and worker configs are
+    /// both accepted — role assignment is determined by the config content,
+    /// not enforced server-side.
+    ///
+    /// Returns 202 Accepted immediately. The node inventory in the cluster
+    /// record is updated once configs have been applied.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = POST,
+        path = "/v1/k8s/clusters/{cluster}/nodes",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_nodes_add(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<AddNodesRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
+
     /// Bootstrap a cluster: apply Talos configs, bootstrap etcd, retrieve
     /// kubeconfig.
     ///

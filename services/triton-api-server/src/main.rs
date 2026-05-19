@@ -22,10 +22,11 @@ use tokio_tungstenite::tungstenite::protocol::Role as WsRole;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tracing::{info, warn};
 use triton_api::{
-    BootstrapClusterRequest, ChallengeMethod, Cluster, ClusterList, ClusterPath, ClusterState,
-    CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse, LoginChallenge, LoginOutcome,
-    LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse, NodeBootstrapRole,
-    PingResponse, RefreshRequest, RefreshResponse, SessionResponse, TritonApi, UserInfo,
+    AddNodesRequest, BootstrapClusterRequest, ChallengeMethod, Cluster, ClusterList, ClusterPath,
+    ClusterState, CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse, LoginChallenge,
+    LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse,
+    NodeBootstrapRole, NodeBootstrapSpec, PingResponse, RefreshRequest, RefreshResponse,
+    SessionResponse, TritonApi, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -648,6 +649,52 @@ impl TritonApi for TritonApiImpl {
         Ok(HttpResponseOk(KubeconfigResponse { kubeconfig }))
     }
 
+    async fn k8s_cluster_nodes_add(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<AddNodesRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let id = path.into_inner().cluster;
+        let ctx = rqctx.context();
+        let store = Arc::clone(&ctx.cluster_store);
+
+        let record = store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        if record.state != ClusterState::Running {
+            return Err(HttpError::for_client_error(
+                Some("InvalidState".to_string()),
+                ClientErrorStatusCode::CONFLICT,
+                format!("cluster {id} must be in `running` state to add nodes"),
+            ));
+        }
+
+        let req = body.into_inner();
+        if req.nodes.is_empty() {
+            return Err(HttpError::for_client_error(
+                Some("InvalidInput".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "nodes list must not be empty".to_string(),
+            ));
+        }
+
+        let relay = Arc::clone(&ctx.relay);
+        let cluster_view = Cluster::from(&record);
+        tokio::spawn(async move {
+            if let Err(e) = run_add_nodes(store, relay, record, req.nodes).await {
+                tracing::error!(cluster = %id, error = %e, "add-nodes failed");
+            }
+        });
+
+        Ok(HttpResponseAccepted(cluster_view))
+    }
+
     async fn k8s_cluster_bootstrap(
         rqctx: RequestContext<Self::Context>,
         path: Path<ClusterPath>,
@@ -891,6 +938,55 @@ async fn run_bootstrap(
         .await
         .with_context(|| format!("update cluster {cluster_id} to Running"))?;
     tracing::info!(cluster = %cluster_id, "cluster bootstrap complete, state=Running");
+    Ok(())
+}
+
+async fn run_add_nodes(
+    store: Arc<dyn ClusterStore>,
+    relay: Arc<RelayState>,
+    mut record: ClusterRecord,
+    nodes: Vec<NodeBootstrapSpec>,
+) -> anyhow::Result<()> {
+    let cluster_id = record.id;
+
+    for node in &nodes {
+        let target = format!("{}:50000", node.fabric_ip);
+        let mut client = talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target)
+            .await
+            .with_context(|| format!("maintenance connect to {target}"))?;
+        client
+            .apply_configuration(node.machine_config.as_bytes().to_vec(), true)
+            .await
+            .with_context(|| format!("apply config to {target}"))?;
+        tracing::info!(cluster = %cluster_id, target = %target, "applied machine config to new node");
+    }
+
+    for node in &nodes {
+        let role = match node.role {
+            NodeBootstrapRole::ControlPlane => NodeRole::Control,
+            NodeBootstrapRole::Worker => NodeRole::Worker,
+        };
+        let node_id = Uuid::new_v4();
+        record.nodes.insert(
+            node_id.to_string(),
+            NodeInfo {
+                instance_id: node_id,
+                primary_ip: node.fabric_ip.clone(),
+                fabric_ip: node.fabric_ip.clone(),
+                role,
+            },
+        );
+    }
+    store
+        .update(&record)
+        .await
+        .with_context(|| format!("persist new nodes for cluster {cluster_id}"))?;
+
+    tracing::info!(
+        cluster = %cluster_id,
+        count = nodes.len(),
+        "node configs applied; nodes will join cluster after reboot"
+    );
     Ok(())
 }
 

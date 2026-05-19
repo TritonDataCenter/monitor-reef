@@ -265,6 +265,21 @@
         ],
         "type": "object"
       },
+      "AddNodesRequest": {
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/nodes`.\n\nEach node must already have the relay agent running. The server applies the supplied Talos machine config in maintenance mode and triggers a reboot; the node then joins the existing cluster automatically.",
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NodeBootstrapSpec"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes"
+        ],
+        "type": "object"
+      },
       "AffinityRules": {
         "description": "Affinity rule strings (used by CreateMachineRequest and MigrateRequest).\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.",
         "items": {
@@ -4693,6 +4708,56 @@
           }
         },
         "summary": "Retrieve the kubeconfig for a running cluster.",
+        "tags": [
+          "k8s"
+        ]
+      }
+    },
+    "/v1/k8s/clusters/{cluster}/nodes": {
+      "post": {
+        "description": "Each node must already have the relay agent active. The server applies the supplied Talos machine config in maintenance mode and triggers a reboot; the node then joins the existing cluster automatically. Control-plane joiner configs and worker configs are both accepted — role assignment is determined by the config content, not enforced server-side.\n\nReturns 202 Accepted immediately. The node inventory in the cluster record is updated once configs have been applied.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_nodes_add",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddNodesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            },
+            "description": "successfully enqueued operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Add nodes to a running cluster.",
         "tags": [
           "k8s"
         ]

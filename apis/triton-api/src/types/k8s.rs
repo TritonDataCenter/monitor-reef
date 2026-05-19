@@ -171,6 +171,17 @@ pub enum NodeBootstrapRole {
     Worker,
 }
 
+/// Body of `POST /v1/k8s/clusters/{cluster}/nodes`.
+///
+/// Each node must already have the relay agent running. The server
+/// applies the supplied Talos machine config in maintenance mode and
+/// triggers a reboot; the node then joins the existing cluster
+/// automatically.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AddNodesRequest {
+    pub nodes: Vec<NodeBootstrapSpec>,
+}
+
 /// Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.
 ///
 /// The `kubeconfig` field is a complete YAML kubeconfig document. Callers
