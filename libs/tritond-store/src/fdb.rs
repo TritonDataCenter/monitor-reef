@@ -168,19 +168,19 @@ use uuid::Uuid;
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
-    CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool, DhcpReservation, Disk,
-    DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL,
-    FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
-    ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, JobOutcome,
-    JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope, MetaValue,
-    NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
+    CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool,
+    DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
+    IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult,
+    JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope,
+    MetaValue, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
     NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
     NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant,
     NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
     Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
-    StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
-    generate_poll_token,
+    StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant, TenantInstanceProjection,
+    User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes,
+    generate_claim_code, generate_poll_token,
 };
 
 /// Maximum attempts to draw a fresh VNI before giving up. Mirrors the
@@ -6991,6 +6991,73 @@ impl Store for FdbStore {
         }
         out.sort_by_key(|r| r.instance_id);
         Ok(out)
+    }
+
+    // ---- Joined snapshots for the placement engine (PL-5) ----
+
+    async fn get_cn_pick_snapshot(&self, server_uuid: Uuid) -> Result<CnPickSnapshot, StoreError> {
+        // PL-5a: compose existing per-keyspace reads. The
+        // single-FDB-txn shape the saga action needs is encoded
+        // in the saga action's body itself at PL-5b: it wraps
+        // get_cn_pick_snapshot + reserve_cn_capacity +
+        // set_instance_host_cn inside one transaction so the
+        // capacity-residual check and the reservation write
+        // share a read version.
+        let cn = self.get_cn(server_uuid).await?;
+        let capacity = match self.get_cn_capacity(server_uuid).await {
+            Ok(c) => Some(c),
+            Err(StoreError::NotFound) => None,
+            Err(e) => return Err(e),
+        };
+        let placement = self.get_cn_placement(server_uuid).await?;
+        let reservations = self.list_cn_reservations(Some(server_uuid)).await?;
+        let load_summary = self.get_cn_load_summary(server_uuid).await?;
+        let assigned_instances = self.list_instances_for_cn(server_uuid).await?;
+        Ok(CnPickSnapshot {
+            cn,
+            capacity,
+            placement,
+            reservations,
+            load_summary,
+            assigned_instances,
+            computed_at: Utc::now(),
+        })
+    }
+
+    async fn list_tenant_instance_projections(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantInstanceProjection>, StoreError> {
+        // Compose: list every CnPlacement so we can index
+        // (cn_uuid -> fault_domain), then range-scan instances
+        // and filter by tenant. PL-5a treats this as a non-
+        // single-transaction read for the same reason as
+        // `get_cn_pick_snapshot`.
+        let placements = self.list_cn_placements().await?;
+        let fault_domains: std::collections::HashMap<Uuid, Option<String>> = placements
+            .into_iter()
+            .map(|p| (p.server_uuid, p.fault_domain))
+            .collect();
+        // No instance-by-tenant index in v1; walk projects, then
+        // per-project listings. A future slice can add the index
+        // if this becomes hot.
+        let projects = self.list_projects_in_tenant(tenant_id).await?;
+        let mut instances: Vec<Instance> = Vec::new();
+        for p in projects {
+            instances.extend(self.list_instances_in_project(p.id).await?);
+        }
+        Ok(instances
+            .into_iter()
+            .map(|i| {
+                let host_fault_domain = i
+                    .host_cn_uuid
+                    .and_then(|cn| fault_domains.get(&cn).cloned().flatten());
+                TenantInstanceProjection {
+                    instance: i,
+                    host_fault_domain,
+                }
+            })
+            .collect())
     }
 
     async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {

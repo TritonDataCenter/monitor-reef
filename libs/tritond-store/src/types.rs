@@ -3704,6 +3704,45 @@ pub enum TopologyKey {
     Trait(String),
 }
 
+/// Joined snapshot of every placement-relevant row for one CN.
+/// Returned by `Store::get_cn_pick_snapshot` inside one read
+/// transaction so the placement chain sees a consistent view
+/// across `Cn` / `CnCapacity` / `CnPlacement` / `CnReservation` /
+/// `CnLoadSummary` / assigned `Instance` rows (RFD 00005 PL-5).
+///
+/// The placement engine (`tritond_placement::CnView`) is a
+/// projection over this snapshot; the caller in `tritond` performs
+/// the projection so the store and the engine stay independent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CnPickSnapshot {
+    pub cn: Cn,
+    pub capacity: Option<CnCapacity>,
+    /// Defaulted via [`CnPlacement::fresh`] when no operator
+    /// edit exists.
+    pub placement: CnPlacement,
+    /// All `cn-reservation/<server_uuid>/*` rows.
+    pub reservations: Vec<CnReservation>,
+    pub load_summary: Option<CnLoadSummary>,
+    /// Instances currently host-bound to this CN.
+    pub assigned_instances: Vec<Instance>,
+    /// Read-version timestamp the snapshot was materialised at.
+    pub computed_at: DateTime<Utc>,
+}
+
+/// Joined tenant-scoped instance projection for the placement
+/// engine's `sibling_instances` slice. Bundles the `Instance`
+/// row with the host CN's `fault_domain` so the spread / pack
+/// scorers don't need a second lookup.
+///
+/// `host_fault_domain` is `None` when the instance is not yet
+/// host-bound (mid-saga) or when the host's `CnPlacement` row
+/// has no fault-domain tag.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TenantInstanceProjection {
+    pub instance: Instance,
+    pub host_fault_domain: Option<String>,
+}
+
 // ---------------------------------------------------------------------
 // Per-VM status report types
 // ---------------------------------------------------------------------

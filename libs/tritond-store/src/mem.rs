@@ -22,19 +22,19 @@ use uuid::Uuid;
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
-    CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool, DhcpReservation, Disk,
-    DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL,
-    FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp, FloatingIpAttachment,
-    IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult,
-    JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope,
-    MetaValue, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
-    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
-    NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant,
-    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
-    Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
-    StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
-    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
-    generate_poll_token,
+    CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool,
+    DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp,
+    FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand,
+    InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState,
+    LifecycleStateKind, MetaScope, MetaValue, NatGateway, NetworkResourceId, NewDhcpPool,
+    NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
+    NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
+    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
+    Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
+    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
+    SystemKey, Tenant, TenantInstanceProjection, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
+    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
 #[cfg(test)]
 use crate::{
@@ -3416,6 +3416,73 @@ impl Store for MemStore {
             .filter(|row| row.tenant_uuid == tenant_id)
             .cloned()
             .collect())
+    }
+
+    // ---- Joined snapshots for the placement engine (PL-5) ----
+
+    async fn get_cn_pick_snapshot(&self, server_uuid: Uuid) -> Result<CnPickSnapshot, StoreError> {
+        let guard = self.inner.read().await;
+        let cn = guard
+            .cns_by_server_uuid
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        let capacity = guard.cn_capacities.get(&server_uuid).cloned();
+        let placement = guard
+            .cn_placements
+            .get(&server_uuid)
+            .cloned()
+            .unwrap_or_else(|| CnPlacement::fresh(server_uuid, Utc::now()));
+        let reservations: Vec<CnReservation> = guard
+            .cn_reservations
+            .iter()
+            .filter(|((s, _), _)| *s == server_uuid)
+            .map(|(_, v)| v.clone())
+            .collect();
+        let load_summary = guard.cn_load_summaries.get(&server_uuid).cloned();
+        let assigned_instances: Vec<Instance> = guard
+            .instances_by_id
+            .values()
+            .filter(|i| i.host_cn_uuid == Some(server_uuid))
+            .cloned()
+            .collect();
+        Ok(CnPickSnapshot {
+            cn,
+            capacity,
+            placement,
+            reservations,
+            load_summary,
+            assigned_instances,
+            computed_at: Utc::now(),
+        })
+    }
+
+    async fn list_tenant_instance_projections(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantInstanceProjection>, StoreError> {
+        let guard = self.inner.read().await;
+        // Build a cn → fault_domain index from cn_placements once.
+        let fault_domains: HashMap<Uuid, Option<String>> = guard
+            .cn_placements
+            .iter()
+            .map(|(uuid, row)| (*uuid, row.fault_domain.clone()))
+            .collect();
+        let out: Vec<TenantInstanceProjection> = guard
+            .instances_by_id
+            .values()
+            .filter(|i| i.tenant_id == tenant_id)
+            .map(|i| {
+                let host_fault_domain = i
+                    .host_cn_uuid
+                    .and_then(|cn| fault_domains.get(&cn).cloned().flatten());
+                TenantInstanceProjection {
+                    instance: i.clone(),
+                    host_fault_domain,
+                }
+            })
+            .collect();
+        Ok(out)
     }
 
     async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {
@@ -9569,5 +9636,197 @@ mod tests {
             store.reserve_cn_capacity(make_reservation(cn, saga1)).await,
             Err(StoreError::AlreadyExists(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn cn_pick_snapshot_returns_not_found_for_absent_cn() {
+        let store = MemStore::new();
+        assert!(matches!(
+            store.get_cn_pick_snapshot(Uuid::new_v4()).await,
+            Err(StoreError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn cn_pick_snapshot_bundles_every_keyspace() {
+        let store = MemStore::new();
+        // Register a CN, then write into every placement
+        // keyspace. The snapshot returns each piece in one shot.
+        let server_uuid = Uuid::new_v4();
+        let cn = store
+            .register_cn(
+                server_uuid,
+                "cn-snap".into(),
+                None,
+                serde_json::json!({"hostname": "cn-snap"}),
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+
+        store
+            .put_cn_capacity(make_capacity(server_uuid))
+            .await
+            .unwrap();
+        let mut placement = CnPlacement::fresh(server_uuid, Utc::now());
+        placement.fault_domain = Some("rack-a".into());
+        store.put_cn_placement(placement.clone()).await.unwrap();
+        let saga = Uuid::new_v4();
+        store
+            .reserve_cn_capacity(make_reservation(server_uuid, saga))
+            .await
+            .unwrap();
+        store
+            .put_cn_load_summary(make_load_summary(server_uuid, false))
+            .await
+            .unwrap();
+
+        let snap = store.get_cn_pick_snapshot(server_uuid).await.unwrap();
+        assert_eq!(snap.cn.server_uuid, cn.server_uuid);
+        assert!(snap.capacity.is_some());
+        assert_eq!(snap.placement.fault_domain.as_deref(), Some("rack-a"));
+        assert_eq!(snap.reservations.len(), 1);
+        assert!(snap.load_summary.is_some());
+        // No instances host-bound yet.
+        assert!(snap.assigned_instances.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cn_pick_snapshot_defaults_placement_for_cn_with_no_operator_edit() {
+        // A CN that has no `cn-placement` row should surface a
+        // fresh-default policy. The engine reads this as "no
+        // operator policy" rather than failing the lookup.
+        let store = MemStore::new();
+        let server_uuid = Uuid::new_v4();
+        store
+            .register_cn(
+                server_uuid,
+                "cn-default".into(),
+                None,
+                serde_json::json!({}),
+                Utc::now(),
+            )
+            .await
+            .unwrap();
+        let snap = store.get_cn_pick_snapshot(server_uuid).await.unwrap();
+        assert!(!snap.placement.reserved);
+        assert!(!snap.placement.cordoned);
+        assert!(snap.placement.pinned_silo_uuid.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_tenant_instance_projections_filters_by_tenant_and_joins_fault_domain() {
+        // Two tenants, three instances; one of the instances is
+        // host-bound to a CN whose CnPlacement.fault_domain is
+        // set. The projection joins the fault_domain in.
+        let store = MemStore::new();
+        let silo = store
+            .create_silo(NewSilo {
+                name: "silo-proj".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant_a = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "ten-a".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let tenant_b = store
+            .create_tenant(
+                silo.id,
+                NewTenant {
+                    name: "ten-b".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let proj_a = store
+            .create_project(
+                tenant_a.id,
+                NewProject {
+                    name: "proj-a".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+        let proj_b = store
+            .create_project(
+                tenant_b.id,
+                NewProject {
+                    name: "proj-b".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Insert instance rows directly into the MemStore inner
+        // state (bypassing the create-instance machinery, which
+        // requires images / NICs / etc. wired up). The Store
+        // method we're testing only reads `instances_by_id` and
+        // `cn_placements`, so a direct insert is the smallest
+        // test fixture.
+        let cn = Uuid::new_v4();
+        let mut placement = CnPlacement::fresh(cn, Utc::now());
+        placement.fault_domain = Some("rack-7".into());
+        store.put_cn_placement(placement).await.unwrap();
+
+        {
+            let mut guard = store.inner.write().await;
+            for (tenant, project, host) in [
+                (tenant_a.id, proj_a.id, Some(cn)),
+                (tenant_a.id, proj_a.id, None),
+                (tenant_b.id, proj_b.id, Some(cn)),
+            ] {
+                let id = Uuid::new_v4();
+                guard.instances_by_id.insert(
+                    id,
+                    Instance {
+                        id,
+                        tenant_id: tenant,
+                        project_id: project,
+                        name: format!("inst-{}", id.simple()),
+                        description: String::new(),
+                        image_id: Uuid::new_v4(),
+                        brand: InstanceBrand::default(),
+                        primary_subnet_id: Uuid::new_v4(),
+                        ssh_key_ids: Vec::new(),
+                        cpu: 1,
+                        memory_bytes: 1_000_000_000,
+                        host_cn_uuid: host,
+                        lifecycle: LifecycleState::Pending,
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                    },
+                );
+            }
+        }
+
+        let for_a = store
+            .list_tenant_instance_projections(tenant_a.id)
+            .await
+            .unwrap();
+        assert_eq!(for_a.len(), 2);
+        let host_bound: Vec<_> = for_a
+            .iter()
+            .filter(|p| p.instance.host_cn_uuid.is_some())
+            .collect();
+        assert_eq!(host_bound.len(), 1);
+        assert_eq!(host_bound[0].host_fault_domain.as_deref(), Some("rack-7"));
+
+        let for_b = store
+            .list_tenant_instance_projections(tenant_b.id)
+            .await
+            .unwrap();
+        assert_eq!(for_b.len(), 1);
+        assert_eq!(for_b[0].host_fault_domain.as_deref(), Some("rack-7"));
     }
 }

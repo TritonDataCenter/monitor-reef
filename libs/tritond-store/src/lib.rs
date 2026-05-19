@@ -34,36 +34,36 @@ pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, AffinityKind, AffinityOp, AffinityRule,
     AffinityScope, AffinitySelector, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
     BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn,
-    CnCapacity, CnLoadSummary, CnPlacement, CnReservation, CnRole, CnState, CnView, ConfigError,
-    ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS, DEFAULT_DHCP_RECONCILE_INTERVAL_SECS,
-    DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT, DEFAULT_STALE_CLAIM_THRESHOLD_SECS,
-    DEFAULT_SWEEPER_INTERVAL_SECS, DeviceCapacity, DeviceKind, DeviceReservation, DhcpLease,
-    DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterInstance,
-    EdgeClusterInstanceState, EdgeClusterKind, EdgeClusterResource, EdgeNicCoord,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FirewallAction, FirewallDirection,
-    FirewallIcmpFilter, FirewallPortRange, FirewallProtocol, FirewallRule, FloatingIp,
-    FloatingIpAttachment, IMDS_HOP_LIMIT_DEFAULT, IMDS_HOP_LIMIT_MAX, IMDS_HOP_LIMIT_MIN,
-    IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, ImdsBindingWire, Instance,
-    InstanceAffinity, InstanceBrand, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus,
-    JobStatusKind, LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind, MAX_META_KEY_BYTES,
-    MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE, MAX_META_VALUE_BYTES,
-    MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED, META_KEY_IMDS_HOP_LIMIT,
-    META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance, MetaScope, MetaValue,
-    MetricsBackend, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
-    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway,
-    NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
-    NewSubnet, NewTenant, NewVpc, Nic, NumaNode, Project, ProvisioningJob, Quota, Realization,
-    RealizationStatus, RealizedMeta, RealizedNetworkState, RealizedView, RealizerId, Route,
-    RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
-    StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier, Subnet,
-    SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
+    CnCapacity, CnLoadSummary, CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, CnView,
+    ConfigError, ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
+    DEFAULT_DHCP_RECONCILE_INTERVAL_SECS, DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT,
+    DEFAULT_STALE_CLAIM_THRESHOLD_SECS, DEFAULT_SWEEPER_INTERVAL_SECS, DeviceCapacity, DeviceKind,
+    DeviceReservation, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind,
+    EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
+    EdgeClusterResource, EdgeNicCoord, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation,
+    FirewallAction, FirewallDirection, FirewallIcmpFilter, FirewallPortRange, FirewallProtocol,
+    FirewallRule, FloatingIp, FloatingIpAttachment, IMDS_HOP_LIMIT_DEFAULT, IMDS_HOP_LIMIT_MAX,
+    IMDS_HOP_LIMIT_MIN, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
+    ImdsBindingWire, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, IpCidr,
+    JobKind, JobOutcome, JobStatus, JobStatusKind, LegacyNic, LegacyVm, LifecycleState,
+    LifecycleStateKind, MAX_META_KEY_BYTES, MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE,
+    MAX_META_VALUE_BYTES, MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED,
+    META_KEY_IMDS_HOP_LIMIT, META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance,
+    MetaScope, MetaValue, MetricsBackend, NatGateway, NetworkResourceId, NewDhcpPool,
+    NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
+    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
+    NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NumaNode, Project,
+    ProvisioningJob, Quota, Realization, RealizationStatus, RealizedMeta, RealizedNetworkState,
+    RealizedView, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope,
+    StorageCluster, StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier,
+    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
     TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID,
-    TRITOND_SSH_KEY_NAMESPACE, Tenant, TopologyKey, TopologySpread, UnderlayCapability, User,
-    UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc,
-    ZpoolCapacity, computed_metadata, default_boot_disk_size_bytes, default_guest_visible,
-    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
-    generate_poll_token, meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports,
-    validate_meta_entry, validate_meta_key,
+    TRITOND_SSH_KEY_NAMESPACE, Tenant, TenantInstanceProjection, TopologyKey, TopologySpread,
+    UnderlayCapability, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport,
+    VmReport, VmState, Vpc, ZpoolCapacity, computed_metadata, default_boot_disk_size_bytes,
+    default_guest_visible, derive_image_id, derive_ssh_key_id, format_claim_code,
+    generate_claim_code, generate_poll_token, meta_key_guest_writable_allowed,
+    normalize_claim_code, parse_vm_reports, validate_meta_entry, validate_meta_key,
 };
 
 use async_trait::async_trait;
@@ -1693,4 +1693,32 @@ pub trait Store: Send + Sync + 'static {
         &self,
         tenant_id: Uuid,
     ) -> Result<Vec<InstanceAffinity>, StoreError>;
+
+    // ---- Joined snapshots for the placement engine (PL-5) ----
+
+    /// Return the joined placement snapshot for one CN: its
+    /// `Cn` row, the optional `CnCapacity`, the (defaulted)
+    /// `CnPlacement`, every `CnReservation` against the CN, the
+    /// optional `CnLoadSummary`, and the host-bound `Instance`
+    /// rows.
+    ///
+    /// PL-5 ships this as a sequence of single-key reads on the
+    /// `MemStore` (which serialises everything behind a single
+    /// `RwLock`, so the reads are naturally consistent) and as a
+    /// single FDB read transaction on `FdbStore`. The caller in
+    /// `tritond` projects the snapshot to
+    /// `tritond_placement::CnView` before handing it to the
+    /// chain runner.
+    async fn get_cn_pick_snapshot(&self, server_uuid: Uuid) -> Result<CnPickSnapshot, StoreError>;
+
+    /// List every instance whose `tenant_id == tenant_id`,
+    /// projected with the host CN's `CnPlacement.fault_domain`
+    /// (`None` if the instance is not yet host-bound or the host
+    /// has no fault-domain tag). Backs the placement engine's
+    /// `ChainContext.sibling_instances` slice for the spread /
+    /// cotenant scorers.
+    async fn list_tenant_instance_projections(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<TenantInstanceProjection>, StoreError>;
 }
