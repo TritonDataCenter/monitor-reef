@@ -74,6 +74,10 @@ struct ApiServerConfig {
     clusters: ClustersConfigFile,
     #[serde(default)]
     cloudapi: Option<CloudApiConfigFile>,
+    /// When set, unauthenticated requests are treated as this account UUID.
+    /// For local development only — never set this in production.
+    #[serde(default)]
+    dev_account_uuid: Option<Uuid>,
 }
 
 /// Operator-credential config for the server-side CloudAPI client.
@@ -175,6 +179,7 @@ impl Default for ApiServerConfig {
             jwt: None,
             clusters: ClustersConfigFile::default(),
             cloudapi: None,
+            dev_account_uuid: None,
         }
     }
 }
@@ -218,6 +223,9 @@ struct ApiContext {
     /// 503 in that case.
     #[allow(dead_code)]
     cloudapi: Option<Arc<TypedClient>>,
+    /// Dev bypass: unauthenticated requests are treated as this account UUID.
+    /// Never set in production.
+    dev_account_uuid: Option<Uuid>,
 }
 
 enum TritonApiImpl {}
@@ -1258,7 +1266,12 @@ async fn resolve_caller(rqctx: &RequestContext<ApiContext>) -> Result<CallerIden
             };
             Ok(CallerIdentity { account_id })
         }
-        auth_scheme::AuthScheme::None => Err(unauthorized()),
+        auth_scheme::AuthScheme::None => {
+            if let Some(uuid) = rqctx.context().dev_account_uuid {
+                return Ok(CallerIdentity { account_id: uuid });
+            }
+            Err(unauthorized())
+        }
     }
 }
 
@@ -1824,6 +1837,10 @@ async fn main() -> Result<()> {
         warn!("no [cloudapi] section in config; bootstrap endpoint will return 503");
     }
 
+    if config.dev_account_uuid.is_some() {
+        warn!("dev_account_uuid is set; unauthenticated requests will bypass auth — do not use in production");
+    }
+
     let context = ApiContext {
         jwt,
         ldap,
@@ -1832,6 +1849,7 @@ async fn main() -> Result<()> {
         cluster_store,
         relay: Arc::new(relay::RelayState::new()),
         cloudapi,
+        dev_account_uuid: config.dev_account_uuid,
     };
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
