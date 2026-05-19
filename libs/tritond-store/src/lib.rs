@@ -31,36 +31,39 @@ mod types;
 pub use fdb::FdbStore;
 pub use mem::MemStore;
 pub use types::{
-    AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, ApiKey, ApiKeyScope, ApiKeyView,
-    AutoApproveWindow, BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN,
-    CLAIM_CODE_TTL, Cn, CnRole, CnState, CnView, ConfigError, ConfigKey,
-    DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS, DEFAULT_DHCP_RECONCILE_INTERVAL_SECS,
+    AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, AffinityKind, AffinityOp, AffinityRule,
+    AffinityScope, AffinitySelector, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
+    BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn,
+    CnCapacity, CnLoadSummary, CnPlacement, CnReservation, CnRole, CnState, CnView, ConfigError,
+    ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS, DEFAULT_DHCP_RECONCILE_INTERVAL_SECS,
     DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT, DEFAULT_STALE_CLAIM_THRESHOLD_SECS,
-    DEFAULT_SWEEPER_INTERVAL_SECS, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk,
-    DiskKind, EdgeCluster, EdgeClusterInstance, EdgeClusterInstanceState, EdgeClusterKind,
-    EdgeClusterResource, EdgeNicCoord, FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation,
-    FirewallAction, FirewallDirection, FirewallIcmpFilter, FirewallPortRange, FirewallProtocol,
-    FirewallRule, FloatingIp, FloatingIpAttachment, IMDS_HOP_LIMIT_DEFAULT, IMDS_HOP_LIMIT_MAX,
-    IMDS_HOP_LIMIT_MIN, IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope,
-    ImdsBindingWire, Instance, InstanceBrand, InstanceCreateResult, IpCidr, JobKind, JobOutcome,
-    JobStatus, JobStatusKind, LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind,
-    MAX_META_KEY_BYTES, MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE, MAX_META_VALUE_BYTES,
+    DEFAULT_SWEEPER_INTERVAL_SECS, DeviceCapacity, DeviceKind, DeviceReservation, DhcpLease,
+    DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterInstance,
+    EdgeClusterInstanceState, EdgeClusterKind, EdgeClusterResource, EdgeNicCoord,
+    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, Federation, FirewallAction, FirewallDirection,
+    FirewallIcmpFilter, FirewallPortRange, FirewallProtocol, FirewallRule, FloatingIp,
+    FloatingIpAttachment, IMDS_HOP_LIMIT_DEFAULT, IMDS_HOP_LIMIT_MAX, IMDS_HOP_LIMIT_MIN,
+    IdpConfig, IdpConfigView, Image, ImageCompatibility, ImageScope, ImdsBindingWire, Instance,
+    InstanceAffinity, InstanceBrand, InstanceCreateResult, IpCidr, JobKind, JobOutcome, JobStatus,
+    JobStatusKind, LegacyNic, LegacyVm, LifecycleState, LifecycleStateKind, MAX_META_KEY_BYTES,
+    MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE, MAX_META_VALUE_BYTES,
     MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED, META_KEY_IMDS_HOP_LIMIT,
     META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance, MetaScope, MetaValue,
     MetricsBackend, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
     NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewInstanceNic, NewJob, NewNatGateway,
     NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster,
-    NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota, Realization,
+    NewSubnet, NewTenant, NewVpc, Nic, NumaNode, Project, ProvisioningJob, Quota, Realization,
     RealizationStatus, RealizedMeta, RealizedNetworkState, RealizedView, RealizerId, Route,
     RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
-    StorageClusterStatus, StorageClusterSurface, StorageClusterView, Subnet, SystemKey,
-    TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID,
-    TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID, TRITOND_SSH_KEY_NAMESPACE, Tenant,
-    User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc,
-    computed_metadata, default_boot_disk_size_bytes, default_guest_visible, derive_image_id,
-    derive_ssh_key_id, format_claim_code, generate_claim_code, generate_poll_token,
-    meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports, validate_meta_entry,
-    validate_meta_key,
+    StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier, Subnet,
+    SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
+    TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID,
+    TRITOND_SSH_KEY_NAMESPACE, Tenant, TopologyKey, TopologySpread, UnderlayCapability, User,
+    UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc,
+    ZpoolCapacity, computed_metadata, default_boot_disk_size_bytes, default_guest_visible,
+    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
+    generate_poll_token, meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports,
+    validate_meta_entry, validate_meta_key,
 };
 
 use async_trait::async_trait;
@@ -97,6 +100,27 @@ pub enum StoreError {
     /// check rides in the same FDB transaction as the write.
     #[error("fenced out: saga {saga_id} has been adopted by another SEC")]
     FencedOut { saga_id: String },
+
+    /// A `put_cn_placement` write was rejected because the
+    /// silo / tenant pin invariant would be violated (RFD 00005
+    /// invariant 5, D-Pl-5). The reason names the conflict.
+    #[error("pin conflict: {reason}")]
+    PinConflict { reason: String },
+
+    /// A `reserve_cn_capacity` write was rejected because the
+    /// post-reservation residual on the target CN would go
+    /// negative. The placement engine treats this as the
+    /// signal to re-run `pick` on the next FDB transaction
+    /// (RFD 00005 invariant 1).
+    #[error("cn-capacity exhausted on {server_uuid}: {reason}")]
+    CapacityExhausted { server_uuid: Uuid, reason: String },
+
+    /// A unique-key constraint was violated by a fresh insert
+    /// (e.g. a second `reserve_cn_capacity` for the same
+    /// `(server_uuid, saga_id)` pair - programming error, the
+    /// catalog action never calls `designate` twice).
+    #[error("already exists: {0}")]
+    AlreadyExists(String),
 }
 
 /// A handle to the control-plane state store.
@@ -1534,4 +1558,139 @@ pub trait Store: Send + Sync + 'static {
     /// The current generation counter for `scope`/`scope_id`. `0` when
     /// the scope has never had a metadata write.
     async fn get_meta_gen(&self, scope: MetaScope, scope_id: Uuid) -> Result<u64, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Placement keyspaces (RFD 00005 doc 01)
+    //
+    // Five logically-independent rows feed the placement engine; one
+    // writer per row in the operational sense (agent / operator /
+    // saga / materialiser / instance-create handler). See the typed
+    // shapes in `types.rs` and `tritond-placement` for the chain that
+    // consumes them.
+    // ------------------------------------------------------------------
+
+    // ---- cn-capacity (agent-published structured capacity) ----
+
+    /// Upsert the [`CnCapacity`] row for one CN.
+    ///
+    /// The agent is the single writer; there is no concurrent
+    /// agent-vs-agent race for one CN because each CN runs one
+    /// agent. PL-2 takes this as an unconditional overwrite - the
+    /// caller (the agent's capacity reporter) sends a fresh row on
+    /// startup and on hardware change. The fencing-tuple parameter
+    /// from RFD 00004 D-Sg-8 is deferred to the broader
+    /// fence-in-mutation-surface follow-up; agent writes are not
+    /// fenced.
+    async fn put_cn_capacity(&self, row: CnCapacity) -> Result<(), StoreError>;
+
+    /// Look up the [`CnCapacity`] row for one CN. Returns
+    /// [`StoreError::NotFound`] for a CN that has never published.
+    async fn get_cn_capacity(&self, server_uuid: Uuid) -> Result<CnCapacity, StoreError>;
+
+    /// List every [`CnCapacity`] row. Used by the placement engine's
+    /// fleet-scan and by the load materialiser to enumerate the
+    /// CNs it queries ClickHouse for.
+    async fn list_cn_capacities(&self) -> Result<Vec<CnCapacity>, StoreError>;
+
+    // ---- cn-placement (operator-edited policy) ----
+
+    /// Upsert the [`CnPlacement`] row for one CN. The Store
+    /// re-validates the pin invariant (D-Pl-5) inside the same
+    /// transaction as the write: if `pinned_tenant_uuid` is
+    /// `Some(t)` and `pinned_silo_uuid` is `Some(s)` where `s` is
+    /// not `t`'s silo, the write is rejected with
+    /// [`StoreError::PinConflict`]. The handler in `tritond` is
+    /// the first line of defence; the store is the second.
+    async fn put_cn_placement(&self, row: CnPlacement) -> Result<(), StoreError>;
+
+    /// Look up the [`CnPlacement`] row for one CN. Returns the
+    /// fresh-CN default (every field cleared) for a CN that has
+    /// no operator edits yet - the engine reads this as "no
+    /// operator policy applied", not as a missing row.
+    async fn get_cn_placement(&self, server_uuid: Uuid) -> Result<CnPlacement, StoreError>;
+
+    /// List every persisted [`CnPlacement`] row. Operator-facing
+    /// fleet view; CNs that have no row are absent from the list.
+    async fn list_cn_placements(&self) -> Result<Vec<CnPlacement>, StoreError>;
+
+    // ---- cn-reservation (saga-owned in-flight capacity ticket) ----
+
+    /// Insert a [`CnReservation`] row.
+    ///
+    /// Uniquely keyed by `(server_uuid, saga_id)`. A second insert
+    /// for the same pair is a programming error (the catalog
+    /// action never calls `designate` twice) and surfaces as
+    /// [`StoreError::AlreadyExists`]. PL-2 ships this as a plain
+    /// insert; PL-5 wraps it with the pick-and-reserve closure
+    /// shape so the read-residual + chain + insert + Instance
+    /// pin happen in one FDB transaction.
+    async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError>;
+
+    /// Delete the [`CnReservation`] row for `(server_uuid, saga_id)`.
+    /// Idempotent: returns [`StoreError::NotFound`] when the row is
+    /// already gone - callers in `undesignate` and in the reaper
+    /// treat that as success.
+    async fn release_cn_reservation(
+        &self,
+        server_uuid: Uuid,
+        saga_id: Uuid,
+    ) -> Result<(), StoreError>;
+
+    /// List [`CnReservation`] rows. `Some(server_uuid)` scans one
+    /// CN; `None` scans the fleet (used by the operator
+    /// reservations table and by the reaper).
+    async fn list_cn_reservations(
+        &self,
+        server_uuid: Option<Uuid>,
+    ) -> Result<Vec<CnReservation>, StoreError>;
+
+    // ---- cn-load-summary (materialiser-owned CH rollup) ----
+
+    /// Upsert the [`CnLoadSummary`] row for one CN. The
+    /// materialiser writes unconditionally on every tick; FDB
+    /// MVCC handles the no-op write cheaply.
+    async fn put_cn_load_summary(&self, row: CnLoadSummary) -> Result<(), StoreError>;
+
+    /// Look up the [`CnLoadSummary`] row for one CN. Returns
+    /// `Ok(None)` for a CN that has never been materialised
+    /// (distinct from `Ok(Some(row))` with `row.stale = true`,
+    /// which means the materialiser ran but produced thin data).
+    async fn get_cn_load_summary(
+        &self,
+        server_uuid: Uuid,
+    ) -> Result<Option<CnLoadSummary>, StoreError>;
+
+    /// List every persisted [`CnLoadSummary`] row.
+    async fn list_cn_load_summaries(&self) -> Result<Vec<CnLoadSummary>, StoreError>;
+
+    // ---- instance-affinity (per-instance rules) ----
+
+    /// Upsert the [`InstanceAffinity`] row for one instance.
+    ///
+    /// Written at instance create (the rules carried on the
+    /// request) and editable later via `tcadm instance affinity`.
+    /// An instance with no rules carries an empty
+    /// [`InstanceAffinity::empty`] row so the read path is a
+    /// single get rather than "get-or-default".
+    async fn put_instance_affinity(&self, row: InstanceAffinity) -> Result<(), StoreError>;
+
+    /// Look up the [`InstanceAffinity`] row for one instance.
+    /// Returns [`StoreError::NotFound`] if the row is absent
+    /// (which should not happen after PL-5 wires
+    /// `put_instance_affinity` into the instance-create saga; PL-2
+    /// ships the surface ahead of that wiring).
+    async fn get_instance_affinity(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<InstanceAffinity, StoreError>;
+
+    /// List every [`InstanceAffinity`] row for one tenant. Used by
+    /// the `score-fewer-cotenant-zones` and topology-spread
+    /// scorers - they need every existing instance's rules to
+    /// compute "would placing this new instance here keep the
+    /// spread within skew?".
+    async fn list_instance_affinities_for_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<InstanceAffinity>, StoreError>;
 }

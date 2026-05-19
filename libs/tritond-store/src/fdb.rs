@@ -167,10 +167,11 @@ use uuid::Uuid;
 
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
-    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, DhcpLease,
-    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
-    IdpConfig, Image, ImageScope, Instance, InstanceBrand, InstanceCreateResult, JobOutcome,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
+    CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool, DhcpReservation, Disk,
+    DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL,
+    FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment, IdpConfig, Image,
+    ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult, JobOutcome,
     JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope, MetaValue,
     NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
     NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
@@ -867,6 +868,56 @@ impl FdbStore {
 
     fn dhcp_lease_global_prefix() -> &'static [u8] {
         b"dhcp_lease/by_vpc/"
+    }
+
+    // ---- RFD 00005 PL-2: placement keyspaces ----
+
+    fn cn_capacity_key(server_uuid: Uuid) -> Vec<u8> {
+        format!("cn_capacity/{server_uuid}").into_bytes()
+    }
+
+    fn cn_capacity_prefix() -> &'static [u8] {
+        b"cn_capacity/"
+    }
+
+    fn cn_placement_key(server_uuid: Uuid) -> Vec<u8> {
+        format!("cn_placement/{server_uuid}").into_bytes()
+    }
+
+    fn cn_placement_prefix() -> &'static [u8] {
+        b"cn_placement/"
+    }
+
+    fn cn_reservation_key(server_uuid: Uuid, saga_id: Uuid) -> Vec<u8> {
+        format!("cn_reservation/{server_uuid}/{saga_id}").into_bytes()
+    }
+
+    fn cn_reservation_per_cn_prefix(server_uuid: Uuid) -> Vec<u8> {
+        format!("cn_reservation/{server_uuid}/").into_bytes()
+    }
+
+    fn cn_reservation_prefix() -> &'static [u8] {
+        b"cn_reservation/"
+    }
+
+    fn cn_load_summary_key(server_uuid: Uuid) -> Vec<u8> {
+        format!("cn_load_summary/{server_uuid}").into_bytes()
+    }
+
+    fn cn_load_summary_prefix() -> &'static [u8] {
+        b"cn_load_summary/"
+    }
+
+    fn instance_affinity_key(instance_id: Uuid) -> Vec<u8> {
+        format!("instance_affinity/{instance_id}").into_bytes()
+    }
+
+    fn instance_affinity_by_tenant_key(tenant_id: Uuid, instance_id: Uuid) -> Vec<u8> {
+        format!("instance_affinity_by_tenant/{tenant_id}/{instance_id}").into_bytes()
+    }
+
+    fn instance_affinity_by_tenant_prefix(tenant_id: Uuid) -> Vec<u8> {
+        format!("instance_affinity_by_tenant/{tenant_id}/").into_bytes()
     }
 }
 
@@ -6483,6 +6534,463 @@ impl Store for FdbStore {
             Ok(Outcome::NotFound) => Err(StoreError::NotFound),
             Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Placement keyspaces (RFD 00005 PL-2)
+    // ------------------------------------------------------------------
+
+    async fn put_cn_capacity(&self, row: CnCapacity) -> Result<(), StoreError> {
+        let key = Self::cn_capacity_key(row.server_uuid);
+        let value = serde_json::to_vec(&row)
+            .map_err(|e| StoreError::Backend(format!("serialize cn_capacity: {e}")))?;
+        self.db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&key, &value);
+                    Ok(())
+                }
+            })
+            .await
+            .map_err(|e: FdbBindingError| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn get_cn_capacity(&self, server_uuid: Uuid) -> Result<CnCapacity, StoreError> {
+        let key = Self::cn_capacity_key(server_uuid);
+        let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
+            })
+            .await;
+        let bytes = bytes
+            .map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?
+            .ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize cn_capacity: {e}")))
+    }
+
+    async fn list_cn_capacities(&self) -> Result<Vec<CnCapacity>, StoreError> {
+        let prefix = Self::cn_capacity_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let bytes_list =
+            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(bytes_list.len());
+        for bytes in bytes_list {
+            let v: CnCapacity = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize cn_capacity: {e}")))?;
+            out.push(v);
+        }
+        out.sort_by_key(|c| c.server_uuid);
+        Ok(out)
+    }
+
+    async fn put_cn_placement(&self, row: CnPlacement) -> Result<(), StoreError> {
+        // D-Pl-5 pin invariant: validate inside the same FDB
+        // transaction as the write so a concurrent edit can't sneak
+        // past. Look up the tenant's silo row by id; reject if it
+        // disagrees with the pinned silo.
+        let placement_key = Self::cn_placement_key(row.server_uuid);
+        let payload = serde_json::to_vec(&row)
+            .map_err(|e| StoreError::Backend(format!("serialize cn_placement: {e}")))?;
+
+        enum Outcome {
+            Wrote,
+            Conflict(String),
+        }
+
+        let pin = match (row.pinned_tenant_uuid, row.pinned_silo_uuid) {
+            (Some(t), Some(s)) => Some((t, s)),
+            _ => None,
+        };
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let placement_key = placement_key.clone();
+                let payload = payload.clone();
+                let pin = pin;
+                async move {
+                    if let Some((tenant_uuid, pinned_silo)) = pin {
+                        let tenant_key = Self::tenant_by_id_key(tenant_uuid);
+                        let tenant_bytes = match tr.get(&tenant_key, false).await? {
+                            Some(b) => b,
+                            None => {
+                                return Ok(Outcome::Conflict(format!(
+                                    "pinned tenant {tenant_uuid} not found"
+                                )));
+                            }
+                        };
+                        let tenant: Tenant =
+                            serde_json::from_slice(&tenant_bytes).map_err(|e| {
+                                FdbBindingError::CustomError(
+                                    format!("deserialize tenant: {e}").into(),
+                                )
+                            })?;
+                        if tenant.silo_id != pinned_silo {
+                            return Ok(Outcome::Conflict(format!(
+                                "pinned tenant {tenant_uuid} lives in silo {} but pinned silo is {pinned_silo}",
+                                tenant.silo_id
+                            )));
+                        }
+                    }
+                    tr.set(&placement_key, &payload);
+                    Ok(Outcome::Wrote)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Wrote) => Ok(()),
+            Ok(Outcome::Conflict(reason)) => Err(StoreError::PinConflict { reason }),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_cn_placement(&self, server_uuid: Uuid) -> Result<CnPlacement, StoreError> {
+        let key = Self::cn_placement_key(server_uuid);
+        let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
+            })
+            .await;
+        match bytes.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))? {
+            Some(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize cn_placement: {e}"))),
+            None => Ok(CnPlacement::fresh(server_uuid, Utc::now())),
+        }
+    }
+
+    async fn list_cn_placements(&self) -> Result<Vec<CnPlacement>, StoreError> {
+        let prefix = Self::cn_placement_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let bytes_list =
+            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(bytes_list.len());
+        for bytes in bytes_list {
+            let v: CnPlacement = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize cn_placement: {e}")))?;
+            out.push(v);
+        }
+        out.sort_by_key(|p| p.server_uuid);
+        Ok(out)
+    }
+
+    async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError> {
+        let key = Self::cn_reservation_key(row.server_uuid, row.saga_id);
+        let value = serde_json::to_vec(&row)
+            .map_err(|e| StoreError::Backend(format!("serialize cn_reservation: {e}")))?;
+        let server_uuid = row.server_uuid;
+        let saga_id = row.saga_id;
+
+        enum Outcome {
+            Wrote,
+            AlreadyExists,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    if tr.get(&key, false).await?.is_some() {
+                        return Ok(Outcome::AlreadyExists);
+                    }
+                    tr.set(&key, &value);
+                    Ok(Outcome::Wrote)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Wrote) => Ok(()),
+            Ok(Outcome::AlreadyExists) => Err(StoreError::AlreadyExists(format!(
+                "cn-reservation/{server_uuid}/{saga_id} already exists"
+            ))),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn release_cn_reservation(
+        &self,
+        server_uuid: Uuid,
+        saga_id: Uuid,
+    ) -> Result<(), StoreError> {
+        let key = Self::cn_reservation_key(server_uuid, saga_id);
+
+        enum Outcome {
+            Deleted,
+            NotFound,
+        }
+
+        let outcome: Result<Outcome, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move {
+                    if tr.get(&key, false).await?.is_none() {
+                        return Ok(Outcome::NotFound);
+                    }
+                    tr.clear(&key);
+                    Ok(Outcome::Deleted)
+                }
+            })
+            .await;
+
+        match outcome {
+            Ok(Outcome::Deleted) => Ok(()),
+            Ok(Outcome::NotFound) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_cn_reservations(
+        &self,
+        server_uuid: Option<Uuid>,
+    ) -> Result<Vec<CnReservation>, StoreError> {
+        let prefix = match server_uuid {
+            Some(cn) => Self::cn_reservation_per_cn_prefix(cn),
+            None => Self::cn_reservation_prefix().to_vec(),
+        };
+        let (begin, end) = prefix_range(&prefix);
+        let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let bytes_list =
+            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(bytes_list.len());
+        for bytes in bytes_list {
+            let v: CnReservation = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize cn_reservation: {e}")))?;
+            out.push(v);
+        }
+        out.sort_by_key(|r| (r.server_uuid, r.saga_id));
+        Ok(out)
+    }
+
+    async fn put_cn_load_summary(&self, row: CnLoadSummary) -> Result<(), StoreError> {
+        let key = Self::cn_load_summary_key(row.server_uuid);
+        let value = serde_json::to_vec(&row)
+            .map_err(|e| StoreError::Backend(format!("serialize cn_load_summary: {e}")))?;
+        self.db
+            .run(|tr, _| {
+                let key = key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&key, &value);
+                    Ok(())
+                }
+            })
+            .await
+            .map_err(|e: FdbBindingError| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn get_cn_load_summary(
+        &self,
+        server_uuid: Uuid,
+    ) -> Result<Option<CnLoadSummary>, StoreError> {
+        let key = Self::cn_load_summary_key(server_uuid);
+        let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
+            })
+            .await;
+        match bytes.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))? {
+            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes).map_err(|e| {
+                StoreError::Backend(format!("deserialize cn_load_summary: {e}"))
+            })?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn list_cn_load_summaries(&self) -> Result<Vec<CnLoadSummary>, StoreError> {
+        let prefix = Self::cn_load_summary_prefix().to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let bytes_list: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let bytes_list =
+            bytes_list.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(bytes_list.len());
+        for bytes in bytes_list {
+            let v: CnLoadSummary = serde_json::from_slice(&bytes)
+                .map_err(|e| StoreError::Backend(format!("deserialize cn_load_summary: {e}")))?;
+            out.push(v);
+        }
+        out.sort_by_key(|s| s.server_uuid);
+        Ok(out)
+    }
+
+    async fn put_instance_affinity(&self, row: InstanceAffinity) -> Result<(), StoreError> {
+        let by_id_key = Self::instance_affinity_key(row.instance_id);
+        let by_tenant_key = Self::instance_affinity_by_tenant_key(row.tenant_uuid, row.instance_id);
+        let value = serde_json::to_vec(&row)
+            .map_err(|e| StoreError::Backend(format!("serialize instance_affinity: {e}")))?;
+        // If the row's tenant changed across edits we'd leak the old
+        // by_tenant index entry; for v1 the tenant is fixed at create
+        // time and never re-parented, so we don't pay for the read
+        // here. PL-7's editing surface adds the read-and-clean-up
+        // path when (and if) it allows tenant reassignment.
+        self.db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let by_tenant_key = by_tenant_key.clone();
+                let value = value.clone();
+                async move {
+                    tr.set(&by_id_key, &value);
+                    tr.set(&by_tenant_key, b"");
+                    Ok(())
+                }
+            })
+            .await
+            .map_err(|e: FdbBindingError| StoreError::Backend(format!("FDB transaction: {e}")))
+    }
+
+    async fn get_instance_affinity(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<InstanceAffinity, StoreError> {
+        let key = Self::instance_affinity_key(instance_id);
+        let bytes: Result<Option<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move { Ok(tr.get(&key, false).await?.map(|s| s.to_vec())) }
+            })
+            .await;
+        let bytes = bytes
+            .map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?
+            .ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize instance_affinity: {e}")))
+    }
+
+    async fn list_instance_affinities_for_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<InstanceAffinity>, StoreError> {
+        let prefix = Self::instance_affinity_by_tenant_prefix(tenant_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        // First pass: collect the instance_ids from the by_tenant
+        // membership index. Second pass: range-read the actual
+        // affinity rows in one FDB transaction.
+        let ids: Result<Vec<Uuid>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut out = Vec::with_capacity(kvs.len());
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        let s = std::str::from_utf8(suffix).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("instance_affinity_by_tenant key utf-8: {e}").into(),
+                            )
+                        })?;
+                        let id = Uuid::parse_str(s).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("parse instance_id uuid: {e}").into(),
+                            )
+                        })?;
+                        out.push(id);
+                    }
+                    Ok(out)
+                }
+            })
+            .await;
+        let ids = ids.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            // Reads happen outside the index-scan transaction; PL-2
+            // doesn't need a single-snapshot read for the scoring
+            // path (the chain runner builds its CnView for the
+            // candidate CN itself). PL-5's `designate` action wraps
+            // the full snapshot in one transaction.
+            let row = self.get_instance_affinity(id).await?;
+            out.push(row);
+        }
+        out.sort_by_key(|r| r.instance_id);
+        Ok(out)
     }
 
     async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {

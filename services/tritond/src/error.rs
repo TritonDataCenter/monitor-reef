@@ -34,6 +34,26 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
             Some("FencedOut".to_string()),
             format!("saga {saga_id} adopted by another tritond instance; retry"),
         ),
+        // RFD 00005 PL-2: placement-keyspace errors. PinConflict is
+        // operator-visible (409); AlreadyExists is an internal
+        // programming error (500); CapacityExhausted is surfaced as
+        // 503 with retry semantics so a transient capacity squeeze
+        // returns the user-facing "try again" rather than 500.
+        StoreError::PinConflict { reason } => HttpError::for_client_error(
+            Some("PinConflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            reason,
+        ),
+        StoreError::CapacityExhausted {
+            server_uuid,
+            reason,
+        } => HttpError::for_unavail(
+            Some("CapacityExhausted".to_string()),
+            format!("capacity exhausted on {server_uuid}: {reason}"),
+        ),
+        StoreError::AlreadyExists(msg) => HttpError::for_internal_error(format!(
+            "store reported AlreadyExists from a path that should never collide: {msg}"
+        )),
     }
 }
 
@@ -52,6 +72,19 @@ pub(crate) fn store_error_to_audit_outcome(err: &StoreError) -> AuditOutcome {
         },
         StoreError::FencedOut { saga_id } => AuditOutcome::ServerError {
             message: format!("fenced out for saga {saga_id}"),
+        },
+        StoreError::PinConflict { reason } => AuditOutcome::ClientError {
+            code: 409,
+            message: reason.clone(),
+        },
+        StoreError::CapacityExhausted {
+            server_uuid,
+            reason,
+        } => AuditOutcome::ServerError {
+            message: format!("cn-capacity exhausted on {server_uuid}: {reason}"),
+        },
+        StoreError::AlreadyExists(msg) => AuditOutcome::ServerError {
+            message: msg.clone(),
         },
     }
 }

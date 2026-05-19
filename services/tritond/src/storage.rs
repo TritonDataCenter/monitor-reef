@@ -181,6 +181,21 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             Some("FencedOut".to_string()),
             format!("saga {saga_id} adopted by another tritond instance; retry"),
         ),
+        // RFD 00005 PL-2: placement-keyspace errors. The
+        // storage-cluster handlers never write to the placement
+        // keyspaces, so reaching any of these here would be a
+        // programming error; surface as 500 with the underlying
+        // reason so it lands in the operator-visible logs.
+        StoreError::PinConflict { reason } => {
+            HttpError::for_internal_error(format!("unexpected pin conflict: {reason}"))
+        }
+        StoreError::CapacityExhausted {
+            server_uuid,
+            reason,
+        } => HttpError::for_internal_error(format!(
+            "unexpected cn-capacity exhausted on {server_uuid}: {reason}"
+        )),
+        StoreError::AlreadyExists(msg) => HttpError::for_internal_error(msg),
     }
 }
 

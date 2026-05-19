@@ -3299,6 +3299,412 @@ impl From<Cn> for CnView {
 }
 
 // ---------------------------------------------------------------------
+// Placement keyspaces (RFD 00005 doc 01)
+//
+// Five independent rows feed the placement engine. Each has a single
+// writer (in the operational sense - at most one role authoritatively
+// updates the row), a typed shape here, and a small set of Store
+// trait methods on the trait. The placement engine in
+// `tritond-placement` reads all five into its `CnView` projection
+// inside one FDB read snapshot at pick time.
+// ---------------------------------------------------------------------
+
+/// Structured hardware capacity reported by `tritonagent`. Written
+/// once at startup and on hardware change events.
+///
+/// The legacy opaque `Cn.sysinfo` blob stays read-only for
+/// compatibility with the existing `tcadm cn show` command; placement
+/// never reads it (RFD 00005 invariant 7). A CN with no `CnCapacity`
+/// row is invisible to placement - every filter rejects it with
+/// reason `"cn-capacity row absent"` and the row surfaces on
+/// `tcadm cn list` with a `no-capacity-report` badge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CnCapacity {
+    pub server_uuid: Uuid,
+    pub cpu_cores_physical: u32,
+    pub cpu_threads_logical: u32,
+    /// Length == 1 on a UMA box.
+    pub numa_nodes: Vec<NumaNode>,
+    pub ram_total_mb: u64,
+    pub zpools: Vec<ZpoolCapacity>,
+    /// Authoritative for the `cn-nic-tags` filter; tritond does not
+    /// re-derive NIC tags from `Cn.sysinfo`.
+    pub nic_tags: Vec<String>,
+    pub underlay: UnderlayCapability,
+    pub devices: Vec<DeviceCapacity>,
+    /// SmartOS / illumos platform ID; matches legacy DAPI
+    /// `min_platform`.
+    pub platform_version: String,
+    /// Whether the CN's CPU advertises hardware virtualisation
+    /// extensions (VMX / SVM). The `cn-hvm-supported` filter consults
+    /// this for bhyve / KVM brands.
+    #[serde(default)]
+    pub hvm_supported: bool,
+    /// Agent-side clock when the row was last published. Staleness
+    /// is judged against the agent heartbeat (`Cn.last_seen`), not
+    /// against this field - the agent only re-reports on hardware
+    /// change, so an old `reported_at` plus a fresh heartbeat means
+    /// "hardware is steady", not "row is stale".
+    pub reported_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct NumaNode {
+    pub node_id: u8,
+    pub cores: u32,
+    pub ram_mb: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ZpoolCapacity {
+    pub name: String,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    pub tier: StorageTier,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum StorageTier {
+    Ssd,
+    Nvme,
+    Hdd,
+    Mixed,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct UnderlayCapability {
+    pub ipv4: bool,
+    pub ipv6: bool,
+}
+
+impl UnderlayCapability {
+    /// Is this CN's underlay sufficient for a request that requires
+    /// `req`? Every protocol the request asks for must be advertised
+    /// by the CN.
+    pub fn satisfies(self, req: UnderlayCapability) -> bool {
+        (!req.ipv4 || self.ipv4) && (!req.ipv6 || self.ipv6)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeviceCapacity {
+    pub kind: DeviceKind,
+    pub model: String,
+    pub free_count: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum DeviceKind {
+    Gpu,
+    SrIovVf,
+}
+
+/// Operator-edited per-CN placement policy. Written through
+/// `tcadm cn` / adminui. Defaults are the "fresh CN" shape: not
+/// reserved, not cordoned, no pins, no traits, no overprovision
+/// overrides, no fault-domain tag.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CnPlacement {
+    pub server_uuid: Uuid,
+    /// Operator-level "out of service for placement" flag. Force-place
+    /// still works (the operator is overriding the chain explicitly).
+    #[serde(default)]
+    pub reserved: bool,
+    #[serde(default)]
+    pub reserved_reason: Option<String>,
+    /// Operator labels: `gpu=a100`, `pci=zone-a`, `customer=acme`.
+    /// Equality-matched per key by the `cn-traits-required` filter.
+    #[serde(default)]
+    pub traits: BTreeMap<String, String>,
+    /// `None` → use the cluster default. The placement engine reads
+    /// the cluster setting at chain build time, not at row write
+    /// time.
+    #[serde(default)]
+    pub overprovision_cpu: Option<f32>,
+    #[serde(default)]
+    pub overprovision_ram: Option<f32>,
+    #[serde(default)]
+    pub overprovision_disk: Option<f32>,
+    /// Free-form operator label: `rack-3`, `pdu-a`, `az-east`. Two
+    /// CNs with the same `fault_domain` are co-located from
+    /// placement's perspective.
+    #[serde(default)]
+    pub fault_domain: Option<String>,
+    /// Silo pin (D-Pl-5). When set, only requests whose
+    /// `silo_uuid` matches may place here.
+    #[serde(default)]
+    pub pinned_silo_uuid: Option<Uuid>,
+    /// Tenant pin (D-Pl-5). When set, only requests whose
+    /// `tenant_uuid` matches may place here. Requires
+    /// `pinned_silo_uuid` to be `None` or to match the tenant's
+    /// silo - enforced inside the FDB transaction by
+    /// [`Store::put_cn_placement`] with [`StoreError::PinConflict`].
+    #[serde(default)]
+    pub pinned_tenant_uuid: Option<Uuid>,
+    /// Drain-only: existing instances stay running, restart still
+    /// hits the same CN, new placements skip.
+    #[serde(default)]
+    pub cordoned: bool,
+    /// "Why cordoned" - set to `"drain"` by `tcadm cn drain` in a
+    /// later slice. Until drain lands, `cn-not-evacuating` is
+    /// effectively `cn-not-cordoned`.
+    #[serde(default)]
+    pub cordoned_reason: Option<String>,
+    /// Operator note surfaced in adminui. Free-form, never read
+    /// by the engine.
+    #[serde(default)]
+    pub note: Option<String>,
+    /// When the row was last updated. The Store sets this to the
+    /// caller-supplied `now` on every write.
+    pub updated_at: DateTime<Utc>,
+    /// Who applied the edit. The audit row (per
+    /// RFD 00005 invariant 4) carries the same value.
+    pub updated_by: String,
+}
+
+impl CnPlacement {
+    /// The "fresh CN" shape, with `updated_at` / `updated_by` left to
+    /// the caller. Used by [`Store::get_cn_placement`] to synthesise
+    /// a row when no FDB entry exists yet (the engine reads it as
+    /// "no operator policy applied").
+    pub fn fresh(server_uuid: Uuid, now: DateTime<Utc>) -> Self {
+        Self {
+            server_uuid,
+            reserved: false,
+            reserved_reason: None,
+            traits: BTreeMap::new(),
+            overprovision_cpu: None,
+            overprovision_ram: None,
+            overprovision_disk: None,
+            fault_domain: None,
+            pinned_silo_uuid: None,
+            pinned_tenant_uuid: None,
+            cordoned: false,
+            cordoned_reason: None,
+            note: None,
+            updated_at: now,
+            updated_by: String::new(),
+        }
+    }
+}
+
+/// In-flight provision capacity ticket. Written by the `designate`
+/// saga action inside the same FDB transaction that pins
+/// `Instance.host_cn_uuid`; deleted by `undesignate` on saga unwind
+/// or by the reaper when `expires_at` has passed and the owning
+/// saga is in a terminal state (`Done` / `Unwound` / `Stuck`).
+///
+/// Scorers on the *next* `designate` read this row and subtract its
+/// resources from the CN's free capacity. The two-row CAS shape is
+/// what closes the race the bin-packer can't survive (D-Pl-2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CnReservation {
+    pub server_uuid: Uuid,
+    /// `steno::SagaId.0`. Stored raw so this crate doesn't take a
+    /// path dep on `tritond-saga` (which itself depends on us).
+    pub saga_id: Uuid,
+    pub instance_id: Uuid,
+    /// 1 vCPU = 100 cpu_units (legacy DAPI `cpu_cap` convention).
+    pub cpu_units: u32,
+    pub ram_mb: u64,
+    /// Per-zpool reservation in bytes. Keys match
+    /// `CnCapacity.zpools[].name`.
+    #[serde(default)]
+    pub disk: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub devices: Vec<DeviceReservation>,
+    pub created_at: DateTime<Utc>,
+    /// Saga deadline + slack. The reaper deletes reservations whose
+    /// `expires_at` has passed *and* whose owning saga is terminal;
+    /// reservations whose saga is still running are left alone (the
+    /// SEC reassignment sweep - RFD 00004 D-Sg-4 - is the right
+    /// mechanism to advance them).
+    pub expires_at: DateTime<Utc>,
+    /// `tritond_saga::SecId.0` - the SEC that wrote the row. Recorded
+    /// for audit, not for fence validation (the engine layer does
+    /// that). The store does not require this to match the *current*
+    /// SEC: a reservation written by a now-dead SEC is still the
+    /// durable record of consumed capacity.
+    pub created_by_sec_id: Uuid,
+    /// `tritond_saga::SecEpoch.0`.
+    pub created_at_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeviceReservation {
+    pub kind: DeviceKind,
+    pub model: String,
+    pub count: u32,
+}
+
+/// Materialiser-owned per-CN ClickHouse rollup. Read by the
+/// load-history scorers on the hot path; refreshed by the
+/// leader-elected materialiser on a tick (default 60s).
+///
+/// The materialiser writes the row unconditionally on every tick
+/// that produces fresh data (capacity-only scorers don't care; load
+/// scorers gate on `stale`). It does *not* try to be clever about
+/// "only write if changed" - the row is small and FDB MVCC handles
+/// the no-op write cheaply.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CnLoadSummary {
+    pub server_uuid: Uuid,
+
+    // CPU utilisation (0.0 .. 1.0 - fraction of total physical cores busy).
+    pub cpu_p50_5m: f32,
+    pub cpu_p95_5m: f32,
+    pub cpu_max_5m: f32,
+    pub cpu_p50_1d: f32,
+    pub cpu_p95_1d: f32,
+    pub cpu_max_1d: f32,
+    pub cpu_p50_7d: f32,
+    pub cpu_p95_7d: f32,
+    pub cpu_max_7d: f32,
+
+    // RAM used (bytes).
+    pub ram_used_p95_5m: u64,
+    pub ram_used_p95_1d: u64,
+    pub ram_used_p95_7d: u64,
+
+    // Disk used per zpool (bytes). Keys match `CnCapacity.zpools[].name`.
+    #[serde(default)]
+    pub disk_used_bytes_p95_5m: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub disk_used_bytes_p95_1d: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub disk_used_bytes_p95_7d: BTreeMap<String, u64>,
+
+    // NIC throughput (bytes/sec).
+    pub nic_tx_bps_p95_5m: u64,
+    pub nic_tx_bps_p95_1d: u64,
+    pub nic_tx_bps_p95_7d: u64,
+    pub nic_rx_bps_p95_5m: u64,
+    pub nic_rx_bps_p95_1d: u64,
+    pub nic_rx_bps_p95_7d: u64,
+
+    // Sample-thinness gate: if any of these is below a per-window
+    // minimum, the row is treated as `stale`.
+    pub samples_5m: u32,
+    pub samples_1d: u32,
+    pub samples_7d: u32,
+
+    pub last_refreshed_at: DateTime<Utc>,
+    /// Set by the materialiser when (a) the last refresh is older
+    /// than `staleness_ticks × interval_seconds`, (b) the per-window
+    /// sample count is below the per-window minimum, or (c) the
+    /// ClickHouse query for this CN returned an error. The row is
+    /// still written with `stale = true` so the heatmap can
+    /// distinguish "no data" from "data says zero".
+    pub stale: bool,
+}
+
+/// Per-instance affinity / anti-affinity / topology-spread rules.
+/// Written at instance create (the rules carried on the request);
+/// editable later by the operator via `tcadm instance affinity set`.
+/// Future restart / move actions read this row; v1 reads it during
+/// the initial `designate`.
+///
+/// An instance with no rules carries an empty `rules: []` row, not
+/// the absence of a row, so the read path is a single get rather
+/// than "get-or-default".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InstanceAffinity {
+    pub instance_id: Uuid,
+    pub tenant_uuid: Uuid,
+    #[serde(default)]
+    pub rules: Vec<AffinityRule>,
+    #[serde(default)]
+    pub spread: Option<TopologySpread>,
+    pub updated_at: DateTime<Utc>,
+    pub updated_by: String,
+}
+
+impl InstanceAffinity {
+    /// The "no rules" shape for an instance whose request carried
+    /// no affinity asks.
+    pub fn empty(instance_id: Uuid, tenant_uuid: Uuid, now: DateTime<Utc>) -> Self {
+        Self {
+            instance_id,
+            tenant_uuid,
+            rules: Vec::new(),
+            spread: None,
+            updated_at: now,
+            updated_by: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AffinityRule {
+    pub kind: AffinityKind,
+    /// `Required` rules failing satisfaction are a hard reject from
+    /// the `cn-affinity-required` filter; `Preferred` rules feed
+    /// the `score-affinity-preferred` scorer.
+    pub scope: AffinityScope,
+    pub op: AffinityOp,
+    pub selector: AffinitySelector,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum AffinityKind {
+    VmToVm,
+    VmToHost,
+    Topology,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum AffinityScope {
+    Required,
+    Preferred,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
+pub enum AffinityOp {
+    In,
+    NotIn,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+#[non_exhaustive]
+pub enum AffinitySelector {
+    /// `vm_to_vm` by explicit instance ids.
+    InstanceIds(Vec<Uuid>),
+    /// `vm_to_vm` by tag-match (key/value over instance tags).
+    InstanceTagMatch { key: String, value: String },
+    /// `vm_to_host` by explicit CN ids.
+    CnUuids(Vec<Uuid>),
+    /// `vm_to_host` by trait-match (key/value over `CnPlacement.traits`).
+    CnTraitMatch { key: String, value: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TopologySpread {
+    pub key: TopologyKey,
+    pub max_skew: u32,
+    pub scope: AffinityScope,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+#[non_exhaustive]
+pub enum TopologyKey {
+    FaultDomain,
+    CnUuid,
+    Trait(String),
+}
+
+// ---------------------------------------------------------------------
 // Per-VM status report types
 // ---------------------------------------------------------------------
 

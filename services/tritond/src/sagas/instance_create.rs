@@ -501,6 +501,13 @@ fn store_err_to_action_err(e: tritond_store::StoreError) -> ActionError {
         tritond_store::StoreError::NotFound => "not_found",
         tritond_store::StoreError::Backend(_) => "backend",
         tritond_store::StoreError::FencedOut { .. } => "fenced_out",
+        // RFD 00005 PL-2 variants. PinConflict tags as conflict so
+        // the existing 409 mapping picks it up; CapacityExhausted
+        // and AlreadyExists ride the backend tag (500 / retry-able)
+        // since the placement saga action lands in PL-5.
+        tritond_store::StoreError::PinConflict { .. } => "conflict",
+        tritond_store::StoreError::CapacityExhausted { .. } => "backend",
+        tritond_store::StoreError::AlreadyExists(_) => "backend",
     };
     let payload = serde_json::json!({
         "kind": "store_error",

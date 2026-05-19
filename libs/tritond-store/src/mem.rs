@@ -21,19 +21,20 @@ use uuid::Uuid;
 
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
 use crate::{
-    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnRole, CnState, DhcpLease,
-    DhcpPool, DhcpReservation, Disk, DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource,
-    FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp,
-    FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceBrand,
-    InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState,
-    LifecycleStateKind, MetaScope, MetaValue, NatGateway, NetworkResourceId, NewDhcpPool,
-    NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-    Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
-    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
-    SystemKey, Tenant, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
-    default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
+    AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
+    CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool, DhcpReservation, Disk,
+    DiskKind, EdgeCluster, EdgeClusterKind, EdgeClusterResource, FLOATING_IP_V4_POOL,
+    FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp, FloatingIpAttachment,
+    IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult,
+    JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope,
+    MetaValue, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
+    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
+    NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant,
+    NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
+    Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
+    StorageClusterStatus, Store, StoreError, Subnet, SystemKey, Tenant, User, VPC_VNI_MAX,
+    VPC_VNI_RESERVED_CEILING, Vpc, default_boot_disk_size_bytes, generate_claim_code,
+    generate_poll_token,
 };
 #[cfg(test)]
 use crate::{
@@ -267,6 +268,24 @@ struct Inner {
     /// `(scope, scope_id)` → monotonic generation counter, bumped on
     /// every metadata write/delete. Absent == 0.
     meta_gen: HashMap<(MetaScope, Uuid), u64>,
+    /// RFD 00005 PL-2: agent-published structured capacity rows,
+    /// keyed by `server_uuid`. One writer per row (the agent's
+    /// capacity reporter); no concurrent agent-vs-agent races.
+    cn_capacities: HashMap<Uuid, CnCapacity>,
+    /// Operator-edited placement policy per CN. Absent until the
+    /// first edit; reads synthesise `CnPlacement::fresh(...)` for
+    /// absent rows so the engine doesn't have to special-case
+    /// "no operator policy".
+    cn_placements: HashMap<Uuid, CnPlacement>,
+    /// In-flight reservations keyed by `(server_uuid, saga_id)`.
+    /// Inserted by `designate`, deleted by `undesignate` or by
+    /// the reaper.
+    cn_reservations: HashMap<(Uuid, Uuid), CnReservation>,
+    /// Materialiser-owned per-CN ClickHouse rollup.
+    cn_load_summaries: HashMap<Uuid, CnLoadSummary>,
+    /// Per-instance affinity / anti-affinity / topology-spread
+    /// rules, keyed by `instance_id`.
+    instance_affinities: HashMap<Uuid, InstanceAffinity>,
 }
 
 /// In-process [`Store`] implementation.
@@ -3238,6 +3257,165 @@ impl Store for MemStore {
         cn.last_status = Some(payload);
         cn.last_seen = Some(at);
         Ok(())
+    }
+
+    // ------------------------------------------------------------------
+    // Placement keyspaces (RFD 00005 PL-2)
+    // ------------------------------------------------------------------
+
+    async fn put_cn_capacity(&self, row: CnCapacity) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.cn_capacities.insert(row.server_uuid, row);
+        Ok(())
+    }
+
+    async fn get_cn_capacity(&self, server_uuid: Uuid) -> Result<CnCapacity, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .cn_capacities
+            .get(&server_uuid)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_cn_capacities(&self) -> Result<Vec<CnCapacity>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.cn_capacities.values().cloned().collect())
+    }
+
+    async fn put_cn_placement(&self, row: CnPlacement) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        // D-Pl-5 pin invariant: if both pins are set, the tenant's
+        // silo must equal the pinned silo. We validate inside the
+        // write to close the door on a racing edit that would
+        // otherwise sneak past the handler's pre-check.
+        if let (Some(tenant_uuid), Some(silo_uuid)) = (row.pinned_tenant_uuid, row.pinned_silo_uuid)
+        {
+            let tenant = guard
+                .tenants_by_id
+                .get(&tenant_uuid)
+                .cloned()
+                .ok_or_else(|| StoreError::PinConflict {
+                    reason: format!("pinned tenant {tenant_uuid} not found"),
+                })?;
+            if tenant.silo_id != silo_uuid {
+                return Err(StoreError::PinConflict {
+                    reason: format!(
+                        "pinned tenant {tenant_uuid} lives in silo {} but pinned silo is {silo_uuid}",
+                        tenant.silo_id
+                    ),
+                });
+            }
+        }
+        guard.cn_placements.insert(row.server_uuid, row);
+        Ok(())
+    }
+
+    async fn get_cn_placement(&self, server_uuid: Uuid) -> Result<CnPlacement, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .cn_placements
+            .get(&server_uuid)
+            .cloned()
+            .unwrap_or_else(|| CnPlacement::fresh(server_uuid, Utc::now())))
+    }
+
+    async fn list_cn_placements(&self) -> Result<Vec<CnPlacement>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.cn_placements.values().cloned().collect())
+    }
+
+    async fn reserve_cn_capacity(&self, row: CnReservation) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        let key = (row.server_uuid, row.saga_id);
+        if guard.cn_reservations.contains_key(&key) {
+            return Err(StoreError::AlreadyExists(format!(
+                "cn-reservation/{}/{} already exists",
+                row.server_uuid, row.saga_id
+            )));
+        }
+        guard.cn_reservations.insert(key, row);
+        Ok(())
+    }
+
+    async fn release_cn_reservation(
+        &self,
+        server_uuid: Uuid,
+        saga_id: Uuid,
+    ) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard
+            .cn_reservations
+            .remove(&(server_uuid, saga_id))
+            .map(|_| ())
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_cn_reservations(
+        &self,
+        server_uuid: Option<Uuid>,
+    ) -> Result<Vec<CnReservation>, StoreError> {
+        let guard = self.inner.read().await;
+        let rows = match server_uuid {
+            Some(cn) => guard
+                .cn_reservations
+                .iter()
+                .filter(|((s, _), _)| *s == cn)
+                .map(|(_, v)| v.clone())
+                .collect(),
+            None => guard.cn_reservations.values().cloned().collect(),
+        };
+        Ok(rows)
+    }
+
+    async fn put_cn_load_summary(&self, row: CnLoadSummary) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.cn_load_summaries.insert(row.server_uuid, row);
+        Ok(())
+    }
+
+    async fn get_cn_load_summary(
+        &self,
+        server_uuid: Uuid,
+    ) -> Result<Option<CnLoadSummary>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.cn_load_summaries.get(&server_uuid).cloned())
+    }
+
+    async fn list_cn_load_summaries(&self) -> Result<Vec<CnLoadSummary>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard.cn_load_summaries.values().cloned().collect())
+    }
+
+    async fn put_instance_affinity(&self, row: InstanceAffinity) -> Result<(), StoreError> {
+        let mut guard = self.inner.write().await;
+        guard.instance_affinities.insert(row.instance_id, row);
+        Ok(())
+    }
+
+    async fn get_instance_affinity(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<InstanceAffinity, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .instance_affinities
+            .get(&instance_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn list_instance_affinities_for_tenant(
+        &self,
+        tenant_id: Uuid,
+    ) -> Result<Vec<InstanceAffinity>, StoreError> {
+        let guard = self.inner.read().await;
+        Ok(guard
+            .instance_affinities
+            .values()
+            .filter(|row| row.tenant_uuid == tenant_id)
+            .cloned()
+            .collect())
     }
 
     async fn upsert_legacy_vm(&self, legacy_vm: LegacyVm) -> Result<(), StoreError> {
@@ -9021,5 +9199,375 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    // ------------------------------------------------------------------
+    // RFD 00005 PL-2: placement-keyspace CAS invariants.
+    // ------------------------------------------------------------------
+
+    fn make_capacity(server_uuid: Uuid) -> CnCapacity {
+        use crate::{NumaNode, StorageTier, UnderlayCapability, ZpoolCapacity};
+        CnCapacity {
+            server_uuid,
+            cpu_cores_physical: 16,
+            cpu_threads_logical: 32,
+            numa_nodes: vec![NumaNode {
+                node_id: 0,
+                cores: 16,
+                ram_mb: 65_536,
+            }],
+            ram_total_mb: 65_536,
+            zpools: vec![ZpoolCapacity {
+                name: "zones".into(),
+                total_bytes: 1_000_000_000_000,
+                free_bytes: 800_000_000_000,
+                tier: StorageTier::Ssd,
+            }],
+            nic_tags: vec!["admin".into(), "external".into()],
+            underlay: UnderlayCapability {
+                ipv4: true,
+                ipv6: false,
+            },
+            devices: Vec::new(),
+            platform_version: "20260501T000000Z".into(),
+            hvm_supported: true,
+            reported_at: Utc::now(),
+        }
+    }
+
+    fn make_reservation(server_uuid: Uuid, saga_id: Uuid) -> CnReservation {
+        CnReservation {
+            server_uuid,
+            saga_id,
+            instance_id: Uuid::new_v4(),
+            cpu_units: 200,
+            ram_mb: 4096,
+            disk: BTreeMap::new(),
+            devices: Vec::new(),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + chrono::Duration::minutes(10),
+            created_by_sec_id: Uuid::new_v4(),
+            created_at_epoch: 1,
+        }
+    }
+
+    fn make_load_summary(server_uuid: Uuid, stale: bool) -> CnLoadSummary {
+        CnLoadSummary {
+            server_uuid,
+            cpu_p50_5m: 0.10,
+            cpu_p95_5m: 0.25,
+            cpu_max_5m: 0.40,
+            cpu_p50_1d: 0.15,
+            cpu_p95_1d: 0.30,
+            cpu_max_1d: 0.55,
+            cpu_p50_7d: 0.18,
+            cpu_p95_7d: 0.42,
+            cpu_max_7d: 0.70,
+            ram_used_p95_5m: 8_000_000_000,
+            ram_used_p95_1d: 10_000_000_000,
+            ram_used_p95_7d: 12_000_000_000,
+            disk_used_bytes_p95_5m: BTreeMap::new(),
+            disk_used_bytes_p95_1d: BTreeMap::new(),
+            disk_used_bytes_p95_7d: BTreeMap::new(),
+            nic_tx_bps_p95_5m: 0,
+            nic_tx_bps_p95_1d: 0,
+            nic_tx_bps_p95_7d: 0,
+            nic_rx_bps_p95_5m: 0,
+            nic_rx_bps_p95_1d: 0,
+            nic_rx_bps_p95_7d: 0,
+            samples_5m: 60,
+            samples_1d: 1440,
+            samples_7d: 10080,
+            last_refreshed_at: Utc::now(),
+            stale,
+        }
+    }
+
+    #[tokio::test]
+    async fn cn_capacity_put_get_list_round_trip() {
+        let store = MemStore::new();
+        let cn_a = Uuid::new_v4();
+        let cn_b = Uuid::new_v4();
+
+        // get-on-empty returns NotFound; list-on-empty returns an
+        // empty slice (the engine treats absence as "not visible to
+        // placement").
+        assert!(matches!(
+            store.get_cn_capacity(cn_a).await,
+            Err(StoreError::NotFound)
+        ));
+        assert!(store.list_cn_capacities().await.unwrap().is_empty());
+
+        store.put_cn_capacity(make_capacity(cn_a)).await.unwrap();
+        store.put_cn_capacity(make_capacity(cn_b)).await.unwrap();
+        let got = store.get_cn_capacity(cn_a).await.unwrap();
+        assert_eq!(got.server_uuid, cn_a);
+        assert_eq!(got.ram_total_mb, 65_536);
+
+        let all = store.list_cn_capacities().await.unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn cn_placement_get_synthesises_fresh_default_on_absent_row() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let row = store.get_cn_placement(cn).await.unwrap();
+        // Defaults: not reserved, not cordoned, no pins, no traits,
+        // no overprovision overrides - the engine reads this as
+        // "no operator policy applied".
+        assert_eq!(row.server_uuid, cn);
+        assert!(!row.reserved);
+        assert!(!row.cordoned);
+        assert!(row.pinned_silo_uuid.is_none());
+        assert!(row.pinned_tenant_uuid.is_none());
+        assert!(row.traits.is_empty());
+        // List is empty - fresh-default rows are not persisted.
+        assert!(store.list_cn_placements().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cn_placement_pin_conflict_rejects_mismatched_silo() {
+        // Build a tenant in silo `s1`, then try to pin a CN to that
+        // tenant *and* a different silo `s2`. The store re-checks the
+        // invariant inside the transaction (D-Pl-5).
+        let store = MemStore::new();
+        let s1 = store
+            .create_silo(NewSilo {
+                name: "silo-1".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let s2 = store
+            .create_silo(NewSilo {
+                name: "silo-2".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let tenant = store
+            .create_tenant(
+                s1.id,
+                NewTenant {
+                    name: "tenant-a".into(),
+                    description: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let cn = Uuid::new_v4();
+        let mut row = CnPlacement::fresh(cn, Utc::now());
+        row.pinned_tenant_uuid = Some(tenant.id);
+        row.pinned_silo_uuid = Some(s2.id); // wrong silo
+        let err = store.put_cn_placement(row.clone()).await.unwrap_err();
+        match err {
+            StoreError::PinConflict { reason } => {
+                assert!(
+                    reason.contains("silo"),
+                    "expected silo-conflict reason, got {reason:?}"
+                );
+            }
+            other => panic!("expected PinConflict, got {other:?}"),
+        }
+
+        // Now write the matching pin: should succeed.
+        row.pinned_silo_uuid = Some(s1.id);
+        store.put_cn_placement(row).await.unwrap();
+        let persisted = store.get_cn_placement(cn).await.unwrap();
+        assert_eq!(persisted.pinned_silo_uuid, Some(s1.id));
+        assert_eq!(persisted.pinned_tenant_uuid, Some(tenant.id));
+    }
+
+    #[tokio::test]
+    async fn cn_placement_pin_conflict_accepts_silo_only_or_tenant_only() {
+        // Single-pin shapes are always fine; the invariant is only
+        // about cross-checking when *both* pins are set.
+        let store = MemStore::new();
+        let s = store
+            .create_silo(NewSilo {
+                name: "silo-x".into(),
+                description: None,
+            })
+            .await
+            .unwrap();
+        let cn = Uuid::new_v4();
+        let mut row = CnPlacement::fresh(cn, Utc::now());
+
+        row.pinned_silo_uuid = Some(s.id);
+        store.put_cn_placement(row.clone()).await.unwrap();
+
+        row.pinned_silo_uuid = None;
+        row.pinned_tenant_uuid = Some(Uuid::new_v4()); // unknown tenant - silo unset, no cross-check
+        store.put_cn_placement(row).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cn_reservation_unique_per_cn_saga_pair() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let saga = Uuid::new_v4();
+        store
+            .reserve_cn_capacity(make_reservation(cn, saga))
+            .await
+            .unwrap();
+        let err = store
+            .reserve_cn_capacity(make_reservation(cn, saga))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, StoreError::AlreadyExists(_)),
+            "expected AlreadyExists for duplicate (cn, saga), got {err:?}"
+        );
+
+        // A second saga on the same CN is fine; same saga on a
+        // different CN is fine. Both rows are listable.
+        let saga2 = Uuid::new_v4();
+        let cn2 = Uuid::new_v4();
+        store
+            .reserve_cn_capacity(make_reservation(cn, saga2))
+            .await
+            .unwrap();
+        store
+            .reserve_cn_capacity(make_reservation(cn2, saga))
+            .await
+            .unwrap();
+
+        let per_cn = store.list_cn_reservations(Some(cn)).await.unwrap();
+        assert_eq!(per_cn.len(), 2);
+        let fleet = store.list_cn_reservations(None).await.unwrap();
+        assert_eq!(fleet.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn cn_reservation_release_is_idempotent_on_not_found() {
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+        let saga = Uuid::new_v4();
+        store
+            .reserve_cn_capacity(make_reservation(cn, saga))
+            .await
+            .unwrap();
+        store.release_cn_reservation(cn, saga).await.unwrap();
+        // Second release: row is already gone - both `undesignate`
+        // and the reaper treat NotFound as success at their call
+        // site.
+        assert!(matches!(
+            store.release_cn_reservation(cn, saga).await,
+            Err(StoreError::NotFound)
+        ));
+        assert!(
+            store
+                .list_cn_reservations(Some(cn))
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn cn_load_summary_materialiser_refresh_is_idempotent_at_the_store_layer() {
+        // The materialiser writes unconditionally on every tick.
+        // Two writes for the same CN should produce a single row
+        // whose body matches the latest write - the store is the
+        // "last write wins" surface that lets the materialiser
+        // avoid clever change-detection logic.
+        let store = MemStore::new();
+        let cn = Uuid::new_v4();
+
+        // get-on-empty returns Ok(None), distinct from
+        // Ok(Some(row { stale: true })) - the engine uses this to
+        // tell "never materialised" apart from "ran but thin data".
+        assert!(store.get_cn_load_summary(cn).await.unwrap().is_none());
+
+        store
+            .put_cn_load_summary(make_load_summary(cn, false))
+            .await
+            .unwrap();
+        let mut latest = make_load_summary(cn, true);
+        latest.cpu_p95_5m = 0.95;
+        store.put_cn_load_summary(latest.clone()).await.unwrap();
+
+        let got = store.get_cn_load_summary(cn).await.unwrap().unwrap();
+        assert!(got.stale);
+        assert!((got.cpu_p95_5m - 0.95).abs() < 1e-6);
+        assert_eq!(store.list_cn_load_summaries().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn instance_affinity_list_filters_by_tenant() {
+        let store = MemStore::new();
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        let now = Utc::now();
+
+        let a1 = InstanceAffinity::empty(Uuid::new_v4(), tenant_a, now);
+        let a2 = InstanceAffinity::empty(Uuid::new_v4(), tenant_a, now);
+        let b1 = InstanceAffinity::empty(Uuid::new_v4(), tenant_b, now);
+
+        store.put_instance_affinity(a1.clone()).await.unwrap();
+        store.put_instance_affinity(a2.clone()).await.unwrap();
+        store.put_instance_affinity(b1.clone()).await.unwrap();
+
+        let for_a = store
+            .list_instance_affinities_for_tenant(tenant_a)
+            .await
+            .unwrap();
+        assert_eq!(for_a.len(), 2);
+        let for_b = store
+            .list_instance_affinities_for_tenant(tenant_b)
+            .await
+            .unwrap();
+        assert_eq!(for_b.len(), 1);
+        let for_unknown = store
+            .list_instance_affinities_for_tenant(Uuid::new_v4())
+            .await
+            .unwrap();
+        assert!(for_unknown.is_empty());
+
+        // get round-trips.
+        let got = store.get_instance_affinity(a1.instance_id).await.unwrap();
+        assert_eq!(got.tenant_uuid, tenant_a);
+    }
+
+    #[tokio::test]
+    async fn concurrent_reservation_writers_serialise_at_the_store_layer() {
+        // Two writers that both try to reserve on the same CN with
+        // *different* saga ids must both land - the store does not
+        // try to detect "is residual exhausted" here (D-Pl-2 wraps
+        // pick + reserve in one transaction at the saga-action
+        // layer; PL-5 lands that). The store-layer invariant is
+        // weaker: (cn, saga) is unique, and concurrent inserts on
+        // distinct sagas all succeed.
+        use std::sync::Arc;
+        let store: Arc<MemStore> = Arc::new(MemStore::new());
+        let cn = Uuid::new_v4();
+        let saga1 = Uuid::new_v4();
+        let saga2 = Uuid::new_v4();
+
+        let s = store.clone();
+        let h1 = tokio::spawn(async move {
+            s.reserve_cn_capacity(make_reservation(cn, saga1))
+                .await
+                .unwrap();
+        });
+        let s = store.clone();
+        let h2 = tokio::spawn(async move {
+            s.reserve_cn_capacity(make_reservation(cn, saga2))
+                .await
+                .unwrap();
+        });
+        h1.await.unwrap();
+        h2.await.unwrap();
+
+        let rows = store.list_cn_reservations(Some(cn)).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        // Both sagas land. Now: a third writer with one of the
+        // existing saga ids must be rejected.
+        assert!(matches!(
+            store.reserve_cn_capacity(make_reservation(cn, saga1)).await,
+            Err(StoreError::AlreadyExists(_))
+        ));
     }
 }
