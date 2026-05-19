@@ -45,3 +45,6 @@ jira-client = { workspace = true }
 jira-stub-server = { workspace = true }
 reqwest = { workspace = true }
 triton-tls = { workspace = true }
+
+[build-dependencies]
+build-data = { workspace = true }

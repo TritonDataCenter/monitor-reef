@@ -29,8 +29,19 @@ fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
         .unwrap_or_else(|| format!("{:?}", val))
 }
 
+fn version_string() -> &'static str {
+    concat!(
+        "napi ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[derive(Parser)]
-#[command(name = "napi", version, about = "CLI for Triton NAPI (Networking API)")]
+#[command(name = "napi", version = version_string(), about = "CLI for Triton NAPI (Networking API)")]
 struct Cli {
     /// NAPI base URL
     #[arg(long, env = "NAPI_URL", default_value = "http://localhost")]
@@ -42,6 +53,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Print version information
+    Version,
+
     /// Health check endpoint
     Ping,
 
@@ -1030,6 +1044,10 @@ async fn main() -> Result<()> {
     let client = Client::new(&cli.base_url);
 
     match cli.command {
+        Commands::Version => {
+            println!("{}", version_string());
+            return Ok(());
+        }
         Commands::Ping => {
             let resp = client
                 .ping()

@@ -28,8 +28,19 @@ fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
         .unwrap_or_else(|| format!("{:?}", val))
 }
 
+fn version_string() -> &'static str {
+    concat!(
+        "papi ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[derive(Parser)]
-#[command(name = "papi", version, about = "CLI for Triton PAPI (Packages API)")]
+#[command(name = "papi", version = version_string(), about = "CLI for Triton PAPI (Packages API)")]
 struct Cli {
     /// PAPI base URL
     #[arg(long, env = "PAPI_URL", default_value = "http://localhost")]
@@ -41,6 +52,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Print version information
+    Version,
+
     // ========================================================================
     // Ping
     // ========================================================================
@@ -274,6 +288,10 @@ async fn main() -> Result<()> {
     let client = Client::new(&cli.base_url);
 
     match cli.command {
+        Commands::Version => {
+            println!("{}", version_string());
+            return Ok(());
+        }
         Commands::Ping => {
             let resp = client
                 .ping()

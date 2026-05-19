@@ -33,3 +33,6 @@ triton-auth = { workspace = true }
 triton-auth-session = { workspace = true }
 triton-tls = { workspace = true }
 uuid = { workspace = true }
+
+[build-dependencies]
+build-data = { workspace = true }

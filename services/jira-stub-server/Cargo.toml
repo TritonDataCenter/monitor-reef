@@ -33,3 +33,6 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 reqwest = { workspace = true }
+
+[build-dependencies]
+build-data = { workspace = true }

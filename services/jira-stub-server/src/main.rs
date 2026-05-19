@@ -23,8 +23,24 @@ use std::sync::Arc;
 
 use jira_stub_server::{StubContext, api_description};
 
+fn version_string() -> &'static str {
+    concat!(
+        "jira-stub-server ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("version") {
+        println!("{}", version_string());
+        return Ok(());
+    }
+
     // Initialize logging
     let log_config = ConfigLogging::StderrTerminal {
         level: ConfigLoggingLevel::Info,

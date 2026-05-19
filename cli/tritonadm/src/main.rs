@@ -38,10 +38,21 @@ fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
         .unwrap_or_else(|| format!("{:?}", val))
 }
 
+fn version_string() -> &'static str {
+    concat!(
+        "tritonadm ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[derive(Parser)]
 #[command(
     name = "tritonadm",
-    version,
+    version = version_string(),
     about = "Administer a Triton datacenter",
     long_about = "Tool for managing Triton datacenter services, instances, and configuration.\n\
                    This is the Rust successor to the Node.js sdcadm tool."
@@ -188,6 +199,9 @@ impl Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Print version information
+    Version,
+
     /// Display images available for update of Triton services and instances
     #[command(alias = "available")]
     Avail {
@@ -342,6 +356,10 @@ async fn main() -> Result<()> {
     let updates_url = cli.updates_url;
 
     match cli.command {
+        Commands::Version => {
+            println!("{}", version_string());
+            return Ok(());
+        }
         Commands::Avail { json } => cmd_avail(&sapi_url?, &imgapi_url?, json).await,
         Commands::CheckConfig => not_yet_implemented("check-config"),
         Commands::CheckHealth => not_yet_implemented("check-health"),

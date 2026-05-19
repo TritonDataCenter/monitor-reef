@@ -24,8 +24,24 @@ struct AgentConfig {
     relay_endpoint: String,
 }
 
+fn version_string() -> &'static str {
+    concat!(
+        "triton-relay-agent ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("version") {
+        println!("{}", version_string());
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
             "triton_relay_agent=info",

@@ -9,8 +9,19 @@ use bugview_client::Client;
 use chrono::DateTime;
 use clap::{Parser, Subcommand};
 
+fn version_string() -> &'static str {
+    concat!(
+        "bugview ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[derive(Parser)]
-#[command(name = "bugview")]
+#[command(name = "bugview", version = version_string())]
 #[command(about = "CLI for interacting with the Bugview public issue viewer", long_about = None)]
 struct Cli {
     /// Base URL of the Bugview service
@@ -24,6 +35,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Print version information
+    Version,
+
     /// List public issues (paginated)
     List {
         /// Next page token for pagination
@@ -309,6 +323,10 @@ async fn main() -> Result<()> {
     let client = Client::new(&cli.base_url);
 
     match cli.command {
+        Commands::Version => {
+            println!("{}", version_string());
+            return Ok(());
+        }
         Commands::List {
             next_page_token,
             sort,

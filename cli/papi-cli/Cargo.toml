@@ -26,3 +26,6 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+
+[build-dependencies]
+build-data = { workspace = true }

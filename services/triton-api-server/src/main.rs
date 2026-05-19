@@ -1722,8 +1722,24 @@ async fn build_mahi_service(cfg: &MahiConfigFile) -> Result<MahiService> {
     Ok(MahiService::new(cfg.url.as_str(), http))
 }
 
+fn version_string() -> &'static str {
+    concat!(
+        "triton-api-server ",
+        env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")"
+    )
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("version") {
+        println!("{}", version_string());
+        return Ok(());
+    }
+
     // Install the rustls crypto provider before `mahi-client::Client::new`
     // (and anything else that builds a reqwest or rustls client) runs.
     // `triton-tls` owns backend selection.

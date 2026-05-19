@@ -14,5 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &["proto", "/opt/local/include"],
         )?;
     println!("cargo:rerun-if-changed=proto");
+    let _ = build_data::set_GIT_COMMIT_SHORT();
+    let dirty = build_data::get_git_dirty().unwrap_or(false);
+    let suffix = if dirty { "-dirty" } else { "" };
+    println!("cargo:rustc-env=GIT_DIRTY_SUFFIX={suffix}");
+    build_data::rerun_if_git_commit_or_branch_changed().ok();
     Ok(())
 }

@@ -518,6 +518,7 @@ dependencies = [
  "anyhow",
  "bugview-api",
  "bugview-client",
+ "build-data",
  "chrono",
  "clap",
  "jira-api",
@@ -546,6 +547,7 @@ dependencies = [
  "async-trait",
  "base64",
  "bugview-api",
+ "build-data",
  "dropshot",
  "http",
  "indexmap 2.13.0",
@@ -2169,6 +2171,7 @@ name = "jira-stub-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "build-data",
  "dropshot",
  "jira-api",
  "reqwest",
@@ -2541,6 +2544,7 @@ name = "napi-cli"
 version = "1.4.3"
 dependencies = [
  "anyhow",
+ "build-data",
  "clap",
  "napi-api",
  "napi-client",
@@ -2812,6 +2816,7 @@ name = "papi-cli"
 version = "7.2.5"
 dependencies = [
  "anyhow",
+ "build-data",
  "clap",
  "papi-api",
  "papi-client",
@@ -5011,6 +5016,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64",
+ "build-data",
  "chrono",
  "cloudapi-client",
  "dropshot",
@@ -5165,6 +5171,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.8.8",
+ "build-data",
  "http",
  "hyper",
  "hyper-rustls",
@@ -5218,6 +5225,7 @@ name = "triton-relay-agent"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "build-data",
  "serde",
  "serde_json",
  "tokio",
@@ -5234,6 +5242,7 @@ name = "triton-relay-bridge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "build-data",
  "clap",
  "futures-util",
  "serde",
@@ -5277,6 +5286,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "async-trait",
+ "build-data",
  "bytes",
  "chrono",
  "clap",
@@ -5547,6 +5557,7 @@ version = "9.17.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "build-data",
  "clap",
  "predicates",
  "serde",
