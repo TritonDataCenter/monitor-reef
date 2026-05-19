@@ -41,6 +41,7 @@ use cluster_store::{
     ClusterRecord, ClusterStore, FileClusterStore, NodeInfo, NodeRole, StoreError,
 };
 mod talos;
+mod talos_config;
 
 mod relay;
 use relay::RelayState;
@@ -789,9 +790,6 @@ impl TritonApi for TritonApiImpl {
         }
 
         record.state = ClusterState::Provisioning;
-        record.talos_ca_pem = Some(req.ca_pem.clone());
-        record.talos_crt_pem = Some(req.crt_pem.clone());
-        record.talos_key_pem = Some(req.key_pem.clone());
         store.update(&record).await.map_err(store_error_to_http)?;
 
         let relay = Arc::clone(&ctx.relay);
@@ -895,9 +893,14 @@ async fn run_bootstrap(
     req: BootstrapClusterRequest,
 ) -> anyhow::Result<()> {
     let cluster_id = record.id;
-    let ca_pem = req.ca_pem.as_bytes().to_vec();
-    let crt_pem = req.crt_pem.as_bytes().to_vec();
-    let key_pem = req.key_pem.as_bytes().to_vec();
+    let talos_version = req
+        .talos_version
+        .as_deref()
+        .unwrap_or(talos_config::DEFAULT_TALOS_VERSION);
+    let install_disk = req
+        .install_disk
+        .as_deref()
+        .unwrap_or(talos_config::DEFAULT_INSTALL_DISK);
 
     let first_cp_ip = req
         .nodes
@@ -906,20 +909,47 @@ async fn run_bootstrap(
         .map(|n| n.fabric_ip.clone())
         .ok_or_else(|| anyhow::anyhow!("no control-plane node in request"))?;
 
+    // Generate Talos PKI and machine configs server-side.
+    let secrets =
+        talos_config::SecretsBundle::generate().context("generate Talos secrets bundle")?;
+    let configs = talos_config::generate_machine_configs(
+        &secrets,
+        &record.name,
+        &first_cp_ip,
+        install_disk,
+        talos_version,
+    )
+    .context("generate Talos machine configs")?;
+
+    // Store secrets and PKI in the cluster record before applying configs.
+    record.secrets_yaml =
+        Some(serde_yaml::to_string(&secrets).context("serialize secrets bundle")?);
+    record.talosconfig_yaml = Some(configs.talosconfig_yaml.clone());
+    record.talos_ca_pem =
+        Some(String::from_utf8(configs.ca_pem_raw.clone()).context("CA PEM utf8")?);
+    record.talos_crt_pem =
+        Some(String::from_utf8(configs.crt_pem_raw.clone()).context("crt PEM utf8")?);
+    record.talos_key_pem =
+        Some(String::from_utf8(configs.key_pem_raw.clone()).context("key PEM utf8")?);
+
     // Phase 1: apply machine configs to all nodes in maintenance mode.
     for node in &req.nodes {
         let target = format!("{}:50000", node.fabric_ip);
+        let machine_config = match node.role {
+            NodeBootstrapRole::ControlPlane => configs.controlplane_yaml.as_bytes().to_vec(),
+            NodeBootstrapRole::Worker => configs.worker_yaml.as_bytes().to_vec(),
+        };
         let mut client = talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target)
             .await
             .with_context(|| format!("maintenance connect to {target}"))?;
         client
-            .apply_configuration(node.machine_config.as_bytes().to_vec(), true)
+            .apply_configuration(machine_config, true)
             .await
             .with_context(|| format!("apply config to {target}"))?;
         tracing::info!(cluster = %cluster_id, target = %target, "applied machine config");
     }
 
-    // Record node inventory and persist before sleeping.
+    // Record node inventory and persist (including generated PKI) before sleeping.
     for node in &req.nodes {
         let role = match node.role {
             NodeBootstrapRole::ControlPlane => NodeRole::Control,
@@ -950,9 +980,9 @@ async fn run_bootstrap(
     let mut client = talos::TalosClient::connect_authenticated(
         Arc::clone(&relay),
         &cp_target,
-        &ca_pem,
-        &crt_pem,
-        &key_pem,
+        &configs.ca_pem_raw,
+        &configs.crt_pem_raw,
+        &configs.key_pem_raw,
     )
     .await
     .with_context(|| format!("authenticated connect to {cp_target}"))?;
@@ -970,9 +1000,9 @@ async fn run_bootstrap(
     let mut client = talos::TalosClient::connect_authenticated(
         Arc::clone(&relay),
         &cp_target,
-        &ca_pem,
-        &crt_pem,
-        &key_pem,
+        &configs.ca_pem_raw,
+        &configs.crt_pem_raw,
+        &configs.key_pem_raw,
     )
     .await
     .with_context(|| format!("authenticated connect to {cp_target} for kubeconfig"))?;
@@ -1077,13 +1107,41 @@ async fn run_add_nodes(
 ) -> anyhow::Result<()> {
     let cluster_id = record.id;
 
+    // Reconstruct machine configs from the stored secrets bundle.
+    let secrets_yaml = record
+        .secrets_yaml
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no stored secrets bundle"))?;
+    let secrets: talos_config::SecretsBundle =
+        serde_yaml::from_str(secrets_yaml).context("deserialize secrets bundle")?;
+
+    let endpoint_ip = record
+        .nodes
+        .values()
+        .find(|n| n.role == NodeRole::Control)
+        .map(|n| n.fabric_ip.clone())
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no control-plane node"))?;
+
+    let configs = talos_config::generate_machine_configs(
+        &secrets,
+        &record.name,
+        &endpoint_ip,
+        talos_config::DEFAULT_INSTALL_DISK,
+        talos_config::DEFAULT_TALOS_VERSION,
+    )
+    .context("generate machine configs for new nodes")?;
+
     for node in &nodes {
         let target = format!("{}:50000", node.fabric_ip);
+        let machine_config = match node.role {
+            NodeBootstrapRole::ControlPlane => configs.controlplane_yaml.as_bytes().to_vec(),
+            NodeBootstrapRole::Worker => configs.worker_yaml.as_bytes().to_vec(),
+        };
         let mut client = talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target)
             .await
             .with_context(|| format!("maintenance connect to {target}"))?;
         client
-            .apply_configuration(node.machine_config.as_bytes().to_vec(), true)
+            .apply_configuration(machine_config, true)
             .await
             .with_context(|| format!("apply config to {target}"))?;
         tracing::info!(cluster = %cluster_id, target = %target, "applied machine config to new node");

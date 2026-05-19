@@ -6,11 +6,10 @@
 
 //! Add nodes to a running Kubernetes cluster
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
-use std::path::PathBuf;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::AddNodesRequest;
+use triton_gateway_client::types::{AddNodesRequest, NodeBootstrapRole, NodeBootstrapSpec};
 
 use crate::output::json;
 
@@ -19,29 +18,40 @@ pub struct AddNodesArgs {
     /// Cluster UUID, short ID prefix, or name
     pub cluster: String,
 
-    /// Path to a JSON file containing AddNodesRequest (nodes array)
-    #[arg(long)]
-    pub config: PathBuf,
+    /// Fabric IP of a control-plane node to add (repeat for multiple)
+    #[arg(long = "control-plane", value_name = "IP")]
+    pub control_planes: Vec<String>,
+
+    /// Fabric IP of a worker node to add (repeat for multiple)
+    #[arg(long = "worker", value_name = "IP")]
+    pub workers: Vec<String>,
 }
 
 pub async fn run(args: AddNodesArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    if args.control_planes.is_empty() && args.workers.is_empty() {
+        anyhow::bail!("at least one --control-plane <ip> or --worker <ip> is required");
+    }
+
     let cluster = super::resolve_cluster(&args.cluster, client).await?;
 
-    // Read and deserialize the add-nodes request body.
-    let raw = std::fs::read_to_string(&args.config)
-        .with_context(|| format!("failed to read config file {}", args.config.display()))?;
-    let body: AddNodesRequest = serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "failed to parse config file {} as AddNodesRequest",
-            args.config.display()
-        )
-    })?;
+    let mut nodes: Vec<NodeBootstrapSpec> = args
+        .control_planes
+        .iter()
+        .map(|ip| NodeBootstrapSpec {
+            fabric_ip: ip.clone(),
+            role: NodeBootstrapRole::ControlPlane,
+        })
+        .collect();
+    nodes.extend(args.workers.iter().map(|ip| NodeBootstrapSpec {
+        fabric_ip: ip.clone(),
+        role: NodeBootstrapRole::Worker,
+    }));
 
     let result = client
         .inner()
         .k8s_cluster_nodes_add()
         .cluster(cluster.id)
-        .body(body)
+        .body(AddNodesRequest { nodes })
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("failed to add nodes: {}", e))?
@@ -50,7 +60,7 @@ pub async fn run(args: AddNodesArgs, client: &TypedClient, use_json: bool) -> Re
     if use_json {
         json::print_json(&result)?;
     } else {
-        println!("Node configs submitted.");
+        println!("Node configs submitted. Nodes will join the cluster after reboot.");
     }
 
     Ok(())

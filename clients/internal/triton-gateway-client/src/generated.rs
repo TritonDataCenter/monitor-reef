@@ -812,32 +812,24 @@ pub mod types {
         }
     }
 
-    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe caller is responsible for generating Talos machine configs (e.g. via `talosctl gen config`) and for ensuring each listed node already has the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`."]
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe server generates all Talos PKI and machine configs internally. Each listed node must already have the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\\n\\nThe caller is responsible for generating Talos machine configs (e.g. via `talosctl gen config`) and for ensuring each listed node already has the relay agent running and reachable through the registered relay tunnel.\\n\\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \\\"running\\\"`.\","]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\\n\\nThe server generates all Talos PKI and machine configs internally. Each listed node must already have the relay agent running and reachable through the registered relay tunnel.\\n\\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \\\"running\\\"`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"ca_pem\","]
-    #[doc = "    \"crt_pem\","]
-    #[doc = "    \"key_pem\","]
     #[doc = "    \"nodes\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"ca_pem\": {"]
-    #[doc = "      \"description\": \"Talos CA certificate in PEM format (from the generated talosconfig). Used by the server to verify node identity in post-bootstrap mTLS.\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"crt_pem\": {"]
-    #[doc = "      \"description\": \"Operator client certificate in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"key_pem\": {"]
-    #[doc = "      \"description\": \"Operator client private key in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "    \"install_disk\": {"]
+    #[doc = "      \"description\": \"Disk to install Talos onto on each node, e.g. `\\\"/dev/sda\\\"`. Defaults to `\\\"/dev/sda\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"nodes\": {"]
     #[doc = "      \"description\": \"Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it.\","]
@@ -845,6 +837,13 @@ pub mod types {
     #[doc = "      \"items\": {"]
     #[doc = "        \"$ref\": \"#/components/schemas/NodeBootstrapSpec\""]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"talos_version\": {"]
+    #[doc = "      \"description\": \"Talos installer image tag, e.g. `\\\"v1.12.7\\\"`. Defaults to `\\\"v1.12.7\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -854,14 +853,14 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct BootstrapClusterRequest {
-        #[doc = "Talos CA certificate in PEM format (from the generated talosconfig). Used by the server to verify node identity in post-bootstrap mTLS."]
-        pub ca_pem: ::std::string::String,
-        #[doc = "Operator client certificate in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes."]
-        pub crt_pem: ::std::string::String,
-        #[doc = "Operator client private key in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes."]
-        pub key_pem: ::std::string::String,
+        #[doc = "Disk to install Talos onto on each node, e.g. `\"/dev/sda\"`. Defaults to `\"/dev/sda\"`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub install_disk: ::std::option::Option<::std::string::String>,
         #[doc = "Nodes to configure, in order. The first `control_plane` entry becomes the etcd bootstrap leader; remaining nodes join it."]
         pub nodes: ::std::vec::Vec<NodeBootstrapSpec>,
+        #[doc = "Talos installer image tag, e.g. `\"v1.12.7\"`. Defaults to `\"v1.12.7\"`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub talos_version: ::std::option::Option<::std::string::String>,
     }
 
     impl BootstrapClusterRequest {
@@ -7250,26 +7249,21 @@ pub mod types {
         }
     }
 
-    #[doc = "Specification for a single node during cluster bootstrap."]
+    #[doc = "Specification for a single node during cluster bootstrap or scale-out."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Specification for a single node during cluster bootstrap.\","]
+    #[doc = "  \"description\": \"Specification for a single node during cluster bootstrap or scale-out.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"fabric_ip\","]
-    #[doc = "    \"machine_config\","]
     #[doc = "    \"role\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"fabric_ip\": {"]
     #[doc = "      \"description\": \"Fabric IP of an already-running node that has the relay agent active. Example: `\\\"10.0.0.5\\\"`.\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"machine_config\": {"]
-    #[doc = "      \"description\": \"Pre-generated Talos machine config YAML for this node (e.g. the `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`).\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"role\": {"]
@@ -7290,8 +7284,6 @@ pub mod types {
     pub struct NodeBootstrapSpec {
         #[doc = "Fabric IP of an already-running node that has the relay agent active. Example: `\"10.0.0.5\"`."]
         pub fabric_ip: ::std::string::String,
-        #[doc = "Pre-generated Talos machine config YAML for this node (e.g. the `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`)."]
-        pub machine_config: ::std::string::String,
         #[doc = "Role this node will play in the cluster."]
         pub role: NodeBootstrapRole,
     }
@@ -11518,11 +11510,16 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct BootstrapClusterRequest {
-            ca_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
-            crt_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
-            key_pem: ::std::result::Result<::std::string::String, ::std::string::String>,
+            install_disk: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             nodes: ::std::result::Result<
                 ::std::vec::Vec<super::NodeBootstrapSpec>,
+                ::std::string::String,
+            >,
+            talos_version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
         }
@@ -11530,43 +11527,22 @@ pub mod types {
         impl ::std::default::Default for BootstrapClusterRequest {
             fn default() -> Self {
                 Self {
-                    ca_pem: Err("no value supplied for ca_pem".to_string()),
-                    crt_pem: Err("no value supplied for crt_pem".to_string()),
-                    key_pem: Err("no value supplied for key_pem".to_string()),
+                    install_disk: Ok(Default::default()),
                     nodes: Err("no value supplied for nodes".to_string()),
+                    talos_version: Ok(Default::default()),
                 }
             }
         }
 
         impl BootstrapClusterRequest {
-            pub fn ca_pem<T>(mut self, value: T) -> Self
+            pub fn install_disk<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.ca_pem = value
+                self.install_disk = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for ca_pem: {e}"));
-                self
-            }
-            pub fn crt_pem<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.crt_pem = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for crt_pem: {e}"));
-                self
-            }
-            pub fn key_pem<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.key_pem = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for key_pem: {e}"));
+                    .map_err(|e| format!("error converting supplied value for install_disk: {e}"));
                 self
             }
             pub fn nodes<T>(mut self, value: T) -> Self
@@ -11579,6 +11555,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for nodes: {e}"));
                 self
             }
+            pub fn talos_version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.talos_version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for talos_version: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<BootstrapClusterRequest> for super::BootstrapClusterRequest {
@@ -11587,10 +11573,9 @@ pub mod types {
                 value: BootstrapClusterRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    ca_pem: value.ca_pem?,
-                    crt_pem: value.crt_pem?,
-                    key_pem: value.key_pem?,
+                    install_disk: value.install_disk?,
                     nodes: value.nodes?,
+                    talos_version: value.talos_version?,
                 })
             }
         }
@@ -11598,10 +11583,9 @@ pub mod types {
         impl ::std::convert::From<super::BootstrapClusterRequest> for BootstrapClusterRequest {
             fn from(value: super::BootstrapClusterRequest) -> Self {
                 Self {
-                    ca_pem: Ok(value.ca_pem),
-                    crt_pem: Ok(value.crt_pem),
-                    key_pem: Ok(value.key_pem),
+                    install_disk: Ok(value.install_disk),
                     nodes: Ok(value.nodes),
+                    talos_version: Ok(value.talos_version),
                 }
             }
         }
@@ -17177,7 +17161,6 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct NodeBootstrapSpec {
             fabric_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
-            machine_config: ::std::result::Result<::std::string::String, ::std::string::String>,
             role: ::std::result::Result<super::NodeBootstrapRole, ::std::string::String>,
         }
 
@@ -17185,7 +17168,6 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     fabric_ip: Err("no value supplied for fabric_ip".to_string()),
-                    machine_config: Err("no value supplied for machine_config".to_string()),
                     role: Err("no value supplied for role".to_string()),
                 }
             }
@@ -17200,16 +17182,6 @@ pub mod types {
                 self.fabric_ip = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for fabric_ip: {e}"));
-                self
-            }
-            pub fn machine_config<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.machine_config = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for machine_config: {e}")
-                });
                 self
             }
             pub fn role<T>(mut self, value: T) -> Self
@@ -17231,7 +17203,6 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     fabric_ip: value.fabric_ip?,
-                    machine_config: value.machine_config?,
                     role: value.role?,
                 })
             }
@@ -17241,7 +17212,6 @@ pub mod types {
             fn from(value: super::NodeBootstrapSpec) -> Self {
                 Self {
                     fabric_ip: Ok(value.fabric_ip),
-                    machine_config: Ok(value.machine_config),
                     role: Ok(value.role),
                 }
             }

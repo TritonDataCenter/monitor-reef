@@ -645,19 +645,13 @@
         ]
       },
       "BootstrapClusterRequest": {
-        "description": "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe caller is responsible for generating Talos machine configs (e.g. via `talosctl gen config`) and for ensuring each listed node already has the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.",
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.\n\nThe server generates all Talos PKI and machine configs internally. Each listed node must already have the relay agent running and reachable through the registered relay tunnel.\n\nThe server applies configs, bootstraps etcd, and retrieves the kubeconfig asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until `state == \"running\"`.",
         "type": "object",
         "properties": {
-          "ca_pem": {
-            "description": "Talos CA certificate in PEM format (from the generated talosconfig). Used by the server to verify node identity in post-bootstrap mTLS.",
-            "type": "string"
-          },
-          "crt_pem": {
-            "description": "Operator client certificate in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.",
-            "type": "string"
-          },
-          "key_pem": {
-            "description": "Operator client private key in PEM format (from the generated talosconfig). Used for mTLS to authenticated Talos nodes.",
+          "install_disk": {
+            "nullable": true,
+            "description": "Disk to install Talos onto on each node, e.g. `\"/dev/sda\"`. Defaults to `\"/dev/sda\"`.",
+            "default": null,
             "type": "string"
           },
           "nodes": {
@@ -666,12 +660,15 @@
             "items": {
               "$ref": "#/components/schemas/NodeBootstrapSpec"
             }
+          },
+          "talos_version": {
+            "nullable": true,
+            "description": "Talos installer image tag, e.g. `\"v1.12.7\"`. Defaults to `\"v1.12.7\"`.",
+            "default": null,
+            "type": "string"
           }
         },
         "required": [
-          "ca_pem",
-          "crt_pem",
-          "key_pem",
           "nodes"
         ]
       },
@@ -1081,15 +1078,11 @@
         ]
       },
       "NodeBootstrapSpec": {
-        "description": "Specification for a single node during cluster bootstrap.",
+        "description": "Specification for a single node during cluster bootstrap or scale-out.",
         "type": "object",
         "properties": {
           "fabric_ip": {
             "description": "Fabric IP of an already-running node that has the relay agent active. Example: `\"10.0.0.5\"`.",
-            "type": "string"
-          },
-          "machine_config": {
-            "description": "Pre-generated Talos machine config YAML for this node (e.g. the `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`).",
             "type": "string"
           },
           "role": {
@@ -1103,7 +1096,6 @@
         },
         "required": [
           "fabric_ip",
-          "machine_config",
           "role"
         ]
       },

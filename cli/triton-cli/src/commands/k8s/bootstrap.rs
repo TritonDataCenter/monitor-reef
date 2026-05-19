@@ -6,11 +6,10 @@
 
 //! Bootstrap a Kubernetes cluster
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Args;
-use std::path::PathBuf;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::BootstrapClusterRequest;
+use triton_gateway_client::types::{BootstrapClusterRequest, NodeBootstrapRole, NodeBootstrapSpec};
 
 use crate::output::json;
 
@@ -19,24 +18,48 @@ pub struct BootstrapArgs {
     /// Cluster UUID, short ID prefix, or name
     pub cluster: String,
 
-    /// Path to a JSON file containing BootstrapClusterRequest
-    /// (ca_pem, crt_pem, key_pem, nodes)
+    /// Fabric IP of a control-plane node (repeat for multiple)
+    #[arg(long = "control-plane", value_name = "IP")]
+    pub control_planes: Vec<String>,
+
+    /// Fabric IP of a worker node (repeat for multiple)
+    #[arg(long = "worker", value_name = "IP")]
+    pub workers: Vec<String>,
+
+    /// Talos installer image tag, e.g. "v1.12.7"
     #[arg(long)]
-    pub config: PathBuf,
+    pub talos_version: Option<String>,
+
+    /// Disk to install Talos on, e.g. "/dev/sda"
+    #[arg(long)]
+    pub install_disk: Option<String>,
 }
 
 pub async fn run(args: BootstrapArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    if args.control_planes.is_empty() {
+        anyhow::bail!("at least one --control-plane <ip> is required");
+    }
+
     let cluster = super::resolve_cluster(&args.cluster, client).await?;
 
-    // Read and deserialize the bootstrap request body.
-    let raw = std::fs::read_to_string(&args.config)
-        .with_context(|| format!("failed to read config file {}", args.config.display()))?;
-    let body: BootstrapClusterRequest = serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "failed to parse config file {} as BootstrapClusterRequest",
-            args.config.display()
-        )
-    })?;
+    let mut nodes: Vec<NodeBootstrapSpec> = args
+        .control_planes
+        .iter()
+        .map(|ip| NodeBootstrapSpec {
+            fabric_ip: ip.clone(),
+            role: NodeBootstrapRole::ControlPlane,
+        })
+        .collect();
+    nodes.extend(args.workers.iter().map(|ip| NodeBootstrapSpec {
+        fabric_ip: ip.clone(),
+        role: NodeBootstrapRole::Worker,
+    }));
+
+    let body = BootstrapClusterRequest {
+        nodes,
+        talos_version: args.talos_version,
+        install_disk: args.install_disk,
+    };
 
     let result = client
         .inner()
@@ -52,8 +75,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, use_json: bool) -> R
         json::print_json(&result)?;
     } else {
         println!(
-            "Bootstrap started. Cluster is now in `provisioning` state. \
-             Poll `triton k8s get {}` until state is `running`.",
+            "Bootstrap started. Poll `triton k8s get {}` until state is `running`.",
             &cluster.id.to_string()[..8]
         );
     }

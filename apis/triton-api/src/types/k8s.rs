@@ -127,30 +127,28 @@ pub struct ClusterList {
 
 /// Body of `POST /v1/k8s/clusters/{cluster}/bootstrap`.
 ///
-/// The caller is responsible for generating Talos machine configs (e.g. via
-/// `talosctl gen config`) and for ensuring each listed node already has the
-/// relay agent running and reachable through the registered relay tunnel.
+/// The server generates all Talos PKI and machine configs internally.
+/// Each listed node must already have the relay agent running and reachable
+/// through the registered relay tunnel.
 ///
 /// The server applies configs, bootstraps etcd, and retrieves the kubeconfig
 /// asynchronously. Poll `GET /v1/k8s/clusters/{cluster}` until
 /// `state == "running"`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BootstrapClusterRequest {
-    /// Talos CA certificate in PEM format (from the generated talosconfig).
-    /// Used by the server to verify node identity in post-bootstrap mTLS.
-    pub ca_pem: String,
-    /// Operator client certificate in PEM format (from the generated
-    /// talosconfig). Used for mTLS to authenticated Talos nodes.
-    pub crt_pem: String,
-    /// Operator client private key in PEM format (from the generated
-    /// talosconfig). Used for mTLS to authenticated Talos nodes.
-    pub key_pem: String,
     /// Nodes to configure, in order. The first `control_plane` entry becomes
     /// the etcd bootstrap leader; remaining nodes join it.
     pub nodes: Vec<NodeBootstrapSpec>,
+    /// Talos installer image tag, e.g. `"v1.12.7"`. Defaults to `"v1.12.7"`.
+    #[serde(default)]
+    pub talos_version: Option<String>,
+    /// Disk to install Talos onto on each node, e.g. `"/dev/sda"`.
+    /// Defaults to `"/dev/sda"`.
+    #[serde(default)]
+    pub install_disk: Option<String>,
 }
 
-/// Specification for a single node during cluster bootstrap.
+/// Specification for a single node during cluster bootstrap or scale-out.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NodeBootstrapSpec {
     /// Fabric IP of an already-running node that has the relay agent active.
@@ -158,9 +156,6 @@ pub struct NodeBootstrapSpec {
     pub fabric_ip: String,
     /// Role this node will play in the cluster.
     pub role: NodeBootstrapRole,
-    /// Pre-generated Talos machine config YAML for this node (e.g. the
-    /// `controlplane.yaml` or `worker.yaml` output of `talosctl gen config`).
-    pub machine_config: String,
 }
 
 /// Role a node plays within a Kelp cluster.
