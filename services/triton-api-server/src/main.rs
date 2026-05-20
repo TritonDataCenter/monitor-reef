@@ -826,7 +826,7 @@ impl TritonApi for TritonApiImpl {
             )
             .await
             {
-                tracing::error!(cluster = %id, error = %e, "bootstrap failed");
+                tracing::error!(cluster = %id, error = ?e, "bootstrap failed");
             }
         });
 

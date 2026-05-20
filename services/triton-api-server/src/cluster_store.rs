@@ -243,6 +243,11 @@ impl ClusterStore for FileClusterStore {
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
+            // Only read files whose stem is a valid UUID — skip config.json etc.
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if uuid::Uuid::parse_str(stem).is_err() {
+                continue;
+            }
             let bytes = match fs::read(&path).await {
                 Ok(b) => b,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
