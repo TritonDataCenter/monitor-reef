@@ -410,6 +410,11 @@ pub enum Action {
     /// the root-allows-all Cedar rule; no per-silo or per-tenant
     /// principal can drive an unwind.
     OperationsAbandon,
+    /// LM-1 read-only migrations surface. Operator-only at the
+    /// fleet-wide list endpoint; per-instance views are gated by
+    /// the existing instance-read permission elsewhere.
+    MigrationList,
+    MigrationGet,
     TenantIdpSet,
     TenantIdpGet,
     TenantIdpDelete,
@@ -674,6 +679,8 @@ impl Action {
             Action::AuditFetch => "audit_fetch",
             Action::AuditVerify => "audit_verify",
             Action::OperationsAbandon => "operations_abandon",
+            Action::MigrationList => "migration_list",
+            Action::MigrationGet => "migration_get",
             Action::TenantIdpSet => "tenant_idp_set",
             Action::TenantIdpGet => "tenant_idp_get",
             Action::TenantIdpDelete => "tenant_idp_delete",
@@ -1337,7 +1344,9 @@ fn is_read_action(action: Action) -> bool {
         | Action::DiskList
         | Action::DiskGet
         | Action::FloatingIpList
-        | Action::FloatingIpGet => true,
+        | Action::FloatingIpGet
+        | Action::MigrationList
+        | Action::MigrationGet => true,
         // Writes / state changes / admin: explicitly denied.
         Action::CreateSilo
         | Action::CreateApiKey

@@ -692,6 +692,59 @@ pub struct OperationPath {
     pub operation_id: Uuid,
 }
 
+// ---------------------------------------------------------------------
+// Live migrations (LM-1).
+//
+// Read-only surface. The mutating endpoint
+// (`POST /v2/instances/{id}/actions/migrate`) lands with the
+// migration saga (LM-5) so the action handler can dispatch on
+// MigrationAction.
+// ---------------------------------------------------------------------
+
+/// Path parameters for `/v2/migrations/{migration_id}` + nested
+/// routes.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MigrationPath {
+    pub migration_id: Uuid,
+}
+
+/// Path parameters for `/v2/instances/{instance_id}/migrations`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InstanceMigrationsPath {
+    pub instance_id: Uuid,
+}
+
+/// Query parameters for `GET /v2/migrations`. Pagination follows the
+/// same cursor pattern as `/v2/operations`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListMigrationsQuery {
+    /// Maximum number of items to return. Defaults to 50 if absent;
+    /// the server caps the maximum to bound response size.
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Continuation token: return migrations strictly after this
+    /// id in the global newest-first ordering. `None` for the first
+    /// page.
+    #[serde(default)]
+    pub after_id: Option<Uuid>,
+}
+
+/// Query parameters for `GET /v2/migrations/{migration_id}/progress`.
+/// Operators page the per-migration event log by passing the
+/// `last_progress_seq` they have already seen as `after_seq`; the
+/// server returns events with `seq > after_seq` in ascending order.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ListMigrationProgressQuery {
+    /// Maximum number of events to return. Defaults to 200; the
+    /// server caps the maximum to bound response size.
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Return only events whose `seq` is greater than this value.
+    /// `None` (or `0`) returns from the beginning.
+    #[serde(default)]
+    pub after_seq: Option<u64>,
+}
+
 /// Response body for `POST /v2/operations/{operation_id}/abandon`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AbandonResponse {
@@ -1858,6 +1911,63 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<OperationPath>,
     ) -> Result<HttpResponseOk<AbandonResponse>, HttpError>;
+
+    // -----------------------------------------------------------------
+    // Live migrations (LM-1, read-only)
+    // -----------------------------------------------------------------
+
+    /// List recent live-migration records across the fleet,
+    /// newest-first, paged by id cursor. Operator-only at LM-1;
+    /// per-tenant scoping is a follow-up once the per-instance
+    /// route below covers the customer-facing view.
+    #[endpoint {
+        method = GET,
+        path = "/v2/migrations",
+        tags = ["migrations"],
+    }]
+    async fn list_migrations(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<ListMigrationsQuery>,
+    ) -> Result<HttpResponseOk<Vec<tritond_store::MigrationRecord>>, HttpError>;
+
+    /// One migration by id.
+    #[endpoint {
+        method = GET,
+        path = "/v2/migrations/{migration_id}",
+        tags = ["migrations"],
+    }]
+    async fn get_migration(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MigrationPath>,
+    ) -> Result<HttpResponseOk<tritond_store::MigrationRecord>, HttpError>;
+
+    /// Page the per-migration progress event log. Operators poll
+    /// this from the adminUI / `tcadm migrations get --watch` by
+    /// passing the highest `seq` they've already seen as
+    /// `after_seq`.
+    #[endpoint {
+        method = GET,
+        path = "/v2/migrations/{migration_id}/progress",
+        tags = ["migrations"],
+    }]
+    async fn list_migration_progress(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MigrationPath>,
+        query: Query<ListMigrationProgressQuery>,
+    ) -> Result<HttpResponseOk<Vec<tritond_store::MigrationProgressEvent>>, HttpError>;
+
+    /// Per-instance migration history (newest first). Includes
+    /// terminal records so an operator can see the VM's full
+    /// migration timeline.
+    #[endpoint {
+        method = GET,
+        path = "/v2/instances/{instance_id}/migrations",
+        tags = ["migrations"],
+    }]
+    async fn list_instance_migrations(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<InstanceMigrationsPath>,
+    ) -> Result<HttpResponseOk<Vec<tritond_store::MigrationRecord>>, HttpError>;
 
     /// Atomically claim the next Pending provisioning job.
     /// Returns `200 OK` with `{"job": null}` when the queue is

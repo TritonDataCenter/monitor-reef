@@ -170,6 +170,35 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::operations::abandon_operation(rqctx, path).await
     }
 
+    async fn list_migrations(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::ListMigrationsQuery>,
+    ) -> Result<HttpResponseOk<Vec<tritond_store::MigrationRecord>>, HttpError> {
+        crate::handlers::migrations::list_migrations(rqctx, query).await
+    }
+
+    async fn get_migration(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MigrationPath>,
+    ) -> Result<HttpResponseOk<tritond_store::MigrationRecord>, HttpError> {
+        crate::handlers::migrations::get_migration(rqctx, path).await
+    }
+
+    async fn list_migration_progress(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MigrationPath>,
+        query: Query<tritond_api::ListMigrationProgressQuery>,
+    ) -> Result<HttpResponseOk<Vec<tritond_store::MigrationProgressEvent>>, HttpError> {
+        crate::handlers::migrations::list_migration_progress(rqctx, path, query).await
+    }
+
+    async fn list_instance_migrations(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::InstanceMigrationsPath>,
+    ) -> Result<HttpResponseOk<Vec<tritond_store::MigrationRecord>>, HttpError> {
+        crate::handlers::migrations::list_instance_migrations(rqctx, path).await
+    }
+
     async fn agent_claim_job(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<ClaimJobRequest>,
