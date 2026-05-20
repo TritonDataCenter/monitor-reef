@@ -266,6 +266,10 @@ pub(crate) async fn create_project_instance(
         }
     };
     let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    // Resource refs known at create time. The by_ref index makes
+    // these sagas discoverable from per-resource detail pages
+    // (RFD 00004 SG-4 resource indexing).
+    let saga_refs = crate::sagas::instance_create::build_references(&saga_params);
     let saga_result = ctx
         .saga
         .saga_execute(
@@ -273,6 +277,7 @@ pub(crate) async fn create_project_instance(
             crate::sagas::instance_create::SAGA_NAME,
             crate::sagas::instance_create::SAGA_VERSION,
             saga_dag,
+            &saga_refs,
         )
         .await;
     let steno_result = match saga_result {
@@ -433,7 +438,7 @@ pub(crate) async fn delete_project_instance(
         project_id,
         instance_id,
     } = path.into_inner();
-    let force = query.into_inner().force;
+    let _force = query.into_inner().force;
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
@@ -455,11 +460,11 @@ pub(crate) async fn delete_project_instance(
     }
     let target_cn_uuid = instance.host_cn_uuid;
 
-    // v2p invalidation push (PROTEUS_PLAN §11.7.1 item 8): before
-    // delete_instance drops the NIC records, snapshot each NIC's
-    // (vni, primary_ip) and push an invalidation onto the global
-    // ring so every CN's next peer-invalidations poll picks them
-    // up. NIC churn is low-frequency; the broadcast cost is bounded.
+    // v2p invalidation push (PROTEUS_PLAN §11.7.1 item 8). Lives
+    // here (not in the saga action body) because the global
+    // `peer_invalidations` ring isn't reachable from a
+    // SagaContext yet. Done before the saga so the
+    // release_record action can drop the NIC rows safely.
     if let Ok(nics) = ctx.store.list_nics_for_instance(instance_id).await {
         for nic in nics {
             let Ok(vpc) = ctx.store.get_vpc(nic.vpc_id).await else {
@@ -474,8 +479,60 @@ pub(crate) async fn delete_project_instance(
         }
     }
 
-    match ctx.store.delete_instance(instance_id, force).await {
-        Ok(()) => {
+    // RFD 00004 SG-3: instance-delete saga. Detaches FIPs,
+    // enqueues a Delete job, awaits the agent's terminal status,
+    // then releases the record. Unwinds via the detach undo if
+    // anything fails before the record is released; lands Stuck
+    // if release_record fails after the agent acked Delete.
+    let saga_params = crate::sagas::instance_delete::InstanceDeleteParams {
+        tenant_id,
+        project_id,
+        instance_id,
+        target_cn_uuid,
+        await_delete_terminal: ctx.saga_wait_for_agent,
+    };
+    let saga_dag = match crate::sagas::instance_delete::build_dag(&saga_params) {
+        Ok(d) => d,
+        Err(e) => {
+            return Err(HttpError::for_internal_error(format!(
+                "instance-delete saga dag build: {e}"
+            )));
+        }
+    };
+    let saga_refs = crate::sagas::instance_delete::build_references(&saga_params, target_cn_uuid);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let saga_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::instance_delete::SAGA_NAME,
+            crate::sagas::instance_delete::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await;
+    let steno_result = match saga_result {
+        Ok(r) => r,
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceDelete,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("saga executor error: {e}"),
+                    },
+                    serde_json::Value::Null,
+                )
+                .await;
+            return Err(HttpError::for_internal_error(format!(
+                "instance-delete saga executor error: {e}"
+            )));
+        }
+    };
+    match steno_result.kind {
+        Ok(_) => {
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -488,41 +545,55 @@ pub(crate) async fn delete_project_instance(
                     serde_json::json!({
                         "tenant_id": tenant_id,
                         "project_id": project_id,
+                        "operation_id": saga_id.0.to_string(),
                     }),
                 )
                 .await;
-            // Best-effort agent cleanup of the SmartOS zone.
-            // Failure here is logged but doesn't fail the
-            // operator-visible delete — the tritond record
-            // is already gone.
-            if let Err(e) = ctx
-                .store
-                .enqueue_job(NewJob {
-                    kind: JobKind::Delete { instance_id },
-                    target_cn_uuid,
-                })
-                .await
-            {
-                tracing::warn!(
-                    %instance_id,
-                    error = %e,
-                    "instance delete record cleared, but enqueue of Delete job failed; zone may leak on the host",
-                );
-            }
             Ok(HttpResponseDeleted())
         }
-        Err(e) => {
+        Err(err) => {
+            let kind_msg: Option<(&'static str, String)> = match &err.error_source {
+                tritond_saga::ActionError::ActionFailed { source_error } => {
+                    let kind = crate::sagas::instance_delete::decode_store_error_kind(source_error);
+                    let msg = source_error
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    kind.map(|k| (k, msg))
+                }
+                _ => None,
+            };
+            let http_err = match kind_msg.as_ref().map(|(k, _)| *k) {
+                Some("not_found") => not_found(),
+                Some("conflict") => HttpError::for_client_error(
+                    Some("Conflict".to_string()),
+                    ClientErrorStatusCode::CONFLICT,
+                    kind_msg
+                        .as_ref()
+                        .map(|(_, m)| m.clone())
+                        .unwrap_or_default(),
+                ),
+                _ => HttpError::for_internal_error(format!(
+                    "instance-delete saga failed at {:?}: {:?}",
+                    err.error_node_name, err.error_source
+                )),
+            };
             ctx.audit
                 .record_mutation(
                     &principal,
                     Action::InstanceDelete,
                     request_id,
                     Some(format!("Instance::\"{instance_id}\"")),
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("{:?}", err.error_source),
+                    },
+                    serde_json::json!({
+                        "operation_id": saga_id.0.to_string(),
+                    }),
                 )
                 .await;
-            Err(store_error_to_http(e))
+            Err(http_err)
         }
     }
 }
@@ -531,16 +602,11 @@ pub(crate) async fn start_project_instance(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    // Stopped → Pending; agent then drives Pending → Provisioning
-    // → Running. The response shows Pending; clients poll for
-    // the final state.
-    instance_lifecycle_transition(
+    lifecycle_saga_entry(
         rqctx,
         path,
         Action::InstanceStart,
-        &[LifecycleStateKind::Stopped],
-        LifecycleState::Pending,
-        Some(JobKindTemplate::Provision),
+        crate::sagas::instance_lifecycle::LifecycleOp::Start,
     )
     .await
 }
@@ -549,14 +615,11 @@ pub(crate) async fn stop_project_instance(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    // Running → Stopping; agent then drives Stopping → Stopped.
-    instance_lifecycle_transition(
+    lifecycle_saga_entry(
         rqctx,
         path,
         Action::InstanceStop,
-        &[LifecycleStateKind::Running],
-        LifecycleState::Stopping,
-        Some(JobKindTemplate::Stop),
+        crate::sagas::instance_lifecycle::LifecycleOp::Stop,
     )
     .await
 }
@@ -565,17 +628,153 @@ pub(crate) async fn restart_project_instance(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    // Running → Stopping; agent then drives the full restart
-    // cycle Stopping → Pending → Provisioning → Running.
-    instance_lifecycle_transition(
+    lifecycle_saga_entry(
         rqctx,
         path,
         Action::InstanceRestart,
-        &[LifecycleStateKind::Running],
-        LifecycleState::Stopping,
-        Some(JobKindTemplate::Restart),
+        crate::sagas::instance_lifecycle::LifecycleOp::Restart,
     )
     .await
+}
+
+/// Common saga-dispatch entrypoint shared by start / stop /
+/// restart. Resolves the instance, captures its current state for
+/// the undo, builds the saga, runs it, and maps the result back to
+/// an HTTP response. The action chain itself lives in
+/// `sagas::instance_lifecycle`.
+async fn lifecycle_saga_entry(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectInstancePath>,
+    action: Action,
+    op: crate::sagas::instance_lifecycle::LifecycleOp,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectInstancePath {
+        tenant_id,
+        project_id,
+        instance_id,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx, &ctx.auth, &ctx.audit, &ctx.store, action, tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if instance.tenant_id != tenant_id || instance.project_id != project_id {
+        return Err(not_found());
+    }
+    let target_cn_uuid = instance.host_cn_uuid;
+    let original_kind = Some(
+        crate::sagas::instance_lifecycle::OriginalLifecycle::from_kind(instance.lifecycle.kind()),
+    );
+
+    let saga_params = crate::sagas::instance_lifecycle::InstanceLifecycleParams {
+        op,
+        tenant_id,
+        project_id,
+        instance_id,
+        target_cn_uuid,
+        await_job_terminal: ctx.saga_wait_for_agent,
+        original_state_kind: original_kind,
+    };
+    let saga_dag = crate::sagas::instance_lifecycle::build_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("{} saga dag build: {e}", op.saga_name()))
+    })?;
+    let saga_refs = crate::sagas::instance_lifecycle::build_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            op.saga_name(),
+            crate::sagas::instance_lifecycle::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("{} saga executor error: {e}", op.saga_name()))
+        })?;
+
+    match steno_result.kind {
+        Ok(ok) => {
+            let final_instance: Instance = ok.lookup_node_output("final").map_err(|e| {
+                HttpError::for_internal_error(format!(
+                    "{} saga finished but output missing: {e}",
+                    op.saga_name()
+                ))
+            })?;
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    action,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Instance::\"{instance_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "operation_id": saga_id.0.to_string(),
+                    }),
+                )
+                .await;
+            Ok(HttpResponseOk(final_instance))
+        }
+        Err(err) => {
+            let kind_msg: Option<(&'static str, String)> = match &err.error_source {
+                tritond_saga::ActionError::ActionFailed { source_error } => {
+                    let kind =
+                        crate::sagas::instance_lifecycle::decode_store_error_kind(source_error);
+                    let msg = source_error
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    kind.map(|k| (k, msg))
+                }
+                _ => None,
+            };
+            let http_err = match kind_msg.as_ref().map(|(k, _)| *k) {
+                Some("not_found") => not_found(),
+                Some("conflict") => HttpError::for_client_error(
+                    Some("Conflict".to_string()),
+                    ClientErrorStatusCode::CONFLICT,
+                    kind_msg
+                        .as_ref()
+                        .map(|(_, m)| m.clone())
+                        .unwrap_or_default(),
+                ),
+                _ => HttpError::for_internal_error(format!(
+                    "{} saga failed at {:?}: {:?}",
+                    op.saga_name(),
+                    err.error_node_name,
+                    err.error_source
+                )),
+            };
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    action,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("{:?}", err.error_source),
+                    },
+                    serde_json::json!({
+                        "operation_id": saga_id.0.to_string(),
+                    }),
+                )
+                .await;
+            Err(http_err)
+        }
+    }
 }
 
 pub(crate) async fn list_instance_nics(
@@ -775,12 +974,36 @@ pub(crate) async fn create_project_floating_ip(
     let request_id = parse_request_id(&rqctx);
     let req = body.into_inner();
 
-    match ctx
-        .store
-        .create_floating_ip(tenant_id, project_id, req)
+    let saga_params = crate::sagas::floating_ip::FloatingIpAllocateParams {
+        tenant_id,
+        project_id,
+        request: req,
+    };
+    let saga_dag = crate::sagas::floating_ip::build_allocate_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("floating-ip-allocate saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::floating_ip::build_allocate_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::floating_ip::SAGA_NAME_ALLOCATE,
+            crate::sagas::floating_ip::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
         .await
-    {
-        Ok(fip) => {
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("floating-ip-allocate saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(ok) => {
+            let fip: FloatingIp = ok.lookup_node_output("fip").map_err(|e| {
+                HttpError::for_internal_error(format!(
+                    "floating-ip-allocate saga finished but output missing: {e}"
+                ))
+            })?;
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -795,25 +1018,81 @@ pub(crate) async fn create_project_floating_ip(
                         "project_id": project_id,
                         "name": fip.name,
                         "address": fip.address.to_string(),
+                        "operation_id": saga_id.0.to_string(),
                     }),
                 )
                 .await;
             Ok(HttpResponseCreated(fip))
         }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FloatingIpCreate,
-                    request_id,
-                    None,
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
+        Err(err) => {
+            map_fip_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::FloatingIpCreate,
+                request_id,
+                None,
+                saga_id,
+                &err,
+            )
+            .await
         }
     }
+}
+
+/// Shared error-mapping for FIP saga failures. Re-derives the
+/// matching HTTP status from the action payload (using
+/// `decode_store_error_kind`) and emits the audit row.
+async fn map_fip_saga_err<T>(
+    audit: &crate::audit::AuditService,
+    principal: &Principal,
+    action: Action,
+    request_id: Option<Uuid>,
+    resource: Option<String>,
+    saga_id: tritond_saga::SagaId,
+    err: &tritond_saga::SagaResultErr,
+) -> Result<T, HttpError> {
+    let kind_msg: Option<(&'static str, String)> = match &err.error_source {
+        tritond_saga::ActionError::ActionFailed { source_error } => {
+            let kind = crate::sagas::floating_ip::decode_store_error_kind(source_error);
+            let msg = source_error
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            kind.map(|k| (k, msg))
+        }
+        _ => None,
+    };
+    let http_err = match kind_msg.as_ref().map(|(k, _)| *k) {
+        Some("not_found") => not_found(),
+        Some("conflict") => HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            kind_msg
+                .as_ref()
+                .map(|(_, m)| m.clone())
+                .unwrap_or_default(),
+        ),
+        _ => HttpError::for_internal_error(format!(
+            "fip saga failed at {:?}: {:?}",
+            err.error_node_name, err.error_source
+        )),
+    };
+    audit
+        .record_mutation(
+            principal,
+            action,
+            request_id,
+            resource,
+            tritond_audit::Outcome::ServerError {
+                message: format!("{:?}", err.error_source),
+            },
+            serde_json::json!({
+                "operation_id": saga_id.0.to_string(),
+            }),
+        )
+        .await;
+    Err(http_err)
 }
 
 pub(crate) async fn get_project_floating_ip(
@@ -935,7 +1214,6 @@ pub(crate) async fn attach_project_floating_ip(
     let request_id = parse_request_id(&rqctx);
     let req = body.into_inner();
 
-    // Defence-in-depth on the FloatingIp itself.
     let fip = ctx
         .store
         .get_floating_ip(floating_ip_id)
@@ -944,12 +1222,45 @@ pub(crate) async fn attach_project_floating_ip(
     if fip.tenant_id != tenant_id || fip.project_id != project_id {
         return Err(not_found());
     }
-    match ctx
-        .store
-        .attach_floating_ip(floating_ip_id, req.nic_id)
+    // Capture prior binding so the undo can restore it.
+    let prior_nic_id = fip.attached_to.as_ref().map(|a| a.nic_id);
+    let target_instance_id = match ctx.store.get_nic(req.nic_id).await {
+        Ok(n) => Some(n.instance_id),
+        Err(_) => None,
+    };
+    let saga_params = crate::sagas::floating_ip::FloatingIpAttachParams {
+        tenant_id,
+        project_id,
+        fip_id: floating_ip_id,
+        target_nic_id: req.nic_id,
+        prior_nic_id,
+        target_instance_id,
+    };
+    let saga_dag = crate::sagas::floating_ip::build_attach_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("floating-ip-attach saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::floating_ip::build_attach_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::floating_ip::SAGA_NAME_ATTACH,
+            crate::sagas::floating_ip::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
         .await
-    {
-        Ok(updated) => {
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("floating-ip-attach saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(ok) => {
+            let updated: FloatingIp = ok.lookup_node_output("attached").map_err(|e| {
+                HttpError::for_internal_error(format!(
+                    "floating-ip-attach saga finished but output missing: {e}"
+                ))
+            })?;
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -963,23 +1274,23 @@ pub(crate) async fn attach_project_floating_ip(
                         "tenant_id": tenant_id,
                         "project_id": project_id,
                         "nic_id": req.nic_id,
+                        "operation_id": saga_id.0.to_string(),
                     }),
                 )
                 .await;
             Ok(HttpResponseOk(updated))
         }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FloatingIpAttach,
-                    request_id,
-                    Some(format!("FloatingIp::\"{floating_ip_id}\"")),
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
+        Err(err) => {
+            map_fip_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::FloatingIpAttach,
+                request_id,
+                Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                saga_id,
+                &err,
+            )
+            .await
         }
     }
 }
@@ -1013,8 +1324,40 @@ pub(crate) async fn detach_project_floating_ip(
     if fip.tenant_id != tenant_id || fip.project_id != project_id {
         return Err(not_found());
     }
-    match ctx.store.detach_floating_ip(floating_ip_id).await {
-        Ok(updated) => {
+    let prior_nic_id = fip.attached_to.as_ref().map(|a| a.nic_id);
+    let prior_instance_id = fip.attached_to.as_ref().map(|a| a.instance_id);
+    let saga_params = crate::sagas::floating_ip::FloatingIpDetachParams {
+        tenant_id,
+        project_id,
+        fip_id: floating_ip_id,
+        prior_nic_id,
+        prior_instance_id,
+    };
+    let saga_dag = crate::sagas::floating_ip::build_detach_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("floating-ip-detach saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::floating_ip::build_detach_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::floating_ip::SAGA_NAME_DETACH,
+            crate::sagas::floating_ip::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("floating-ip-detach saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(ok) => {
+            let updated: FloatingIp = ok.lookup_node_output("detached").map_err(|e| {
+                HttpError::for_internal_error(format!(
+                    "floating-ip-detach saga finished but output missing: {e}"
+                ))
+            })?;
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -1027,23 +1370,23 @@ pub(crate) async fn detach_project_floating_ip(
                     serde_json::json!({
                         "tenant_id": tenant_id,
                         "project_id": project_id,
+                        "operation_id": saga_id.0.to_string(),
                     }),
                 )
                 .await;
             Ok(HttpResponseOk(updated))
         }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FloatingIpDetach,
-                    request_id,
-                    Some(format!("FloatingIp::\"{floating_ip_id}\"")),
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
+        Err(err) => {
+            map_fip_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::FloatingIpDetach,
+                request_id,
+                Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                saga_id,
+                &err,
+            )
+            .await
         }
     }
 }

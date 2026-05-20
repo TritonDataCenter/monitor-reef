@@ -33,7 +33,7 @@ use crate::context::{ActionRegistry, SagaContext};
 use crate::error::{SagaError, SagaResult};
 use crate::mem::MemSecStore;
 use crate::secstore::TritondSecStore;
-use crate::types::{RecoverableSaga, SecEpoch, SecHeartbeat, SecId};
+use crate::types::{RecoverableSaga, ResourceRef, ResourceScope, SecEpoch, SecHeartbeat, SecId};
 
 /// Audit emitter for saga lifecycle events (RFD 00004 D-Sg-11).
 ///
@@ -196,6 +196,7 @@ impl SagaExecutor {
         name: &'static str,
         version: u32,
         dag: Arc<SagaDag>,
+        references: &[ResourceRef],
     ) -> SagaResult<StenoSagaResult> {
         let ctx = Arc::new(self.make_context_for_saga(saga_id));
         // 1. Steno persists the saga (calls our SecStore::saga_create).
@@ -204,9 +205,18 @@ impl SagaExecutor {
             .saga_create(saga_id, ctx, dag, self.registry.clone())
             .await
             .map_err(SagaError::from)?;
-        // 2. Stamp the fence + version onto the record.
+        // 2. Stamp the fence + version + resource refs onto the
+        //    record. References populate the secondary index that
+        //    powers per-resource saga views (RFD 00004 SG-4).
         self.sec_store
-            .stamp_create(saga_id, name, version, self.sec_id, self.sec_epoch)
+            .stamp_create(
+                saga_id,
+                name,
+                version,
+                self.sec_id,
+                self.sec_epoch,
+                references,
+            )
             .await?;
         // 3. Audit: operation_started (D-Sg-11). Fired after the
         //    record is durable so a reader of the audit log can
@@ -289,6 +299,21 @@ impl SagaExecutor {
         id: steno::SagaId,
     ) -> SagaResult<Vec<steno::SagaNodeEvent>> {
         self.sec_store.load_events(id).await
+    }
+
+    /// Resource-scoped saga listing. Backed by the FDB by_ref index;
+    /// returns newest-first. Used by per-VM / per-CN / per-tenant
+    /// "operations" views (RFD 00004 SG-4 resource indexing).
+    pub async fn list_sagas_by_reference(
+        &self,
+        scope: ResourceScope,
+        id: uuid::Uuid,
+        marker: Option<SagaId>,
+        limit: usize,
+    ) -> SagaResult<Vec<crate::types::SagaRecord>> {
+        self.sec_store
+            .list_sagas_by_reference(scope, id, marker, limit)
+            .await
     }
 
     /// Sweeper hook: drop every terminal saga whose `time_done` is

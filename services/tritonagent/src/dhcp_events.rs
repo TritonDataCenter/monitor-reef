@@ -502,7 +502,10 @@ async fn poll_invalidations(
     let resp = match client.client().get(&url).send().await {
         Ok(r) if r.status().is_success() => r,
         Ok(r) => {
-            tracing::debug!(status = r.status().as_u16(), "peer-invalidations: non-success");
+            tracing::debug!(
+                status = r.status().as_u16(),
+                "peer-invalidations: non-success"
+            );
             return None;
         }
         Err(e) => {
@@ -738,13 +741,15 @@ mod tests {
     #[test]
     fn peer_resolve_jobs_empty_batch_yields_empty() {
         assert!(peer_resolve_jobs_from_events(&[]).is_empty());
-        assert!(peer_resolve_jobs_from_events(&[dhcp_event(
-            Uuid::nil(),
-            DhcpMessageType::Discover,
-            [0; 6],
-            0,
-        )])
-        .is_empty());
+        assert!(
+            peer_resolve_jobs_from_events(&[dhcp_event(
+                Uuid::nil(),
+                DhcpMessageType::Discover,
+                [0; 6],
+                0,
+            )])
+            .is_empty()
+        );
     }
 
     fn key(port: Uuid, vni: u32, peer: [u8; 4]) -> NegativeKey {

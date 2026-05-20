@@ -16,11 +16,12 @@ use std::collections::HashMap;
 use dropshot::{HttpError, HttpResponseOk, Path, Query, RequestContext};
 use tritond_api::{
     AbandonResponse, ListOperationsQuery, OperationDetail, OperationPath, OperationProgress,
-    OperationState, OperationStep, OperationSummary, StepStatus,
+    OperationState, OperationStep, OperationSummary, ResourceReference,
+    ResourceScope as ApiResourceScope, StepStatus,
 };
 use tritond_saga::{
-    SagaCachedStatePersist, SagaError, SagaId, SagaNodeEvent, SagaNodeEventType, SagaNodeId,
-    SagaRecord,
+    ResourceScope as SagaResourceScope, SagaCachedStatePersist, SagaError, SagaId, SagaNodeEvent,
+    SagaNodeEventType, SagaNodeId, SagaRecord,
 };
 
 use crate::auth::{Action, authenticate_and_authorize};
@@ -46,11 +47,31 @@ pub(crate) async fn list_operations(
         .map(|l| (l as usize).clamp(1, MAX_LIMIT))
         .unwrap_or(DEFAULT_LIMIT);
     let marker = q.after_id.map(SagaId);
-    let records = ctx
-        .saga
-        .list_sagas(marker, limit)
-        .await
-        .map_err(saga_error_to_http)?;
+
+    // Resource-scoped path (RFD 00004 SG-4): both query params
+    // must be present together. Passing one without the other is
+    // a 400 — silent fall-through to unfiltered would be a
+    // footgun for callers building per-resource saga pages.
+    let records = match (q.resource_scope, q.resource_id) {
+        (Some(api_scope), Some(rid)) => {
+            let saga_scope = api_scope_to_saga(api_scope);
+            ctx.saga
+                .list_sagas_by_reference(saga_scope, rid, marker, limit)
+                .await
+                .map_err(saga_error_to_http)?
+        }
+        (None, None) => ctx
+            .saga
+            .list_sagas(marker, limit)
+            .await
+            .map_err(saga_error_to_http)?,
+        _ => {
+            return Err(HttpError::for_bad_request(
+                Some("InvalidRequest".to_string()),
+                "resource_scope and resource_id must be provided together".to_string(),
+            ));
+        }
+    };
     Ok(HttpResponseOk(
         records.into_iter().map(record_to_summary).collect(),
     ))
@@ -65,7 +86,11 @@ pub(crate) async fn get_operation(
         .await?;
     let OperationPath { operation_id } = path.into_inner();
     let saga_id = SagaId(operation_id);
-    let record = ctx.saga.get_saga(saga_id).await.map_err(saga_error_to_http)?;
+    let record = ctx
+        .saga
+        .get_saga(saga_id)
+        .await
+        .map_err(saga_error_to_http)?;
     // RFD 00004 D-Sg-13: progress is computed from the persisted
     // DAG + node-event log so the value survives a tritond restart.
     // `load_events` paginates internally under the FDB 10 MB
@@ -113,6 +138,14 @@ pub(crate) async fn abandon_operation(
 
 fn record_to_summary(r: SagaRecord) -> OperationSummary {
     let state = state_from_record(&r);
+    let references = r
+        .references
+        .iter()
+        .map(|x| ResourceReference {
+            scope: saga_scope_to_api(x.scope),
+            id: x.id,
+        })
+        .collect();
     OperationSummary {
         id: r.id.0,
         kind: r.name,
@@ -123,6 +156,53 @@ fn record_to_summary(r: SagaRecord) -> OperationSummary {
         time_created: r.time_created,
         time_done: r.time_done,
         stuck_reason: r.stuck_reason,
+        references,
+    }
+}
+
+/// Wire-form ↔ saga-form scope conversion. Wide enums on both
+/// sides; kept verbose so adding a scope is one match arm in each
+/// direction with no chance of silent mismatch.
+fn api_scope_to_saga(s: ApiResourceScope) -> SagaResourceScope {
+    match s {
+        ApiResourceScope::Fleet => SagaResourceScope::Fleet,
+        ApiResourceScope::Silo => SagaResourceScope::Silo,
+        ApiResourceScope::Tenant => SagaResourceScope::Tenant,
+        ApiResourceScope::Project => SagaResourceScope::Project,
+        ApiResourceScope::Vpc => SagaResourceScope::Vpc,
+        ApiResourceScope::Subnet => SagaResourceScope::Subnet,
+        ApiResourceScope::Cn => SagaResourceScope::Cn,
+        ApiResourceScope::Instance => SagaResourceScope::Instance,
+        ApiResourceScope::Nic => SagaResourceScope::Nic,
+        ApiResourceScope::Disk => SagaResourceScope::Disk,
+        ApiResourceScope::Image => SagaResourceScope::Image,
+        ApiResourceScope::FloatingIp => SagaResourceScope::FloatingIp,
+        ApiResourceScope::NatGateway => SagaResourceScope::NatGateway,
+        ApiResourceScope::Route => SagaResourceScope::Route,
+        ApiResourceScope::RouteTable => SagaResourceScope::RouteTable,
+        ApiResourceScope::EdgeCluster => SagaResourceScope::EdgeCluster,
+        ApiResourceScope::Job => SagaResourceScope::Job,
+    }
+}
+fn saga_scope_to_api(s: SagaResourceScope) -> ApiResourceScope {
+    match s {
+        SagaResourceScope::Fleet => ApiResourceScope::Fleet,
+        SagaResourceScope::Silo => ApiResourceScope::Silo,
+        SagaResourceScope::Tenant => ApiResourceScope::Tenant,
+        SagaResourceScope::Project => ApiResourceScope::Project,
+        SagaResourceScope::Vpc => ApiResourceScope::Vpc,
+        SagaResourceScope::Subnet => ApiResourceScope::Subnet,
+        SagaResourceScope::Cn => ApiResourceScope::Cn,
+        SagaResourceScope::Instance => ApiResourceScope::Instance,
+        SagaResourceScope::Nic => ApiResourceScope::Nic,
+        SagaResourceScope::Disk => ApiResourceScope::Disk,
+        SagaResourceScope::Image => ApiResourceScope::Image,
+        SagaResourceScope::FloatingIp => ApiResourceScope::FloatingIp,
+        SagaResourceScope::NatGateway => ApiResourceScope::NatGateway,
+        SagaResourceScope::Route => ApiResourceScope::Route,
+        SagaResourceScope::RouteTable => ApiResourceScope::RouteTable,
+        SagaResourceScope::EdgeCluster => ApiResourceScope::EdgeCluster,
+        SagaResourceScope::Job => ApiResourceScope::Job,
     }
 }
 
@@ -144,6 +224,14 @@ fn record_to_detail(
     refined_state: OperationState,
     steps: Vec<OperationStep>,
 ) -> OperationDetail {
+    let references = r
+        .references
+        .iter()
+        .map(|x| ResourceReference {
+            scope: saga_scope_to_api(x.scope),
+            id: x.id,
+        })
+        .collect();
     OperationDetail {
         summary: OperationSummary {
             id: r.id.0,
@@ -155,6 +243,7 @@ fn record_to_detail(
             time_created: r.time_created,
             time_done: r.time_done,
             stuck_reason: r.stuck_reason.clone(),
+            references,
         },
         current_epoch: r.current_epoch.0,
         adopt_generation: r.adopt_generation,
@@ -176,7 +265,10 @@ struct ActionNodeRef {
 /// `SagaDag` JSON has `graph.nodes[i] = { Action: { name, label, action_name } }`
 /// for action nodes, plus `Start` / `End` markers we skip).
 fn enumerate_action_nodes_full(dag: &serde_json::Value) -> Vec<ActionNodeRef> {
-    let Some(nodes) = dag.get("graph").and_then(|g| g.get("nodes")).and_then(|n| n.as_array())
+    let Some(nodes) = dag
+        .get("graph")
+        .and_then(|g| g.get("nodes"))
+        .and_then(|n| n.as_array())
     else {
         return Vec::new();
     };
@@ -242,8 +334,7 @@ fn compute_steps(r: &SagaRecord, events: &[SagaNodeEvent]) -> Vec<OperationStep>
     if nodes.is_empty() {
         return Vec::new();
     }
-    let action_indices: std::collections::HashSet<u32> =
-        nodes.iter().map(|n| n.index).collect();
+    let action_indices: std::collections::HashSet<u32> = nodes.iter().map(|n| n.index).collect();
 
     // Bucket events by node_id, keeping the order we read them.
     let mut by_node: HashMap<u32, Vec<&SagaNodeEvent>> = HashMap::new();
@@ -257,14 +348,9 @@ fn compute_steps(r: &SagaRecord, events: &[SagaNodeEvent]) -> Vec<OperationStep>
     nodes
         .into_iter()
         .map(|n| {
-            let evs: &[&SagaNodeEvent] = by_node
-                .get(&n.index)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
+            let evs: &[&SagaNodeEvent] = by_node.get(&n.index).map(|v| v.as_slice()).unwrap_or(&[]);
             let (status, output, error, undo_error) = project_step(evs);
-            let error_message = error
-                .as_ref()
-                .and_then(extract_error_message);
+            let error_message = error.as_ref().and_then(extract_error_message);
             OperationStep {
                 index: n.index,
                 name: n.name,
@@ -361,7 +447,11 @@ fn extract_error_message(value: &serde_json::Value) -> Option<String> {
     // Last-resort: serde-print the whole thing so the operator
     // sees *something*. Capped to a reasonable display length.
     let s = serde_json::to_string(value).ok()?;
-    Some(if s.len() > 200 { format!("{}…", &s[..200]) } else { s })
+    Some(if s.len() > 200 {
+        format!("{}…", &s[..200])
+    } else {
+        s
+    })
 }
 
 /// Project per-step progress from the DAG (total Action nodes) +
@@ -380,10 +470,8 @@ fn compute_progress(r: &SagaRecord, events: &[SagaNodeEvent]) -> OperationProgre
     }
     let action_node_ids: std::collections::HashSet<u32> =
         action_nodes.iter().map(|(i, _)| *i).collect();
-    let label_for: HashMap<u32, &str> = action_nodes
-        .iter()
-        .map(|(i, l)| (*i, l.as_str()))
-        .collect();
+    let label_for: HashMap<u32, &str> =
+        action_nodes.iter().map(|(i, l)| (*i, l.as_str())).collect();
 
     // Latest forward-direction event-kind per Action node. Only
     // forward kinds count toward "completed_steps"; undo events

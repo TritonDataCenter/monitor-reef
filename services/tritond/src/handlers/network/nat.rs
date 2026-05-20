@@ -136,12 +136,37 @@ pub(crate) async fn create_vpc_nat_gateway(
     let request_id = parse_request_id(&rqctx);
     let req = body.into_inner();
 
-    match ctx
-        .store
-        .create_nat_gateway(tenant_id, project_id, vpc_id, req)
+    let saga_params = crate::sagas::nat_gateway::NatGatewayCreateParams {
+        tenant_id,
+        project_id,
+        vpc_id,
+        request: req,
+    };
+    let saga_dag = crate::sagas::nat_gateway::build_create_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("nat-gateway-create saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::nat_gateway::build_create_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::nat_gateway::SAGA_NAME_CREATE,
+            crate::sagas::nat_gateway::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
         .await
-    {
-        Ok(nat_gateway) => {
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("nat-gateway-create saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(ok) => {
+            let nat_gateway: NatGateway = ok.lookup_node_output("nat_gateway").map_err(|e| {
+                HttpError::for_internal_error(format!(
+                    "nat-gateway-create saga finished but output missing: {e}"
+                ))
+            })?;
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -158,25 +183,80 @@ pub(crate) async fn create_vpc_nat_gateway(
                         "name": nat_gateway.name,
                         "public_address": nat_gateway.public_address.to_string(),
                         "desired_generation": nat_gateway.desired_generation,
+                        "operation_id": saga_id.0.to_string(),
                     }),
                 )
                 .await;
             Ok(HttpResponseCreated(nat_gateway))
         }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::NatGatewayCreate,
-                    request_id,
-                    None,
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
+        Err(err) => {
+            map_nat_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::NatGatewayCreate,
+                request_id,
+                None,
+                saga_id,
+                &err,
+            )
+            .await
         }
     }
+}
+
+/// Map a NAT-saga failure back to an HTTP error using the same
+/// kind-string convention shared across the saga catalog.
+async fn map_nat_saga_err<T>(
+    audit: &crate::audit::AuditService,
+    principal: &crate::auth::Principal,
+    action: Action,
+    request_id: Option<Uuid>,
+    resource: Option<String>,
+    saga_id: tritond_saga::SagaId,
+    err: &tritond_saga::SagaResultErr,
+) -> Result<T, HttpError> {
+    let kind_msg: Option<(&'static str, String)> = match &err.error_source {
+        tritond_saga::ActionError::ActionFailed { source_error } => {
+            let kind = crate::sagas::nat_gateway::decode_store_error_kind(source_error);
+            let msg = source_error
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            kind.map(|k| (k, msg))
+        }
+        _ => None,
+    };
+    let http_err = match kind_msg.as_ref().map(|(k, _)| *k) {
+        Some("not_found") => not_found(),
+        Some("conflict") => HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            dropshot::ClientErrorStatusCode::CONFLICT,
+            kind_msg
+                .as_ref()
+                .map(|(_, m)| m.clone())
+                .unwrap_or_default(),
+        ),
+        _ => HttpError::for_internal_error(format!(
+            "nat-gateway saga failed at {:?}: {:?}",
+            err.error_node_name, err.error_source
+        )),
+    };
+    audit
+        .record_mutation(
+            principal,
+            action,
+            request_id,
+            resource,
+            tritond_audit::Outcome::ServerError {
+                message: format!("{:?}", err.error_source),
+            },
+            serde_json::json!({
+                "operation_id": saga_id.0.to_string(),
+            }),
+        )
+        .await;
+    Err(http_err)
 }
 
 pub(crate) async fn get_vpc_nat_gateway(
@@ -246,8 +326,32 @@ pub(crate) async fn delete_vpc_nat_gateway(
     {
         return Err(not_found());
     }
-    match ctx.store.delete_nat_gateway(nat_gateway_id).await {
-        Ok(()) => {
+    let saga_params = crate::sagas::nat_gateway::NatGatewayDeleteParams {
+        tenant_id,
+        project_id,
+        vpc_id,
+        nat_gateway_id,
+    };
+    let saga_dag = crate::sagas::nat_gateway::build_delete_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("nat-gateway-delete saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::nat_gateway::build_delete_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::nat_gateway::SAGA_NAME_DELETE,
+            crate::sagas::nat_gateway::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("nat-gateway-delete saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(_) => {
             ctx.audit
                 .record_mutation(
                     &principal,
@@ -261,23 +365,23 @@ pub(crate) async fn delete_vpc_nat_gateway(
                         "tenant_id": tenant_id,
                         "project_id": project_id,
                         "vpc_id": vpc_id,
+                        "operation_id": saga_id.0.to_string(),
                     }),
                 )
                 .await;
             Ok(HttpResponseDeleted())
         }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::NatGatewayDelete,
-                    request_id,
-                    Some(format!("NatGateway::\"{nat_gateway_id}\"")),
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
+        Err(err) => {
+            map_nat_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::NatGatewayDelete,
+                request_id,
+                Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                saga_id,
+                &err,
+            )
+            .await
         }
     }
 }

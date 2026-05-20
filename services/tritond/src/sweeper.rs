@@ -140,7 +140,10 @@ async fn run(
                 continue;
             }
         };
-        match saga.prune_terminal_sagas_older_than(saga_retention_cutoff).await {
+        match saga
+            .prune_terminal_sagas_older_than(saga_retention_cutoff)
+            .await
+        {
             Ok(0) => debug!("no aged-out terminal sagas this sweep"),
             Ok(n) => info!(pruned = n, "tritond-saga: pruned aged-out terminal sagas"),
             Err(e) => {

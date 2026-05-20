@@ -70,8 +70,11 @@ impl TableState {
         let Some(path) = self.persist_to.as_ref() else {
             return;
         };
-        let serialisable: HashMap<String, ResolvedBinding> =
-            self.entries.iter().map(|(ip, b)| (ip.to_string(), *b)).collect();
+        let serialisable: HashMap<String, ResolvedBinding> = self
+            .entries
+            .iter()
+            .map(|(ip, b)| (ip.to_string(), *b))
+            .collect();
         match serde_json::to_string_pretty(&serialisable) {
             Ok(text) => {
                 if let Err(e) = std::fs::write(path, text) {

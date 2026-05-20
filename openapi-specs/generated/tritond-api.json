@@ -2216,6 +2216,24 @@
               "format": "uint32",
               "minimum": 0
             }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "description": "Resource id to filter by. Must be paired with `resource_scope`.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_scope",
+            "description": "Resource scope to filter by (e.g. `instance`, `cn`, `tenant`). Must be paired with `resource_id`.",
+            "schema": {
+              "$ref": "#/components/schemas/ResourceScope"
+            }
           }
         ],
         "responses": {
@@ -12117,6 +12135,14 @@
               }
             ]
           },
+          "references": {
+            "description": "Resources this saga touches. Populated at create time; used by per-resource saga views to filter. Empty for sagas created before RFD 00004 SG-4 resource indexing landed.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceReference"
+            }
+          },
           "state": {
             "description": "Public state (see [`OperationState`]).",
             "allOf": [
@@ -12338,6 +12364,14 @@
           "kind": {
             "description": "Saga `NAME` (`instance-create`, `instance-delete`, …). Kebab.",
             "type": "string"
+          },
+          "references": {
+            "description": "Resources this saga touches. Populated at create time; used by per-resource saga views to filter. Empty for sagas created before RFD 00004 SG-4 resource indexing landed.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceReference"
+            }
           },
           "state": {
             "description": "Public state (see [`OperationState`]).",
@@ -13105,6 +13139,46 @@
         },
         "required": [
           "state"
+        ]
+      },
+      "ResourceReference": {
+        "description": "One resource a saga touches. Mirrors `tritond_saga::ResourceRef` on the wire; the type lives here so the API doesn't depend on the saga crate's serde shape directly.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ResourceScope"
+          }
+        },
+        "required": [
+          "id",
+          "scope"
+        ]
+      },
+      "ResourceScope": {
+        "description": "Wire mirror of `tritond_saga::ResourceScope`. Stable snake_case strings; safe to extend (callers that don't recognise a new value fall through to whatever default behavior they have — the value is opaque to most clients).",
+        "type": "string",
+        "enum": [
+          "fleet",
+          "silo",
+          "tenant",
+          "project",
+          "vpc",
+          "subnet",
+          "cn",
+          "instance",
+          "nic",
+          "disk",
+          "image",
+          "floating_ip",
+          "nat_gateway",
+          "route",
+          "route_table",
+          "edge_cluster",
+          "job"
         ]
       },
       "Route": {

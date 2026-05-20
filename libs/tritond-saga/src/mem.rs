@@ -27,7 +27,8 @@ use tokio::sync::RwLock;
 use crate::error::{SagaError, SagaResult};
 use crate::secstore::TritondSecStore;
 use crate::types::{
-    RecoverableSaga, SagaCachedStatePersist, SagaRecord, SecEpoch, SecHeartbeat, SecId,
+    RecoverableSaga, ResourceRef, ResourceScope, SagaCachedStatePersist, SagaRecord, SecEpoch,
+    SecHeartbeat, SecId,
 };
 
 #[derive(Default)]
@@ -103,6 +104,7 @@ impl steno::SecStore for MemSecStore {
             time_created: now,
             time_done: None,
             stuck_reason: None,
+            references: Vec::new(),
         };
         g.sagas.entry(params.id).or_insert(record);
         g.events.entry(params.id).or_default();
@@ -134,6 +136,7 @@ impl TritondSecStore for MemSecStore {
         version: u32,
         sec: SecId,
         epoch: SecEpoch,
+        references: &[ResourceRef],
     ) -> SagaResult<()> {
         let mut g = self.inner.write().await;
         // Steno's `saga_create` has already inserted a sentinel
@@ -153,12 +156,17 @@ impl TritondSecStore for MemSecStore {
             time_created: Utc::now(),
             time_done: None,
             stuck_reason: None,
+            references: references.to_vec(),
         });
         rec.name = name.to_string();
         rec.version = version;
         rec.creator_sec = sec;
         rec.current_sec = sec;
         rec.current_epoch = epoch;
+        // Stamp_create is idempotent on saga_id, so a re-run of the
+        // create path replaces the ref list rather than appending —
+        // matches FDB's set-of-keys semantics.
+        rec.references = references.to_vec();
         g.events.entry(saga_id).or_default();
         Ok(())
     }
@@ -258,10 +266,7 @@ impl TritondSecStore for MemSecStore {
         Ok(g.events.get(&saga_id).cloned().unwrap_or_default())
     }
 
-    async fn prune_terminal_sagas_older_than(
-        &self,
-        before: DateTime<Utc>,
-    ) -> SagaResult<usize> {
+    async fn prune_terminal_sagas_older_than(&self, before: DateTime<Utc>) -> SagaResult<usize> {
         let mut g = self.inner.write().await;
         let to_prune: Vec<SagaId> = g
             .sagas
@@ -301,5 +306,41 @@ impl TritondSecStore for MemSecStore {
             Box::new(g.sagas.iter())
         };
         Ok(it.take(limit).map(|(_, r)| r.clone()).collect())
+    }
+
+    async fn list_sagas_by_reference(
+        &self,
+        scope: ResourceScope,
+        id: uuid::Uuid,
+        marker: Option<SagaId>,
+        limit: usize,
+    ) -> SagaResult<Vec<SagaRecord>> {
+        let g = self.inner.read().await;
+        // Scan every saga, filter to those whose ref list contains
+        // (scope, id). MemSecStore is the test/dev backend — no
+        // need for a real index here; FDB has one. Ordering by
+        // time_created DESC mirrors the FDB inverted-ts key
+        // ordering so test expectations match prod.
+        let needle = ResourceRef::new(scope, id);
+        let mut matches: Vec<&SagaRecord> = g
+            .sagas
+            .values()
+            .filter(|r| r.references.iter().any(|x| *x == needle))
+            .collect();
+        matches.sort_by(|a, b| b.time_created.cmp(&a.time_created).then(b.id.cmp(&a.id)));
+        let start = match marker {
+            None => 0,
+            Some(m) => matches
+                .iter()
+                .position(|r| r.id == m)
+                .map(|i| i + 1)
+                .unwrap_or(matches.len()),
+        };
+        Ok(matches
+            .into_iter()
+            .skip(start)
+            .take(limit)
+            .cloned()
+            .collect())
     }
 }

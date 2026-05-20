@@ -88,15 +88,14 @@ impl Ring {
     /// Push a fresh invalidation onto the ring. Returns the
     /// assigned sequence number.
     pub fn push(&self, vni: u32, peer_ip: String) -> u64 {
-        let mut inner = self.inner.lock().expect("peer_invalidations: lock poisoned");
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("peer_invalidations: lock poisoned");
         let seq = inner.next_seq;
         inner.next_seq = seq.wrapping_add(1);
         let entry = RingEntry {
-            invalidation: AgentPeerInvalidation {
-                seq,
-                vni,
-                peer_ip,
-            },
+            invalidation: AgentPeerInvalidation { seq, vni, peer_ip },
             pushed_at: Instant::now(),
         };
         inner.entries.push_back(entry);
@@ -109,7 +108,10 @@ impl Ring {
     /// highest seq returned (for the agent's next `since` cursor).
     /// Empty list with `tail_seq = since` when nothing's new.
     pub fn drain_since(&self, since: u64) -> (Vec<AgentPeerInvalidation>, u64) {
-        let mut inner = self.inner.lock().expect("peer_invalidations: lock poisoned");
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("peer_invalidations: lock poisoned");
         Self::trim(&mut inner);
         let mut out: Vec<AgentPeerInvalidation> = inner
             .entries

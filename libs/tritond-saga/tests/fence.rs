@@ -34,7 +34,7 @@ async fn verify_fence_passes_when_owner_matches() {
 
     // Set up the saga record: SEC A is the current owner at epoch 1.
     store
-        .stamp_create(saga_id, "test-saga", 1, sec_a, SecEpoch::new(1))
+        .stamp_create(saga_id, "test-saga", 1, sec_a, SecEpoch::new(1), &[])
         .await
         .unwrap();
 
@@ -57,7 +57,7 @@ async fn verify_fence_fails_after_reassignment() {
 
     // SEC A creates the saga at epoch 1.
     store
-        .stamp_create(saga_id, "test-saga", 1, sec_a, SecEpoch::new(1))
+        .stamp_create(saga_id, "test-saga", 1, sec_a, SecEpoch::new(1), &[])
         .await
         .unwrap();
 

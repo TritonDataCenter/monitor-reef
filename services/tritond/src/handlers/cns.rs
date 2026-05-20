@@ -159,6 +159,28 @@ pub(crate) async fn approve_cn(
 
     let updated = mint_and_attach_cn_credential(ctx, &principal, request_id, &cn).await?;
 
+    // RFD 00004 SG-6: wrap the join outcome in a saga record so
+    // the operation surface (Operations page, per-CN view) shows
+    // the approval. Marker-only today — SG-6b expands to a real
+    // chain with cred-revoke undo.
+    let join_params = crate::sagas::node_join::NodeJoinParams {
+        server_uuid: updated.server_uuid,
+    };
+    if let Ok(saga_dag) = crate::sagas::node_join::build_dag(&join_params) {
+        let saga_refs = crate::sagas::node_join::build_references(&join_params);
+        let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+        let _ = ctx
+            .saga
+            .saga_execute(
+                saga_id,
+                crate::sagas::node_join::SAGA_NAME,
+                crate::sagas::node_join::SAGA_VERSION,
+                saga_dag,
+                &saga_refs,
+            )
+            .await;
+    }
+
     ctx.audit
         .record_mutation(
             &principal,

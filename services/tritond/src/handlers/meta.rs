@@ -347,7 +347,11 @@ pub(crate) async fn agent_set_instance_guest_meta(
         updated_at: Utc::now(),
     };
 
-    match ctx.store.set_meta(scope, scope_id, &key, entry.clone()).await {
+    match ctx
+        .store
+        .set_meta(scope, scope_id, &key, entry.clone())
+        .await
+    {
         Ok(generation) => Ok(HttpResponseOk(SetMetaResponse {
             entry: MetaEntry { key, value: entry },
             generation,

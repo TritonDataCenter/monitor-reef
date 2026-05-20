@@ -137,7 +137,7 @@ async fn trivial_saga_runs_to_done() {
     let (exec, dag) = build_executor(store.clone());
     let saga_id = SagaId(uuid::Uuid::new_v4());
     let result = exec
-        .saga_execute(saga_id, SAGA_NAME, SAGA_VERSION, dag)
+        .saga_execute(saga_id, SAGA_NAME, SAGA_VERSION, dag, &[])
         .await
         .expect("saga_execute should not surface an engine error");
     let ok = match result.kind {
@@ -165,7 +165,7 @@ async fn trivial_saga_unwinds_on_action_failure() {
     let (exec, dag) = build_executor(store.clone());
     let saga_id = SagaId(uuid::Uuid::new_v4());
     let result = exec
-        .saga_execute(saga_id, SAGA_NAME, SAGA_VERSION, dag)
+        .saga_execute(saga_id, SAGA_NAME, SAGA_VERSION, dag, &[])
         .await
         .expect("saga_execute should not surface an engine error");
     assert!(
@@ -187,7 +187,7 @@ async fn recover_terminal_saga_is_a_noop() {
     {
         let (exec, dag) = build_executor(store.clone());
         let saga_id = SagaId(uuid::Uuid::new_v4());
-        exec.saga_execute(saga_id, SAGA_NAME, SAGA_VERSION, dag)
+        exec.saga_execute(saga_id, SAGA_NAME, SAGA_VERSION, dag, &[])
             .await
             .expect("first run succeeds");
     }

@@ -524,6 +524,46 @@ pub struct OperationSummary {
     /// Set when the saga ends `Stuck` (Done-with-undo-error or
     /// missing-version). Human-readable.
     pub stuck_reason: Option<String>,
+    /// Resources this saga touches. Populated at create time; used
+    /// by per-resource saga views to filter. Empty for sagas
+    /// created before RFD 00004 SG-4 resource indexing landed.
+    #[serde(default)]
+    pub references: Vec<ResourceReference>,
+}
+
+/// Wire mirror of `tritond_saga::ResourceScope`. Stable
+/// snake_case strings; safe to extend (callers that don't
+/// recognise a new value fall through to whatever default behavior
+/// they have — the value is opaque to most clients).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceScope {
+    Fleet,
+    Silo,
+    Tenant,
+    Project,
+    Vpc,
+    Subnet,
+    Cn,
+    Instance,
+    Nic,
+    Disk,
+    Image,
+    FloatingIp,
+    NatGateway,
+    Route,
+    RouteTable,
+    EdgeCluster,
+    Job,
+}
+
+/// One resource a saga touches. Mirrors `tritond_saga::ResourceRef`
+/// on the wire; the type lives here so the API doesn't depend on
+/// the saga crate's serde shape directly.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Hash)]
+pub struct ResourceReference {
+    pub scope: ResourceScope,
+    pub id: Uuid,
 }
 
 /// Detail view: the summary plus the persisted DAG + event log.
@@ -667,6 +707,11 @@ pub struct AbandonResponse {
 /// Query parameters for `GET /v2/operations`. Pagination is
 /// continuation-token style: pass back the `id` of the last entry
 /// from the previous page as `after_id`.
+///
+/// Resource filtering (RFD 00004 SG-4): pass both `resource_scope`
+/// and `resource_id` to restrict the listing to sagas that touched
+/// the named resource. Backed by the FDB by_ref index; returns
+/// newest-first ordering. Passing only one of the two is a 400.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListOperationsQuery {
     /// Maximum number of items to return. Defaults to 50 if absent;
@@ -677,6 +722,14 @@ pub struct ListOperationsQuery {
     /// id. `None` for the first page.
     #[serde(default)]
     pub after_id: Option<Uuid>,
+    /// Resource scope to filter by (e.g. `instance`, `cn`,
+    /// `tenant`). Must be paired with `resource_id`.
+    #[serde(default)]
+    pub resource_scope: Option<ResourceScope>,
+    /// Resource id to filter by. Must be paired with
+    /// `resource_scope`.
+    #[serde(default)]
+    pub resource_id: Option<Uuid>,
 }
 
 // ---------------------------------------------------------------------

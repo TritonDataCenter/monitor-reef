@@ -32,7 +32,9 @@ use chrono::{DateTime, Utc};
 use steno::{SagaId, SagaNodeEvent};
 
 use crate::error::SagaResult;
-use crate::types::{RecoverableSaga, SagaRecord, SecEpoch, SecHeartbeat, SecId};
+use crate::types::{
+    RecoverableSaga, ResourceRef, ResourceScope, SagaRecord, SecEpoch, SecHeartbeat, SecId,
+};
 
 /// `TritondSecStore` extends Steno's `SecStore` with the queries the
 /// `SagaExecutor` needs for recovery, reassignment, and fence
@@ -45,11 +47,18 @@ use crate::types::{RecoverableSaga, SagaRecord, SecEpoch, SecHeartbeat, SecId};
 /// `SagaExecutor`s in sequence reproduces the restart case.
 #[async_trait]
 pub trait TritondSecStore: steno::SecStore {
-    /// Stamp the creating SEC / epoch / version onto a saga's
-    /// record. Called by `SagaExecutor::saga_execute` immediately
-    /// after `SecClient::saga_create` so the record carries the
-    /// fence fields the rest of the system relies on (Invariant 8 /
-    /// D-Sg-10). Idempotent on `saga_id`.
+    /// Stamp the creating SEC / epoch / version / resource refs
+    /// onto a saga's record. Called by `SagaExecutor::saga_execute`
+    /// immediately after `SecClient::saga_create` so the record
+    /// carries the fence fields and resource index the rest of the
+    /// system relies on (Invariant 8 / D-Sg-10 / RFD 00004 SG-4
+    /// resource indexing). Idempotent on `saga_id`.
+    ///
+    /// `references` is the catalog module's `build_references(...)`
+    /// output — every resource known at create-time. FDB
+    /// implementations write secondary keys
+    /// `saga/by_ref/<scope>/<id>/<inv_ts>/<saga_id>` in the same
+    /// transaction so the index is atomic with the saga record.
     async fn stamp_create(
         &self,
         saga_id: SagaId,
@@ -57,6 +66,7 @@ pub trait TritondSecStore: steno::SecStore {
         version: u32,
         sec: SecId,
         epoch: SecEpoch,
+        references: &[ResourceRef],
     ) -> SagaResult<()>;
 
     /// Look up the persisted record for a saga. Used by
@@ -135,8 +145,21 @@ pub trait TritondSecStore: steno::SecStore {
     /// (a slow Done write may still be in flight) and must not
     /// touch the `Stuck` set — `stuck_reason` is operator-actionable
     /// and never expires.
-    async fn prune_terminal_sagas_older_than(
+    async fn prune_terminal_sagas_older_than(&self, before: DateTime<Utc>) -> SagaResult<usize>;
+
+    /// Page through every saga that touches the given resource.
+    /// Ordering is newest-first (the FDB index keys the saga id
+    /// under an inverted millisecond timestamp). `marker` is the
+    /// saga id of the last entry from the prior page; pass `None`
+    /// for the first page.
+    ///
+    /// Operator-visible endpoint: `GET /v2/operations?resource_scope=
+    /// &resource_id=` (RFD 00004 SG-4 resource indexing).
+    async fn list_sagas_by_reference(
         &self,
-        before: DateTime<Utc>,
-    ) -> SagaResult<usize>;
+        scope: ResourceScope,
+        id: uuid::Uuid,
+        marker: Option<SagaId>,
+        limit: usize,
+    ) -> SagaResult<Vec<SagaRecord>>;
 }

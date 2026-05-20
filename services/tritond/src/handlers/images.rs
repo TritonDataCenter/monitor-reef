@@ -230,6 +230,29 @@ pub(crate) async fn create_silo_image(
     }
     match ctx.store.create_image_silo(silo_id, req).await {
         Ok(image) => {
+            // RFD 00004 SG-6: record the import in the saga catalog
+            // so the operation surface and per-image / per-silo
+            // saga views pick it up. Marker-only today.
+            let imp_params = crate::sagas::image_import::ImageImportParams {
+                image_id: image.id,
+                silo_id: Some(silo_id),
+                tenant_id: None,
+                project_id: None,
+            };
+            if let Ok(saga_dag) = crate::sagas::image_import::build_dag(&imp_params) {
+                let saga_refs = crate::sagas::image_import::build_references(&imp_params);
+                let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+                let _ = ctx
+                    .saga
+                    .saga_execute(
+                        saga_id,
+                        crate::sagas::image_import::SAGA_NAME,
+                        crate::sagas::image_import::SAGA_VERSION,
+                        saga_dag,
+                        &saga_refs,
+                    )
+                    .await;
+            }
             audit_image_create_success(
                 ctx,
                 &principal,

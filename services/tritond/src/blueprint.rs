@@ -604,8 +604,10 @@ fn build_routes_with_imds_and_local_subnet(
     let mut out = build_routes_with_imds(stored, route_table_id, imds_enabled)?;
     if emit_local_subnet {
         if let Some(cidr) = subnet_ipv4_block {
-            let synthetic_id =
-                Uuid::new_v5(&Uuid::NAMESPACE_OID, &derive_local_subnet_seed(route_table_id));
+            let synthetic_id = Uuid::new_v5(
+                &Uuid::NAMESPACE_OID,
+                &derive_local_subnet_seed(route_table_id),
+            );
             out.push(RouteIntentV1 {
                 id: synthetic_id,
                 tenant_id: Uuid::nil(),
@@ -657,10 +659,7 @@ pub(crate) async fn resolve_peer(
     //    so total cost scales with realized-NIC count, not the
     //    cluster's full configuration surface. An index by
     //    (vni, ip) -> nic_id lands when scale demands it.
-    let cns = store
-        .list_cns(None)
-        .await
-        .map_err(store_error_to_http)?;
+    let cns = store.list_cns(None).await.map_err(store_error_to_http)?;
     for cn in cns {
         let Some(admin_ip) = cn.admin_ip else {
             continue;

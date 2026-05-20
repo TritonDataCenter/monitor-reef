@@ -62,8 +62,8 @@ pub use executor::{SagaAuditEmitter, SagaExecutor};
 pub use mem::MemSecStore;
 pub use secstore::TritondSecStore;
 pub use types::{
-    RecoverableSaga, SagaCachedStatePersist, SagaRecord, SagaRequestCtx, SecEpoch, SecHeartbeat,
-    SecId,
+    RecoverableSaga, ResourceRef, ResourceScope, SagaCachedStatePersist, SagaRecord,
+    SagaRequestCtx, SecEpoch, SecHeartbeat, SecId,
 };
 
 // Re-export the steno surface most call sites need so consumers

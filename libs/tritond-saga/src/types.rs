@@ -91,6 +91,131 @@ impl SagaRequestCtx {
     }
 }
 
+/// Stable identifier for a resource scope a saga can touch. Used
+/// in [`ResourceRef`] to index sagas by resource so a per-resource
+/// view (the VM detail page's "operations" subtab, a CN's saga
+/// log, a tenant's audit pane) can resolve "what sagas touched
+/// me" without scanning every saga.
+///
+/// Wire form is `snake_case` so the FDB index key + the JSON
+/// representation are the same string and easy to grep:
+///
+/// ```text
+/// saga/by_ref/instance/<uuid>/<inverted_ms>/<saga_id>
+/// ```
+///
+/// Adding a scope is non-breaking — old records with unknown
+/// scopes deserialise as `Other(String)` via the `#[serde(other)]`
+/// catch-all and stay queryable by their raw kebab name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceScope {
+    /// Fleet-wide. Used by sagas that touch global state
+    /// (`node_join`, `image_import` of a public image).
+    Fleet,
+    Silo,
+    Tenant,
+    Project,
+    Vpc,
+    Subnet,
+    /// A compute node (`CN`). The scope id is the server UUID.
+    Cn,
+    Instance,
+    Nic,
+    Disk,
+    Image,
+    FloatingIp,
+    NatGateway,
+    Route,
+    RouteTable,
+    /// An `EdgeCluster` (route_with_nat_edge / nat_gateway sagas).
+    EdgeCluster,
+    /// A `ProvisioningJob` row the saga enqueued. Lets the
+    /// per-job view show the saga that produced it.
+    Job,
+}
+
+impl ResourceScope {
+    /// Stable kebab string used as the FDB key segment. Must match
+    /// the `serde(rename_all = "snake_case")` output exactly so the
+    /// wire JSON and the index key agree.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ResourceScope::Fleet => "fleet",
+            ResourceScope::Silo => "silo",
+            ResourceScope::Tenant => "tenant",
+            ResourceScope::Project => "project",
+            ResourceScope::Vpc => "vpc",
+            ResourceScope::Subnet => "subnet",
+            ResourceScope::Cn => "cn",
+            ResourceScope::Instance => "instance",
+            ResourceScope::Nic => "nic",
+            ResourceScope::Disk => "disk",
+            ResourceScope::Image => "image",
+            ResourceScope::FloatingIp => "floating_ip",
+            ResourceScope::NatGateway => "nat_gateway",
+            ResourceScope::Route => "route",
+            ResourceScope::RouteTable => "route_table",
+            ResourceScope::EdgeCluster => "edge_cluster",
+            ResourceScope::Job => "job",
+        }
+    }
+
+    /// Parse a kebab string back into a scope. Returns `None` for
+    /// an unknown scope (callers map this to a 400 — we don't want
+    /// a silent fall-through).
+    pub fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "fleet" => ResourceScope::Fleet,
+            "silo" => ResourceScope::Silo,
+            "tenant" => ResourceScope::Tenant,
+            "project" => ResourceScope::Project,
+            "vpc" => ResourceScope::Vpc,
+            "subnet" => ResourceScope::Subnet,
+            "cn" => ResourceScope::Cn,
+            "instance" => ResourceScope::Instance,
+            "nic" => ResourceScope::Nic,
+            "disk" => ResourceScope::Disk,
+            "image" => ResourceScope::Image,
+            "floating_ip" => ResourceScope::FloatingIp,
+            "nat_gateway" => ResourceScope::NatGateway,
+            "route" => ResourceScope::Route,
+            "route_table" => ResourceScope::RouteTable,
+            "edge_cluster" => ResourceScope::EdgeCluster,
+            "job" => ResourceScope::Job,
+            _ => return None,
+        })
+    }
+}
+
+/// A resource a saga touches. Catalog modules export a
+/// `build_references(params)` helper that returns one of these per
+/// known resource at saga-create time. Stored on the saga record
+/// AND indexed in `saga/by_ref/<scope>/<id>/...` so resource-scoped
+/// queries are O(scan-on-index) instead of O(scan-all-sagas).
+///
+/// Resources allocated *during* the saga (e.g. the instance_id
+/// created by `instance-create.create_record`) can't be on the
+/// initial ref list. Two ways to handle that, in order of
+/// preference:
+///   1. Pre-allocate the UUID in the handler and pass it in as a
+///      param so it's known at create time. The store
+///      mutation's CAS protects uniqueness.
+///   2. Defer the ref; it shows up only after action 1 succeeds
+///      and a sweeper-style backfill writes it. Not implemented
+///      yet — deferred sagas just have an incomplete ref list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct ResourceRef {
+    pub scope: ResourceScope,
+    pub id: Uuid,
+}
+
+impl ResourceRef {
+    pub const fn new(scope: ResourceScope, id: Uuid) -> Self {
+        Self { scope, id }
+    }
+}
+
 /// The persisted "what saga is this" record, indexed by saga id.
 /// Sized to fit in one FDB value (well under the 100 KB FDB
 /// value-size budget). Event log lives separately under
@@ -126,6 +251,12 @@ pub struct SagaRecord {
     /// undo itself errored, or because the registered version is
     /// missing (`SagaError::UnknownVersion`). Operator-visible.
     pub stuck_reason: Option<String>,
+    /// Resources this saga touches, written at create time. Used
+    /// by per-resource saga views — see `ResourceRef`. Empty for
+    /// pre-resource-index records (those just don't show up in
+    /// per-resource queries; no migration needed).
+    #[serde(default)]
+    pub references: Vec<ResourceRef>,
 }
 
 /// Local mirror of `steno::SagaCachedState` so we can derive serde +

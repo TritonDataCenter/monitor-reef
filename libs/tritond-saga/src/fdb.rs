@@ -38,7 +38,8 @@ use steno::{SagaCachedState, SagaCreateParams, SagaId, SagaNodeEvent, SagaNodeEv
 use crate::error::{SagaError, SagaResult};
 use crate::secstore::TritondSecStore;
 use crate::types::{
-    RecoverableSaga, SagaCachedStatePersist, SagaRecord, SecEpoch, SecHeartbeat, SecId,
+    RecoverableSaga, ResourceRef, ResourceScope, SagaCachedStatePersist, SagaRecord, SecEpoch,
+    SecHeartbeat, SecId,
 };
 
 /// FoundationDB-backed `SecStore`.
@@ -96,6 +97,37 @@ impl FdbSecStore {
     fn heartbeat_prefix() -> &'static [u8] {
         b"saga/sec_heartbeat/"
     }
+
+    /// `saga/by_ref/<scope>/<uuid>/<inv_ts_hex16>/<saga_uuid>` — the
+    /// secondary index that powers `list_sagas_by_reference`. The
+    /// inverted-timestamp segment is `u64::MAX - now_ms` in
+    /// 16-hex-digit big-endian form so an ascending range scan
+    /// returns newest-first naturally. RFD 00004 SG-4 resource
+    /// indexing.
+    fn by_ref_key(scope: ResourceScope, id: uuid::Uuid, inv_ts: u64, saga_id: SagaId) -> Vec<u8> {
+        format!(
+            "saga/by_ref/{}/{}/{:016x}/{}",
+            scope.as_str(),
+            id,
+            inv_ts,
+            saga_id.0,
+        )
+        .into_bytes()
+    }
+
+    /// `saga/by_ref/<scope>/<uuid>/` — every saga that touches a
+    /// resource shares this prefix; range-scan it to enumerate.
+    fn by_ref_resource_prefix(scope: ResourceScope, id: uuid::Uuid) -> Vec<u8> {
+        format!("saga/by_ref/{}/{}/", scope.as_str(), id).into_bytes()
+    }
+}
+
+/// Inverted millisecond timestamp — `u64::MAX - now_ms`. Encoded
+/// as a 16-hex segment in the by_ref key so newest entries sort
+/// first under an ascending range scan.
+fn invert_ts_ms(t: DateTime<Utc>) -> u64 {
+    let ms = t.timestamp_millis().max(0) as u64;
+    u64::MAX - ms
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -203,6 +235,9 @@ impl steno::SecStore for FdbSecStore {
             time_created: now,
             time_done: None,
             stuck_reason: None,
+            // stamp_create fills these in after Steno's saga_create
+            // returns; the sentinel record starts with no refs.
+            references: Vec::new(),
         };
         let by_id_key = Self::by_id_key(params.id);
         let value = serde_json::to_vec(&record)
@@ -312,15 +347,18 @@ impl TritondSecStore for FdbSecStore {
         version: u32,
         sec: SecId,
         epoch: SecEpoch,
+        references: &[ResourceRef],
     ) -> SagaResult<()> {
         let by_id_key = Self::by_id_key(saga_id);
         let by_sec_key = Self::by_sec_key(sec, saga_id);
         let name = name.to_string();
+        let refs: Vec<ResourceRef> = references.to_vec();
         self.db
             .run(|tr, _| {
                 let by_id_key = by_id_key.clone();
                 let by_sec_key = by_sec_key.clone();
                 let name = name.clone();
+                let refs = refs.clone();
                 async move {
                     let bytes = match tr.get(&by_id_key, false).await? {
                         Some(b) => b,
@@ -345,10 +383,26 @@ impl TritondSecStore for FdbSecStore {
                                 time_created: now,
                                 time_done: None,
                                 stuck_reason: None,
+                                references: refs.clone(),
                             };
                             let value = ser_record(&rec)?;
                             tr.set(&by_id_key, &value);
                             tr.set(&by_sec_key, b"");
+                            // Write by_ref index keys. The
+                            // inverted timestamp uses now so newer
+                            // sagas sort first under ascending
+                            // range scans. (Subsequent calls to
+                            // stamp_create on the same id are
+                            // idempotent because they re-write the
+                            // same key with the same inv_ts when
+                            // time_created hasn't changed; the
+                            // sentinel branch only fires once per
+                            // saga, so we use `now` directly.)
+                            let inv_ts = invert_ts_ms(now);
+                            for r in &refs {
+                                let k = Self::by_ref_key(r.scope, r.id, inv_ts, saga_id);
+                                tr.set(&k, b"");
+                            }
                             return Ok(());
                         }
                     };
@@ -358,9 +412,19 @@ impl TritondSecStore for FdbSecStore {
                     rec.creator_sec = sec;
                     rec.current_sec = sec;
                     rec.current_epoch = epoch;
+                    // Re-stamp idempotently: replace the saga's ref
+                    // list and rewrite the by_ref keys at the
+                    // record's *original* time_created so retries
+                    // converge to the same key set.
+                    rec.references = refs.clone();
                     let value = ser_record(&rec)?;
                     tr.set(&by_id_key, &value);
                     tr.set(&by_sec_key, b"");
+                    let inv_ts = invert_ts_ms(rec.time_created);
+                    for r in &refs {
+                        let k = Self::by_ref_key(r.scope, r.id, inv_ts, saga_id);
+                        tr.set(&k, b"");
+                    }
                     Ok::<(), FdbBindingError>(())
                 }
             })
@@ -618,10 +682,7 @@ impl TritondSecStore for FdbSecStore {
         self.load_events_paged(saga_id).await
     }
 
-    async fn prune_terminal_sagas_older_than(
-        &self,
-        before: DateTime<Utc>,
-    ) -> SagaResult<usize> {
+    async fn prune_terminal_sagas_older_than(&self, before: DateTime<Utc>) -> SagaResult<usize> {
         // Step 1: scan `saga/by_id/<*>` and collect ids that meet
         // the prune criteria. WantAll so the scan returns the full
         // set rather than the iteration-1 batch.
@@ -647,28 +708,46 @@ impl TritondSecStore for FdbSecStore {
             })
             .await
             .map_err(backend)?;
-        let mut to_prune: Vec<(SagaId, SecId)> = Vec::new();
+        struct Doomed {
+            saga_id: SagaId,
+            sec: SecId,
+            time_created: DateTime<Utc>,
+            references: Vec<ResourceRef>,
+        }
+        let mut to_prune: Vec<Doomed> = Vec::new();
         for raw in &raws {
             if let Ok(rec) = deser_record(raw) {
-                let terminal_done = matches!(rec.state, SagaCachedStatePersist::Done)
-                    && rec.stuck_reason.is_none();
+                let terminal_done =
+                    matches!(rec.state, SagaCachedStatePersist::Done) && rec.stuck_reason.is_none();
                 let aged_out = rec.time_done.is_some_and(|t| t < before);
                 if terminal_done && aged_out {
-                    to_prune.push((rec.id, rec.current_sec));
+                    to_prune.push(Doomed {
+                        saga_id: rec.id,
+                        sec: rec.current_sec,
+                        time_created: rec.time_created,
+                        references: rec.references,
+                    });
                 }
             }
         }
 
         // Step 2: for each prunable saga, delete the by_id record,
-        // every event under saga/event/<id>/, and the by_sec
-        // marker. One FDB transaction per saga keeps each delete
-        // independently safe to retry on conflict.
+        // every event under saga/event/<id>/, the by_sec marker,
+        // and every by_ref index key. One FDB transaction per
+        // saga keeps each delete independently safe to retry on
+        // conflict.
         let mut pruned = 0usize;
-        for (saga_id, sec) in to_prune {
-            let by_id_key = Self::by_id_key(saga_id);
-            let by_sec_key = Self::by_sec_key(sec, saga_id);
-            let event_prefix = Self::events_prefix(saga_id);
+        for d in to_prune {
+            let by_id_key = Self::by_id_key(d.saga_id);
+            let by_sec_key = Self::by_sec_key(d.sec, d.saga_id);
+            let event_prefix = Self::events_prefix(d.saga_id);
             let (ev_begin, ev_end) = prefix_range(&event_prefix);
+            let inv_ts = invert_ts_ms(d.time_created);
+            let by_ref_keys: Vec<Vec<u8>> = d
+                .references
+                .iter()
+                .map(|r| Self::by_ref_key(r.scope, r.id, inv_ts, d.saga_id))
+                .collect();
             let result: Result<(), FdbBindingError> = self
                 .db
                 .run(|tr, _| {
@@ -676,10 +755,14 @@ impl TritondSecStore for FdbSecStore {
                     let by_sec_key = by_sec_key.clone();
                     let ev_begin = ev_begin.clone();
                     let ev_end = ev_end.clone();
+                    let by_ref_keys = by_ref_keys.clone();
                     async move {
                         tr.clear(&by_id_key);
                         tr.clear(&by_sec_key);
                         tr.clear_range(&ev_begin, &ev_end);
+                        for k in &by_ref_keys {
+                            tr.clear(k);
+                        }
                         Ok::<(), FdbBindingError>(())
                     }
                 })
@@ -730,6 +813,87 @@ impl TritondSecStore for FdbSecStore {
             .into_iter()
             .filter_map(|b| deser_record(&b).ok())
             .collect())
+    }
+
+    async fn list_sagas_by_reference(
+        &self,
+        scope: ResourceScope,
+        id: uuid::Uuid,
+        marker: Option<SagaId>,
+        limit: usize,
+    ) -> SagaResult<Vec<SagaRecord>> {
+        // Step 1: range-scan `saga/by_ref/<scope>/<id>/` to get
+        // saga ids. Keys are sorted ascending by inverted-ts so
+        // the natural scan order is newest-first.
+        let prefix = Self::by_ref_resource_prefix(scope, id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+        // Cap the index scan at `limit * 4` to absorb skipped-past
+        // markers without unbounded reads. We then filter + take
+        // exactly `limit` below.
+        let scan_limit = limit.saturating_mul(4).max(limit);
+        let raw_keys: Vec<Vec<u8>> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        limit: Some(scan_limit),
+                        mode: StreamingMode::WantAll,
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok::<Vec<Vec<u8>>, FdbBindingError>(
+                        kvs.iter().map(|kv| kv.key().to_vec()).collect(),
+                    )
+                }
+            })
+            .await
+            .map_err(backend)?;
+
+        // Parse the trailing `<saga_uuid>` segment out of each key
+        // (`saga/by_ref/<scope>/<id>/<inv_ts>/<saga_uuid>`).
+        let mut saga_ids: Vec<SagaId> = Vec::with_capacity(raw_keys.len());
+        for k in raw_keys {
+            let s = match std::str::from_utf8(&k[prefix_len..]) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let Some(tail) = s.rsplit('/').next() else {
+                continue;
+            };
+            let Ok(uuid) = uuid::Uuid::parse_str(tail) else {
+                continue;
+            };
+            saga_ids.push(SagaId(uuid));
+        }
+
+        // Apply continuation: drop everything up to and including
+        // the marker.
+        let mut started = marker.is_none();
+        let mut out: Vec<SagaRecord> = Vec::with_capacity(limit);
+        for sid in saga_ids {
+            if !started {
+                if Some(sid) == marker {
+                    started = true;
+                }
+                continue;
+            }
+            if out.len() >= limit {
+                break;
+            }
+            // Resolve each id back to its full record. One FDB
+            // get per saga; the index scan is the expensive part.
+            match self.get_record(sid).await {
+                Ok(rec) => out.push(rec),
+                Err(SagaError::NotFound) => { /* stale index entry */ }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
     }
 }
 

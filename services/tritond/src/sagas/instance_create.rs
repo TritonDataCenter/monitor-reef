@@ -46,8 +46,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tritond_auth::generate_random_password;
 use tritond_saga::{
-    ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, SagaDag, SagaError,
-    SagaName, SagaResult, TritondSagaType,
+    ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, ResourceRef,
+    ResourceScope, SagaDag, SagaError, SagaName, SagaResult, TritondSagaType,
 };
 use tritond_store::{
     Instance, InstanceCreateResult, JobKind, JobStatusKind, MetaScope, MetaValue, NewInstance,
@@ -218,6 +218,36 @@ pub fn build_dag(params: &InstanceCreateParams) -> SagaResult<Arc<SagaDag>> {
     let params_json = serde_json::to_value(params)
         .map_err(|e| SagaError::Backend(format!("params serialize: {e}")))?;
     Ok(Arc::new(SagaDag::new(dag, params_json)))
+}
+
+/// Resources this saga touches, known at create time. Used by
+/// `SagaExecutor::saga_execute` to populate the by_ref index so a
+/// future per-resource view (the VM detail page's "operations"
+/// subtab, a CN's saga log, etc.) can resolve sagas without
+/// scanning every record.
+///
+/// **Deferred:** the instance UUID isn't on this list because
+/// `create_instance_record` allocates it. Pre-allocating the UUID
+/// in the handler would let us include it; doing so is a small
+/// follow-up. Until then, an Instance's saga page shows sagas that
+/// named the instance in their params (delete / start / stop /
+/// restart / fip-attach), not the create itself.
+pub fn build_references(params: &InstanceCreateParams) -> Vec<ResourceRef> {
+    let mut out = Vec::new();
+    out.push(ResourceRef::new(ResourceScope::Tenant, params.tenant_id));
+    out.push(ResourceRef::new(ResourceScope::Project, params.project_id));
+    if let Some(cn) = params.target_cn_uuid {
+        out.push(ResourceRef::new(ResourceScope::Cn, cn));
+    }
+    out.push(ResourceRef::new(
+        ResourceScope::Image,
+        params.request.image_id,
+    ));
+    out.push(ResourceRef::new(
+        ResourceScope::Subnet,
+        params.request.primary_subnet_id,
+    ));
+    out
 }
 
 // ---------------------------------------------------------------
@@ -452,21 +482,17 @@ async fn await_provision_terminal(ctx: Ctx) -> Result<(), ActionError> {
 /// output before this action because action 4's output became the
 /// `ProvisioningJob` once SG-2b added the await step.
 async fn finish(ctx: Ctx) -> Result<Instance, ActionError> {
-    crate::sagas::with_action_timeout(
-        "instance_create.finish",
-        ACTION_TIMEOUT_STORE,
-        async move {
-            let user_ctx = ctx.user_data();
-            fence_check(user_ctx).await?;
-            let store = user_ctx.store().clone();
-            let instance: Instance = ctx.lookup("instance_after_pin")?;
-            let refreshed: Instance = store
-                .get_instance(instance.id)
-                .await
-                .map_err(store_err_to_action_err)?;
-            Ok(refreshed)
-        },
-    )
+    crate::sagas::with_action_timeout("instance_create.finish", ACTION_TIMEOUT_STORE, async move {
+        let user_ctx = ctx.user_data();
+        fence_check(user_ctx).await?;
+        let store = user_ctx.store().clone();
+        let instance: Instance = ctx.lookup("instance_after_pin")?;
+        let refreshed: Instance = store
+            .get_instance(instance.id)
+            .await
+            .map_err(store_err_to_action_err)?;
+        Ok(refreshed)
+    })
     .await
 }
 
