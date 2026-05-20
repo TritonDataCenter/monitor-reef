@@ -378,6 +378,16 @@ fn capacity_view(c: tritond_store::CnCapacity) -> CapacityView {
         platform_version: c.platform_version,
         reported_at: c.reported_at,
         hvm_supported: c.hvm_supported,
+        // LM-0 migration fingerprint fields. The capability probe
+        // (LM-0 task #13) will extend `CnCapacity` with the
+        // corresponding source-side fields and we'll thread them
+        // through here. Until then the migration filters `Skip`
+        // when these are absent / empty so the chain behaves
+        // identically for `instance-create` requests.
+        vmm_protocol_version: None,
+        cpu_features: Vec::new(),
+        tsc_offset_ns: None,
+        zpool_props: std::collections::BTreeMap::new(),
     }
 }
 
@@ -647,11 +657,15 @@ mod tests {
             force_cn: None,
             ignore_scope_pin: false,
             deadline: Utc::now() + chrono::Duration::minutes(5),
+            avoid_cn: Vec::new(),
+            migration: None,
         };
         let (chosen, report) = runner.pick(&[view.clone()], &req, &ctx);
         assert_eq!(chosen, Some(view.server_uuid));
-        // 18 filters in the default chain + 12 scorers.
-        assert_eq!(report.per_cn[0].filter_results.len(), 18);
+        // 23 filters in the default chain (17 RFD-00005 +
+        // cn-capacity-present + 5 LM-0 migration filters) + 12
+        // scorers.
+        assert_eq!(report.per_cn[0].filter_results.len(), 23);
         assert_eq!(report.per_cn[0].scorer_results.len(), 12);
     }
 
@@ -686,6 +700,8 @@ mod tests {
             force_cn: None,
             ignore_scope_pin: false,
             deadline: Utc::now() + chrono::Duration::minutes(5),
+            avoid_cn: Vec::new(),
+            migration: None,
         }
     }
 

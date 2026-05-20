@@ -68,6 +68,10 @@ fn make_cn(uuid: Uuid, fault_domain: Option<&str>) -> CnView {
             platform_version: "20260501T000000Z".into(),
             reported_at: now(),
             hvm_supported: true,
+            vmm_protocol_version: None,
+            cpu_features: Vec::new(),
+            tsc_offset_ns: None,
+            zpool_props: BTreeMap::new(),
         }),
         placement: policy,
         active_reservations: Vec::new(),
@@ -101,6 +105,8 @@ fn make_req(tenant: Uuid) -> PlacementRequest {
         force_cn: None,
         ignore_scope_pin: false,
         deadline: now() + Duration::minutes(5),
+        avoid_cn: Vec::new(),
+        migration: None,
     }
 }
 
@@ -252,8 +258,9 @@ fn explain_report_per_cn_carries_filter_and_scorer_breakdown() {
     assert_eq!(report.per_cn.len(), 1);
     let entry = &report.per_cn[0];
     assert!(entry.accepted);
-    // Default chain ships 18 filters; every one ran.
-    assert_eq!(entry.filter_results.len(), 18);
+    // Default chain ships 23 filters (18 RFD-00005 + 5 LM-0
+    // migration filters); every one ran.
+    assert_eq!(entry.filter_results.len(), 23);
     // Default scorer chain has 12 entries; all 12 contributions land.
     assert_eq!(entry.scorer_results.len(), 12);
     // Total score is the sum of contributions.

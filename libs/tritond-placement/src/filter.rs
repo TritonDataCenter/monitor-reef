@@ -694,6 +694,208 @@ impl Filter for CnNotEvacuating {
 }
 
 // ---------------------------------------------------------------------------
+// Migration filters (LM-0). See `we-need-to-build-ancient-scone.md`
+// §2 / §J. These five filters are in the default chain but the four
+// source-vs-target comparison filters explicitly `Skip` when
+// `req.migration` is `None`, so `instance-create` is unaffected. The
+// designate_for_migration saga action populates `req.migration` and
+// the filters engage.
+// ---------------------------------------------------------------------------
+
+// cn-not-in-avoid-list — reject any CN whose uuid appears in
+// `req.avoid_cn`. Migration uses this to stop the chain from picking
+// the source CN as its own target. Honored even on the force-place
+// path: an operator can't force back onto a CN they explicitly
+// avoided.
+pub struct CnNotInAvoidList;
+impl Filter for CnNotInAvoidList {
+    fn name(&self) -> &'static str {
+        "cn-not-in-avoid-list"
+    }
+    fn evaluate(&self, cn: &CnView, req: &PlacementRequest, _ctx: &ChainContext) -> Verdict {
+        if req.avoid_cn.is_empty() {
+            return Verdict::Skip;
+        }
+        if req.avoid_cn.contains(&cn.server_uuid) {
+            Verdict::reject(format!(
+                "cn {} appears in avoid_cn ({} entries)",
+                cn.server_uuid,
+                req.avoid_cn.len(),
+            ))
+        } else {
+            Verdict::Accept
+        }
+    }
+}
+
+// cn-bhyve-compatible — target's vmm-migrate wire protocol must
+// match the source's. Mismatch means the WebSocket handshake would
+// reject and the migration would fail on the wire; we'd rather catch
+// it at designate time so the operator sees a clean error.
+pub struct CnBhyveCompatible;
+impl Filter for CnBhyveCompatible {
+    fn name(&self) -> &'static str {
+        "cn-bhyve-compatible"
+    }
+    fn evaluate(&self, cn: &CnView, req: &PlacementRequest, _ctx: &ChainContext) -> Verdict {
+        let Some(mig) = req.migration.as_ref() else {
+            return Verdict::Skip;
+        };
+        let Some(cap) = cn.capacity.as_ref() else {
+            // `cn-capacity-present` already rejected; defensive Skip.
+            return Verdict::Skip;
+        };
+        match cap.vmm_protocol_version.as_deref() {
+            None => Verdict::reject(
+                "cn has not reported vmm_protocol_version (agent capability probe missing)",
+            ),
+            Some(v) if v == mig.vmm_protocol_version => Verdict::Accept,
+            Some(v) => Verdict::reject(format!(
+                "vmm protocol mismatch: source={} target={}",
+                mig.vmm_protocol_version, v,
+            )),
+        }
+    }
+}
+
+// cn-cpu-feature-superset — target CPU feature set must be a
+// superset of what bhyve exposes to the guest on the source.
+// Missing a feature the guest sees would manifest as a `#UD` (invalid
+// opcode) exception on resume, which kernel panics most guests.
+pub struct CnCpuFeatureSuperset;
+impl Filter for CnCpuFeatureSuperset {
+    fn name(&self) -> &'static str {
+        "cn-cpu-feature-superset"
+    }
+    fn evaluate(&self, cn: &CnView, req: &PlacementRequest, _ctx: &ChainContext) -> Verdict {
+        let Some(mig) = req.migration.as_ref() else {
+            return Verdict::Skip;
+        };
+        let Some(cap) = cn.capacity.as_ref() else {
+            return Verdict::Skip;
+        };
+        if mig.cpu_features.is_empty() {
+            // Source reported no features — treat as "no constraint"
+            // rather than a wholesale reject. The agent capability
+            // probe will fill this in for v1; older agents pass.
+            return Verdict::Skip;
+        }
+        let missing: Vec<&str> = mig
+            .cpu_features
+            .iter()
+            .filter(|f| !cap.cpu_features.iter().any(|c| c == *f))
+            .map(|s| s.as_str())
+            .collect();
+        if missing.is_empty() {
+            Verdict::Accept
+        } else {
+            Verdict::reject(format!(
+                "target missing cpu features: {}",
+                missing.join(", "),
+            ))
+        }
+    }
+}
+
+// cn-time-synced — target's clock must be within 100 ms of the
+// source's. bhyve imports TSC + wall-clock state during the
+// device-state handoff; a large skew between source and target
+// surfaces as a guest-visible clock jump on resume which some
+// userspaces (notably databases with leases / fencing) treat as a
+// fatal error.
+pub struct CnTimeSynced {
+    /// Maximum permitted target-vs-source clock offset, absolute
+    /// value in nanoseconds. Defaults to 100ms; the configuration
+    /// loader can tune this via cluster settings later.
+    pub max_skew_ns: i64,
+}
+
+impl Default for CnTimeSynced {
+    fn default() -> Self {
+        Self {
+            max_skew_ns: 100_000_000, // 100ms
+        }
+    }
+}
+
+impl Filter for CnTimeSynced {
+    fn name(&self) -> &'static str {
+        "cn-time-synced"
+    }
+    fn evaluate(&self, cn: &CnView, req: &PlacementRequest, _ctx: &ChainContext) -> Verdict {
+        let Some(mig) = req.migration.as_ref() else {
+            return Verdict::Skip;
+        };
+        let Some(cap) = cn.capacity.as_ref() else {
+            return Verdict::Skip;
+        };
+        let Some(target_offset) = cap.tsc_offset_ns else {
+            return Verdict::reject(
+                "cn has not reported tsc_offset_ns (agent capability probe missing)",
+            );
+        };
+        let skew_ns = mig.tsc_offset_ns.saturating_sub(target_offset).abs();
+        if skew_ns > self.max_skew_ns {
+            Verdict::reject(format!(
+                "clock skew {}ns exceeds threshold {}ns",
+                skew_ns, self.max_skew_ns,
+            ))
+        } else {
+            Verdict::Accept
+        }
+    }
+}
+
+// cn-zfs-compatible — for every source pool, the target must have a
+// pool with matching on-disk-format properties (encryption,
+// compression, recordsize). Mismatch means `zfs recv` would fail or
+// the resulting dataset would have different semantics than the
+// source.
+pub struct CnZfsCompatible;
+impl Filter for CnZfsCompatible {
+    fn name(&self) -> &'static str {
+        "cn-zfs-compatible"
+    }
+    fn evaluate(&self, cn: &CnView, req: &PlacementRequest, _ctx: &ChainContext) -> Verdict {
+        let Some(mig) = req.migration.as_ref() else {
+            return Verdict::Skip;
+        };
+        let Some(cap) = cn.capacity.as_ref() else {
+            return Verdict::Skip;
+        };
+        if mig.zpool_props.is_empty() {
+            // No source pools to compare; this is a misuse, not a
+            // CN problem.
+            return Verdict::Skip;
+        }
+        for (pool, src) in &mig.zpool_props {
+            let Some(dst) = cap.zpool_props.get(pool) else {
+                return Verdict::reject(format!("target missing zpool {pool} (source uses it)"));
+            };
+            if src.encryption != dst.encryption {
+                return Verdict::reject(format!(
+                    "zpool {pool} encryption mismatch: source={} target={}",
+                    src.encryption, dst.encryption,
+                ));
+            }
+            if src.compression != dst.compression {
+                return Verdict::reject(format!(
+                    "zpool {pool} compression mismatch: source={} target={}",
+                    src.compression, dst.compression,
+                ));
+            }
+            if src.recordsize_bytes != dst.recordsize_bytes {
+                return Verdict::reject(format!(
+                    "zpool {pool} recordsize mismatch: source={} target={}",
+                    src.recordsize_bytes, dst.recordsize_bytes,
+                ));
+            }
+        }
+        Verdict::Accept
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Opt-in guardrail: cn-load-not-overheating (D-Pl-9)
 // ---------------------------------------------------------------------------
 
@@ -739,13 +941,26 @@ impl Filter for CnLoadNotOverheating {
 // Default chain.
 // ---------------------------------------------------------------------------
 
-/// Default registration order for the seventeen built-in filters,
-/// matching RFD 00005 doc 02 §"The seventeen built-in filters".
-/// `cn-load-not-overheating` is *not* included -- operators opt
-/// in via cluster settings (D-Pl-9).
+/// Default registration order for the built-in filters, matching
+/// RFD 00005 doc 02 §"The seventeen built-in filters" plus the five
+/// LM-0 migration filters. `cn-load-not-overheating` is *not*
+/// included -- operators opt in via cluster settings (D-Pl-9).
+///
+/// The migration filters (`cn-not-in-avoid-list`,
+/// `cn-bhyve-compatible`, `cn-cpu-feature-superset`,
+/// `cn-time-synced`, `cn-zfs-compatible`) are included by default
+/// but `Verdict::Skip` when the request doesn't carry the
+/// migration-shape inputs (`avoid_cn` / `migration`). `instance-create`
+/// requests are unaffected; only the migration designate action
+/// engages them.
 pub fn default_filter_chain() -> Vec<Arc<dyn Filter>> {
     vec![
         Arc::new(CnApprovedAndLive),
+        // Migration: avoid_cn is honored regardless of feature data
+        // availability, so it goes right after the liveness gate so
+        // a force-place against a CN that's been explicitly avoided
+        // gets rejected as cheaply as possible.
+        Arc::new(CnNotInAvoidList),
         Arc::new(CnCapacityPresent),
         Arc::new(CnRoleMatches),
         Arc::new(CnNotReserved),
@@ -763,6 +978,14 @@ pub fn default_filter_chain() -> Vec<Arc<dyn Filter>> {
         Arc::new(CnDeviceAvailable),
         Arc::new(CnHvmSupported),
         Arc::new(CnAffinityRequired),
+        // Migration compat checks. All four `Skip` when
+        // `req.migration` is `None`, so the chain is unchanged for
+        // `instance-create`. They run only when the designate
+        // saga action populates the source fingerprint.
+        Arc::new(CnBhyveCompatible),
+        Arc::new(CnCpuFeatureSuperset),
+        Arc::new(CnTimeSynced::default()),
+        Arc::new(CnZfsCompatible),
     ]
 }
 
@@ -843,6 +1066,10 @@ mod tests {
                 platform_version: "20260501T000000Z".into(),
                 reported_at: now(),
                 hvm_supported: true,
+                vmm_protocol_version: None,
+                cpu_features: Vec::new(),
+                tsc_offset_ns: None,
+                zpool_props: BTreeMap::new(),
             }),
             placement: PlacementPolicyView::default(),
             active_reservations: Vec::new(),
@@ -876,6 +1103,8 @@ mod tests {
             force_cn: None,
             ignore_scope_pin: false,
             deadline: now() + Duration::minutes(5),
+            avoid_cn: Vec::new(),
+            migration: None,
         }
     }
 
@@ -1708,13 +1937,315 @@ mod tests {
     }
 
     #[test]
-    fn default_chain_size_is_eighteen() {
-        // The default chain ships the seventeen filters plus
-        // `cn-capacity-present` (the explicit "row absent" check
-        // factored out of the per-filter `if let Some(cap)` boilerplate).
-        // The opt-in `cn-load-not-overheating` is NOT in the
-        // default.
-        assert_eq!(default_filter_chain().len(), 18);
+    fn default_chain_size_is_twenty_three() {
+        // 17 RFD-00005 filters + `cn-capacity-present` (the explicit
+        // "row absent" check factored out of the per-filter
+        // `if let Some(cap)` boilerplate) + 5 LM-0 migration filters
+        // (`cn-not-in-avoid-list`, `cn-bhyve-compatible`,
+        // `cn-cpu-feature-superset`, `cn-time-synced`,
+        // `cn-zfs-compatible`). The opt-in `cn-load-not-overheating`
+        // is NOT in the default.
+        assert_eq!(default_filter_chain().len(), 23);
+    }
+
+    // ---- cn-not-in-avoid-list (LM-0) ----
+
+    #[test]
+    fn cn_not_in_avoid_list_skips_when_avoid_empty() {
+        let cn = make_cn();
+        let req = make_req();
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnNotInAvoidList.evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
+    #[test]
+    fn cn_not_in_avoid_list_rejects_when_this_cn_is_avoided() {
+        let cn = make_cn();
+        let mut req = make_req();
+        req.avoid_cn.push(cn.server_uuid);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        match CnNotInAvoidList.evaluate(&cn, &req, &ctx) {
+            Verdict::Reject { reason } => assert!(reason.contains("avoid_cn")),
+            v => panic!("expected reject, got {v:?}"),
+        }
+    }
+
+    #[test]
+    fn cn_not_in_avoid_list_rejects_even_under_force_place() {
+        // Force-place must NOT override the avoid list: an operator
+        // asking the chain to land on a CN they also told it to
+        // avoid is a contradiction; we reject the placement rather
+        // than honor the force.
+        let cn = make_cn();
+        let mut req = make_req();
+        req.avoid_cn.push(cn.server_uuid);
+        req.force_cn = Some(cn.server_uuid);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnNotInAvoidList.evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
+        ));
+    }
+
+    #[test]
+    fn cn_not_in_avoid_list_accepts_when_different_cn_avoided() {
+        let cn = make_cn();
+        let mut req = make_req();
+        req.avoid_cn.push(Uuid::new_v4()); // some other CN
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnNotInAvoidList.evaluate(&cn, &req, &ctx),
+            Verdict::Accept
+        ));
+    }
+
+    // ---- cn-bhyve-compatible (LM-0) ----
+
+    fn migration_compat_v0() -> crate::types::MigrationCompat {
+        crate::types::MigrationCompat {
+            vmm_protocol_version: "vmm-migrate-ron/0".into(),
+            cpu_features: vec!["vmx".into(), "avx2".into()],
+            tsc_offset_ns: 0,
+            zpool_props: BTreeMap::new(),
+            source_dataset_encrypted: false,
+        }
+    }
+
+    #[test]
+    fn cn_bhyve_compatible_skips_without_migration_context() {
+        let cn = make_cn();
+        let req = make_req(); // migration: None
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnBhyveCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
+    #[test]
+    fn cn_bhyve_compatible_rejects_when_target_missing_version() {
+        let cn = make_cn(); // vmm_protocol_version: None
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0());
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnBhyveCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
+        ));
+    }
+
+    #[test]
+    fn cn_bhyve_compatible_rejects_on_version_mismatch() {
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().vmm_protocol_version = Some("vmm-migrate-ron/1".into());
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0());
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnBhyveCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
+        ));
+    }
+
+    #[test]
+    fn cn_bhyve_compatible_accepts_on_version_match() {
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().vmm_protocol_version = Some("vmm-migrate-ron/0".into());
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0());
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnBhyveCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Accept
+        ));
+    }
+
+    // ---- cn-cpu-feature-superset (LM-0) ----
+
+    #[test]
+    fn cn_cpu_feature_superset_skips_without_migration_context() {
+        let cn = make_cn();
+        let req = make_req();
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnCpuFeatureSuperset.evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
+    #[test]
+    fn cn_cpu_feature_superset_rejects_when_target_missing_feature() {
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().cpu_features = vec!["vmx".into()]; // missing avx2
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0()); // wants vmx + avx2
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        match CnCpuFeatureSuperset.evaluate(&cn, &req, &ctx) {
+            Verdict::Reject { reason } => assert!(reason.contains("avx2")),
+            v => panic!("expected reject, got {v:?}"),
+        }
+    }
+
+    #[test]
+    fn cn_cpu_feature_superset_accepts_when_target_is_superset() {
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().cpu_features =
+            vec!["vmx".into(), "avx2".into(), "aes".into()]; // superset
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0());
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnCpuFeatureSuperset.evaluate(&cn, &req, &ctx),
+            Verdict::Accept
+        ));
+    }
+
+    // ---- cn-time-synced (LM-0) ----
+
+    #[test]
+    fn cn_time_synced_skips_without_migration_context() {
+        let cn = make_cn();
+        let req = make_req();
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnTimeSynced::default().evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
+    #[test]
+    fn cn_time_synced_rejects_when_target_offset_unknown() {
+        let cn = make_cn(); // tsc_offset_ns: None
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0());
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnTimeSynced::default().evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
+        ));
+    }
+
+    #[test]
+    fn cn_time_synced_rejects_above_threshold() {
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().tsc_offset_ns = Some(500_000_000); // 500ms
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0()); // source offset 0
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnTimeSynced::default().evaluate(&cn, &req, &ctx),
+            Verdict::Reject { .. }
+        ));
+    }
+
+    #[test]
+    fn cn_time_synced_accepts_within_threshold() {
+        let mut cn = make_cn();
+        cn.capacity.as_mut().unwrap().tsc_offset_ns = Some(50_000_000); // 50ms
+        let mut req = make_req();
+        req.migration = Some(migration_compat_v0()); // source offset 0
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnTimeSynced::default().evaluate(&cn, &req, &ctx),
+            Verdict::Accept
+        ));
+    }
+
+    // ---- cn-zfs-compatible (LM-0) ----
+
+    fn zones_pool() -> crate::types::ZpoolPropFingerprint {
+        crate::types::ZpoolPropFingerprint {
+            encryption: "off".into(),
+            compression: "lz4".into(),
+            recordsize_bytes: 131_072,
+        }
+    }
+
+    #[test]
+    fn cn_zfs_compatible_skips_without_migration_context() {
+        let cn = make_cn();
+        let req = make_req();
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnZfsCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Skip
+        ));
+    }
+
+    #[test]
+    fn cn_zfs_compatible_rejects_when_target_missing_pool() {
+        let cn = make_cn(); // empty zpool_props
+        let mut mig = migration_compat_v0();
+        mig.zpool_props.insert("zones".into(), zones_pool());
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        match CnZfsCompatible.evaluate(&cn, &req, &ctx) {
+            Verdict::Reject { reason } => assert!(reason.contains("zones")),
+            v => panic!("expected reject, got {v:?}"),
+        }
+    }
+
+    #[test]
+    fn cn_zfs_compatible_rejects_on_compression_mismatch() {
+        let mut cn = make_cn();
+        let mut target_pool = zones_pool();
+        target_pool.compression = "zstd".into();
+        cn.capacity
+            .as_mut()
+            .unwrap()
+            .zpool_props
+            .insert("zones".into(), target_pool);
+        let mut mig = migration_compat_v0();
+        mig.zpool_props.insert("zones".into(), zones_pool());
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        match CnZfsCompatible.evaluate(&cn, &req, &ctx) {
+            Verdict::Reject { reason } => assert!(reason.contains("compression")),
+            v => panic!("expected reject, got {v:?}"),
+        }
+    }
+
+    #[test]
+    fn cn_zfs_compatible_accepts_on_match() {
+        let mut cn = make_cn();
+        cn.capacity
+            .as_mut()
+            .unwrap()
+            .zpool_props
+            .insert("zones".into(), zones_pool());
+        let mut mig = migration_compat_v0();
+        mig.zpool_props.insert("zones".into(), zones_pool());
+        let mut req = make_req();
+        req.migration = Some(mig);
+        let weights = StrategyWeights::new();
+        let ctx = make_ctx(&weights);
+        assert!(matches!(
+            CnZfsCompatible.evaluate(&cn, &req, &ctx),
+            Verdict::Accept
+        ));
     }
 
     #[test]

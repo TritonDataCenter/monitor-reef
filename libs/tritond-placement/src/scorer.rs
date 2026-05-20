@@ -590,6 +590,10 @@ mod tests {
                 platform_version: "20260501T000000Z".into(),
                 reported_at: now(),
                 hvm_supported: true,
+                vmm_protocol_version: None,
+                cpu_features: Vec::new(),
+                tsc_offset_ns: None,
+                zpool_props: BTreeMap::new(),
             }),
             placement: PlacementPolicyView::default(),
             active_reservations: Vec::new(),
@@ -623,6 +627,8 @@ mod tests {
             force_cn: None,
             ignore_scope_pin: false,
             deadline: now() + Duration::minutes(5),
+            avoid_cn: Vec::new(),
+            migration: None,
         }
     }
 

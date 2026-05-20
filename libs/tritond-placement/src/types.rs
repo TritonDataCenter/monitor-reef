@@ -281,6 +281,84 @@ pub struct PlacementRequest {
     /// threshold). The store layer sets the reservation TTL from
     /// this.
     pub deadline: DateTime<Utc>,
+
+    /// CNs that must not be picked by this placement request,
+    /// regardless of every other filter. The migration designate
+    /// action populates this with the source CN's uuid so the chain
+    /// cannot pick the same host the VM already lives on. Honored
+    /// even under [`Self::force_cn`]: an explicit force at a CN in
+    /// this list rejects.
+    ///
+    /// Default empty — `instance-create` doesn't set it.
+    #[serde(default)]
+    pub avoid_cn: Vec<Uuid>,
+
+    /// Migration-specific compatibility fingerprint of the source CN
+    /// + dataset, set on placement requests originating from the
+    /// `designate_for_migration` saga action. Used by the
+    /// `cn-bhyve-compatible`, `cn-cpu-feature-superset`,
+    /// `cn-time-synced`, and `cn-zfs-compatible` filters to reject
+    /// targets the source can't safely hand off to.
+    ///
+    /// Default `None` — `instance-create` doesn't set it, and the
+    /// four migration filters return `Verdict::Skip` when it is
+    /// absent.
+    #[serde(default)]
+    pub migration: Option<MigrationCompat>,
+}
+
+/// Source-side compatibility fingerprint for live-migration target
+/// selection. Built by the migration saga from the source CN's
+/// agent-reported [`CapacityView`] (with its `migration` fields
+/// populated by the LM-0 capability probe) plus the source dataset
+/// properties read at saga begin time.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MigrationCompat {
+    /// vmm-migrate wire protocol the source's tritonagent speaks
+    /// (e.g. `"vmm-migrate-ron/0"`). Target must report the same
+    /// string for the handshake to succeed.
+    pub vmm_protocol_version: String,
+
+    /// CPU feature flags the bhyve userspace exposes to the guest on
+    /// the source (e.g. `["vmx", "avx2", "sse4_2", "aes"]`). Target
+    /// must report a superset; a missing flag would cause the guest
+    /// to `#UD` on resume.
+    pub cpu_features: Vec<String>,
+
+    /// Source's NTP offset relative to UTC in nanoseconds. Migration
+    /// is rejected if the target's offset differs by more than 100ms
+    /// (bhyve TSC import is sensitive to large skews).
+    pub tsc_offset_ns: i64,
+
+    /// Source dataset properties the target zpool must support. Keyed
+    /// by zpool name on the source. The migration only carries the
+    /// zpool that actually backs the VM (in v1, the single `zones`
+    /// pool); the field is map-shaped so multi-dataset migrations can
+    /// extend it without a schema bump.
+    #[serde(default)]
+    pub zpool_props: BTreeMap<String, ZpoolPropFingerprint>,
+
+    /// Whether the source's primary dataset has `encryption=on`. v1
+    /// punts encrypted-source migration; the saga handler rejects at
+    /// the API edge so this never reaches the chain. The flag is
+    /// carried here for symmetry with the wire types and so a future
+    /// `cn-not-encrypted-source` filter can short-circuit the chain.
+    #[serde(default)]
+    pub source_dataset_encrypted: bool,
+}
+
+/// Per-zpool ZFS properties the migration compares between source
+/// and target. Only the values that affect on-disk format
+/// compatibility live here — performance-only knobs (atime, sync,
+/// etc.) are out of scope.
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ZpoolPropFingerprint {
+    /// `zfs get encryption`: `"off"`, `"on"`, or `"aes-256-gcm"` etc.
+    pub encryption: String,
+    /// `zfs get compression`: `"off"`, `"lz4"`, `"zstd"`, etc.
+    pub compression: String,
+    /// `zfs get recordsize` in bytes (e.g. `131072` for 128K).
+    pub recordsize_bytes: u32,
 }
 
 /// Per-device reservation ask. PL-1 ships the shape; the agent-side
@@ -436,6 +514,39 @@ pub struct CapacityView {
     /// consults this for bhyve / KVM brands.
     #[serde(default)]
     pub hvm_supported: bool,
+
+    // ----- migration-compatibility fingerprint -----
+    //
+    // These four fields are populated by the LM-0 tritonagent
+    // capability probe and consumed by the migration filters. They
+    // are `Option` / empty-default-shaped so that CNs whose agents
+    // haven't been upgraded to ship them yet still pass through the
+    // chain on non-migration requests; the migration filters
+    // explicitly `Skip` when the matching field is absent.
+    /// vmm-migrate wire protocol the agent's userspace speaks
+    /// (e.g. `"vmm-migrate-ron/0"`). `None` until the agent reports
+    /// the capability; the `cn-bhyve-compatible` filter rejects in
+    /// that case when a migration request is in flight.
+    #[serde(default)]
+    pub vmm_protocol_version: Option<String>,
+
+    /// CPU feature flags bhyve exposes to guests on this CN. Default
+    /// empty; the `cn-cpu-feature-superset` filter rejects when the
+    /// source asks for a feature not in this set.
+    #[serde(default)]
+    pub cpu_features: Vec<String>,
+
+    /// CN's NTP offset relative to UTC in nanoseconds. `None` when
+    /// the agent hasn't reported a probe; the `cn-time-synced`
+    /// filter rejects in that case for migration requests.
+    #[serde(default)]
+    pub tsc_offset_ns: Option<i64>,
+
+    /// Per-zpool ZFS property fingerprint, keyed by pool name.
+    /// Default empty; the `cn-zfs-compatible` filter requires every
+    /// source pool to be present here with a compatible value.
+    #[serde(default)]
+    pub zpool_props: BTreeMap<String, ZpoolPropFingerprint>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, schemars::JsonSchema)]
