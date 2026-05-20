@@ -173,8 +173,9 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallRule, FloatingIp, FloatingIpAttachment,
     IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand, InstanceCreateResult,
     JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState, LifecycleStateKind, MetaScope,
-    MetaValue, NatGateway, NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster,
-    NewFirewallRule, NewFloatingIp, NewImage, NewInstance, NewJob, NewNatGateway, NewProject,
+    MetaValue, MigrationPhase, MigrationProgressEvent, MigrationRecord, MigrationState, NatGateway,
+    NetworkResourceId, NewDhcpPool, NewDhcpReservation, NewEdgeCluster, NewFirewallRule,
+    NewFloatingIp, NewImage, NewInstance, NewJob, NewMigration, NewNatGateway, NewProject,
     NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant,
     NewVpc, Nic, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizerId,
     Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope, StorageCluster,
@@ -5916,6 +5917,313 @@ impl Store for FdbStore {
         });
         jobs.truncate(limit);
         Ok(jobs)
+    }
+
+    // ----- LM-1 live migrations -----
+    //
+    // FDB schema:
+    //
+    //   migration/by_id/<uuid>                       JSON MigrationRecord
+    //   migration/by_instance/<inst>/<inv_ts>/<id>   id bytes (history)
+    //   migration/active/<inst>                      id bytes (cross-handler guard)
+    //   migration/progress/<id>/<seq:016x>           JSON MigrationProgressEvent
+    //
+    // `<inv_ts>` is `u64::MAX - created_at.timestamp_micros()` so a
+    // forward range scan returns newest-first, matching the
+    // `instance/by_id` history pattern elsewhere in this file.
+
+    async fn create_migration(&self, req: NewMigration) -> Result<MigrationRecord, StoreError> {
+        let now = chrono::Utc::now();
+        let new_id = Uuid::new_v4();
+        let record = MigrationRecord {
+            id: new_id,
+            instance_id: req.instance_id,
+            tenant_id: req.tenant_id,
+            project_id: req.project_id,
+            source_cn: req.source_cn,
+            target_cn: None,
+            saga_id: None,
+            phase: MigrationPhase::Begin,
+            state: MigrationState::Begin,
+            action_requested: req.action_requested,
+            created_at: now,
+            started_at: None,
+            finished_at: None,
+            error: None,
+            reserved_nics: Vec::new(),
+            source_filesystem_details: None,
+            last_progress_seq: 0,
+            disallow_retry: false,
+            automatic: req.automatic,
+        };
+        let record_bytes = serde_json::to_vec(&record)
+            .map_err(|e| StoreError::Backend(format!("encode MigrationRecord: {e}")))?;
+
+        let by_id_key = format!("migration/by_id/{}", record.id).into_bytes();
+        let active_key = format!("migration/active/{}", record.instance_id).into_bytes();
+        let inv_ts = u64::MAX - (now.timestamp_micros() as u64);
+        let by_instance_key = format!(
+            "migration/by_instance/{}/{:016x}/{}",
+            record.instance_id, inv_ts, record.id,
+        )
+        .into_bytes();
+        let id_bytes = record.id.to_string().into_bytes();
+
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let active_key = active_key.clone();
+                let by_id_key = by_id_key.clone();
+                let by_instance_key = by_instance_key.clone();
+                let record_bytes = record_bytes.clone();
+                let id_bytes = id_bytes.clone();
+                async move {
+                    if tr.get(&active_key, false).await?.is_some() {
+                        return Err(FdbBindingError::CustomError(
+                            "active-migration-conflict".to_string().into(),
+                        ));
+                    }
+                    tr.set(&by_id_key, &record_bytes);
+                    tr.set(&by_instance_key, &id_bytes);
+                    tr.set(&active_key, &id_bytes);
+                    Ok(())
+                }
+            })
+            .await;
+        match result {
+            Ok(()) => Ok(record),
+            Err(FdbBindingError::CustomError(e))
+                if e.to_string().contains("active-migration-conflict") =>
+            {
+                Err(StoreError::Conflict(format!(
+                    "instance {} already has an active migration",
+                    req.instance_id,
+                )))
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn get_migration(&self, migration_id: Uuid) -> Result<MigrationRecord, StoreError> {
+        let key = format!("migration/by_id/{migration_id}").into_bytes();
+        let raw: Result<Option<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let key = key.clone();
+                async move { Ok(tr.get(&key, false).await?.map(|v| v.to_vec())) }
+            })
+            .await;
+        let raw = raw.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let bytes = raw.ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| StoreError::Backend(format!("decode MigrationRecord: {e}")))
+    }
+
+    async fn put_migration(&self, record: MigrationRecord) -> Result<MigrationRecord, StoreError> {
+        let by_id_key = format!("migration/by_id/{}", record.id).into_bytes();
+        let bytes = serde_json::to_vec(&record)
+            .map_err(|e| StoreError::Backend(format!("encode MigrationRecord: {e}")))?;
+        let result: Result<(), FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let bytes = bytes.clone();
+                async move {
+                    if tr.get(&by_id_key, false).await?.is_none() {
+                        return Err(FdbBindingError::CustomError(
+                            "migration-not-found".to_string().into(),
+                        ));
+                    }
+                    tr.set(&by_id_key, &bytes);
+                    Ok(())
+                }
+            })
+            .await;
+        match result {
+            Ok(()) => Ok(record),
+            Err(FdbBindingError::CustomError(e))
+                if e.to_string().contains("migration-not-found") =>
+            {
+                Err(StoreError::NotFound)
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_migrations(
+        &self,
+        after_id: Option<Uuid>,
+        limit: usize,
+    ) -> Result<Vec<MigrationRecord>, StoreError> {
+        // Phase 0: scan and sort. The hot path for migration
+        // observation is per-instance history (a separate range);
+        // fleet-wide list is operator-only.
+        let prefix = b"migration/by_id/".to_vec();
+        let (begin, end) = prefix_range(&prefix);
+        let raws: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut rows: Vec<MigrationRecord> = raws
+            .into_iter()
+            .filter_map(|b| serde_json::from_slice(&b).ok())
+            .collect();
+        rows.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
+        if let Some(cursor) = after_id
+            && let Some(idx) = rows.iter().position(|r| r.id == cursor)
+        {
+            rows = rows.split_off(idx + 1);
+        }
+        rows.truncate(limit);
+        Ok(rows)
+    }
+
+    async fn list_migrations_for_instance(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Vec<MigrationRecord>, StoreError> {
+        // Range scan of `migration/by_instance/<inst>/` returns ids
+        // in newest-first order (inv_ts encoding); for each id fetch
+        // the canonical record.
+        let prefix = format!("migration/by_instance/{instance_id}/").into_bytes();
+        let (begin, end) = prefix_range(&prefix);
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs
+                        .iter()
+                        .filter_map(|kv| std::str::from_utf8(kv.value()).ok().map(String::from))
+                        .collect())
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let mut rows = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            if let Ok(id) = Uuid::parse_str(&s)
+                && let Ok(record) = self.get_migration(id).await
+            {
+                rows.push(record);
+            }
+        }
+        Ok(rows)
+    }
+
+    async fn append_migration_progress(
+        &self,
+        migration_id: Uuid,
+        mut event: MigrationProgressEvent,
+    ) -> Result<MigrationProgressEvent, StoreError> {
+        let record_key = format!("migration/by_id/{migration_id}").into_bytes();
+        let event_clone = event.clone();
+        let result: Result<MigrationProgressEvent, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let record_key = record_key.clone();
+                let event_clone = event_clone.clone();
+                async move {
+                    let Some(bytes) = tr.get(&record_key, false).await? else {
+                        return Err(FdbBindingError::CustomError(
+                            "migration-not-found".to_string().into(),
+                        ));
+                    };
+                    let mut record: MigrationRecord =
+                        serde_json::from_slice(&bytes).map_err(|e| {
+                            FdbBindingError::CustomError(
+                                format!("decode MigrationRecord: {e}").into(),
+                            )
+                        })?;
+                    let next_seq = record.last_progress_seq.saturating_add(1);
+                    record.last_progress_seq = next_seq;
+                    let mut event_out = event_clone.clone();
+                    event_out.seq = next_seq;
+                    let record_bytes = serde_json::to_vec(&record).map_err(|e| {
+                        FdbBindingError::CustomError(format!("encode MigrationRecord: {e}").into())
+                    })?;
+                    let event_bytes = serde_json::to_vec(&event_out).map_err(|e| {
+                        FdbBindingError::CustomError(
+                            format!("encode MigrationProgressEvent: {e}").into(),
+                        )
+                    })?;
+                    let event_key = format!("migration/progress/{migration_id}/{:016x}", next_seq,)
+                        .into_bytes();
+                    tr.set(&record_key, &record_bytes);
+                    tr.set(&event_key, &event_bytes);
+                    Ok(event_out)
+                }
+            })
+            .await;
+        match result {
+            Ok(e) => {
+                event = e;
+                Ok(event)
+            }
+            Err(FdbBindingError::CustomError(s))
+                if s.to_string().contains("migration-not-found") =>
+            {
+                Err(StoreError::NotFound)
+            }
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
+    async fn list_migration_progress(
+        &self,
+        migration_id: Uuid,
+        after_seq: u64,
+        limit: usize,
+    ) -> Result<Vec<MigrationProgressEvent>, StoreError> {
+        // Confirm the record exists so we can distinguish "no
+        // progress yet" (empty Vec) from "no such migration".
+        self.get_migration(migration_id).await?;
+        let prefix = format!("migration/progress/{migration_id}/").into_bytes();
+        let (begin, end) = prefix_range(&prefix);
+        let raws: Result<Vec<Vec<u8>>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    Ok(kvs.iter().map(|kv| kv.value().to_vec()).collect())
+                }
+            })
+            .await;
+        let raws = raws.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+        let rows: Vec<MigrationProgressEvent> = raws
+            .into_iter()
+            .filter_map(|b| serde_json::from_slice(&b).ok())
+            .filter(|e: &MigrationProgressEvent| e.seq > after_seq)
+            .take(limit)
+            .collect();
+        Ok(rows)
     }
 
     async fn register_cn(

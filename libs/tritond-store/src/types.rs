@@ -3346,6 +3346,49 @@ pub struct CnCapacity {
     /// change, so an old `reported_at` plus a fresh heartbeat means
     /// "hardware is steady", not "row is stale".
     pub reported_at: DateTime<Utc>,
+
+    // ----- LM-0 live-migration compatibility fingerprint -----
+    //
+    // These fields feed the migration filters in tritond-placement
+    // (`cn-bhyve-compatible`, `cn-cpu-feature-superset`,
+    // `cn-time-synced`, `cn-zfs-compatible`). All are
+    // #[serde(default)] / Option-shaped so older agent reports still
+    // deserialise; the placement filters return `Verdict::Skip` when
+    // the matching field is absent.
+    /// vmm-migrate wire protocol the agent's userspace speaks (e.g.
+    /// `"vmm-migrate-ron/0"`). `None` until the agent reports the
+    /// capability probe.
+    #[serde(default)]
+    pub vmm_protocol_version: Option<String>,
+
+    /// CPU feature flags bhyve exposes to guests on this CN (e.g.
+    /// `["vmx", "avx2", "sse4_2", "aes"]`). Default empty.
+    #[serde(default)]
+    pub cpu_features: Vec<String>,
+
+    /// CN's NTP-corrected clock offset relative to UTC, in
+    /// nanoseconds. `None` when the agent hasn't reported a probe.
+    #[serde(default)]
+    pub tsc_offset_ns: Option<i64>,
+
+    /// Per-zpool ZFS on-disk-format property fingerprint, keyed by
+    /// pool name. Default empty.
+    #[serde(default)]
+    pub zpool_props: std::collections::BTreeMap<String, ZpoolPropFingerprint>,
+}
+
+/// Per-zpool ZFS properties the live-migration designate filter
+/// compares between source and target. Only the values that affect
+/// on-disk-format compatibility live here — performance-only knobs
+/// (`atime`, `sync`, etc.) are out of scope.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct ZpoolPropFingerprint {
+    /// `zfs get encryption`: `"off"`, `"on"`, `"aes-256-gcm"`, etc.
+    pub encryption: String,
+    /// `zfs get compression`: `"off"`, `"lz4"`, `"zstd"`, etc.
+    pub compression: String,
+    /// `zfs get recordsize` in bytes (e.g. `131072` for 128K).
+    pub recordsize_bytes: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -6418,4 +6461,249 @@ pub struct ImdsBindingWire {
     pub pseudo_src: IpAddr,
     pub port_id: Uuid,
     pub instance_id: Uuid,
+}
+
+// ===========================================================================
+// LM-1: Live-migration MigrationRecord + supporting types.
+//
+// This is the FDB row that anchors the live-migration saga
+// (see /Users/nwilkens/.claude/plans/we-need-to-build-ancient-scone.md).
+// The wire enum names match `vmapi-api::types::migrations` so the
+// existing legacy-shape JSON is unchanged when we surface a record
+// to the operator UI; the saga-internal phase machine uses these
+// values directly.
+// ===========================================================================
+
+/// Lifecycle state of a migration row.
+///
+/// The state machine is:
+///
+/// ```text
+///   begin → sync ⇄ paused
+///     │       │
+///     │       └──→ switch → successful | failed
+///     │
+///     └──→ aborted | failed | rolled_back
+/// ```
+///
+/// `running` is a holding state used in legacy JSON for in-flight
+/// records that don't fit the strict phase enum; vnext writes the
+/// concrete phase but accepts `running` on read for forward compat.
+/// `unknown` catches values we don't recognise yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum MigrationState {
+    Begin,
+    Estimate,
+    Sync,
+    Paused,
+    Switch,
+    Aborted,
+    #[serde(rename = "rollback")]
+    RolledBack,
+    Successful,
+    Failed,
+    Running,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Coarse-grained phase the migration is in. The saga catalog at
+/// `services/tritond/src/sagas/migration.rs` (LM-5) drives the
+/// transitions; `Begin` covers designate / pre-flight / target zone
+/// create / initial ZFS, `Sync` covers iterative ZFS + memory
+/// transfer, `Switch` covers pause / handoff / resume / cleanup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum MigrationPhase {
+    Begin,
+    Sync,
+    Switch,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Operator-initiated action against a migration record. The HTTP
+/// handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task
+/// #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the
+/// others address an existing migration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum MigrationAction {
+    Begin,
+    Estimate,
+    Sync,
+    Pause,
+    Switch,
+    Abort,
+    Rollback,
+    Finalize,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Source-dataset details captured at migration start so the saga
+/// can restore them on abort or rollback. The quota dance for bhyve
+/// (legacy compatibility — see plan §5) requires temporarily zeroing
+/// the source's `quota` and `refreservation` so snapshot send works;
+/// the original values live here and the terminal action either
+/// restores them on the source (abort) or applies them to the
+/// target (successful migration).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceFilesystemDetails {
+    /// `zones/<instance>` or similar — the dataset that hosts the
+    /// instance's root.
+    pub dataset: String,
+    /// Original `quota` in bytes, if any.
+    #[serde(default)]
+    pub original_quota_bytes: Option<u64>,
+    /// Original `refreservation` in bytes, if any.
+    #[serde(default)]
+    pub original_refreservation_bytes: Option<u64>,
+    /// Snapshots taken during the migration (in send/receive order).
+    /// On terminal cleanup these are destroyed on whichever side
+    /// loses authority over the dataset.
+    #[serde(default)]
+    pub snapshots: Vec<String>,
+    /// Whether the source dataset had `encryption=on`. v1 rejects
+    /// encrypted-source migrations at the API edge; the flag is
+    /// recorded so audits can show why.
+    #[serde(default)]
+    pub encrypted: bool,
+}
+
+/// First-class FDB row tracking one live migration. Created by the
+/// `migrate-instance` saga's first action (LM-5) and mutated by
+/// subsequent actions; on terminal-state transitions the saga
+/// clears the `migration/active/<instance>` guard so a fresh
+/// migration can start.
+///
+/// Persisted via the keys documented in `libs/tritond-store/src/fdb.rs`:
+///
+/// ```text
+/// migration/by_id/<uuid>                          JSON-encoded MigrationRecord
+/// migration/by_instance/<inst>/<inv_ts>/<uuid>    uuid bytes (history, newest-first)
+/// migration/by_source_cn/<cn>/<inv_ts>/<uuid>     uuid bytes
+/// migration/by_target_cn/<cn>/<inv_ts>/<uuid>     uuid bytes
+/// migration/active/<instance>                     uuid bytes (presence == active)
+/// migration/progress/<migration>/<seq>            JSON-encoded MigrationProgressEvent
+/// ```
+///
+/// The active guard plus `Instance.migration_in_progress`
+/// (added in LM-5) is the cross-handler advisory lock that keeps
+/// start/stop/restart/delete from racing a migration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MigrationRecord {
+    pub id: Uuid,
+    pub instance_id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    /// CN the instance currently lives on. Pinned at saga create.
+    pub source_cn: Uuid,
+    /// CN the saga designates as the target. `None` until the
+    /// designate action commits (LM-5).
+    #[serde(default)]
+    pub target_cn: Option<Uuid>,
+    /// Steno saga id, bound after `saga_execute` returns.
+    #[serde(default)]
+    pub saga_id: Option<Uuid>,
+    pub phase: MigrationPhase,
+    pub state: MigrationState,
+    /// Last action the operator asked for. The list of valid
+    /// transitions per state is enforced by the dispatch handler;
+    /// invalid combinations return 409.
+    pub action_requested: MigrationAction,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub finished_at: Option<DateTime<Utc>>,
+    /// Populated on `Failed` / `Aborted` / `RolledBack` terminal
+    /// states with the kind+message string that surfaced from the
+    /// failing saga node.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// NIC uuids whose `host_cn_uuid` is being moved by this
+    /// migration. Tracked here for audit visibility and abort
+    /// undo; the source-of-truth for current NIC location remains
+    /// the `Nic` row.
+    #[serde(default)]
+    pub reserved_nics: Vec<Uuid>,
+    /// Captured source dataset state. `None` for migrations that
+    /// haven't completed the snapshot_source_quota saga node yet.
+    #[serde(default)]
+    pub source_filesystem_details: Option<SourceFilesystemDetails>,
+    /// Cursor into the `migration/progress/<id>/<seq>` event log.
+    /// Each agent progress POST CAS-increments this; the watch
+    /// endpoint pages from `since=<seq>`.
+    #[serde(default)]
+    pub last_progress_seq: u64,
+    /// Once set (typically after the switch action commits), the
+    /// migration cannot be retried in either direction. Prevents
+    /// accidental re-migration after a successful cutover.
+    #[serde(default)]
+    pub disallow_retry: bool,
+    /// True if the migration was triggered automatically (eg. by
+    /// the rebalance / evacuate driver) rather than by an
+    /// operator. Used for audit log labels and metrics.
+    #[serde(default)]
+    pub automatic: bool,
+}
+
+/// One progress entry appended to the per-migration event log. The
+/// agent's progress POSTs (LM-3) write one of these per phase
+/// transition + per N-byte threshold during streaming; the admin UI
+/// + `tcadm migrations get` pages through them via the `?since=<seq>`
+/// query parameter.
+///
+/// The shape mirrors the legacy `MigrationProgress` JSON in
+/// `vmapi-api::types::migrations` so existing operators see the
+/// fields they expect.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MigrationProgressEvent {
+    /// Monotonic per-migration sequence number. CAS-increments on
+    /// each append; the FDB key trailer matches.
+    pub seq: u64,
+    /// Free-form type label (e.g. `"progress"`, `"phase_transition"`,
+    /// `"end"`). Legacy VMAPI wrote arbitrary strings here; we keep
+    /// it as `String` so we don't have to bump the wire on every
+    /// new event kind.
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<MigrationPhase>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<MigrationState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percentage: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transferred_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Inputs to `Store::create_migration`. The handler validates the
+/// caller is acting on a real instance + the source CN; the store
+/// fills in `id`, `created_at`, `phase = Begin`, `state = Begin`,
+/// `last_progress_seq = 0`, and atomically takes the
+/// `migration/active/<instance>` guard.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewMigration {
+    pub instance_id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub source_cn: Uuid,
+    pub action_requested: MigrationAction,
+    #[serde(default)]
+    pub automatic: bool,
 }

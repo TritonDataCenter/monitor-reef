@@ -49,21 +49,23 @@ pub use types::{
     LifecycleStateKind, MAX_META_KEY_BYTES, MAX_META_KEY_DEPTH, MAX_META_KEYS_PER_SCOPE,
     MAX_META_VALUE_BYTES, MAX_REALIZED_BYTES_PER_INSTANCE, META_KEY_IMDS_ENABLED,
     META_KEY_IMDS_HOP_LIMIT, META_KEY_USER_DATA, ManagedIdentity, MetaError, MetaProvenance,
-    MetaScope, MetaValue, MetricsBackend, NatGateway, NetworkResourceId, NewDhcpPool,
+    MetaScope, MetaValue, MetricsBackend, MigrationAction, MigrationPhase, MigrationProgressEvent,
+    MigrationRecord, MigrationState, NatGateway, NetworkResourceId, NewDhcpPool,
     NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
-    NewInstanceNic, NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
-    NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, NumaNode, Project,
-    ProvisioningJob, Quota, Realization, RealizationStatus, RealizedMeta, RealizedNetworkState,
-    RealizedView, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo, SshKey, SshKeyScope,
-    StorageCluster, StorageClusterStatus, StorageClusterSurface, StorageClusterView, StorageTier,
-    Subnet, SystemKey, TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC,
-    TRITOND_METADATA_INSTANCE_ID, TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID,
-    TRITOND_SSH_KEY_NAMESPACE, Tenant, TenantInstanceProjection, TopologyKey, TopologySpread,
-    UnderlayCapability, User, UserView, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport,
-    VmReport, VmState, Vpc, ZpoolCapacity, computed_metadata, default_boot_disk_size_bytes,
-    default_guest_visible, derive_image_id, derive_ssh_key_id, format_claim_code,
-    generate_claim_code, generate_poll_token, meta_key_guest_writable_allowed,
-    normalize_claim_code, parse_vm_reports, validate_meta_entry, validate_meta_key,
+    NewInstanceNic, NewJob, NewMigration, NewNatGateway, NewProject, NewQuota, NewRoute,
+    NewRouteTable, NewSilo, NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic,
+    NumaNode, Project, ProvisioningJob, Quota, Realization, RealizationStatus, RealizedMeta,
+    RealizedNetworkState, RealizedView, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
+    SourceFilesystemDetails, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus,
+    StorageClusterSurface, StorageClusterView, StorageTier, Subnet, SystemKey,
+    TRITOND_IMAGE_NAMESPACE, TRITOND_METADATA_IDENTITY_HMAC, TRITOND_METADATA_INSTANCE_ID,
+    TRITOND_METADATA_PROJECT_ID, TRITOND_METADATA_TENANT_ID, TRITOND_SSH_KEY_NAMESPACE, Tenant,
+    TenantInstanceProjection, TopologyKey, TopologySpread, UnderlayCapability, User, UserView,
+    VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, VmNicReport, VmReport, VmState, Vpc, ZpoolCapacity,
+    ZpoolPropFingerprint, computed_metadata, default_boot_disk_size_bytes, default_guest_visible,
+    derive_image_id, derive_ssh_key_id, format_claim_code, generate_claim_code,
+    generate_poll_token, meta_key_guest_writable_allowed, normalize_claim_code, parse_vm_reports,
+    validate_meta_entry, validate_meta_key,
 };
 
 use async_trait::async_trait;
@@ -1070,6 +1072,83 @@ pub trait Store: Send + Sync + 'static {
     /// reverse chronological order (newest first). Used by
     /// operator debugging surfaces.
     async fn list_recent_jobs(&self, limit: usize) -> Result<Vec<ProvisioningJob>, StoreError>;
+
+    // ------------------------------------------------------------------
+    // Live migrations (LM-1).
+    //
+    // The migration-saga lifecycle owns these rows; operators
+    // observe via `GET /v2/migrations` and friends. The
+    // one-migration-per-VM guard is enforced by `create_migration`
+    // taking the `migration/active/<instance>` key atomically.
+    // ------------------------------------------------------------------
+
+    /// Create a new migration row + take the
+    /// `migration/active/<instance>` guard in one transaction.
+    ///
+    /// Returns [`StoreError::Conflict`] if another migration is
+    /// already active for the same instance, or if the instance
+    /// already carries `migration_in_progress = Some(_)`. The row
+    /// is created with `id = Uuid::new_v4()`,
+    /// `phase = MigrationPhase::Begin`,
+    /// `state = MigrationState::Begin`,
+    /// `last_progress_seq = 0`, `created_at = now`, and the rest
+    /// of the Option-shaped fields `None`.
+    async fn create_migration(&self, req: NewMigration) -> Result<MigrationRecord, StoreError>;
+
+    /// Look up one migration by id.
+    async fn get_migration(&self, migration_id: Uuid) -> Result<MigrationRecord, StoreError>;
+
+    /// Persist a full migration record (used by the saga to advance
+    /// state / phase / fill in `target_cn` / `error` / etc.).
+    /// Returns [`StoreError::NotFound`] if no record exists for
+    /// `record.id`.
+    ///
+    /// The store does NOT validate state-machine transitions here
+    /// — the saga is the authority. The HTTP handler does enforce
+    /// "valid action for current state" before invoking the saga.
+    async fn put_migration(&self, record: MigrationRecord) -> Result<MigrationRecord, StoreError>;
+
+    /// List recent migrations across the fleet, newest-first, paged
+    /// by id cursor. Returns up to `limit` records; if `after_id`
+    /// is set, the page starts after that id in the global
+    /// newest-first ordering.
+    async fn list_migrations(
+        &self,
+        after_id: Option<Uuid>,
+        limit: usize,
+    ) -> Result<Vec<MigrationRecord>, StoreError>;
+
+    /// List migrations for one instance, newest-first. The
+    /// `migration/by_instance/<inst>/` range is the source of truth;
+    /// includes terminal records so an operator can see a VM's
+    /// full migration history.
+    async fn list_migrations_for_instance(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Vec<MigrationRecord>, StoreError>;
+
+    /// Append one progress event under
+    /// `migration/progress/<migration_id>/<seq>` and CAS-bump the
+    /// parent record's `last_progress_seq`. The store fills in the
+    /// `seq` field on the returned event.
+    ///
+    /// Returns [`StoreError::NotFound`] if no migration record
+    /// exists for the id.
+    async fn append_migration_progress(
+        &self,
+        migration_id: Uuid,
+        event: MigrationProgressEvent,
+    ) -> Result<MigrationProgressEvent, StoreError>;
+
+    /// Page the progress event log for one migration. Returns up to
+    /// `limit` events with `seq > after_seq`, in ascending-seq
+    /// order. `after_seq = 0` returns from the beginning.
+    async fn list_migration_progress(
+        &self,
+        migration_id: Uuid,
+        after_seq: u64,
+        limit: usize,
+    ) -> Result<Vec<MigrationProgressEvent>, StoreError>;
 
     // ------------------------------------------------------------------
     // Compute nodes (CN registration + approval)

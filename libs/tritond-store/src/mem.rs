@@ -27,12 +27,13 @@ use crate::{
     FLOATING_IP_V4_POOL, FLOATING_IP_V6_POOL, FirewallProtocol, FirewallRule, FloatingIp,
     FloatingIpAttachment, IdpConfig, Image, ImageScope, Instance, InstanceAffinity, InstanceBrand,
     InstanceCreateResult, JobOutcome, JobStatus, JobStatusKind, LegacyVm, LifecycleState,
-    LifecycleStateKind, MetaScope, MetaValue, NatGateway, NetworkResourceId, NewDhcpPool,
+    LifecycleStateKind, MetaScope, MetaValue, MigrationPhase, MigrationProgressEvent,
+    MigrationRecord, MigrationState, NatGateway, NetworkResourceId, NewDhcpPool,
     NewDhcpReservation, NewEdgeCluster, NewFirewallRule, NewFloatingIp, NewImage, NewInstance,
-    NewJob, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo, NewSshKey,
-    NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob, Quota,
-    Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings, Silo,
-    SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
+    NewJob, NewMigration, NewNatGateway, NewProject, NewQuota, NewRoute, NewRouteTable, NewSilo,
+    NewSshKey, NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, Project, ProvisioningJob,
+    Quota, Realization, RealizationStatus, RealizerId, Route, RouteTable, RouteTarget, Settings,
+    Silo, SshKey, SshKeyScope, StorageCluster, StorageClusterStatus, Store, StoreError, Subnet,
     SystemKey, Tenant, TenantInstanceProjection, User, VPC_VNI_MAX, VPC_VNI_RESERVED_CEILING, Vpc,
     default_boot_disk_size_bytes, generate_claim_code, generate_poll_token,
 };
@@ -216,6 +217,15 @@ struct Inner {
     /// FIFO consumption picks the smallest `seq` with status
     /// `Pending`.
     next_job_seq: u64,
+    /// LM-1 live-migration rows. Keyed by migration id.
+    migrations_by_id: HashMap<Uuid, MigrationRecord>,
+    /// Cross-handler advisory lock for "one migration per VM":
+    /// presence means a migration is in flight for that instance.
+    /// Cleared by terminal saga actions (LM-5 follow-up).
+    migration_active_by_instance: HashMap<Uuid, Uuid>,
+    /// Per-migration progress event log, keyed by migration id.
+    /// Each Vec is append-only in `seq` order; pages slice it.
+    migration_progress: HashMap<Uuid, Vec<MigrationProgressEvent>>,
     nics_by_id: HashMap<Uuid, Nic>,
     /// Per-subnet IPv4 allocations. NIC delete frees the address
     /// back to the pool, so re-creating an instance reuses the
@@ -2935,6 +2945,142 @@ impl Store for MemStore {
         });
         jobs.truncate(limit);
         Ok(jobs)
+    }
+
+    // ----- LM-1 live migrations -----
+
+    async fn create_migration(&self, req: NewMigration) -> Result<MigrationRecord, StoreError> {
+        let mut guard = self.inner.write().await;
+        if guard
+            .migration_active_by_instance
+            .contains_key(&req.instance_id)
+        {
+            return Err(StoreError::Conflict(format!(
+                "instance {} already has an active migration",
+                req.instance_id,
+            )));
+        }
+        let id = Uuid::new_v4();
+        let record = MigrationRecord {
+            id,
+            instance_id: req.instance_id,
+            tenant_id: req.tenant_id,
+            project_id: req.project_id,
+            source_cn: req.source_cn,
+            target_cn: None,
+            saga_id: None,
+            phase: MigrationPhase::Begin,
+            state: MigrationState::Begin,
+            action_requested: req.action_requested,
+            created_at: Utc::now(),
+            started_at: None,
+            finished_at: None,
+            error: None,
+            reserved_nics: Vec::new(),
+            source_filesystem_details: None,
+            last_progress_seq: 0,
+            disallow_retry: false,
+            automatic: req.automatic,
+        };
+        guard.migrations_by_id.insert(id, record.clone());
+        guard
+            .migration_active_by_instance
+            .insert(req.instance_id, id);
+        Ok(record)
+    }
+
+    async fn get_migration(&self, migration_id: Uuid) -> Result<MigrationRecord, StoreError> {
+        let guard = self.inner.read().await;
+        guard
+            .migrations_by_id
+            .get(&migration_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn put_migration(&self, record: MigrationRecord) -> Result<MigrationRecord, StoreError> {
+        let mut guard = self.inner.write().await;
+        if !guard.migrations_by_id.contains_key(&record.id) {
+            return Err(StoreError::NotFound);
+        }
+        guard.migrations_by_id.insert(record.id, record.clone());
+        Ok(record)
+    }
+
+    async fn list_migrations(
+        &self,
+        after_id: Option<Uuid>,
+        limit: usize,
+    ) -> Result<Vec<MigrationRecord>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut rows: Vec<MigrationRecord> = guard.migrations_by_id.values().cloned().collect();
+        rows.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
+        // Cursor pagination: skip until we pass `after_id` in the sorted list.
+        if let Some(cursor) = after_id {
+            if let Some(idx) = rows.iter().position(|r| r.id == cursor) {
+                rows = rows.split_off(idx + 1);
+            }
+        }
+        rows.truncate(limit);
+        Ok(rows)
+    }
+
+    async fn list_migrations_for_instance(
+        &self,
+        instance_id: Uuid,
+    ) -> Result<Vec<MigrationRecord>, StoreError> {
+        let guard = self.inner.read().await;
+        let mut rows: Vec<MigrationRecord> = guard
+            .migrations_by_id
+            .values()
+            .filter(|m| m.instance_id == instance_id)
+            .cloned()
+            .collect();
+        rows.sort_by(|a, b| b.created_at.cmp(&a.created_at).then(b.id.cmp(&a.id)));
+        Ok(rows)
+    }
+
+    async fn append_migration_progress(
+        &self,
+        migration_id: Uuid,
+        mut event: MigrationProgressEvent,
+    ) -> Result<MigrationProgressEvent, StoreError> {
+        let mut guard = self.inner.write().await;
+        let Some(record) = guard.migrations_by_id.get_mut(&migration_id) else {
+            return Err(StoreError::NotFound);
+        };
+        // Monotonic CAS-style: parent's last_progress_seq + 1.
+        let next_seq = record.last_progress_seq.saturating_add(1);
+        event.seq = next_seq;
+        record.last_progress_seq = next_seq;
+        guard
+            .migration_progress
+            .entry(migration_id)
+            .or_default()
+            .push(event.clone());
+        Ok(event)
+    }
+
+    async fn list_migration_progress(
+        &self,
+        migration_id: Uuid,
+        after_seq: u64,
+        limit: usize,
+    ) -> Result<Vec<MigrationProgressEvent>, StoreError> {
+        let guard = self.inner.read().await;
+        if !guard.migrations_by_id.contains_key(&migration_id) {
+            return Err(StoreError::NotFound);
+        }
+        let Some(events) = guard.migration_progress.get(&migration_id) else {
+            return Ok(Vec::new());
+        };
+        let rows: Vec<MigrationProgressEvent> = events
+            .iter()
+            .filter(|e| e.seq > after_seq)
+            .take(limit)
+            .cloned()
+            .collect();
+        Ok(rows)
     }
 
     async fn register_cn(
@@ -8288,6 +8434,189 @@ mod tests {
         assert_eq!(listed[2].seq, 2);
     }
 
+    // ---------- LM-1 live migrations ----------
+
+    fn migration_req(instance_id: Uuid) -> NewMigration {
+        NewMigration {
+            instance_id,
+            tenant_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            source_cn: Uuid::new_v4(),
+            action_requested: crate::MigrationAction::Begin,
+            automatic: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_migration_writes_record_and_takes_active_guard() {
+        let store = MemStore::new();
+        let inst = Uuid::new_v4();
+        let record = store.create_migration(migration_req(inst)).await.unwrap();
+        assert_eq!(record.instance_id, inst);
+        assert_eq!(record.phase, MigrationPhase::Begin);
+        assert_eq!(record.state, MigrationState::Begin);
+        assert_eq!(record.last_progress_seq, 0);
+        assert!(record.target_cn.is_none());
+        assert!(record.saga_id.is_none());
+
+        let listed = store.list_migrations_for_instance(inst).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, record.id);
+
+        let one = store.get_migration(record.id).await.unwrap();
+        assert_eq!(one.id, record.id);
+    }
+
+    #[tokio::test]
+    async fn create_migration_rejects_concurrent_for_same_instance() {
+        let store = MemStore::new();
+        let inst = Uuid::new_v4();
+        let _ = store.create_migration(migration_req(inst)).await.unwrap();
+        let err = store
+            .create_migration(migration_req(inst))
+            .await
+            .expect_err("second migration must conflict");
+        assert!(matches!(err, StoreError::Conflict(_)));
+    }
+
+    #[tokio::test]
+    async fn put_migration_round_trips() {
+        let store = MemStore::new();
+        let mut record = store
+            .create_migration(migration_req(Uuid::new_v4()))
+            .await
+            .unwrap();
+        let target = Uuid::new_v4();
+        record.target_cn = Some(target);
+        record.state = MigrationState::Sync;
+        record.phase = MigrationPhase::Sync;
+        let updated = store.put_migration(record.clone()).await.unwrap();
+        assert_eq!(updated.target_cn, Some(target));
+        assert_eq!(updated.state, MigrationState::Sync);
+        let fetched = store.get_migration(record.id).await.unwrap();
+        assert_eq!(fetched.state, MigrationState::Sync);
+    }
+
+    #[tokio::test]
+    async fn put_migration_rejects_unknown_id() {
+        let store = MemStore::new();
+        let bogus = MigrationRecord {
+            id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            source_cn: Uuid::new_v4(),
+            target_cn: None,
+            saga_id: None,
+            phase: MigrationPhase::Begin,
+            state: MigrationState::Begin,
+            action_requested: crate::MigrationAction::Begin,
+            created_at: Utc::now(),
+            started_at: None,
+            finished_at: None,
+            error: None,
+            reserved_nics: Vec::new(),
+            source_filesystem_details: None,
+            last_progress_seq: 0,
+            disallow_retry: false,
+            automatic: false,
+        };
+        let err = store.put_migration(bogus).await.expect_err("not found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn list_migrations_newest_first_and_paged() {
+        let store = MemStore::new();
+        let mut ids = Vec::new();
+        for _ in 0..5 {
+            let r = store
+                .create_migration(migration_req(Uuid::new_v4()))
+                .await
+                .unwrap();
+            ids.push(r.id);
+            // Tick to ensure created_at ordering is stable; MemStore
+            // uses Utc::now() so distinct calls produce distinct
+            // timestamps on most clocks, but a yield avoids any
+            // surprise collision in CI.
+            tokio::task::yield_now().await;
+        }
+        let listed = store.list_migrations(None, 3).await.unwrap();
+        assert_eq!(listed.len(), 3);
+        // Newest first = last id we created.
+        assert_eq!(listed[0].id, ids[4]);
+        // Cursor: skip past the second page.
+        let after = listed[2].id;
+        let page2 = store.list_migrations(Some(after), 10).await.unwrap();
+        assert_eq!(page2.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn append_and_list_migration_progress() {
+        let store = MemStore::new();
+        let record = store
+            .create_migration(migration_req(Uuid::new_v4()))
+            .await
+            .unwrap();
+        for i in 0..3 {
+            let event = MigrationProgressEvent {
+                seq: 0, // overwritten by store
+                kind: "progress".into(),
+                phase: Some(MigrationPhase::Sync),
+                state: Some(MigrationState::Sync),
+                percentage: Some(33.0 * (i as f64 + 1.0)),
+                transferred_bytes: None,
+                total_bytes: None,
+                eta_ms: None,
+                message: None,
+                error: None,
+                timestamp: Utc::now(),
+            };
+            let stored = store
+                .append_migration_progress(record.id, event)
+                .await
+                .unwrap();
+            assert_eq!(stored.seq, (i as u64) + 1);
+        }
+        let after_zero = store
+            .list_migration_progress(record.id, 0, 10)
+            .await
+            .unwrap();
+        assert_eq!(after_zero.len(), 3);
+        assert_eq!(after_zero[0].seq, 1);
+        let after_first = store
+            .list_migration_progress(record.id, 1, 10)
+            .await
+            .unwrap();
+        assert_eq!(after_first.len(), 2);
+        assert_eq!(after_first[0].seq, 2);
+        let fetched = store.get_migration(record.id).await.unwrap();
+        assert_eq!(fetched.last_progress_seq, 3);
+    }
+
+    #[tokio::test]
+    async fn append_migration_progress_rejects_unknown_id() {
+        let store = MemStore::new();
+        let event = MigrationProgressEvent {
+            seq: 0,
+            kind: "progress".into(),
+            phase: None,
+            state: None,
+            percentage: None,
+            transferred_bytes: None,
+            total_bytes: None,
+            eta_ms: None,
+            message: None,
+            error: None,
+            timestamp: Utc::now(),
+        };
+        let err = store
+            .append_migration_progress(Uuid::new_v4(), event)
+            .await
+            .expect_err("not found");
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
     #[tokio::test]
     async fn settings_round_trip() {
         let store = MemStore::new();
@@ -9299,6 +9628,10 @@ mod tests {
             platform_version: "20260501T000000Z".into(),
             hvm_supported: true,
             reported_at: Utc::now(),
+            vmm_protocol_version: None,
+            cpu_features: Vec::new(),
+            tsc_offset_ns: None,
+            zpool_props: std::collections::BTreeMap::new(),
         }
     }
 

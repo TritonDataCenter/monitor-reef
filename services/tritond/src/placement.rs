@@ -378,16 +378,27 @@ fn capacity_view(c: tritond_store::CnCapacity) -> CapacityView {
         platform_version: c.platform_version,
         reported_at: c.reported_at,
         hvm_supported: c.hvm_supported,
-        // LM-0 migration fingerprint fields. The capability probe
-        // (LM-0 task #13) will extend `CnCapacity` with the
-        // corresponding source-side fields and we'll thread them
-        // through here. Until then the migration filters `Skip`
-        // when these are absent / empty so the chain behaves
-        // identically for `instance-create` requests.
-        vmm_protocol_version: None,
-        cpu_features: Vec::new(),
-        tsc_offset_ns: None,
-        zpool_props: std::collections::BTreeMap::new(),
+        // LM-0 migration compatibility fingerprint. Threaded from
+        // the agent-reported CnCapacity row; each migration filter
+        // Verdict::Skip's when its matching field is absent so the
+        // chain behaves identically for instance-create.
+        vmm_protocol_version: c.vmm_protocol_version,
+        cpu_features: c.cpu_features,
+        tsc_offset_ns: c.tsc_offset_ns,
+        zpool_props: c
+            .zpool_props
+            .into_iter()
+            .map(|(pool, props)| {
+                (
+                    pool,
+                    tritond_placement::types::ZpoolPropFingerprint {
+                        encryption: props.encryption,
+                        compression: props.compression,
+                        recordsize_bytes: props.recordsize_bytes,
+                    },
+                )
+            })
+            .collect(),
     }
 }
 
@@ -582,6 +593,10 @@ mod tests {
             platform_version: "20260501T000000Z".into(),
             hvm_supported: true,
             reported_at: Utc::now(),
+            vmm_protocol_version: None,
+            cpu_features: Vec::new(),
+            tsc_offset_ns: None,
+            zpool_props: std::collections::BTreeMap::new(),
         };
         let placement = CnPlacement::fresh(cn.server_uuid, Utc::now());
         let reservation = CnReservation {
@@ -769,6 +784,10 @@ mod tests {
             platform_version: "20260501T000000Z".into(),
             hvm_supported: true,
             reported_at: Utc::now(),
+            vmm_protocol_version: None,
+            cpu_features: Vec::new(),
+            tsc_offset_ns: None,
+            zpool_props: std::collections::BTreeMap::new(),
         })
         .await
         .unwrap();
