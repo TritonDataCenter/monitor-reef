@@ -9,7 +9,7 @@
 use anyhow::Result;
 use clap::Args;
 use triton_gateway_client::TypedClient;
-use triton_gateway_client::types::Cluster;
+use triton_gateway_client::types::{Cluster, ClusterState};
 
 use crate::output::{enum_to_display, json};
 
@@ -17,15 +17,42 @@ use crate::output::{enum_to_display, json};
 pub struct GetArgs {
     /// Cluster UUID, short ID prefix, or name
     pub cluster: String,
+
+    /// Poll until the cluster reaches a terminal state (running or degraded)
+    #[arg(long, short = 'w')]
+    pub watch: bool,
 }
 
 pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let cluster = super::resolve_cluster(&args.cluster, client).await?;
 
-    if use_json {
-        json::print_json(&cluster)?;
-    } else {
-        print_cluster_kv(&cluster);
+    if !args.watch {
+        if use_json {
+            json::print_json(&cluster)?;
+        } else {
+            print_cluster_kv(&cluster);
+        }
+        return Ok(());
+    }
+
+    // Watch mode: poll every 10s until terminal state.
+    let mut current = cluster;
+    loop {
+        if use_json {
+            json::print_json(&current)?;
+        } else {
+            print_cluster_kv(&current);
+            println!();
+        }
+
+        match current.state {
+            ClusterState::Running | ClusterState::Degraded => break,
+            _ => {}
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+        current = super::resolve_cluster(&args.cluster, client).await?;
     }
 
     Ok(())
