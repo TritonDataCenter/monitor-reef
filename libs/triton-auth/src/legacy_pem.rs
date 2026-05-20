@@ -380,7 +380,18 @@ impl LegacyPrivateKey {
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, AuthError> {
         match self {
             Self::OpenSsh(key) => {
-                // Use ssh-key's signing
+                // Ed25519: ssh-key 0.6.7 rejects empty-namespace signing, so
+                // use ed25519_dalek directly with the raw 32-byte seed.
+                if let ssh_key::private::KeypairData::Ed25519(kp) = key.key_data() {
+                    use ed25519_dalek::{Signer as _, SigningKey};
+                    let seed: &[u8] = kp.private.as_ref();
+                    let seed32: &[u8; 32] = seed.try_into().map_err(|_| {
+                        AuthError::SigningError("Ed25519 private key has wrong length".into())
+                    })?;
+                    let signing_key = SigningKey::from_bytes(seed32);
+                    return Ok(signing_key.sign(data).to_bytes().to_vec());
+                }
+
                 let key_type = KeyType::from_private_key(key)?;
                 let hash_alg = match key_type {
                     KeyType::Rsa | KeyType::Dsa | KeyType::Ecdsa256 | KeyType::Ecdsa384 => {

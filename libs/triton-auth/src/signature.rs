@@ -214,11 +214,22 @@ impl RequestSigner {
 /// # Returns
 /// The base64-encoded signature
 pub fn sign_with_key(key: &PrivateKey, data: &[u8]) -> Result<String, AuthError> {
+    // Ed25519: ssh-key 0.6.7 rejects empty-namespace signing, so use
+    // ed25519_dalek directly with the raw 32-byte seed.
+    if let ssh_key::private::KeypairData::Ed25519(kp) = key.key_data() {
+        use ed25519_dalek::{Signer as _, SigningKey};
+        let seed: &[u8] = kp.private.as_ref();
+        let seed32: &[u8; 32] = seed.try_into().map_err(|_| {
+            AuthError::SigningError("Ed25519 private key has wrong length".into())
+        })?;
+        let signing_key = SigningKey::from_bytes(seed32);
+        let sig_bytes = signing_key.sign(data).to_bytes().to_vec();
+        return Ok(base64::engine::general_purpose::STANDARD.encode(&sig_bytes));
+    }
+
     let key_type = KeyType::from_private_key(key)?;
     let hash_alg = key_type.hash_alg();
 
-    // Sign using the ssh-key crate
-    // The first argument is a namespace (empty string for SSH signatures)
     let signature = key
         .sign("", hash_alg, data)
         .map_err(|e| AuthError::SigningError(format!("Failed to sign data: {}", e)))?;
