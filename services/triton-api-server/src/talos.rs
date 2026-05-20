@@ -214,7 +214,8 @@ impl TalosClient {
     /// address on the fabric network.
     pub async fn connect_maintenance(relay: Arc<RelayState>, target: &str) -> Result<Self> {
         let tls_config = maintenance_tls_config()?;
-        Self::connect_with_tls(relay, tls_config, target).await
+        // SNI is irrelevant for maintenance mode since cert verification is skipped.
+        Self::connect_with_tls(relay, tls_config, target, "talos").await
     }
 
     /// Connect with mutual TLS using talosconfig credentials.
@@ -232,18 +233,21 @@ impl TalosClient {
         key_pem: &[u8],
     ) -> Result<Self> {
         let tls_config = mtls_config(ca_pem, cert_pem, key_pem)?;
-        Self::connect_with_tls(relay, tls_config, target).await
+        // Use the host portion of target as SNI — Talos issues certs with the
+        // node's IP in the SAN, so the IP matches what rustls will verify.
+        let host = target.rsplit_once(':').map(|(h, _)| h).unwrap_or(target);
+        Self::connect_with_tls(relay, tls_config, target, host).await
     }
 
     async fn connect_with_tls(
         relay: Arc<RelayState>,
         tls_config: rustls::ClientConfig,
         target: &str,
+        server_name: &str,
     ) -> Result<Self> {
         let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
-        // "talos" is the SNI name; Talos ignores SNI in maintenance mode and
-        // validates it against the cert's SAN in authenticated mode.
-        let sni = ServerName::try_from("talos").map_err(|e| anyhow::anyhow!("invalid SNI: {e}"))?;
+        let sni = ServerName::try_from(server_name.to_owned())
+            .map_err(|e| anyhow::anyhow!("invalid SNI {:?}: {e}", server_name))?;
         let target = target.to_string();
 
         // The dummy URI is passed to our connector but ignored — we always

@@ -18,6 +18,7 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tokio_tungstenite::tungstenite::protocol::Role as WsRole;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tracing::{info, warn};
@@ -230,6 +231,9 @@ struct ApiContext {
     /// Dev bypass: unauthenticated requests are treated as this account UUID.
     /// Never set in production.
     dev_account_uuid: Option<Uuid>,
+    /// Cancelled when the server begins shutting down; relay handlers select on
+    /// this to exit promptly instead of waiting for clients to disconnect.
+    shutdown: CancellationToken,
 }
 
 enum TritonApiImpl {}
@@ -837,7 +841,9 @@ impl TritonApi for TritonApiImpl {
         rqctx: RequestContext<Self::Context>,
         upgraded: WebsocketConnection,
     ) -> WebsocketChannelResult {
-        let relay = Arc::clone(&rqctx.context().relay);
+        let ctx = rqctx.context();
+        let relay = Arc::clone(&ctx.relay);
+        let shutdown = ctx.shutdown.clone();
 
         // Wrap the raw HTTP-upgraded connection in a WebSocket frame layer,
         // then adapt that to the futures::io byte stream that yamux needs.
@@ -853,8 +859,14 @@ impl TritonApi for TritonApiImpl {
         relay.register(relay::TunnelHandle { open_stream: tx });
         info!("relay agent registered");
 
-        // Block until the agent disconnects; the driver clears the handle on exit.
-        relay::run_agent_connection(conn, rx, Arc::clone(&relay)).await;
+        // Block until the agent disconnects or the server shuts down.
+        tokio::select! {
+            () = relay::run_agent_connection(conn, rx, Arc::clone(&relay)) => {}
+            () = shutdown.cancelled() => {
+                relay.clear();
+                info!("relay agent disconnected (server shutdown)");
+            }
+        }
 
         info!("relay agent disconnected");
         Ok(())
@@ -864,7 +876,9 @@ impl TritonApi for TritonApiImpl {
         rqctx: RequestContext<Self::Context>,
         upgraded: WebsocketConnection,
     ) -> WebsocketChannelResult {
-        let relay = Arc::clone(&rqctx.context().relay);
+        let ctx = rqctx.context();
+        let relay = Arc::clone(&ctx.relay);
+        let shutdown = ctx.shutdown.clone();
 
         let raw = upgraded.into_inner();
         let ws =
@@ -876,7 +890,14 @@ impl TritonApi for TritonApiImpl {
             yamux::Connection::new(ws_compat, yamux::Config::default(), yamux::Mode::Server);
 
         loop {
-            let stream = std::future::poll_fn(|cx| conn.poll_next_inbound(cx)).await;
+            let next = std::future::poll_fn(|cx| conn.poll_next_inbound(cx));
+            let stream = tokio::select! {
+                s = next => s,
+                () = shutdown.cancelled() => {
+                    info!("bridge connection closed (server shutdown)");
+                    break;
+                }
+            };
             match stream {
                 Some(Ok(bridge_stream)) => {
                     let relay = Arc::clone(&relay);
@@ -1058,9 +1079,10 @@ async fn run_bootstrap(
     tracing::info!(cluster = %cluster_id, image = %image_uuid, "resolved image UUID");
 
     let mut provisioned: Vec<ProvisionedNode> = Vec::new();
+    let id_prefix = &cluster_id.to_string()[..8];
 
     for i in 0..req.control_plane_count {
-        let name = format!("{}-cp-{i}", record.name);
+        let name = format!("{id_prefix}-cp-{i}");
         let fabric_ip = provision_vm(
             &cloudapi,
             &cloudapi_account,
@@ -1078,7 +1100,7 @@ async fn run_bootstrap(
     }
 
     for i in 0..req.worker_count {
-        let name = format!("{}-w-{i}", record.name);
+        let name = format!("{id_prefix}-w-{i}");
         let fabric_ip = provision_vm(
             &cloudapi,
             &cloudapi_account,
@@ -2041,6 +2063,8 @@ async fn main() -> Result<()> {
         );
     }
 
+    let shutdown = CancellationToken::new();
+
     let context = ApiContext {
         jwt,
         ldap,
@@ -2051,6 +2075,7 @@ async fn main() -> Result<()> {
         cloudapi,
         cloudapi_account: config.cloudapi.as_ref().map(|c| c.account.clone()),
         dev_account_uuid: config.dev_account_uuid,
+        shutdown: shutdown.clone(),
     };
 
     let server = HttpServerStarter::new(&config_dropshot, api, context, &log)
@@ -2068,6 +2093,9 @@ async fn main() -> Result<()> {
         }
         () = shutdown_signal() => {}
     }
+
+    // Signal relay WebSocket handlers to exit before draining Dropshot.
+    shutdown.cancel();
 
     server
         .close()
