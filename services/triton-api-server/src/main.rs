@@ -1125,15 +1125,34 @@ async fn run_bootstrap(
         Some(String::from_utf8(configs.key_pem_raw.clone()).context("key PEM utf8")?);
 
     // Phase 2: apply machine configs to all nodes in maintenance mode.
+    // Talos may still be booting when CloudAPI reports the VM as running,
+    // so retry the maintenance connect with backoff for up to 5 minutes.
     for node in &provisioned {
         let target = format!("{}:50000", node.fabric_ip);
         let machine_config = match node.role {
             NodeRole::Control => configs.controlplane_yaml.as_bytes().to_vec(),
             NodeRole::Worker => configs.worker_yaml.as_bytes().to_vec(),
         };
-        let mut client = talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target)
-            .await
-            .with_context(|| format!("maintenance connect to {target}"))?;
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        let mut client = loop {
+            match talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target).await {
+                Ok(c) => break c,
+                Err(e) if std::time::Instant::now() < deadline => {
+                    tracing::warn!(
+                        cluster = %cluster_id,
+                        target = %target,
+                        error = %e,
+                        "Talos maintenance API not ready, retrying in 15s"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| format!("maintenance connect to {target}"));
+                }
+            }
+        };
+
         client
             .apply_configuration(machine_config, true)
             .await
