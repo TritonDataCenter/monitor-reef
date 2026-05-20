@@ -946,26 +946,25 @@ async fn resolve_image_uuid(
         .ok_or_else(|| anyhow::anyhow!("no image found with name {:?}", image))
 }
 
-/// Provision a single VM via CloudAPI and return its fabric IP.
+/// Provision a single VM via CloudAPI and return its primary IP.
+///
+/// No fabric network is specified — the operator account provisions on its
+/// default network. Connectivity to the VM is provided by the relay tunnel,
+/// so the exact network placement doesn't matter for the POC.
 async fn provision_vm(
     cloudapi: &TypedClient,
     account: &str,
     name: &str,
     image_uuid: Uuid,
     package: &str,
-    fabric_network_id: Uuid,
 ) -> anyhow::Result<String> {
-    use cloudapi_client::types::{CreateMachineRequest, MachineState, NetworkObject};
+    use cloudapi_client::types::{CreateMachineRequest, MachineState};
 
     let body = CreateMachineRequest {
         name: Some(name.to_string()),
         image: image_uuid,
         package: package.to_string(),
-        networks: Some(vec![NetworkObject {
-            ipv4_uuid: fabric_network_id,
-            ipv4_ips: None,
-            primary: Some(true),
-        }]),
+        networks: None,
         affinity: None,
         locality: None,
         metadata: None,
@@ -1017,25 +1016,22 @@ async fn provision_vm(
             _ => {}
         }
     }
-    tracing::info!(name = %name, machine = %machine_id, "VM running, fetching fabric NIC");
+    tracing::info!(name = %name, machine = %machine_id, "VM running, reading primary IP");
 
-    // Find the NIC on the fabric network to get the fabric IP.
-    let nics = cloudapi
+    // Re-fetch to get the final IP assignment.
+    let m = cloudapi
         .inner()
-        .list_nics()
+        .get_machine()
         .account(account)
         .machine(machine_id)
         .send()
         .await
-        .with_context(|| format!("list NICs for machine {machine_id}"))?
+        .with_context(|| format!("get machine {machine_id} for IP"))?
         .into_inner();
 
-    nics.into_iter()
-        .find(|n| n.network == fabric_network_id)
-        .map(|n| n.ip)
-        .ok_or_else(|| {
-            anyhow::anyhow!("machine {machine_id} has no NIC on fabric network {fabric_network_id}")
-        })
+    m.primary_ip
+        .or_else(|| m.ips.into_iter().next())
+        .ok_or_else(|| anyhow::anyhow!("machine {machine_id} has no IP address after running"))
 }
 
 async fn run_bootstrap(
@@ -1071,7 +1067,6 @@ async fn run_bootstrap(
             &name,
             image_uuid,
             &req.package,
-            fabric_network_id,
         )
         .await
         .with_context(|| format!("provision control-plane node {name}"))?;
@@ -1090,7 +1085,6 @@ async fn run_bootstrap(
             &name,
             image_uuid,
             &req.package,
-            fabric_network_id,
         )
         .await
         .with_context(|| format!("provision worker node {name}"))?;
