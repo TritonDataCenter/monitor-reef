@@ -65,6 +65,6 @@ pub async fn run(args: KubeconfigArgs, client: &TypedClient) -> Result<()> {
             .with_context(|| format!("failed to set permissions on {}", output_path.display()))?;
     }
 
-    println!("Written to {}", output_path.display());
+    eprintln!("Written to {}", output_path.display());
     Ok(())
 }
