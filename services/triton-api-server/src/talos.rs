@@ -383,7 +383,10 @@ impl TalosClient {
         let mut archive = tar::Archive::new(gz);
         for entry in archive.entries().context("read kubeconfig tar entries")? {
             let mut entry = entry.context("read kubeconfig tar entry")?;
-            if matches!(entry.header().entry_type(), tar::EntryType::Regular | tar::EntryType::GNUSparse) {
+            if matches!(
+                entry.header().entry_type(),
+                tar::EntryType::Regular | tar::EntryType::GNUSparse
+            ) {
                 let mut yaml = Vec::new();
                 entry
                     .read_to_end(&mut yaml)
