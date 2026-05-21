@@ -171,6 +171,18 @@ pub enum Commit {
         /// `tritond_saga::SecEpoch.0`.
         sec_epoch: u64,
     },
+    /// Insert the `CnReservation` *only* — do **not** touch
+    /// `Instance.host_cn_uuid`. Used by the live-migration
+    /// designate action (LM-6): the instance must keep its
+    /// source-CN pin until the cutover step atomically flips it,
+    /// but we still need to hold target capacity for the duration
+    /// of the migration so a concurrent `instance-create` can't
+    /// steal it.
+    ReservationOnly {
+        saga_id: Uuid,
+        sec_id: Uuid,
+        sec_epoch: u64,
+    },
 }
 
 /// Errors `pick` can fail with.
@@ -289,7 +301,46 @@ pub async fn pick(
                 instance,
             })
         }
-        (None, Commit::Yes { .. }) => {
+        (
+            Some(cn_uuid),
+            Commit::ReservationOnly {
+                saga_id,
+                sec_id,
+                sec_epoch,
+            },
+        ) => {
+            let reservation = CnReservation {
+                server_uuid: cn_uuid,
+                saga_id,
+                instance_id: request.instance_id,
+                cpu_units: request.cpu_units,
+                ram_mb: request.ram_mb,
+                disk: request.disk.clone(),
+                devices: request
+                    .required_devices
+                    .iter()
+                    .map(|d| tritond_store::DeviceReservation {
+                        kind: store_device_kind(d.kind),
+                        model: d.model.clone(),
+                        count: d.count,
+                    })
+                    .collect(),
+                created_at: Utc::now(),
+                expires_at: request.deadline,
+                created_by_sec_id: sec_id,
+                created_at_epoch: sec_epoch,
+            };
+            store.reserve_cn_capacity(reservation.clone()).await?;
+            // Read the instance for the PickCommit shape but do
+            // NOT call set_instance_host_cn — migration keeps
+            // source pin until the cutover step.
+            let instance = store.get_instance(request.instance_id).await?;
+            Some(PickCommit {
+                reservation,
+                instance,
+            })
+        }
+        (None, Commit::Yes { .. }) | (None, Commit::ReservationOnly { .. }) => {
             return Err(PickError::NoEligibleCn {
                 report: Box::new(report),
             });

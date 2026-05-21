@@ -354,36 +354,147 @@ async fn designate_target(ctx: Ctx) -> Result<Uuid, ActionError> {
         fence_check(user_ctx).await?;
         let store = user_ctx.store().clone();
         let params: MigrationSagaParams = ctx.saga_params()?;
+        let saga_id_uuid: Uuid = user_ctx.saga_id().0;
+        let sec_id_uuid = user_ctx.sec_id().0;
+        let sec_epoch_u64 = user_ctx.sec_epoch().0;
 
-        // LM-5 skeleton: honour `target_cn_hint` if provided;
-        // otherwise pick the same CN as the source so the
-        // skeleton walks the rest of the DAG without a placement
-        // call (LM-6 wires placement::pick with avoid_cn =
-        // [source_cn] + the new migration compat filters).
-        let target_cn = params.target_cn_hint.unwrap_or(params.source_cn);
+        // Read the source Instance for its shape + affinity rules
+        // so the PlacementRequest reflects the actual workload.
+        let instance = store
+            .get_instance(params.instance_id)
+            .await
+            .map_err(store_err_to_action_err)?;
 
+        // Build the placement request. The migration filters
+        // (cn-not-in-avoid-list + the four migration compat
+        // filters) engage because `avoid_cn` is non-empty and
+        // `migration` is `Some(_)`. The compat fingerprint is
+        // empty for LM-6 — the agent capability probe (LM-0
+        // task #13b) will populate the source CN's
+        // `CapacityView::{vmm_protocol_version, cpu_features,
+        // tsc_offset_ns, zpool_props}`, at which point the
+        // migration filters start gating real candidates. Until
+        // then they `Skip` on missing fields.
+        let migration_compat = tritond_placement::types::MigrationCompat {
+            // PROTOCOL_V0 from tritond-vmm-migrate. tritond
+            // doesn't link the data-plane crate (the agents
+            // do), so we hard-code the wire string here. A
+            // mismatch with tritond_vmm_migrate::PROTOCOL_V0
+            // would surface as the `cn-bhyve-compatible` filter
+            // rejecting every CN, which a smoke test would
+            // catch immediately.
+            vmm_protocol_version: "vmm-migrate-ron/0".to_string(),
+            cpu_features: Vec::new(),
+            tsc_offset_ns: 0,
+            zpool_props: std::collections::BTreeMap::new(),
+            source_dataset_encrypted: false,
+        };
+        let request = tritond_placement::PlacementRequest {
+            instance_id: params.instance_id,
+            silo_uuid: uuid::Uuid::nil(),
+            tenant_uuid: params.tenant_id,
+            project_uuid: params.project_id,
+            role: tritond_placement::types::CnRoleView::Tenant,
+            // cpu_units convention: 1 vCPU = 100 cpu_units (DAPI
+            // legacy convention picked up by tritond-placement).
+            cpu_units: (instance.cpu as u32) * 100,
+            ram_mb: (instance.memory_bytes / (1024 * 1024)) as u64,
+            disk: std::collections::BTreeMap::new(),
+            required_traits: std::collections::BTreeMap::new(),
+            required_nic_tags: Vec::new(),
+            required_underlay: tritond_placement::types::UnderlayCapability {
+                ipv4: true,
+                ipv6: false,
+            },
+            required_devices: Vec::new(),
+            needs_hvm: matches!(instance.brand, tritond_store::InstanceBrand::Bhyve),
+            min_platform: None,
+            affinity: tritond_store::InstanceAffinity::empty(
+                params.instance_id,
+                params.tenant_id,
+                chrono::Utc::now(),
+            ),
+            strategy_override: None,
+            force_cn: params.target_cn_hint,
+            ignore_scope_pin: false,
+            deadline: chrono::Utc::now() + chrono::Duration::hours(6),
+            avoid_cn: vec![params.source_cn],
+            migration: Some(migration_compat),
+        };
+
+        let chosen = match crate::placement::pick(
+            &store,
+            request,
+            crate::placement::Commit::ReservationOnly {
+                saga_id: saga_id_uuid,
+                sec_id: sec_id_uuid,
+                sec_epoch: sec_epoch_u64,
+            },
+        )
+        .await
+        {
+            Ok(outcome) => outcome.chosen.ok_or_else(|| {
+                ActionError::action_failed(serde_json::json!({
+                    "kind": "migration.designate.no_eligible_cn",
+                    "reason": "internal: chosen was None on commit-success",
+                }))
+            })?,
+            Err(crate::placement::PickError::NoEligibleCn { report }) => {
+                return Err(ActionError::action_failed(serde_json::json!({
+                    "kind": "migration.designate.no_eligible_cn",
+                    "audit": report.bounded_for_audit(),
+                })));
+            }
+            Err(crate::placement::PickError::Store(e)) => {
+                return Err(store_err_to_action_err(e));
+            }
+        };
+
+        // Persist target_cn on the migration record + advance
+        // phase. The Instance pin stays on source_cn — switch
+        // happens in `switch_ownership`.
         let mut record = store
             .get_migration(params.migration_id)
             .await
             .map_err(store_err_to_action_err)?;
-        record.target_cn = Some(target_cn);
+        record.target_cn = Some(chosen);
         record.phase = MigrationPhase::Sync;
         record.state = MigrationState::Sync;
         store
             .put_migration(record)
             .await
             .map_err(store_err_to_action_err)?;
-        Ok(target_cn)
+        Ok(chosen)
     })
     .await
 }
 
-async fn designate_target_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
-    // LM-6 releases the CnReservation here; LM-5 skeleton has
-    // nothing to release. Reset the target_cn pointer so the
-    // operator-visible record matches reality if a later action
-    // already ran (the unwind tail walks backwards, so this is
-    // called when nodes ≥3 ran).
+async fn designate_target_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
+    let user_ctx = ctx.user_data();
+    let store = user_ctx.store().clone();
+    let params: MigrationSagaParams = ctx.saga_params()?;
+    let saga_id_uuid: Uuid = user_ctx.saga_id().0;
+    // The forward fn returns the chosen CN; the unwind path
+    // looks it up via ctx.lookup against the *node* name. We
+    // wired the DAG to expose this output as
+    // `designated_target_cn`.
+    let cn: Uuid = ctx.lookup("designated_target_cn").unwrap_or(Uuid::nil());
+    if cn == Uuid::nil() {
+        // do-fn never produced a chosen CN — nothing to release.
+        return Ok(());
+    }
+    crate::placement::release_reservation(&store, cn, saga_id_uuid, params.instance_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("migration.designate undo: release_reservation: {e}"))?;
+    // Also clear target_cn on the record so the audit view
+    // shows the migration as un-designated rather than
+    // pointing at a CN whose reservation is gone.
+    if let Ok(mut r) = store.get_migration(params.migration_id).await {
+        r.target_cn = None;
+        if let Err(e) = store.put_migration(r).await {
+            tracing::warn!(error = %e, "migration.designate undo: clear target_cn failed");
+        }
+    }
     Ok(())
 }
 
@@ -408,21 +519,70 @@ async fn snapshot_source_quota_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn create_target_zone(ctx: Ctx) -> Result<(), ActionError> {
+async fn create_target_zone(ctx: Ctx) -> Result<tritond_store::ProvisioningJob, ActionError> {
     crate::sagas::with_action_timeout("migration.create_target_zone", ACTION_TIMEOUT, async move {
         let user_ctx = ctx.user_data();
         fence_check(user_ctx).await?;
-        // LM-6 enqueues a `JobKind::Provision` on the target
-        // agent with the migration blueprint (same MACs as
-        // source). LM-5 no-op.
-        Ok(())
+        let store = user_ctx.store().clone();
+        let params: MigrationSagaParams = ctx.saga_params()?;
+        let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
+
+        // Enqueue a Provision job on the target CN. The agent's
+        // existing Provision handler will vmadm-create the zone
+        // shell; LM-7 will plumb a migration-blueprint variant
+        // that suppresses guest boot (the target zone waits for
+        // the memory stream before it runs vCPUs). LM-6 cold-
+        // migrate just gets a stopped zone the cutover then
+        // "activates" via the Instance.host_cn_uuid flip + a
+        // follow-up start.
+        let job = store
+            .enqueue_job(tritond_store::NewJob {
+                kind: tritond_store::JobKind::Provision {
+                    instance_id: params.instance_id,
+                },
+                target_cn_uuid: Some(target_cn),
+            })
+            .await
+            .map_err(store_err_to_action_err)?;
+        tracing::info!(
+            migration_id = %params.migration_id,
+            target_cn = %target_cn,
+            job_id = %job.id,
+            "migration.create_target_zone: enqueued Provision job",
+        );
+        Ok(job)
     })
     .await
 }
 
-async fn create_target_zone_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
-    // LM-6 enqueues `JobKind::MigrationCleanupTarget` here;
-    // LM-5 has no target zone to tear down.
+async fn create_target_zone_undo(ctx: Ctx) -> Result<(), anyhow::Error> {
+    let store = ctx.user_data().store().clone();
+    let params: MigrationSagaParams = ctx.saga_params()?;
+    let target_cn: Uuid = ctx.lookup("designated_target_cn").unwrap_or(Uuid::nil());
+    if target_cn == Uuid::nil() {
+        return Ok(());
+    }
+    // Best-effort: enqueue a MigrationCleanupTarget job so the
+    // target agent vmadm-deletes the half-started zone. If the
+    // target CN is unreachable, the job sits in the queue until
+    // the agent comes back (operator-visible via /v2/migrations
+    // showing the failed migration).
+    if let Err(e) = store
+        .enqueue_job(tritond_store::NewJob {
+            kind: tritond_store::JobKind::MigrationCleanupTarget {
+                migration_id: params.migration_id,
+                instance_id: params.instance_id,
+            },
+            target_cn_uuid: Some(target_cn),
+        })
+        .await
+    {
+        tracing::warn!(
+            error = %e,
+            migration_id = %params.migration_id,
+            "migration.create_target_zone undo: enqueue MigrationCleanupTarget failed",
+        );
+    }
     Ok(())
 }
 
@@ -513,17 +673,60 @@ async fn switch_ownership(ctx: Ctx) -> Result<(), ActionError> {
         let store = user_ctx.store().clone();
         let params: MigrationSagaParams = ctx.saga_params()?;
 
-        // **POINT OF NO RETURN.** LM-7's body runs the
-        // PauseComplete / SwitchComplete WebSocket fence + an
-        // atomic FDB CAS of Instance.host_cn_uuid. The LM-5
-        // skeleton just records the audit timestamps so the
-        // post-mortem view has something to render.
-        let mut record = store
+        // **POINT OF NO RETURN.** Read the chosen target_cn off
+        // the migration record (designate_target wrote it).
+        let record = store
             .get_migration(params.migration_id)
             .await
             .map_err(store_err_to_action_err)?;
-        // Phase stays at Switch; state moves once `finish` runs.
-        let _ = &mut record;
+        let target_cn = record.target_cn.ok_or_else(|| {
+            ActionError::action_failed(serde_json::json!({
+                "kind": "migration.switch.no_target_cn",
+                "reason": "migration record missing target_cn — designate_target must have failed silently",
+            }))
+        })?;
+
+        // Atomic CAS of Instance.host_cn_uuid from source_cn to
+        // target_cn. LM-7 will wrap this in the
+        // PauseComplete / SwitchComplete WebSocket fence; for
+        // LM-6 cold-migrate the agent stops the source guest
+        // before this runs (so there's nothing to fence) and the
+        // FDB write is the cutover.
+        let instance = store
+            .get_instance(params.instance_id)
+            .await
+            .map_err(store_err_to_action_err)?;
+        if instance.host_cn_uuid != Some(params.source_cn) {
+            // Either someone moved the instance out from under
+            // us, or recovery is re-running switch on an
+            // already-flipped instance. The second case is fine
+            // (idempotent); the first is a programming error we
+            // surface so the audit log catches it.
+            if instance.host_cn_uuid == Some(target_cn) {
+                tracing::info!(
+                    migration_id = %params.migration_id,
+                    "migration.switch_ownership: idempotent re-entry (host_cn already target)",
+                );
+                return Ok(());
+            }
+            return Err(ActionError::action_failed(serde_json::json!({
+                "kind": "migration.switch.host_cn_mismatch",
+                "reason": "Instance.host_cn_uuid was neither source nor target",
+                "expected_source": params.source_cn.to_string(),
+                "expected_target": target_cn.to_string(),
+                "observed": instance.host_cn_uuid.map(|u| u.to_string()),
+            })));
+        }
+        let _updated = store
+            .set_instance_host_cn(params.instance_id, Some(target_cn))
+            .await
+            .map_err(store_err_to_action_err)?;
+        tracing::info!(
+            migration_id = %params.migration_id,
+            from = %params.source_cn,
+            to = %target_cn,
+            "migration.switch_ownership: cutover committed",
+        );
         Ok(())
     })
     .await
