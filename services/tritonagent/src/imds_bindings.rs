@@ -324,7 +324,7 @@ mod tests {
         t.insert(p1, port_a, instance_a);
         t.insert(p2, port_a, instance_a);
         t.insert(p3, port_b, instance_b);
-        assert_eq!(t.remove_by_port(port_a), 2);
+        assert_eq!(t.remove_by_port(port_a).len(), 2);
         assert!(t.lookup(p1).is_none());
         assert!(t.lookup(p2).is_none());
         assert_eq!(t.lookup(p3).unwrap().port_id, port_b);
