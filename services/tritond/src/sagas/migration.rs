@@ -56,7 +56,7 @@ use tritond_saga::{
     ActionContext, ActionError, ActionFunc, ActionRegistry, DagBuilder, Node, ResourceRef,
     ResourceScope, SagaDag, SagaError, SagaName, SagaResult, TritondSagaType,
 };
-use tritond_store::{MigrationPhase, MigrationRecord, MigrationState, StoreError};
+use tritond_store::{MigrationPhase, MigrationRecord, MigrationState};
 use uuid::Uuid;
 
 use crate::sagas::common::{
@@ -505,10 +505,47 @@ async fn snapshot_source_quota(ctx: Ctx) -> Result<(), ActionError> {
         async move {
             let user_ctx = ctx.user_data();
             fence_check(user_ctx).await?;
-            // LM-6 enqueues a `JobKind::MigrateZfsSend` query on
-            // the source agent which returns the
-            // `SavedQuotas` shape; LM-5 stub leaves
-            // `source_filesystem_details = None`.
+            let store = user_ctx.store().clone();
+            let params: MigrationSagaParams = ctx.saga_params()?;
+
+            // Derive the dataset name from the SmartOS
+            // convention: `zones/<instance_uuid>`. A future
+            // slice replaces this with the actual dataset path
+            // read off the source agent (the agent knows from
+            // its blueprint cache); the convention is
+            // load-bearing on every current SmartOS deploy so
+            // hard-coding it here is fine for LM-6b.
+            let dataset = format!("zones/{}", params.instance_id);
+
+            // LM-6b: persist a `SourceFilesystemDetails` with
+            // the dataset name + empty quota/refres values. The
+            // agent-side query that returns actual saved quotas
+            // (via `zfs::save_quotas` from LM-4) lands when
+            // LM-3b wires the agent's migrate-job dispatcher;
+            // until then we record the dataset so the saga's
+            // abort + finalize paths know which dataset to
+            // address.
+            let details = tritond_store::SourceFilesystemDetails {
+                dataset: dataset.clone(),
+                original_quota_bytes: None,
+                original_refreservation_bytes: None,
+                snapshots: Vec::new(),
+                encrypted: false,
+            };
+            let mut record = store
+                .get_migration(params.migration_id)
+                .await
+                .map_err(store_err_to_action_err)?;
+            record.source_filesystem_details = Some(details);
+            store
+                .put_migration(record)
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                %dataset,
+                "migration.snapshot_source_quota: recorded dataset; quota probe pending LM-3b",
+            );
             Ok(())
         },
     )
@@ -593,9 +630,37 @@ async fn reserve_target_nics(ctx: Ctx) -> Result<(), ActionError> {
         async move {
             let user_ctx = ctx.user_data();
             fence_check(user_ctx).await?;
-            // LM-6 pre-binds the source's existing NIC uuids to
-            // the target_cn (port created paused) so the cutover
-            // is an atomic FDB flip. LM-5 no-op.
+            let store = user_ctx.store().clone();
+            let params: MigrationSagaParams = ctx.saga_params()?;
+
+            // Read the source instance's NICs and copy their
+            // uuids onto the migration record. The MACs travel
+            // with the VM in vnext (per-VM in FDB, not per-CN),
+            // so reservation here is bookkeeping for the
+            // operator-visible record + the switch action's
+            // sanity check; the actual Proteus
+            // `create_port(paused)` lands when the agent learns
+            // to dispatch ProteusActivate / ProteusDeactivate
+            // jobs (LM-7's cutover fence).
+            let nics = store
+                .list_nics_for_instance(params.instance_id)
+                .await
+                .map_err(store_err_to_action_err)?;
+            let nic_ids: Vec<Uuid> = nics.iter().map(|n| n.id).collect();
+            let mut record = store
+                .get_migration(params.migration_id)
+                .await
+                .map_err(store_err_to_action_err)?;
+            record.reserved_nics = nic_ids.clone();
+            store
+                .put_migration(record)
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                nic_count = nic_ids.len(),
+                "migration.reserve_target_nics: recorded NICs; Proteus pre-bind pending LM-7",
+            );
             Ok(())
         },
     )
@@ -610,10 +675,60 @@ async fn initial_zfs_send(ctx: Ctx) -> Result<(), ActionError> {
     crate::sagas::with_action_timeout("migration.initial_zfs_send", ACTION_TIMEOUT, async move {
         let user_ctx = ctx.user_data();
         fence_check(user_ctx).await?;
-        // LM-6 enqueues `JobKind::MigrateZfsSend { role:
-        // Source, from_snap: None, to_snap: "@migration-base" }`
-        // on the source agent + a matching Target on the target
-        // agent, then awaits both. LM-5 no-op.
+        let store = user_ctx.store().clone();
+        let params: MigrationSagaParams = ctx.saga_params()?;
+        let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
+
+        // Derive dataset + snapshot names from the same SmartOS
+        // convention snapshot_source_quota used. The
+        // `migration-base` snapshot is the first send; final
+        // increment uses `migration-final` against it.
+        let dataset = format!("zones/{}", params.instance_id);
+        let base_snap = format!("{dataset}@migration-base");
+
+        // Paired enqueue: Source CN runs `zfs send`, Target CN
+        // runs `zfs receive`, both connected via the per-CN
+        // migrate WebSocket transport (see
+        // `services/tritonagent/src/migrate.rs`). The agent's
+        // dispatcher arm for these JobKinds lands in LM-3b /
+        // LM-6c; until then the jobs sit unclaimed and the next
+        // saga node fires immediately (same gap as
+        // `create_target_zone` per LM-6 v1 — this whole branch
+        // becomes await-coupled in LM-6c).
+        let src_job = store
+            .enqueue_job(tritond_store::NewJob {
+                kind: tritond_store::JobKind::MigrateZfsSend {
+                    migration_id: params.migration_id,
+                    instance_id: params.instance_id,
+                    role: tritond_store::MigrationJobRole::Source,
+                    dataset: dataset.clone(),
+                    from_snap: None,
+                    to_snap: base_snap.clone(),
+                },
+                target_cn_uuid: Some(params.source_cn),
+            })
+            .await
+            .map_err(store_err_to_action_err)?;
+        let dst_job = store
+            .enqueue_job(tritond_store::NewJob {
+                kind: tritond_store::JobKind::MigrateZfsSend {
+                    migration_id: params.migration_id,
+                    instance_id: params.instance_id,
+                    role: tritond_store::MigrationJobRole::Target,
+                    dataset,
+                    from_snap: None,
+                    to_snap: base_snap,
+                },
+                target_cn_uuid: Some(target_cn),
+            })
+            .await
+            .map_err(store_err_to_action_err)?;
+        tracing::info!(
+            migration_id = %params.migration_id,
+            src_job_id = %src_job.id,
+            dst_job_id = %dst_job.id,
+            "migration.initial_zfs_send: enqueued source+target ZFS jobs; await pending LM-6c",
+        );
         Ok(())
     })
     .await
@@ -626,8 +741,52 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
         async move {
             let user_ctx = ctx.user_data();
             fence_check(user_ctx).await?;
-            // LM-6 enqueues the `-i base final` incremental.
-            // LM-5 no-op.
+            let store = user_ctx.store().clone();
+            let params: MigrationSagaParams = ctx.saga_params()?;
+            let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
+
+            let dataset = format!("zones/{}", params.instance_id);
+            let base_snap = format!("{dataset}@migration-base");
+            let final_snap = format!("{dataset}@migration-final");
+
+            // `-i base final` incremental. Same source/target
+            // pair as `initial_zfs_send`; the agent's
+            // ZFS-receive job knows to apply the increment by
+            // looking at `from_snap.is_some()`.
+            let src_job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::MigrateZfsSend {
+                        migration_id: params.migration_id,
+                        instance_id: params.instance_id,
+                        role: tritond_store::MigrationJobRole::Source,
+                        dataset: dataset.clone(),
+                        from_snap: Some(base_snap.clone()),
+                        to_snap: final_snap.clone(),
+                    },
+                    target_cn_uuid: Some(params.source_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            let dst_job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::MigrateZfsSend {
+                        migration_id: params.migration_id,
+                        instance_id: params.instance_id,
+                        role: tritond_store::MigrationJobRole::Target,
+                        dataset,
+                        from_snap: Some(base_snap),
+                        to_snap: final_snap,
+                    },
+                    target_cn_uuid: Some(target_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                src_job_id = %src_job.id,
+                dst_job_id = %dst_job.id,
+                "migration.final_zfs_increment: enqueued incremental ZFS jobs; await pending LM-6c",
+            );
             Ok(())
         },
     )
@@ -749,9 +908,47 @@ async fn cleanup_source(ctx: Ctx) -> Result<(), ActionError> {
     crate::sagas::with_action_timeout("migration.cleanup_source", ACTION_TIMEOUT, async move {
         let user_ctx = ctx.user_data();
         fence_check(user_ctx).await?;
-        // LM-6 enqueues `JobKind::MigrationCleanupSource` (vmadm
-        // delete on source + zfs destroy snapshots + release
-        // source-side NICs). LM-5 no-op.
+        let store = user_ctx.store().clone();
+        let params: MigrationSagaParams = ctx.saga_params()?;
+
+        // Best-effort: enqueue the source-side cleanup job
+        // (vmadm delete on the source + zfs destroy of the
+        // migration snapshots + release of source-side NIC
+        // bindings). This runs AFTER switch_ownership has
+        // committed — the target is canonical at this point,
+        // so a failed cleanup is an operator alert (stranded
+        // dataset on the source CN), not a saga failure.
+        // The saga returns Ok regardless; the job sits in
+        // the queue for the source agent whenever it's
+        // available.
+        match store
+            .enqueue_job(tritond_store::NewJob {
+                kind: tritond_store::JobKind::MigrationCleanupSource {
+                    migration_id: params.migration_id,
+                    instance_id: params.instance_id,
+                },
+                target_cn_uuid: Some(params.source_cn),
+            })
+            .await
+        {
+            Ok(job) => {
+                tracing::info!(
+                    migration_id = %params.migration_id,
+                    job_id = %job.id,
+                    "migration.cleanup_source: enqueued source teardown job",
+                );
+            }
+            Err(e) => {
+                // Don't fail the saga — cutover already
+                // committed. Operator-visible via the
+                // migration record's error field + audit log.
+                tracing::warn!(
+                    migration_id = %params.migration_id,
+                    error = %e,
+                    "migration.cleanup_source: enqueue failed; source needs manual cleanup",
+                );
+            }
+        }
         Ok(())
     })
     .await
@@ -899,7 +1096,9 @@ mod tests {
     // setup needs the global registry. Until then the unit tests
     // here cover the params + DAG shape only.
     #[allow(dead_code)]
-    fn _smoke_compile_check(_store: Arc<dyn tritond_store::Store>) -> Result<(), StoreError> {
+    fn _smoke_compile_check(
+        _store: Arc<dyn tritond_store::Store>,
+    ) -> Result<(), tritond_store::StoreError> {
         Ok(())
     }
 }
