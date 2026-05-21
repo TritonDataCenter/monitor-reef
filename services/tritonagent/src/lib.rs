@@ -717,6 +717,127 @@ async fn drive_job(
             edge::reap(&cfg.edge_root, *edge_instance_id)
                 .with_context(|| format!("reap edge instance {edge_instance_id}"))?;
         }
+        // ────────────────────────────────────────────────────
+        // Live-migration job arms (LM-6c).
+        //
+        // Cleanup arms run real work (vmadm-delete + zfs-destroy
+        // the migration snapshots) — they're identical on
+        // source and target since both sides need the same
+        // tear-down. ZFS-send / VMM-stream / Proteus-flip arms
+        // are stubs that log + complete so the saga's await
+        // loops walk through; the real dispatch lands in LM-6c
+        // step 4 (ZFS) and LM-7 (VMM + Proteus). Stubs
+        // intentionally `Ok(())` rather than `bail!` so a saga
+        // running against a half-deployed fleet can still drain
+        // the queue and surface the gap on the migration record
+        // rather than wedging.
+        // ────────────────────────────────────────────────────
+        JobKind::MigrationCleanupSource {
+            instance_id,
+            migration_id,
+        }
+        | JobKind::MigrationCleanupTarget {
+            instance_id,
+            migration_id,
+        } => {
+            let side = match &job.kind {
+                JobKind::MigrationCleanupSource { .. } => "source",
+                _ => "target",
+            };
+            // Best-effort `vmadm delete` first so the zone
+            // releases its hold on the dataset before we try
+            // to destroy snapshots. Idempotent against zone-
+            // not-found (mirrors the `Delete` arm above).
+            if let Err(e) = vmadm::delete_zone(*instance_id).await {
+                warn!(
+                    %migration_id, %instance_id, side, error = %e,
+                    "migration cleanup: vmadm delete failed (best-effort, continuing)",
+                );
+            }
+            // Destroy the two migration snapshots the saga
+            // creates. `destroy_snapshot` errors on missing
+            // snapshots, so we warn-and-continue rather than
+            // failing the job — a half-completed migration
+            // may not have created both snapshots.
+            let dataset = format!("zones/{instance_id}");
+            for snap_label in &["migration-base", "migration-final"] {
+                let snap = format!("{dataset}@{snap_label}");
+                if let Err(e) = zfs::destroy_snapshot(&snap).await {
+                    warn!(
+                        %migration_id, %instance_id, side, %snap, error = %e,
+                        "migration cleanup: destroy_snapshot failed (best-effort, continuing)",
+                    );
+                }
+            }
+            info!(
+                %migration_id, %instance_id, side,
+                "migration cleanup: vmadm-delete + zfs-destroy completed (best-effort)",
+            );
+        }
+        JobKind::MigrateZfsSend {
+            migration_id,
+            instance_id,
+            role,
+            dataset,
+            from_snap,
+            to_snap,
+        } => {
+            // LM-6c step 4 will wire the real ZFS transfer:
+            // Source spawns `zfs send`, dials the target's
+            // `/migrate/{id}/zfs` listener over the migrate
+            // WebSocket, pipes stdout through `ZfsSender`.
+            // Target's job arm becomes "wait for the listener
+            // route to finish receiving" (the route is already
+            // wired and runs `zfs recv` against the dataset).
+            // Step 3 stub: log + report completed so the saga
+            // walks past the await without timing out.
+            info!(
+                %migration_id, %instance_id, ?role, dataset, ?from_snap, %to_snap,
+                "migrate-zfs-send: LM-6c step 4 dispatcher pending — completing stub",
+            );
+        }
+        JobKind::MigrateVmmStream {
+            migration_id,
+            instance_id,
+            role,
+        } => {
+            // LM-7 wires this — drives `OutboundMigration` /
+            // `InboundMigration` via the `tritond-vmm-migrate`
+            // crate over the LM-3 memory channel. Step 3 stub
+            // so an accidental enqueue (e.g. `cold: false`
+            // before LM-7) doesn't wedge the agent.
+            info!(
+                %migration_id, %instance_id, ?role,
+                "migrate-vmm-stream: LM-7 dispatcher pending — completing stub",
+            );
+        }
+        JobKind::ProteusActivate {
+            migration_id,
+            instance_id,
+            nic_ids,
+        } => {
+            // LM-7 wires this — `proteus.start_port` on each
+            // NIC after the cutover fence reports
+            // `PauseComplete`. Stub.
+            info!(
+                %migration_id, %instance_id, nic_count = nic_ids.len(),
+                "proteus-activate: LM-7 dispatcher pending — completing stub",
+            );
+        }
+        JobKind::ProteusDeactivate {
+            migration_id,
+            instance_id,
+            nic_ids,
+        } => {
+            // LM-7 wires this — `proteus.pause_port` +
+            // `delete_port` on the source after the cutover.
+            // Audit warning on failure (target is canonical
+            // post-switch). Stub.
+            info!(
+                %migration_id, %instance_id, nic_count = nic_ids.len(),
+                "proteus-deactivate: LM-7 dispatcher pending — completing stub",
+            );
+        }
     }
 
     Ok(())
