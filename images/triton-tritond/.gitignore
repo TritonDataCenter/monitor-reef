@@ -1,0 +1,4 @@
+# tritond release binary and libfdb_c.so are too large for github.
+# build.sh fetches both at build time from Manta-hosted sources.
+proto/opt/triton/tritond/bin/
+proto/opt/triton/tritond/lib/

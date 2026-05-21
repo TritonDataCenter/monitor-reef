@@ -1,0 +1,90 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# SMF start method for site/triton-tritond.
+#
+# Reads operator metadata via mdata-get:
+#   triton:fdb_cluster_secret      (required)  cluster shared secret
+#   triton:fdb_cluster_peers       (required)  comma-separated IPs of FDB nodes
+#   triton:tritond_bind_address    (optional)  defaults to "0.0.0.0:8080"
+#   triton:tritond_log_filter      (optional)  defaults to "info"
+#
+# Re-renders bootstrap config + cluster file on every boot from the
+# template so that vmadm metadata changes + zone reboot are sufficient
+# to push a config change. State (the JWT key, deployment HMAC key,
+# audit chain, etc.) lives in FoundationDB and is unaffected.
+#
+# Backgrounds tritond and exits 0 so SMF's exec_method timeout does
+# not kill the contract.
+
+set -eu
+
+DATA_VERSION_FILE=/data/version
+EXPECTED_DATA_VERSION=1
+TRITOND_ETC=/data/etc/tritond
+TRITOND_STATE=/data/state/tritond
+TRITOND_BIN=/opt/triton/tritond/bin/tritond
+TRITOND_LIB=/opt/triton/tritond/lib
+CONFIG_TMPL=/opt/triton/tritond/etc/config.toml.tmpl
+
+mkdir -p "$TRITOND_ETC" "$TRITOND_STATE"
+
+# Resolve required metadata; refuse to start without it.
+SECRET="$(mdata-get triton:fdb_cluster_secret 2>/dev/null || true)"
+PEERS="$(mdata-get triton:fdb_cluster_peers 2>/dev/null || true)"
+[ -n "$SECRET" ] || { echo "triton-tritond: missing triton:fdb_cluster_secret" >&2; exit 1; }
+[ -n "$PEERS"  ] || { echo "triton-tritond: missing triton:fdb_cluster_peers" >&2; exit 1; }
+
+BIND_ADDRESS="$(mdata-get triton:tritond_bind_address 2>/dev/null || echo "0.0.0.0:8080")"
+LOG_FILTER="$(mdata-get triton:tritond_log_filter 2>/dev/null || echo "info")"
+
+# Render FDB cluster file.
+PEERS=$(echo "$PEERS" | tr -d ' ')
+CLUSTER_LINE="triton:${SECRET}@"
+first=1
+for p in $(echo "$PEERS" | tr ',' '\n'); do
+    if [ $first -eq 1 ]; then
+        CLUSTER_LINE="${CLUSTER_LINE}${p}:4500"
+        first=0
+    else
+        CLUSTER_LINE="${CLUSTER_LINE},${p}:4500"
+    fi
+done
+
+printf '%s\n' "$CLUSTER_LINE" > "$TRITOND_ETC/fdb.cluster"
+chmod 0644 "$TRITOND_ETC/fdb.cluster"
+
+# Render bootstrap TOML from the template.
+sed \
+    -e "s#__BIND_ADDRESS__#$BIND_ADDRESS#" \
+    -e "s#__FDB_CLUSTER_FILE__#$TRITOND_ETC/fdb.cluster#" \
+    -e "s#__LOG_FILTER__#$LOG_FILTER#" \
+    "$CONFIG_TMPL" > "$TRITOND_ETC/config.toml"
+chmod 0644 "$TRITOND_ETC/config.toml"
+
+# Mark fresh provision on first boot. The marker is informational
+# for tritond; on a fresh FDB cluster tritond auto-bootstraps its
+# own state (mints the root password to stderr, etc.). Reprovisions
+# detect this file's presence and stay quiet.
+if [ ! -f "$DATA_VERSION_FILE" ]; then
+    echo "triton-tritond: fresh provision; watch /data/state/tritond/server.out for the one-time root password" >&2
+    printf '%s\n' "$EXPECTED_DATA_VERSION" > "$DATA_VERSION_FILE"
+    chmod 0644 "$DATA_VERSION_FILE"
+fi
+
+export LD_LIBRARY_PATH="$TRITOND_LIB"
+
+# Background tritond under SMF's contract. Capture stderr to a
+# log file inside the delegated dataset so the first-boot
+# self-bootstrap banner (root password) survives the start method
+# returning.
+"$TRITOND_BIN" serve --config "$TRITOND_ETC/config.toml" \
+    >>"$TRITOND_STATE/server.out" 2>&1 &
+
+echo "triton-tritond: tritond launched pid=$! bind=$BIND_ADDRESS" >&2
+exit 0

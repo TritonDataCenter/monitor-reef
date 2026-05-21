@@ -1,0 +1,17 @@
+# Bootstrap config for tritond. See
+# monitor-reef/docs/vnext/operating-tritond.md for the full schema.
+#
+# Rendered by /var/svc/method/triton-tritond on first boot to
+# /data/etc/tritond/config.toml. Subsequent boots re-render (the
+# template is small + cheap; this also means metadata changes
+# applied via vmadm update + zone reboot take effect).
+#
+# Placeholders below are substituted by the start method:
+#   __BIND_ADDRESS__        -> triton:tritond_bind_address (defaults to "0.0.0.0:8080")
+#   __FDB_CLUSTER_FILE__    -> /data/etc/tritond/fdb.cluster (always)
+#   __LOG_FILTER__          -> triton:tritond_log_filter (defaults to "info")
+
+bind_address     = "__BIND_ADDRESS__"
+fdb_cluster_file = "__FDB_CLUSTER_FILE__"
+log_filter       = "__LOG_FILTER__"
+peer_endpoints   = []
