@@ -219,9 +219,9 @@ pub fn sign_with_key(key: &PrivateKey, data: &[u8]) -> Result<String, AuthError>
     if let ssh_key::private::KeypairData::Ed25519(kp) = key.key_data() {
         use ed25519_dalek::{Signer as _, SigningKey};
         let seed: &[u8] = kp.private.as_ref();
-        let seed32: &[u8; 32] = seed.try_into().map_err(|_| {
-            AuthError::SigningError("Ed25519 private key has wrong length".into())
-        })?;
+        let seed32: &[u8; 32] = seed
+            .try_into()
+            .map_err(|_| AuthError::SigningError("Ed25519 private key has wrong length".into()))?;
         let signing_key = SigningKey::from_bytes(seed32);
         let sig_bytes = signing_key.sign(data).to_bytes().to_vec();
         return Ok(base64::engine::general_purpose::STANDARD.encode(&sig_bytes));

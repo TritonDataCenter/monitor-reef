@@ -92,6 +92,10 @@ pub enum ClusterState {
     /// underlying VMs have been destroyed.
     Deleting,
 
+    /// Bootstrap failed with an unrecoverable error; manual intervention
+    /// (delete and re-create) is required.
+    Failed,
+
     /// Catch-all for forward compatibility; an unrecognised state
     /// name from a newer server.
     #[serde(other)]

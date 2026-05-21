@@ -560,6 +560,13 @@
             "type": "string"
           },
           {
+            "description": "Bootstrap failed with an unrecoverable error; manual intervention (delete and re-create) is required.",
+            "enum": [
+              "failed"
+            ],
+            "type": "string"
+          },
+          {
             "description": "Catch-all for forward compatibility; an unrecognised state name from a newer server.",
             "enum": [
               "unknown"

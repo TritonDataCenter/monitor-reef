@@ -18,9 +18,9 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 use tokio_tungstenite::tungstenite::protocol::Role as WsRole;
 use tokio_util::compat::FuturesAsyncReadCompatExt as _;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use triton_api::{
     AddNodesRequest, BootstrapClusterRequest, ChallengeMethod, Cluster, ClusterList, ClusterPath,
@@ -817,6 +817,7 @@ impl TritonApi for TritonApiImpl {
         store.update(&record).await.map_err(store_error_to_http)?;
 
         let relay = Arc::clone(&ctx.relay);
+        let store_for_error = Arc::clone(&store);
         let cluster_view = Cluster::from(&record);
         tokio::spawn(async move {
             if let Err(e) = run_bootstrap(
@@ -831,6 +832,10 @@ impl TritonApi for TritonApiImpl {
             .await
             {
                 tracing::error!(cluster = %id, error = ?e, "bootstrap failed");
+                if let Ok(Some(mut failed_record)) = store_for_error.get(id).await {
+                    failed_record.state = ClusterState::Failed;
+                    let _ = store_for_error.update(&failed_record).await;
+                }
             }
         });
 
@@ -1206,17 +1211,35 @@ async fn run_bootstrap(
 
     // Phase 4: bootstrap etcd on the first control-plane node.
     // The node may need more time beyond the 90s reboot wait before etcd is
-    // ready to accept a bootstrap request; retry for up to 5 minutes.
+    // ready to accept a bootstrap request; retry both the TLS connect and the
+    // bootstrap call for up to 5 minutes.
     let cp_target = format!("{first_cp_ip}:50000");
-    let mut client = talos::TalosClient::connect_authenticated(
-        Arc::clone(&relay),
-        &cp_target,
-        &configs.ca_pem_raw,
-        &configs.crt_pem_raw,
-        &configs.key_pem_raw,
-    )
-    .await
-    .with_context(|| format!("authenticated connect to {cp_target}"))?;
+    let auth_deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    let mut client = loop {
+        match talos::TalosClient::connect_authenticated(
+            Arc::clone(&relay),
+            &cp_target,
+            &configs.ca_pem_raw,
+            &configs.crt_pem_raw,
+            &configs.key_pem_raw,
+        )
+        .await
+        {
+            Ok(c) => break c,
+            Err(e) if std::time::Instant::now() < auth_deadline => {
+                tracing::warn!(
+                    cluster = %cluster_id,
+                    target = %cp_target,
+                    error = %e,
+                    "Talos authenticated API not ready, retrying in 15s"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+            }
+            Err(e) => {
+                return Err(e).with_context(|| format!("authenticated connect to {cp_target}"));
+            }
+        }
+    };
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
     loop {

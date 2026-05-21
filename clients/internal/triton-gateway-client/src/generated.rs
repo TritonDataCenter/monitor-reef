@@ -1381,6 +1381,13 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    {"]
+    #[doc = "      \"description\": \"Bootstrap failed with an unrecoverable error; manual intervention (delete and re-create) is required.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"failed\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
     #[doc = "      \"description\": \"Catch-all for forward compatibility; an unrecognised state name from a newer server.\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"enum\": ["]
@@ -1420,6 +1427,9 @@ pub mod types {
         #[doc = "Deletion is in progress; the record will disappear when the underlying VMs have been destroyed."]
         #[serde(rename = "deleting")]
         Deleting,
+        #[doc = "Bootstrap failed with an unrecoverable error; manual intervention (delete and re-create) is required."]
+        #[serde(rename = "failed")]
+        Failed,
         #[doc = "Catch-all for forward compatibility; an unrecognised state name from a newer server."]
         #[serde(rename = "unknown")]
         Unknown,
@@ -1433,6 +1443,7 @@ pub mod types {
                 Self::Running => f.write_str("running"),
                 Self::Degraded => f.write_str("degraded"),
                 Self::Deleting => f.write_str("deleting"),
+                Self::Failed => f.write_str("failed"),
                 Self::Unknown => f.write_str("unknown"),
             }
         }
@@ -1447,6 +1458,7 @@ pub mod types {
                 "running" => Ok(Self::Running),
                 "degraded" => Ok(Self::Degraded),
                 "deleting" => Ok(Self::Deleting),
+                "failed" => Ok(Self::Failed),
                 "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
