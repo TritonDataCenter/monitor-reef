@@ -123,7 +123,9 @@ pub fn generate_machine_configs(
 ) -> Result<MachineConfigOutput> {
     let admin_cert = generate_admin_client_cert(&secrets.certs.os)?;
 
-    let cert_sans = vec![endpoint_ip.to_string()];
+    // Include 127.0.0.1 so the API server cert is valid when accessed via the
+    // relay bridge, which listens locally and tunnels to the fabric endpoint.
+    let cert_sans = vec![endpoint_ip.to_string(), "127.0.0.1".to_string()];
 
     let cp_config = generate_controlplane_config(
         secrets,
