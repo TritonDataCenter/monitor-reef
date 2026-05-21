@@ -1,0 +1,41 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "tritond-vmm-migrate"
+version = "0.1.0"
+edition.workspace = true
+description = "bhyve live-migration data-plane (LM-2): codec, protocol constants, VmmDev abstraction, BhyveCtl async client, OutboundMigration / InboundMigration state machines. Ported from the legacy vmm-migrate-agent and adapted to a tokio-async, transport-generic shape so the tritonagent migrate module can drive it over WebSocket while tests use in-memory channels."
+license = "MPL-2.0"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+async-trait = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+# Page-batch payload compression. Optional at the protocol level
+# (PAGE_BATCH_FLAG_ZSTD bit toggles per-batch), so we always link
+# but only invoke when the batch would actually shrink.
+zstd = "0.13"
+
+# illumos-only ioctl FFI. On every other platform the SmartOS impl
+# is feature-gated out and only the trait + mock are available, so
+# the crate still compiles cleanly on macOS/Linux dev machines.
+[target.'cfg(target_os = "illumos")'.dependencies]
+nix = { version = "0.30", features = ["fs", "ioctl", "mman", "uio"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "io-util"] }
