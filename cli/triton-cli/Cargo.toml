@@ -58,6 +58,11 @@ http = { workspace = true }
 axum = { workspace = true }
 tempfile = { workspace = true }
 
+# Relay bridge dependencies
+yamux = { workspace = true }
+tokio-util = { workspace = true }
+triton-relay-protocol = { workspace = true }
+
 [build-dependencies]
 build-data = { workspace = true }
 

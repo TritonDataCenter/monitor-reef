@@ -39,7 +39,8 @@ use uuid::Uuid;
 
 mod cluster_store;
 use cluster_store::{
-    ClusterRecord, ClusterStore, FileClusterStore, NodeInfo, NodeRole, StoreError,
+    ClusterRecord, ClusterStore, ControlPlaneConfig, FileClusterStore, NodeInfo, NodeRole,
+    StoreError,
 };
 mod talos;
 mod talos_config;
@@ -983,14 +984,19 @@ async fn provision_vm(
     name: &str,
     image_uuid: Uuid,
     package: &str,
+    fabric_network_id: Uuid,
 ) -> anyhow::Result<String> {
-    use cloudapi_client::types::{CreateMachineRequest, MachineState};
+    use cloudapi_client::types::{CreateMachineRequest, MachineState, NetworkObject};
 
     let body = CreateMachineRequest {
         name: Some(name.to_string()),
         image: image_uuid,
         package: package.to_string(),
-        networks: None,
+        networks: Some(vec![NetworkObject {
+            ipv4_uuid: fabric_network_id,
+            ipv4_ips: None,
+            primary: Some(true),
+        }]),
         affinity: None,
         locality: None,
         metadata: None,
@@ -1094,6 +1100,7 @@ async fn run_bootstrap(
             &name,
             image_uuid,
             &req.package,
+            fabric_network_id,
         )
         .await
         .with_context(|| format!("provision control-plane node {name}"))?;
@@ -1112,6 +1119,7 @@ async fn run_bootstrap(
             &name,
             image_uuid,
             &req.package,
+            fabric_network_id,
         )
         .await
         .with_context(|| format!("provision worker node {name}"))?;
@@ -1278,6 +1286,14 @@ async fn run_bootstrap(
     let kubeconfig_bytes = client.kubeconfig().await.context("retrieve kubeconfig")?;
 
     record.kubeconfig_yaml = Some(String::from_utf8_lossy(&kubeconfig_bytes).into_owned());
+    record.control_plane_config = Some(ControlPlaneConfig {
+        endpoint: format!("https://{}:6443", first_cp_ip),
+        cns_suffix: String::new(),
+        package_id: Uuid::nil(),
+        image_id: image_uuid,
+        talos_version: talos_version.to_string(),
+        kubernetes_version: String::new(),
+    });
     record.state = ClusterState::Running;
     store
         .update(&record)

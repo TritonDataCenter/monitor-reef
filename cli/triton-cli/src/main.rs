@@ -668,8 +668,13 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::K8s { command } => {
-            let (client, _profile) = cli.build_client().await?;
-            command.clone().run(&client, cli.json).await
+            let (client, profile) = cli.build_client().await?;
+            if let commands::k8s::K8sCommand::RelayBridge(args) = command.clone() {
+                let (base_url, _) = cli.resolve_url_and_insecure(&profile);
+                commands::k8s::relay_bridge::run(args, &client, &base_url).await
+            } else {
+                command.clone().run(&client, cli.json).await
+            }
         }
         Commands::Info => {
             let (client, _profile) = cli.build_client().await?;
