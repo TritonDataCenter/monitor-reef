@@ -47,6 +47,7 @@ pub mod imds_data;
 pub mod imds_ratelimit;
 pub mod log_tailer;
 pub mod metrics;
+pub mod migrate;
 pub mod platform;
 pub mod proteus;
 pub mod registration;

@@ -239,6 +239,7 @@ tritond-metrics = { path = "libs/tritond-metrics" }
 tritond-placement = { path = "libs/tritond-placement" }
 tritond-saga = { path = "libs/tritond-saga" }
 tritond-store = { path = "libs/tritond-store" }
+tritond-vmm-migrate = { path = "libs/tritond-vmm-migrate" }
 tritonagent = { path = "services/tritonagent" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }

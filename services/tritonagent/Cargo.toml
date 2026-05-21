@@ -49,6 +49,7 @@ tracing-subscriber = { workspace = true }
 tritond-api = { workspace = true }
 tritond-auth = { workspace = true }
 tritond-client = { workspace = true }
+tritond-vmm-migrate = { workspace = true }
 urlencoding = { workspace = true }
 tritond-cn-platform = { workspace = true }
 tritond-image-manifest = { workspace = true }

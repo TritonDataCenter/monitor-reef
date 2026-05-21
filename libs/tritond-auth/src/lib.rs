@@ -33,6 +33,7 @@ pub mod console_ticket;
 pub mod identity_hmac;
 pub mod imds_token;
 pub mod jwt;
+pub mod migrate_ticket;
 pub mod oidc;
 pub mod password;
 pub mod redacted;
@@ -52,6 +53,10 @@ pub use imds_token::{
 };
 pub use jwt::{
     AccessClaims, JwtError, JwtKey, RefreshClaims, TokenKind, mint_access, mint_refresh, verify,
+};
+pub use migrate_ticket::{
+    DEFAULT_MIGRATE_TICKET_TTL_SECS, MIGRATE_TICKET_KEY_BYTES, MigrateRole, MigrateTicketError,
+    MigrateTicketKey,
 };
 pub use oidc::{OidcClaims, OidcConfig, OidcError, OidcVerifier, peek_issuer};
 pub use password::{PasswordError, generate_random_password, hash_password, verify_password};
