@@ -1,0 +1,6 @@
+# The FDB binaries + runtime libs are too large for github
+# (fdbserver is 110 MB and the 100 MB hard limit makes them
+# untrackable here). build.sh fetches them at build time from a
+# Manta-hosted tarball (TRITON_FDB_BITS_URL or default).
+proto/opt/fdb/bin/
+proto/opt/fdb/lib/

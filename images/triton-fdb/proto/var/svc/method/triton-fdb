@@ -1,0 +1,122 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# SMF start method for site/triton-fdb. Idempotent: distinguishes
+# fresh provision from attach-existing by the presence of
+# /data/version.
+#
+# Fresh provision (no /data/version):
+#   - read triton:fdb_public_ip      from customer_metadata
+#   - read triton:fdb_cluster_secret from customer_metadata
+#   - (optional) read triton:fdb_cluster_peers (comma-separated IPs)
+#       — defaults to just $public_ip for single-node bringup
+#   - write /etc/fdb/public_ip   (single line)
+#   - write /etc/fdb/fdb.cluster (triton:<secret>@<peer>:4500,...)
+#   - mkdir /data/state/fdb/{data,log,etc}
+#   - background-task: once fdbserver is reachable, issue
+#     `fdbcli configure new single ssd` so the cluster is
+#     initialised (FDB does not auto-create a usable DB on its own);
+#     then write /data/version atomically.
+#
+# Always (fresh OR attach-existing):
+#   - background fdbserver and exit. SMF's contract semantics watch
+#     the daemon; we never block the start method on fdbserver
+#     because that runs into the exec_method timeout.
+
+set -eu
+
+DATA_VERSION_FILE=/data/version
+EXPECTED_DATA_VERSION=730           # FDB 7.3 on-disk format
+FDB_ETC=/etc/fdb
+FDB_DATA=/data/state/fdb/data
+FDB_LOG=/data/state/fdb/log
+FDB_BIN=/opt/fdb/bin
+FDB_LIB=/opt/fdb/lib
+
+mkdir -p "$FDB_ETC" "$FDB_DATA" "$FDB_LOG"
+
+NEEDS_BOOTSTRAP=0
+if [ ! -f "$DATA_VERSION_FILE" ]; then
+    echo "triton-fdb: fresh provision; initialising /data" >&2
+    NEEDS_BOOTSTRAP=1
+
+    PUBLIC_IP="$(mdata-get triton:fdb_public_ip)"
+    SECRET="$(mdata-get triton:fdb_cluster_secret)"
+    PEERS="$(mdata-get triton:fdb_cluster_peers 2>/dev/null || echo "$PUBLIC_IP")"
+
+    [ -n "$PUBLIC_IP" ] || { echo "triton-fdb: missing triton:fdb_public_ip metadata" >&2; exit 1; }
+    [ -n "$SECRET"    ] || { echo "triton-fdb: missing triton:fdb_cluster_secret metadata" >&2; exit 1; }
+
+    PEERS=$(echo "$PEERS" | tr -d ' ')
+    CLUSTER_LINE="triton:${SECRET}@"
+    first=1
+    for p in $(echo "$PEERS" | tr ',' '\n'); do
+        if [ $first -eq 1 ]; then
+            CLUSTER_LINE="${CLUSTER_LINE}${p}:4500"
+            first=0
+        else
+            CLUSTER_LINE="${CLUSTER_LINE},${p}:4500"
+        fi
+    done
+
+    printf '%s\n' "$PUBLIC_IP"     > "$FDB_ETC/public_ip"
+    printf '%s\n' "$CLUSTER_LINE"  > "$FDB_ETC/fdb.cluster"
+    chmod 0644 "$FDB_ETC/public_ip" "$FDB_ETC/fdb.cluster"
+fi
+
+PUBLIC_IP="$(cat "$FDB_ETC/public_ip")"
+CLUSTER_FILE="$FDB_ETC/fdb.cluster"
+
+export LD_LIBRARY_PATH="$FDB_LIB"
+
+# Background fdbserver under SMF's contract.
+"$FDB_BIN/fdbserver" \
+    --cluster-file "$CLUSTER_FILE" \
+    --datadir "$FDB_DATA" \
+    --logdir  "$FDB_LOG" \
+    --listen-address "${PUBLIC_IP}:4500" \
+    --public-address "${PUBLIC_IP}:4500" \
+    --memory 400MiB \
+    --storage-memory 256MiB \
+    --cache-memory 64MiB \
+    >>"$FDB_LOG/server.out" 2>&1 &
+
+FDBSERVER_PID=$!
+echo "triton-fdb: fdbserver launched pid=$FDBSERVER_PID on ${PUBLIC_IP}:4500" >&2
+
+# On fresh provision, do `configure new single ssd` once fdbserver
+# is reachable, then mark the data dir initialised. Runs in a
+# background subshell so the SMF start method returns promptly.
+if [ "$NEEDS_BOOTSTRAP" = "1" ]; then
+    (
+        # Wait up to ~60s for fdbserver to accept fdbcli connections.
+        for i in $(seq 1 30); do
+            sleep 2
+            if "$FDB_BIN/fdbcli" -C "$CLUSTER_FILE" \
+                    --timeout 2 --exec "status minimal" 2>&1 \
+                    | grep -qE "fully replicated|database is unavailable"; then
+                break
+            fi
+        done
+
+        # `configure new single ssd` is destructive (wipes the DB).
+        # Only safe here because we KNOW /data/version did not exist
+        # when this script started, so /data/state/fdb is empty.
+        if "$FDB_BIN/fdbcli" -C "$CLUSTER_FILE" \
+                --timeout 10 --exec "configure new single ssd" 2>&1 \
+                | grep -qE "Database created|Database already created"; then
+            printf '%s\n' "$EXPECTED_DATA_VERSION" > "$DATA_VERSION_FILE"
+            chmod 0644 "$DATA_VERSION_FILE"
+            echo "triton-fdb: cluster initialised; /data/version=$EXPECTED_DATA_VERSION" >&2
+        else
+            echo "triton-fdb: configure new FAILED; check fdbserver logs" >&2
+        fi
+    ) &
+fi
+
+exit 0
