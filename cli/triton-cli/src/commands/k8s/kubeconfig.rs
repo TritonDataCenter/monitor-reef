@@ -23,6 +23,11 @@ pub struct KubeconfigArgs {
     /// Print kubeconfig to stdout instead of writing to a file
     #[arg(long)]
     pub stdout: bool,
+
+    /// Override the server URL in the kubeconfig (defaults to the relay bridge
+    /// address https://127.0.0.1:6443)
+    #[arg(long, default_value = "https://127.0.0.1:6443")]
+    pub server: String,
 }
 
 pub async fn run(args: KubeconfigArgs, client: &TypedClient) -> Result<()> {
@@ -37,8 +42,10 @@ pub async fn run(args: KubeconfigArgs, client: &TypedClient) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to get kubeconfig: {}", e))?
         .into_inner();
 
+    let kubeconfig = patch_server_url(&response.kubeconfig, &args.server);
+
     if args.stdout {
-        print!("{}", response.kubeconfig);
+        print!("{}", kubeconfig);
         return Ok(());
     }
 
@@ -54,7 +61,7 @@ pub async fn run(args: KubeconfigArgs, client: &TypedClient) -> Result<()> {
         kube_dir.join("config")
     };
 
-    std::fs::write(&output_path, response.kubeconfig.as_bytes())
+    std::fs::write(&output_path, kubeconfig.as_bytes())
         .with_context(|| format!("failed to write kubeconfig to {}", output_path.display()))?;
 
     // Set permissions to 0600 on Unix systems.
@@ -67,4 +74,21 @@ pub async fn run(args: KubeconfigArgs, client: &TypedClient) -> Result<()> {
 
     eprintln!("Written to {}", output_path.display());
     Ok(())
+}
+
+/// Replace every `server:` value in the kubeconfig YAML with `server_url`.
+fn patch_server_url(kubeconfig: &str, server_url: &str) -> String {
+    kubeconfig
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("server:") {
+                let indent = &line[..line.len() - trimmed.len()];
+                format!("{}server: {}", indent, server_url)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
