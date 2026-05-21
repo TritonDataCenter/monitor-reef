@@ -352,9 +352,12 @@ impl TalosClient {
 
     /// Retrieve the kubeconfig from the control-plane node.
     ///
-    /// The RPC is server-streaming; this method collects all data chunks into
-    /// a single byte vector containing the complete YAML kubeconfig.
+    /// The RPC is server-streaming; this method collects all data chunks and
+    /// decompresses the gzip stream that Talos wraps the kubeconfig YAML in.
     pub async fn kubeconfig(&mut self) -> Result<Vec<u8>> {
+        use flate2::read::GzDecoder;
+        use std::io::Read as _;
+
         let mut stream = self
             .inner
             .kubeconfig(())
@@ -362,17 +365,22 @@ impl TalosClient {
             .map_err(|s| anyhow::anyhow!("Kubeconfig: {s}"))?
             .into_inner();
 
-        let mut data = Vec::new();
+        let mut compressed = Vec::new();
         loop {
             match stream
                 .message()
                 .await
                 .map_err(|s| anyhow::anyhow!("Kubeconfig stream: {s}"))?
             {
-                Some(chunk) => data.extend_from_slice(&chunk.bytes),
+                Some(chunk) => compressed.extend_from_slice(&chunk.bytes),
                 None => break,
             }
         }
-        Ok(data)
+
+        let mut yaml = Vec::new();
+        GzDecoder::new(compressed.as_slice())
+            .read_to_end(&mut yaml)
+            .context("decompress kubeconfig gzip")?;
+        Ok(yaml)
     }
 }

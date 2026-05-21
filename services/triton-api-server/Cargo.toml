@@ -28,6 +28,7 @@ serde_yaml = { workspace = true }
 time = { workspace = true }
 cloudapi-client = { workspace = true }
 dropshot = { workspace = true }
+flate2 = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }

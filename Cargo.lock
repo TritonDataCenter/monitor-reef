@@ -5020,6 +5020,7 @@ dependencies = [
  "chrono",
  "cloudapi-client",
  "dropshot",
+ "flate2",
  "futures-util",
  "http",
  "hyper",
