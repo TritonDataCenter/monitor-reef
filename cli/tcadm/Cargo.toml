@@ -17,20 +17,29 @@ workspace = true
 name = "tcadm"
 path = "src/main.rs"
 
+[build-dependencies]
+chrono = { workspace = true }
+
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 dialoguer = { workspace = true }
 dirs = { workspace = true }
-reqwest = { workspace = true }
+flate2 = "1"
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 rpassword = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+triton-channel = { workspace = true }
 tritond-client = { workspace = true }
 uuid = { workspace = true }
 webpki-roots = { workspace = true }

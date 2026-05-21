@@ -23,6 +23,7 @@
 
 mod commands;
 mod config;
+mod self_update;
 mod session;
 
 use anyhow::Result;
@@ -174,6 +175,25 @@ enum Commands {
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
+    },
+    /// Update this `tcadm` binary against the signed Manta release
+    /// channel. Verifies the channel signature against the publisher
+    /// pubkey baked into the binary; refuses to act on a tampered or
+    /// mis-signed manifest. Atomic swap; the previous binary is kept
+    /// at `tcadm.prev` for manual rollback.
+    SelfUpdate {
+        /// Override the channel manifest URL. Defaults to the stable
+        /// channel under tritoncloud.
+        #[arg(long)]
+        channel_url: Option<String>,
+        /// Override the install directory. Defaults to the directory
+        /// of the currently-running binary.
+        #[arg(long)]
+        install_dir: Option<std::path::PathBuf>,
+        /// Report current vs latest only; do not download or replace.
+        /// Exits non-zero if an update is available.
+        #[arg(long)]
+        check: bool,
     },
 }
 
@@ -3365,6 +3385,24 @@ async fn main() -> Result<()> {
                 commands::config_reset(cli.endpoint, cli.api_key, key).await
             }
         },
+        Commands::SelfUpdate {
+            channel_url,
+            install_dir,
+            check,
+        } => {
+            // self-update is sync (blocking reqwest + filesystem). Run
+            // it on a blocking-task slot to avoid wedging the tokio
+            // runtime; the call returns a Result that we propagate.
+            tokio::task::spawn_blocking(move || {
+                self_update::run(self_update::SelfUpdateOpts {
+                    channel_url,
+                    install_dir,
+                    check,
+                })
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("self-update task panicked: {e}"))?
+        }
     }
 }
 
