@@ -1,0 +1,4 @@
+# ClickHouse multi-call binary is 667 MB stripped; well over GitHub's
+# 100 MB limit. build.sh fetches it on demand from Manta-hosted
+# sources.
+proto/opt/triton/clickhouse/bin/

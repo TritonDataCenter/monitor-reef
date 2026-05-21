@@ -1,0 +1,67 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# SMF start method for site/triton-clickhouse.
+#
+# Optional metadata via mdata-get:
+#   triton:clickhouse_http_port    default 8123
+#   triton:clickhouse_tcp_port     default 9000
+#   triton:clickhouse_listen       default 0.0.0.0
+#
+# State lives entirely on the delegated dataset under
+# /data/state/clickhouse; reprovision swaps the binary, the DB
+# survives.
+
+set -eu
+
+DATA_VERSION_FILE=/data/version
+EXPECTED_DATA_VERSION=1
+CH_ETC=/data/etc/clickhouse-server
+CH_DATA=/data/state/clickhouse/data
+CH_LOG=/data/state/clickhouse/log
+CH_BIN=/opt/triton/clickhouse/bin/clickhouse
+CONFIG_TMPL=/opt/triton/clickhouse/etc/config.xml.tmpl
+USERS_XML=/opt/triton/clickhouse/etc/users.xml
+
+mkdir -p "$CH_ETC" "$CH_DATA" "$CH_LOG" "$CH_DATA/tmp" "$CH_DATA/user_files"
+
+HTTP_PORT="$(mdata-get triton:clickhouse_http_port 2>/dev/null || echo 8123)"
+TCP_PORT="$(mdata-get triton:clickhouse_tcp_port  2>/dev/null || echo 9000)"
+LISTEN_HOST="$(mdata-get triton:clickhouse_listen 2>/dev/null || echo 0.0.0.0)"
+
+# Render config.xml from the template every boot. users.xml is copied
+# verbatim on first boot only; ClickHouse mutates it via SQL `CREATE USER`
+# (access_management=1), so subsequent boots must preserve in-place edits.
+sed \
+    -e "s#__HTTP_PORT__#$HTTP_PORT#" \
+    -e "s#__TCP_PORT__#$TCP_PORT#" \
+    -e "s#__LISTEN_HOST__#$LISTEN_HOST#" \
+    -e "s#__DATA_DIR__#$CH_DATA#" \
+    -e "s#__LOG_DIR__#$CH_LOG#" \
+    "$CONFIG_TMPL" > "$CH_ETC/config.xml"
+chmod 0644 "$CH_ETC/config.xml"
+
+if [ ! -f "$CH_ETC/users.xml" ]; then
+    cp "$USERS_XML" "$CH_ETC/users.xml"
+    chmod 0644 "$CH_ETC/users.xml"
+fi
+
+if [ ! -f "$DATA_VERSION_FILE" ]; then
+    echo "triton-clickhouse: fresh provision; default user has no password (set one after first boot via ALTER USER)" >&2
+    printf '%s\n' "$EXPECTED_DATA_VERSION" > "$DATA_VERSION_FILE"
+    chmod 0644 "$DATA_VERSION_FILE"
+fi
+
+# Background clickhouse-server under SMF's contract.
+# clickhouse-server takes --config-file; logs go to the configured
+# log dir; stdout/stderr we still capture for early-boot debug.
+"$CH_BIN" server --config-file "$CH_ETC/config.xml" \
+    >>"$CH_LOG/server.out" 2>&1 &
+
+echo "triton-clickhouse: clickhouse-server launched pid=$! http=$LISTEN_HOST:$HTTP_PORT" >&2
+exit 0

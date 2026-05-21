@@ -1,0 +1,34 @@
+<!--
+    Bootstrap config for triton-clickhouse. Rendered by
+    /var/svc/method/triton-clickhouse on first boot to
+    /data/etc/clickhouse-server/config.xml.
+
+    Placeholders substituted by the start method:
+      __HTTP_PORT__    -> triton:clickhouse_http_port (default 8123)
+      __TCP_PORT__     -> triton:clickhouse_tcp_port  (default 9000)
+      __LISTEN_HOST__  -> triton:clickhouse_listen    (default 0.0.0.0)
+      __DATA_DIR__     -> /data/state/clickhouse/data (always)
+      __LOG_DIR__      -> /data/state/clickhouse/log  (always)
+-->
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <log>__LOG_DIR__/server.log</log>
+        <errorlog>__LOG_DIR__/error.log</errorlog>
+        <size>100M</size>
+        <count>5</count>
+    </logger>
+    <http_port>__HTTP_PORT__</http_port>
+    <tcp_port>__TCP_PORT__</tcp_port>
+    <listen_host>__LISTEN_HOST__</listen_host>
+    <listen_try>1</listen_try>
+    <path>__DATA_DIR__/</path>
+    <tmp_path>__DATA_DIR__/tmp/</tmp_path>
+    <user_files_path>__DATA_DIR__/user_files/</user_files_path>
+    <users_config>users.xml</users_config>
+    <default_profile>default</default_profile>
+    <default_database>default</default_database>
+    <mark_cache_size>5368709120</mark_cache_size>
+    <mlock_executable>false</mlock_executable>
+    <timezone>UTC</timezone>
+</clickhouse>
