@@ -182,6 +182,7 @@ permit(
         Action::"instance_stop",
         Action::"instance_restart",
         Action::"instance_console",
+        Action::"instance_migrate",
         Action::"nic_list",
         Action::"nic_get",
         Action::"disk_list",
@@ -415,6 +416,13 @@ pub enum Action {
     /// the existing instance-read permission elsewhere.
     MigrationList,
     MigrationGet,
+    /// LM-5 — start a live migration via
+    /// `POST /v2/instances/{id}/actions/migrate`. Tenant-scoped
+    /// (any project member can migrate their own instances);
+    /// operator-only sub-actions like `target_server_uuid` force
+    /// override gate behind the root-allows-all Cedar rule
+    /// because they cross tenant boundaries.
+    InstanceMigrate,
     TenantIdpSet,
     TenantIdpGet,
     TenantIdpDelete,
@@ -681,6 +689,7 @@ impl Action {
             Action::OperationsAbandon => "operations_abandon",
             Action::MigrationList => "migration_list",
             Action::MigrationGet => "migration_get",
+            Action::InstanceMigrate => "instance_migrate",
             Action::TenantIdpSet => "tenant_idp_set",
             Action::TenantIdpGet => "tenant_idp_get",
             Action::TenantIdpDelete => "tenant_idp_delete",
@@ -1388,6 +1397,10 @@ fn is_read_action(action: Action) -> bool {
         // Opening a console is an interactive action that touches
         // the guest; a ReadOnly key must not reach it.
         | Action::InstanceConsole
+        // Starting a migration is a multi-host write that
+        // mutates instance ownership; ReadOnly keys must not
+        // reach it.
+        | Action::InstanceMigrate
         | Action::FloatingIpCreate
         | Action::FloatingIpDelete
         | Action::FloatingIpAttach

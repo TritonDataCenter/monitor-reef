@@ -777,6 +777,168 @@ async fn lifecycle_saga_entry(
     }
 }
 
+// ──────────────────────────────────────────────────────────────────
+// LM-5 — Live migration: POST .../instances/{id}/migrate
+//
+// Creates a MigrationRecord (atomic active-key guard against
+// concurrent migrations of the same VM), kicks off the
+// `migrate-instance` saga, and returns 202 with both ids. The
+// other MigrationActions (estimate / pause / abort / rollback /
+// finalize / sync) return 501 until LM-6 / LM-8 wire the sub-
+// sagas.
+// ──────────────────────────────────────────────────────────────────
+
+pub(crate) async fn migrate_project_instance(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectInstancePath>,
+    body: dropshot::TypedBody<tritond_api::MigrateInstanceBody>,
+) -> Result<HttpResponseCreated<tritond_api::MigrateInstanceResponse>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectInstancePath {
+        tenant_id,
+        project_id,
+        instance_id,
+    } = path.into_inner();
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::InstanceMigrate,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let body = body.into_inner();
+
+    // LM-5 ships Begin only; the other actions surface 400 with
+    // a pointer to the slice that wires them. (Dropshot's
+    // `ClientErrorStatusCode` doesn't include 501; modelling
+    // "deferred action" as a structured 400 is fine until the
+    // sub-sagas land and these become real verbs.)
+    use tritond_store::MigrationAction;
+    match body.action {
+        MigrationAction::Begin => {}
+        MigrationAction::Estimate => {
+            return Err(HttpError::for_client_error(
+                Some("NotImplemented".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "migrate: action=estimate lands in LM-6 (designate-only pre-flight)".to_string(),
+            ));
+        }
+        MigrationAction::Pause
+        | MigrationAction::Abort
+        | MigrationAction::Rollback
+        | MigrationAction::Finalize
+        | MigrationAction::Sync
+        | MigrationAction::Switch => {
+            return Err(HttpError::for_client_error(
+                Some("NotImplemented".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                format!(
+                    "migrate: action={:?} lands in LM-8 (pause / abort / rollback sub-sagas)",
+                    body.action,
+                ),
+            ));
+        }
+        _ => {
+            return Err(HttpError::for_client_error(
+                Some("BadRequest".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "migrate: unknown action".to_string(),
+            ));
+        }
+    }
+
+    // Verify the instance exists + belongs to this tenant/project.
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if instance.tenant_id != tenant_id || instance.project_id != project_id {
+        return Err(not_found());
+    }
+    let source_cn = instance.host_cn_uuid.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("Conflict".to_string()),
+            ClientErrorStatusCode::CONFLICT,
+            "instance has no host_cn_uuid (was it ever provisioned?)".to_string(),
+        )
+    })?;
+
+    // Atomic create_migration: takes the
+    // migration/active/<instance> guard so a second concurrent
+    // migrate against the same VM is rejected as 409.
+    let record = ctx
+        .store
+        .create_migration(tritond_store::NewMigration {
+            instance_id,
+            tenant_id,
+            project_id,
+            source_cn,
+            action_requested: MigrationAction::Begin,
+            automatic: false,
+        })
+        .await
+        .map_err(store_error_to_http)?;
+
+    let saga_params = crate::sagas::migration::MigrationSagaParams {
+        migration_id: record.id,
+        instance_id,
+        tenant_id,
+        project_id,
+        source_cn,
+        target_cn_hint: body.target_server_uuid,
+        automatic: false,
+    };
+    let saga_dag = crate::sagas::migration::build_dag(&saga_params)
+        .map_err(|e| HttpError::for_internal_error(format!("migrate saga dag build: {e}")))?;
+    let saga_refs = crate::sagas::migration::build_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(Uuid::new_v4());
+
+    // saga_execute spawns the saga; we don't block on its
+    // terminal state for migration (it can take minutes) — the
+    // operator polls /v2/operations/{id} for saga state and
+    // /v2/migrations/{id}/progress for the per-phase event log.
+    let _ = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::migration::SAGA_NAME,
+            crate::sagas::migration::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await
+        .map_err(|e| HttpError::for_internal_error(format!("migrate saga execute: {e}")))?;
+
+    ctx.audit
+        .record_mutation(
+            &principal,
+            Action::InstanceMigrate,
+            request_id,
+            Some(format!("Instance::\"{instance_id}\"")),
+            AuditOutcome::Success {
+                resource: Some(format!("Instance::\"{instance_id}\"")),
+            },
+            serde_json::json!({
+                "tenant_id": tenant_id,
+                "project_id": project_id,
+                "migration_id": record.id.to_string(),
+                "operation_id": saga_id.0.to_string(),
+                "source_cn": source_cn.to_string(),
+                "target_cn_hint": body.target_server_uuid.map(|u| u.to_string()),
+            }),
+        )
+        .await;
+
+    Ok(HttpResponseCreated(tritond_api::MigrateInstanceResponse {
+        migration_id: record.id,
+        operation_id: saga_id.0,
+    }))
+}
+
 pub(crate) async fn list_instance_nics(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectInstancePath>,

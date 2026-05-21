@@ -729,6 +729,46 @@ pub struct ListMigrationsQuery {
     pub after_id: Option<Uuid>,
 }
 
+/// Request body for `POST .../instances/{instance_id}/migrate`.
+///
+/// LM-5 ships `action=begin` only; the other actions (estimate,
+/// pause, switch, abort, rollback, finalize) return 501 until
+/// LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now
+/// so clients don't have to bump on each LM-* slice.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MigrateInstanceBody {
+    /// Sub-action. Defaults to `Begin` when omitted so the
+    /// minimal "just migrate" request body is the empty object.
+    #[serde(default = "default_migration_action")]
+    pub action: tritond_store::MigrationAction,
+    /// Operator-supplied target CN. When set, the placement chain
+    /// force-places to this CN (still subject to the migration
+    /// filters); operator-only — the tenant-scoped Cedar policy
+    /// doesn't grant cross-tenant force-place, so a tenant member
+    /// supplying this field gets a 403.
+    #[serde(default)]
+    pub target_server_uuid: Option<Uuid>,
+    /// Operator-supplied affinity rules. LM-5 ignores this; LM-6
+    /// threads it through `PlacementRequest.affinity`.
+    #[serde(default)]
+    pub affinity: Option<Vec<String>>,
+}
+
+fn default_migration_action() -> tritond_store::MigrationAction {
+    tritond_store::MigrationAction::Begin
+}
+
+/// Response body for `POST .../instances/{instance_id}/migrate`
+/// when the action is `Begin`. The operation id is the Steno
+/// saga id; clients poll `GET /v2/operations/{operation_id}` for
+/// saga-level progress and `GET /v2/migrations/{migration_id}`
+/// for the migration-specific timeline.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MigrateInstanceResponse {
+    pub migration_id: Uuid,
+    pub operation_id: Uuid,
+}
+
 /// Query parameters for `GET /v2/migrations/{migration_id}/progress`.
 /// Operators page the per-migration event log by passing the
 /// `last_progress_seq` they have already seen as `after_seq`; the
@@ -3410,6 +3450,32 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// Start a live migration of a running instance (LM-5).
+    ///
+    /// The body's `action` dispatches between begin / estimate /
+    /// pause / switch / abort / rollback / finalize / sync.
+    /// LM-5 ships `action=Begin` only; the others return 501
+    /// until LM-6 / LM-8 wire the sub-sagas. Begin creates a
+    /// `MigrationRecord` (atomic active-key guard against
+    /// concurrent migrations of the same VM), kicks off the
+    /// `migrate-instance` saga, and returns 202 with the
+    /// migration id + the saga id (operation id).
+    ///
+    /// Tenant-scoped: any project member can migrate their own
+    /// instances. Operator-only fields (`target_server_uuid` to
+    /// force a specific target CN, cross-tenant target) gate
+    /// behind the `root-allows-all` Cedar rule.
+    #[endpoint {
+        method = POST,
+        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate",
+        tags = ["instances", "migrations"],
+    }]
+    async fn migrate_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectInstancePath>,
+        body: TypedBody<MigrateInstanceBody>,
+    ) -> Result<HttpResponseCreated<MigrateInstanceResponse>, HttpError>;
 
     /// Browser-facing serial / VNC console for a managed instance.
     /// Authorises via the `instance_console` Cedar action; only valid

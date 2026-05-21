@@ -2055,11 +2055,94 @@ pub enum JobKind {
     /// Reap a firehyve/fhrun edge instance that no longer has a
     /// desired EdgeCluster binding.
     EdgeReap { edge_instance_id: Uuid },
+
+    // ----- LM-5 live-migration jobs -----
+    //
+    // The migration saga enqueues these on the source agent +
+    // target agent (the `role` discriminates) so the existing
+    // claim/complete mechanism drives the heavy lifting. The
+    // saga awaits each job's terminal status via the standard
+    // `wait_for_provisioning_job_terminal` pattern; the agents
+    // perform the actual zfs / bhyve / proteus work.
+    /// One pass of `zfs send`/`zfs recv` between source and target
+    /// agents (uses the LM-4 dataset-stream WebSocket). The saga
+    /// enqueues two of these (one on source, one on target) per
+    /// snapshot round. `dataset` lets the receiver pick the
+    /// destination dataset name; `from_snap`/`to_snap` shape the
+    /// `zfs send -i from to` command on the source side.
+    MigrateZfsSend {
+        migration_id: Uuid,
+        instance_id: Uuid,
+        role: MigrationJobRole,
+        dataset: String,
+        /// `None` on the initial send; `Some(@migration-prev)` on
+        /// incremental rounds.
+        #[serde(default)]
+        from_snap: Option<String>,
+        to_snap: String,
+    },
+    /// One run of the bhyve memory-stream state machine
+    /// (`OutboundMigration` on source, `InboundMigration` on
+    /// target) over the LM-2/LM-3 memory-channel WebSocket.
+    MigrateVmmStream {
+        migration_id: Uuid,
+        instance_id: Uuid,
+        role: MigrationJobRole,
+    },
+    /// Proteus port activation on the target (`start_port`) after
+    /// the cutover fence completes. Source-side equivalent is
+    /// [`ProteusDeactivate`].
+    ProteusActivate {
+        migration_id: Uuid,
+        instance_id: Uuid,
+        nic_ids: Vec<Uuid>,
+    },
+    /// Proteus port deactivation on the source (`pause_port` →
+    /// `delete_port`). Runs in parallel with target-side
+    /// [`ProteusActivate`] after the FDB ownership flip; loss of
+    /// the deactivation surfaces as an audit warning, not a
+    /// migration failure, because the target is already canonical.
+    ProteusDeactivate {
+        migration_id: Uuid,
+        instance_id: Uuid,
+        nic_ids: Vec<Uuid>,
+    },
+    /// Tear down the target-side zone + dataset on saga unwind
+    /// (pre-switch abort). Best-effort: a target CN that's
+    /// unreachable surfaces as an audit warning so an operator
+    /// can clean up by hand.
+    MigrationCleanupTarget {
+        migration_id: Uuid,
+        instance_id: Uuid,
+    },
+    /// Tear down the source-side zone + dataset after a successful
+    /// cutover (post-switch cleanup). Same best-effort semantics
+    /// as [`MigrationCleanupTarget`].
+    MigrationCleanupSource {
+        migration_id: Uuid,
+        instance_id: Uuid,
+    },
+}
+
+/// Which side of a migration a [`JobKind`] runs on. Distinct from
+/// [`crate::MigrationPhase`] / [`tritond_auth::MigrateRole`]: the
+/// phase + ticket-role describe state-machine + auth scope, while
+/// this just tells the agent's job dispatcher which arm to take
+/// (e.g. spawn `zfs send` vs `zfs recv`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum MigrationJobRole {
+    Source,
+    Target,
 }
 
 impl JobKind {
     /// Extract the target VM instance id when this is an
-    /// instance-lifecycle job.
+    /// instance-lifecycle job. Migration jobs also carry an
+    /// instance_id (the VM being migrated) and surface it here so
+    /// the existing per-VM job listings include them without a
+    /// JobKind-specific match.
     #[must_use]
     pub fn instance_id(&self) -> Option<Uuid> {
         match self {
@@ -2067,6 +2150,12 @@ impl JobKind {
             | JobKind::Stop { instance_id }
             | JobKind::Restart { instance_id }
             | JobKind::Delete { instance_id } => Some(*instance_id),
+            JobKind::MigrateZfsSend { instance_id, .. }
+            | JobKind::MigrateVmmStream { instance_id, .. }
+            | JobKind::ProteusActivate { instance_id, .. }
+            | JobKind::ProteusDeactivate { instance_id, .. }
+            | JobKind::MigrationCleanupTarget { instance_id, .. }
+            | JobKind::MigrationCleanupSource { instance_id, .. } => Some(*instance_id),
             JobKind::EdgeApply { .. } | JobKind::EdgeReap { .. } => None,
         }
     }
@@ -2082,7 +2171,31 @@ impl JobKind {
             JobKind::Provision { .. }
             | JobKind::Stop { .. }
             | JobKind::Restart { .. }
-            | JobKind::Delete { .. } => None,
+            | JobKind::Delete { .. }
+            | JobKind::MigrateZfsSend { .. }
+            | JobKind::MigrateVmmStream { .. }
+            | JobKind::ProteusActivate { .. }
+            | JobKind::ProteusDeactivate { .. }
+            | JobKind::MigrationCleanupTarget { .. }
+            | JobKind::MigrationCleanupSource { .. } => None,
+        }
+    }
+
+    /// Extract the migration record id for migration jobs.
+    /// Returns `None` for non-migration jobs. Used by the
+    /// `migration/by_id/<uuid>/progress` event-log writer to
+    /// surface job-lifecycle events on the migration record's
+    /// timeline.
+    #[must_use]
+    pub fn migration_id(&self) -> Option<Uuid> {
+        match self {
+            JobKind::MigrateZfsSend { migration_id, .. }
+            | JobKind::MigrateVmmStream { migration_id, .. }
+            | JobKind::ProteusActivate { migration_id, .. }
+            | JobKind::ProteusDeactivate { migration_id, .. }
+            | JobKind::MigrationCleanupTarget { migration_id, .. }
+            | JobKind::MigrationCleanupSource { migration_id, .. } => Some(*migration_id),
+            _ => None,
         }
     }
 
@@ -2109,6 +2222,39 @@ mod job_kind_tests {
             Some(instance_id)
         );
         assert_eq!(JobKind::EdgeReap { edge_instance_id }.instance_id(), None);
+    }
+
+    #[test]
+    fn migration_jobs_carry_instance_and_migration_ids() {
+        let migration_id = Uuid::new_v4();
+        let instance_id = Uuid::new_v4();
+        let kind = JobKind::MigrateVmmStream {
+            migration_id,
+            instance_id,
+            role: MigrationJobRole::Source,
+        };
+        assert_eq!(kind.instance_id(), Some(instance_id));
+        assert_eq!(kind.migration_id(), Some(migration_id));
+        assert_eq!(kind.edge_instance_id(), None);
+        // Non-migration jobs return None for migration_id.
+        assert_eq!(JobKind::Provision { instance_id }.migration_id(), None);
+    }
+
+    #[test]
+    fn migrate_zfs_send_round_trips_with_increment_fields() {
+        let kind = JobKind::MigrateZfsSend {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            role: MigrationJobRole::Source,
+            dataset: "zones/abcd".to_string(),
+            from_snap: Some("zones/abcd@migration-base".to_string()),
+            to_snap: "zones/abcd@migration-final".to_string(),
+        };
+        let json = serde_json::to_value(&kind).unwrap();
+        assert_eq!(json["kind"].as_str(), Some("migrate_zfs_send"));
+        assert_eq!(json["role"].as_str(), Some("source"));
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, kind);
     }
 
     #[test]

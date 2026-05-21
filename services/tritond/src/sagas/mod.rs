@@ -45,6 +45,7 @@ pub mod image_import;
 pub mod instance_create;
 pub mod instance_delete;
 pub mod instance_lifecycle;
+pub mod migration;
 pub mod nat_gateway;
 pub mod node_join;
 
@@ -83,6 +84,7 @@ pub fn register_all_actions(reg: &mut ActionRegistry) {
     instance_delete::register(reg);
     instance_lifecycle::register(reg);
     floating_ip::register(reg);
+    migration::register(reg);
     nat_gateway::register(reg);
     node_join::register(reg);
     image_import::register(reg);
@@ -119,5 +121,6 @@ pub fn registered_versions() -> Vec<(&'static str, u32)> {
         (nat_gateway::SAGA_NAME_DELETE, nat_gateway::SAGA_VERSION),
         (node_join::SAGA_NAME, node_join::SAGA_VERSION),
         (image_import::SAGA_NAME, image_import::SAGA_VERSION),
+        (migration::SAGA_NAME, migration::SAGA_VERSION),
     ]
 }

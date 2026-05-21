@@ -870,6 +870,15 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::restart_project_instance(rqctx, path).await
     }
 
+    async fn migrate_project_instance(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<TenantProjectInstancePath>,
+        body: dropshot::TypedBody<tritond_api::MigrateInstanceBody>,
+    ) -> Result<dropshot::HttpResponseCreated<tritond_api::MigrateInstanceResponse>, HttpError>
+    {
+        crate::handlers::instances::migrate_project_instance(rqctx, path, body).await
+    }
+
     async fn instance_console(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectInstancePath>,
