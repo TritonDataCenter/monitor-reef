@@ -106,6 +106,17 @@ enum Command {
 
     /// Publish a tcadm binary for one target triple.
     Tcadm(TcadmArgs),
+
+    /// Publish the bootstrap install.sh script + its detached
+    /// signature to `~~/public/tritoncloud/install.sh`. The script
+    /// itself is not channel-scoped (the embedded pubkey + default
+    /// channel URL are baked into the script source); operators
+    /// curl it directly. This subcommand only re-signs and uploads.
+    InstallSh {
+        /// Local path to the install.sh source.
+        #[arg(long, default_value = "tools/install.sh")]
+        source: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -212,7 +223,28 @@ fn main() -> Result<()> {
         Command::Image(args) => do_image(&locator, &secret_key, args),
         Command::Agent(args) => do_agent(&locator, &secret_key, args),
         Command::Tcadm(args) => do_tcadm(&locator, &secret_key, args),
+        Command::InstallSh { source } => do_install_sh(&locator, &secret_key, source),
     }
+}
+
+fn do_install_sh(locator: &ChannelLocator, secret_key: &Path, source: PathBuf) -> Result<()> {
+    // install.sh lives at the top of `~~/public/tritoncloud/` (not
+    // channel-scoped) so it has a stable curl URL. Sign in-process so
+    // MINISIGN_PASSWORD is honored, then mput both files.
+    let workdir = tempfile::tempdir().context("tempdir")?;
+    let local = workdir.path().join("install.sh");
+    let sig = workdir.path().join("install.sh.minisig");
+
+    fs::copy(&source, &local)
+        .with_context(|| format!("copy {} -> {}", source.display(), local.display()))?;
+    crate::signing::sign_file(secret_key, &local, &sig)?;
+
+    let remote = format!("{}/install.sh", locator.manta_base);
+    let remote_sig = format!("{remote}.minisig");
+    mput(&local, &remote)?;
+    mput(&sig, &remote_sig)?;
+    info!("install.sh published");
+    Ok(())
 }
 
 fn do_init_channel(locator: &ChannelLocator, secret_key: &Path) -> Result<()> {

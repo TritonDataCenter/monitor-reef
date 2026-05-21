@@ -46,23 +46,6 @@ pub fn mput(local_path: &Path, remote_path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Atomically rename Manta object `from` to `to`.
-///
-/// Used to publish a new channel manifest by first `mput`ing to a
-/// sibling `<name>.new` path and then `mmv`ing it over the live name.
-pub fn mmv(from: &str, to: &str) -> Result<()> {
-    info!(from = from, to = to, "mmv");
-    let status = Command::new("mmv")
-        .arg(from)
-        .arg(to)
-        .status()
-        .with_context(|| format!("failed to spawn mmv {from} -> {to}"))?;
-    if !status.success() {
-        bail!("mmv {from} -> {to} exited {status}");
-    }
-    Ok(())
-}
-
 /// Read the contents of a Manta object into memory.
 ///
 /// We use HTTPS GET against the public URL rather than `mget` so this

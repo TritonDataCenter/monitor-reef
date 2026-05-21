@@ -6275,6 +6275,8 @@ dependencies = [
  "chrono",
  "clap",
  "hex",
+ "minisign",
+ "rpassword",
  "serde",
  "serde_json",
  "sha2",

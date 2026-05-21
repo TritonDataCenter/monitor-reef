@@ -22,6 +22,12 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 hex = { workspace = true }
+# Full-featured minisign (signing). Used in-process so we can read
+# MINISIGN_PASSWORD from env or prompt via rpassword, rather than
+# shelling to `minisign -S` which insists on a TTY for the passphrase
+# and refuses to read env vars.
+minisign = "0.9"
+rpassword = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

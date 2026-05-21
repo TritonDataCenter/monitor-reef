@@ -22,7 +22,7 @@ use chrono::Utc;
 use tracing::info;
 use triton_channel::{CURRENT_SCHEMA, ChannelManifest, parse_channel};
 
-use crate::manta::{mget_public, mmv, mput};
+use crate::manta::{mget_public, mput};
 use crate::signing::sign_file;
 
 /// Settings derived from a publisher run.
@@ -116,15 +116,15 @@ pub fn publish(
 
     sign_file(secret_key_path, &manifest_local, &sig_local)?;
 
+    // Manta object PUT is server-side atomic at the object level, so
+    // we mput directly to the live path. The mput dance with a `.new`
+    // sibling + `mmv` is a Unix-filesystem idiom that does not apply
+    // to object storage (and node-manta does not ship `mmv`).
     let live = locator.channel_manta_path();
     let live_sig = format!("{live}.minisig");
-    let staging = format!("{live}.new");
-    let staging_sig = format!("{live_sig}.new");
 
-    mput(&manifest_local, &staging)?;
-    mput(&sig_local, &staging_sig)?;
-    mmv(&staging, &live)?;
-    mmv(&staging_sig, &live_sig)?;
+    mput(&manifest_local, &live)?;
+    mput(&sig_local, &live_sig)?;
 
     Ok(())
 }
