@@ -56,12 +56,14 @@ pub async fn run(args: KubeconfigArgs, client: &TypedClient) -> Result<()> {
         let home =
             dirs::home_dir().ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
         let kube_dir = home.join(".kube");
-        std::fs::create_dir_all(&kube_dir)
+        tokio::fs::create_dir_all(&kube_dir)
+            .await
             .with_context(|| format!("failed to create {}", kube_dir.display()))?;
         kube_dir.join("config")
     };
 
-    std::fs::write(&output_path, kubeconfig.as_bytes())
+    tokio::fs::write(&output_path, kubeconfig.as_bytes())
+        .await
         .with_context(|| format!("failed to write kubeconfig to {}", output_path.display()))?;
 
     // Set permissions to 0600 on Unix systems.

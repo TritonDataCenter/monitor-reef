@@ -62,7 +62,7 @@ where
                 Poll::Ready(Some(Ok(_))) => continue,
                 Poll::Ready(None) => return Poll::Ready(Ok(0)),
                 Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)));
+                    return Poll::Ready(Err(io::Error::other(e)));
                 }
                 Poll::Pending => return Poll::Pending,
             }
@@ -83,13 +83,13 @@ where
         match Pin::new(&mut this.inner).poll_ready(cx) {
             Poll::Ready(Ok(())) => {}
             Poll::Ready(Err(e)) => {
-                return Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)));
+                return Poll::Ready(Err(io::Error::other(e)));
             }
             Poll::Pending => return Poll::Pending,
         }
         match Pin::new(&mut this.inner).start_send(Message::binary(buf.to_vec())) {
             Ok(()) => Poll::Ready(Ok(buf.len())),
-            Err(e) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+            Err(e) => Poll::Ready(Err(io::Error::other(e))),
         }
     }
 
@@ -97,14 +97,14 @@ where
         let this = self.get_mut();
         Pin::new(&mut this.inner)
             .poll_flush(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         Pin::new(&mut this.inner)
             .poll_close(cx)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
     }
 }
 

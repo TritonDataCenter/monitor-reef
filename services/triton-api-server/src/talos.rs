@@ -269,7 +269,7 @@ impl TalosClient {
                     // fabric endpoint to dial for this stream.
                     write_connect_target(&mut stream, &target)
                         .await
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                        .map_err(|e| io::Error::other(e.to_string()))?;
                     let compat = stream.compat();
                     let tls = connector.connect(sni, compat).await?;
                     Ok::<_, io::Error>(RelayIo(TokioIo::new(tls)))
@@ -366,15 +366,12 @@ impl TalosClient {
             .into_inner();
 
         let mut compressed = Vec::new();
-        loop {
-            match stream
-                .message()
-                .await
-                .map_err(|s| anyhow::anyhow!("Kubeconfig stream: {s}"))?
-            {
-                Some(chunk) => compressed.extend_from_slice(&chunk.bytes),
-                None => break,
-            }
+        while let Some(chunk) = stream
+            .message()
+            .await
+            .map_err(|s| anyhow::anyhow!("Kubeconfig stream: {s}"))?
+        {
+            compressed.extend_from_slice(&chunk.bytes);
         }
 
         // Talos wraps the kubeconfig in a tar.gz archive; decompress and

@@ -59,7 +59,8 @@ async fn main() -> Result<()> {
              or as the first CLI argument",
         )?;
 
-    let config_text = std::fs::read_to_string(&config_path)
+    let config_text = tokio::fs::read_to_string(&config_path)
+        .await
         .with_context(|| format!("read config from {config_path}"))?;
     let config: AgentConfig =
         serde_json::from_str(&config_text).context("parse agent config JSON")?;

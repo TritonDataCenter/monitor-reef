@@ -809,10 +809,12 @@ impl TritonApi for TritonApiImpl {
                 "CloudAPI operator client is not configured on this tritonapi instance".to_string(),
             )
         })?;
-        let cloudapi_account = ctx
-            .cloudapi_account
-            .clone()
-            .expect("cloudapi_account is always Some when cloudapi is Some");
+        let cloudapi_account = ctx.cloudapi_account.clone().ok_or_else(|| {
+            HttpError::for_unavail(
+                Some("ServiceUnavailable".to_string()),
+                "CloudAPI account is not configured on this tritonapi instance".to_string(),
+            )
+        })?;
 
         record.state = ClusterState::Provisioning;
         store.update(&record).await.map_err(store_error_to_http)?;
@@ -1134,7 +1136,7 @@ async fn run_bootstrap(
         .iter()
         .find(|n| n.role == NodeRole::Control)
         .map(|n| n.fabric_ip.clone())
-        .expect("at least one control-plane node was provisioned");
+        .ok_or_else(|| anyhow::anyhow!("no control-plane node was provisioned"))?;
 
     // Phase 1: generate Talos PKI and machine configs server-side.
     let secrets =
