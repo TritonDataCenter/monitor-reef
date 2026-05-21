@@ -1205,6 +1205,8 @@ async fn run_bootstrap(
     tokio::time::sleep(std::time::Duration::from_secs(90)).await;
 
     // Phase 4: bootstrap etcd on the first control-plane node.
+    // The node may need more time beyond the 90s reboot wait before etcd is
+    // ready to accept a bootstrap request; retry for up to 5 minutes.
     let cp_target = format!("{first_cp_ip}:50000");
     let mut client = talos::TalosClient::connect_authenticated(
         Arc::clone(&relay),
@@ -1215,10 +1217,25 @@ async fn run_bootstrap(
     )
     .await
     .with_context(|| format!("authenticated connect to {cp_target}"))?;
-    client
-        .bootstrap()
-        .await
-        .with_context(|| format!("bootstrap etcd on {cp_target}"))?;
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    loop {
+        match client.bootstrap().await {
+            Ok(_) => break,
+            Err(e)
+                if e.to_string().contains("bootstrap is not available yet")
+                    && std::time::Instant::now() < deadline =>
+            {
+                tracing::warn!(
+                    cluster = %cluster_id,
+                    target = %cp_target,
+                    "etcd not ready yet, retrying in 15s"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+            }
+            Err(e) => return Err(e).with_context(|| format!("bootstrap etcd on {cp_target}")),
+        }
+    }
     tracing::info!(cluster = %cluster_id, cp = %cp_target, "etcd bootstrapped");
 
     // Phase 5: wait for the Kubernetes API to come up.
