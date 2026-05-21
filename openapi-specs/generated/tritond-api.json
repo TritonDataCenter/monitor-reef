@@ -6089,6 +6089,74 @@
         }
       }
     },
+    "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/migrate": {
+      "post": {
+        "tags": [
+          "instances",
+          "migrations"
+        ],
+        "summary": "Start a live migration of a running instance (LM-5).",
+        "description": "The body's `action` dispatches between begin / estimate / pause / switch / abort / rollback / finalize / sync. LM-5 ships `action=Begin` only; the others return 501 until LM-6 / LM-8 wire the sub-sagas. Begin creates a `MigrationRecord` (atomic active-key guard against concurrent migrations of the same VM), kicks off the `migrate-instance` saga, and returns 202 with the migration id + the saga id (operation id).\n\nTenant-scoped: any project member can migrate their own instances. Operator-only fields (`target_server_uuid` to force a specific target CN, cross-tenant target) gate behind the `root-allows-all` Cedar rule.",
+        "operationId": "migrate_project_instance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrateInstanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrateInstanceResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics": {
       "get": {
         "tags": [
@@ -10657,6 +10725,194 @@
               "edge_instance_id",
               "kind"
             ]
+          },
+          {
+            "description": "One pass of `zfs send`/`zfs recv` between source and target agents (uses the LM-4 dataset-stream WebSocket). The saga enqueues two of these (one on source, one on target) per snapshot round. `dataset` lets the receiver pick the destination dataset name; `from_snap`/`to_snap` shape the `zfs send -i from to` command on the source side.",
+            "type": "object",
+            "properties": {
+              "dataset": {
+                "type": "string"
+              },
+              "from_snap": {
+                "nullable": true,
+                "description": "`None` on the initial send; `Some(@migration-prev)` on incremental rounds.",
+                "default": null,
+                "type": "string"
+              },
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_zfs_send"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "role": {
+                "$ref": "#/components/schemas/MigrationJobRole"
+              },
+              "to_snap": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "dataset",
+              "instance_id",
+              "kind",
+              "migration_id",
+              "role",
+              "to_snap"
+            ]
+          },
+          {
+            "description": "One run of the bhyve memory-stream state machine (`OutboundMigration` on source, `InboundMigration` on target) over the LM-2/LM-3 memory-channel WebSocket.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migrate_vmm_stream"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "role": {
+                "$ref": "#/components/schemas/MigrationJobRole"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id",
+              "role"
+            ]
+          },
+          {
+            "description": "Proteus port activation on the target (`start_port`) after the cutover fence completes. Source-side equivalent is [`ProteusDeactivate`].",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proteus_activate"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "nic_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id",
+              "nic_ids"
+            ]
+          },
+          {
+            "description": "Proteus port deactivation on the source (`pause_port` → `delete_port`). Runs in parallel with target-side [`ProteusActivate`] after the FDB ownership flip; loss of the deactivation surfaces as an audit warning, not a migration failure, because the target is already canonical.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "proteus_deactivate"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "nic_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id",
+              "nic_ids"
+            ]
+          },
+          {
+            "description": "Tear down the target-side zone + dataset on saga unwind (pre-switch abort). Best-effort: a target CN that's unreachable surfaces as an audit warning so an operator can clean up by hand.",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migration_cleanup_target"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
+            ]
+          },
+          {
+            "description": "Tear down the source-side zone + dataset after a successful cutover (post-switch cleanup). Same best-effort semantics as [`MigrationCleanupTarget`].",
+            "type": "object",
+            "properties": {
+              "instance_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "migration_cleanup_source"
+                ]
+              },
+              "migration_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "instance_id",
+              "kind",
+              "migration_id"
+            ]
           }
         ]
       },
@@ -11286,6 +11542,60 @@
           "value"
         ]
       },
+      "MigrateInstanceBody": {
+        "description": "Request body for `POST .../instances/{instance_id}/migrate`.\n\nLM-5 ships `action=begin` only; the other actions (estimate, pause, switch, abort, rollback, finalize) return 501 until LM-6 / LM-8 wire the sub-sagas. The wire shape is fixed now so clients don't have to bump on each LM-* slice.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "Sub-action. Defaults to `Begin` when omitted so the minimal \"just migrate\" request body is the empty object.",
+            "default": "begin",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationAction"
+              }
+            ]
+          },
+          "affinity": {
+            "nullable": true,
+            "description": "Operator-supplied affinity rules. LM-5 ignores this; LM-6 threads it through `PlacementRequest.affinity`.",
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cold": {
+            "description": "Cold-migrate: the source VM is already stopped (or the operator handled it pre-migration). The saga skips the live-memory transfer (node 8) and treats the post- incremental ZFS state as canonical. Defaults to `false` once LM-7 lands the live path; until LM-7 ships, passing `false` returns a clear error pointing at LM-7 rather than running a silently-broken cutover.",
+            "default": false,
+            "type": "boolean"
+          },
+          "target_server_uuid": {
+            "nullable": true,
+            "description": "Operator-supplied target CN. When set, the placement chain force-places to this CN (still subject to the migration filters); operator-only — the tenant-scoped Cedar policy doesn't grant cross-tenant force-place, so a tenant member supplying this field gets a 403.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "MigrateInstanceResponse": {
+        "description": "Response body for `POST .../instances/{instance_id}/migrate` when the action is `Begin`. The operation id is the Steno saga id; clients poll `GET /v2/operations/{operation_id}` for saga-level progress and `GET /v2/migrations/{migration_id}` for the migration-specific timeline.",
+        "type": "object",
+        "properties": {
+          "migration_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "migration_id",
+          "operation_id"
+        ]
+      },
       "MigrationAction": {
         "description": "Operator-initiated action against a migration record. The HTTP handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration.",
         "type": "string",
@@ -11299,6 +11609,14 @@
           "rollback",
           "finalize",
           "unknown"
+        ]
+      },
+      "MigrationJobRole": {
+        "description": "Which side of a migration a [`JobKind`] runs on. Distinct from [`crate::MigrationPhase`] / [`tritond_auth::MigrateRole`]: the phase + ticket-role describe state-machine + auth scope, while this just tells the agent's job dispatcher which arm to take (e.g. spawn `zfs send` vs `zfs recv`).",
+        "type": "string",
+        "enum": [
+          "source",
+          "target"
         ]
       },
       "MigrationPhase": {

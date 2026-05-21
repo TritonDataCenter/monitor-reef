@@ -752,6 +752,15 @@ pub struct MigrateInstanceBody {
     /// threads it through `PlacementRequest.affinity`.
     #[serde(default)]
     pub affinity: Option<Vec<String>>,
+    /// Cold-migrate: the source VM is already stopped (or the
+    /// operator handled it pre-migration). The saga skips the
+    /// live-memory transfer (node 8) and treats the post-
+    /// incremental ZFS state as canonical. Defaults to `false`
+    /// once LM-7 lands the live path; until LM-7 ships, passing
+    /// `false` returns a clear error pointing at LM-7 rather
+    /// than running a silently-broken cutover.
+    #[serde(default)]
+    pub cold: bool,
 }
 
 fn default_migration_action() -> tritond_store::MigrationAction {

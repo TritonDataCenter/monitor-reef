@@ -60,7 +60,7 @@ use tritond_store::{MigrationPhase, MigrationRecord, MigrationState};
 use uuid::Uuid;
 
 use crate::sagas::common::{
-    ACTION_TIMEOUT_STORE, fence_check, no_op_undo, store_err_to_action_err,
+    ACTION_TIMEOUT_AWAIT, ACTION_TIMEOUT_STORE, fence_check, no_op_undo, store_err_to_action_err,
 };
 
 /// Steno saga catalog name (kebab-case per RFD 00004 D-Sg-10).
@@ -107,6 +107,16 @@ pub struct MigrationSagaParams {
     /// used for audit labels + metrics.
     #[serde(default)]
     pub automatic: bool,
+    /// `true` for the cold-migrate path: the VM is stopped before
+    /// the migration begins (or the saga stops it as part of
+    /// `quiesce_and_stream`), so node 8's live-memory transfer is
+    /// skipped — the dataset on the target is canonical after the
+    /// incremental ZFS send. `false` runs the live path (lands
+    /// with LM-7). LM-6c only ships the cold path; passing
+    /// `cold: false` falls through to a placeholder no-op until
+    /// then.
+    #[serde(default)]
+    pub cold: bool,
 }
 
 /// Register every catalog action onto the executor's
@@ -557,38 +567,49 @@ async fn snapshot_source_quota_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
 }
 
 async fn create_target_zone(ctx: Ctx) -> Result<tritond_store::ProvisioningJob, ActionError> {
-    crate::sagas::with_action_timeout("migration.create_target_zone", ACTION_TIMEOUT, async move {
-        let user_ctx = ctx.user_data();
-        fence_check(user_ctx).await?;
-        let store = user_ctx.store().clone();
-        let params: MigrationSagaParams = ctx.saga_params()?;
-        let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
+    crate::sagas::with_action_timeout(
+        "migration.create_target_zone",
+        ACTION_TIMEOUT_AWAIT,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: MigrationSagaParams = ctx.saga_params()?;
+            let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
 
-        // Enqueue a Provision job on the target CN. The agent's
-        // existing Provision handler will vmadm-create the zone
-        // shell; LM-7 will plumb a migration-blueprint variant
-        // that suppresses guest boot (the target zone waits for
-        // the memory stream before it runs vCPUs). LM-6 cold-
-        // migrate just gets a stopped zone the cutover then
-        // "activates" via the Instance.host_cn_uuid flip + a
-        // follow-up start.
-        let job = store
-            .enqueue_job(tritond_store::NewJob {
-                kind: tritond_store::JobKind::Provision {
-                    instance_id: params.instance_id,
-                },
-                target_cn_uuid: Some(target_cn),
-            })
-            .await
-            .map_err(store_err_to_action_err)?;
-        tracing::info!(
-            migration_id = %params.migration_id,
-            target_cn = %target_cn,
-            job_id = %job.id,
-            "migration.create_target_zone: enqueued Provision job",
-        );
-        Ok(job)
-    })
+            // Enqueue a Provision job on the target CN. The
+            // agent's existing Provision handler vmadm-creates
+            // the zone shell. LM-7 will swap in a migration
+            // blueprint variant that suppresses guest boot (the
+            // target zone waits for the memory stream before it
+            // runs vCPUs); LM-6c cold-migrate gets a stopped
+            // zone the cutover then "activates" via the
+            // Instance.host_cn_uuid flip + a follow-up start.
+            let job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::Provision {
+                        instance_id: params.instance_id,
+                    },
+                    target_cn_uuid: Some(target_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                target_cn = %target_cn,
+                job_id = %job.id,
+                "migration.create_target_zone: enqueued Provision job; awaiting terminal",
+            );
+            await_jobs_terminal(store, &[job.id], "migration.create_target_zone").await?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                target_cn = %target_cn,
+                job_id = %job.id,
+                "migration.create_target_zone: Provision job completed",
+            );
+            Ok(job)
+        },
+    )
     .await
 }
 
@@ -672,72 +693,82 @@ async fn reserve_target_nics_undo(_ctx: Ctx) -> Result<(), anyhow::Error> {
 }
 
 async fn initial_zfs_send(ctx: Ctx) -> Result<(), ActionError> {
-    crate::sagas::with_action_timeout("migration.initial_zfs_send", ACTION_TIMEOUT, async move {
-        let user_ctx = ctx.user_data();
-        fence_check(user_ctx).await?;
-        let store = user_ctx.store().clone();
-        let params: MigrationSagaParams = ctx.saga_params()?;
-        let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
+    crate::sagas::with_action_timeout(
+        "migration.initial_zfs_send",
+        ACTION_TIMEOUT_AWAIT,
+        async move {
+            let user_ctx = ctx.user_data();
+            fence_check(user_ctx).await?;
+            let store = user_ctx.store().clone();
+            let params: MigrationSagaParams = ctx.saga_params()?;
+            let target_cn: Uuid = ctx.lookup("designated_target_cn")?;
 
-        // Derive dataset + snapshot names from the same SmartOS
-        // convention snapshot_source_quota used. The
-        // `migration-base` snapshot is the first send; final
-        // increment uses `migration-final` against it.
-        let dataset = format!("zones/{}", params.instance_id);
-        let base_snap = format!("{dataset}@migration-base");
+            let dataset = format!("zones/{}", params.instance_id);
+            let base_snap = format!("{dataset}@migration-base");
 
-        // Paired enqueue: Source CN runs `zfs send`, Target CN
-        // runs `zfs receive`, both connected via the per-CN
-        // migrate WebSocket transport (see
-        // `services/tritonagent/src/migrate.rs`). The agent's
-        // dispatcher arm for these JobKinds lands in LM-3b /
-        // LM-6c; until then the jobs sit unclaimed and the next
-        // saga node fires immediately (same gap as
-        // `create_target_zone` per LM-6 v1 — this whole branch
-        // becomes await-coupled in LM-6c).
-        let src_job = store
-            .enqueue_job(tritond_store::NewJob {
-                kind: tritond_store::JobKind::MigrateZfsSend {
-                    migration_id: params.migration_id,
-                    instance_id: params.instance_id,
-                    role: tritond_store::MigrationJobRole::Source,
-                    dataset: dataset.clone(),
-                    from_snap: None,
-                    to_snap: base_snap.clone(),
-                },
-                target_cn_uuid: Some(params.source_cn),
-            })
-            .await
-            .map_err(store_err_to_action_err)?;
-        let dst_job = store
-            .enqueue_job(tritond_store::NewJob {
-                kind: tritond_store::JobKind::MigrateZfsSend {
-                    migration_id: params.migration_id,
-                    instance_id: params.instance_id,
-                    role: tritond_store::MigrationJobRole::Target,
-                    dataset,
-                    from_snap: None,
-                    to_snap: base_snap,
-                },
-                target_cn_uuid: Some(target_cn),
-            })
-            .await
-            .map_err(store_err_to_action_err)?;
-        tracing::info!(
-            migration_id = %params.migration_id,
-            src_job_id = %src_job.id,
-            dst_job_id = %dst_job.id,
-            "migration.initial_zfs_send: enqueued source+target ZFS jobs; await pending LM-6c",
-        );
-        Ok(())
-    })
+            // Paired enqueue: Source CN runs `zfs send`, Target
+            // CN runs `zfs receive`, both connected via the
+            // per-CN migrate WebSocket transport (see
+            // `services/tritonagent/src/migrate.rs`). Both jobs
+            // are awaited together — the source finishes when
+            // its `zfs send` stream completes, the target
+            // finishes when `zfs recv` exits 0 against the
+            // received stream. A failure on either side fails
+            // the saga node + unwinds.
+            let src_job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::MigrateZfsSend {
+                        migration_id: params.migration_id,
+                        instance_id: params.instance_id,
+                        role: tritond_store::MigrationJobRole::Source,
+                        dataset: dataset.clone(),
+                        from_snap: None,
+                        to_snap: base_snap.clone(),
+                    },
+                    target_cn_uuid: Some(params.source_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            let dst_job = store
+                .enqueue_job(tritond_store::NewJob {
+                    kind: tritond_store::JobKind::MigrateZfsSend {
+                        migration_id: params.migration_id,
+                        instance_id: params.instance_id,
+                        role: tritond_store::MigrationJobRole::Target,
+                        dataset,
+                        from_snap: None,
+                        to_snap: base_snap,
+                    },
+                    target_cn_uuid: Some(target_cn),
+                })
+                .await
+                .map_err(store_err_to_action_err)?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                src_job_id = %src_job.id,
+                dst_job_id = %dst_job.id,
+                "migration.initial_zfs_send: enqueued source+target ZFS jobs; awaiting both",
+            );
+            await_jobs_terminal(
+                store,
+                &[src_job.id, dst_job.id],
+                "migration.initial_zfs_send",
+            )
+            .await?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                "migration.initial_zfs_send: both ZFS jobs completed",
+            );
+            Ok(())
+        },
+    )
     .await
 }
 
 async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
     crate::sagas::with_action_timeout(
         "migration.final_zfs_increment",
-        ACTION_TIMEOUT,
+        ACTION_TIMEOUT_AWAIT,
         async move {
             let user_ctx = ctx.user_data();
             fence_check(user_ctx).await?;
@@ -749,10 +780,6 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
             let base_snap = format!("{dataset}@migration-base");
             let final_snap = format!("{dataset}@migration-final");
 
-            // `-i base final` incremental. Same source/target
-            // pair as `initial_zfs_send`; the agent's
-            // ZFS-receive job knows to apply the increment by
-            // looking at `from_snap.is_some()`.
             let src_job = store
                 .enqueue_job(tritond_store::NewJob {
                     kind: tritond_store::JobKind::MigrateZfsSend {
@@ -785,7 +812,17 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
                 migration_id = %params.migration_id,
                 src_job_id = %src_job.id,
                 dst_job_id = %dst_job.id,
-                "migration.final_zfs_increment: enqueued incremental ZFS jobs; await pending LM-6c",
+                "migration.final_zfs_increment: enqueued incremental ZFS jobs; awaiting both",
+            );
+            await_jobs_terminal(
+                store,
+                &[src_job.id, dst_job.id],
+                "migration.final_zfs_increment",
+            )
+            .await?;
+            tracing::info!(
+                migration_id = %params.migration_id,
+                "migration.final_zfs_increment: both ZFS jobs completed",
             );
             Ok(())
         },
@@ -801,9 +838,7 @@ async fn quiesce_and_stream(ctx: Ctx) -> Result<(), ActionError> {
         let params: MigrationSagaParams = ctx.saga_params()?;
 
         // Transition record phase to Switch — the cutover
-        // window is open. LM-7 enqueues the
-        // MigrateVmmStream jobs that actually pause the
-        // guest + stream RAM + run the cutover fence.
+        // window is open.
         let mut record = store
             .get_migration(params.migration_id)
             .await
@@ -814,7 +849,38 @@ async fn quiesce_and_stream(ctx: Ctx) -> Result<(), ActionError> {
             .put_migration(record)
             .await
             .map_err(store_err_to_action_err)?;
-        Ok(())
+
+        if params.cold {
+            // Cold-migrate: source VM is already stopped (or
+            // the operator handled it pre-migration); the
+            // dataset transferred in nodes 6+7 is canonical,
+            // so the only thing left for this node is the
+            // phase transition above. switch_ownership
+            // commits the FDB CAS next; on the target CN,
+            // the existing Provision job (node 4) brings the
+            // newly-received dataset up under the migrated
+            // identity.
+            tracing::info!(
+                migration_id = %params.migration_id,
+                "migration.quiesce_and_stream: cold path, phase Switch recorded; nothing to stream",
+            );
+            return Ok(());
+        }
+
+        // Live path: LM-7 enqueues the MigrateVmmStream
+        // jobs that pause the guest, stream RAM, and run the
+        // PauseComplete/SwitchComplete cutover fence. Until
+        // LM-7 the live path is a no-op (which would race
+        // forward into a switch with no quiesce — the
+        // migration would corrupt the guest's open
+        // connections). Surface that here as an explicit
+        // failure so an operator who passes `cold: false`
+        // before LM-7 gets a clear error rather than a
+        // silently-broken cutover.
+        Err(ActionError::action_failed(serde_json::json!({
+            "kind": "migration.quiesce_and_stream.live_path_pending_lm7",
+            "reason": "live-memory transfer not implemented until LM-7; pass `cold: true` for now",
+        })))
     })
     .await
 }
@@ -975,6 +1041,52 @@ async fn finish(ctx: Ctx) -> Result<MigrationRecord, ActionError> {
     .await
 }
 
+/// Poll a set of `ProvisioningJob` ids until every one reaches a
+/// terminal status. Returns `Err` on the first one that lands in
+/// `Failed`. Used by the migration saga's enqueue-then-await
+/// pattern; the standard
+/// [`crate::sagas::common::await_provisioning_job_terminal`] helper
+/// expects a single job looked up by node name, while the migrate
+/// flow enqueues paired Source + Target jobs that need to be
+/// awaited together.
+async fn await_jobs_terminal(
+    store: Arc<dyn tritond_store::Store>,
+    job_ids: &[Uuid],
+    action_name: &'static str,
+) -> Result<(), ActionError> {
+    use std::time::Duration;
+    use tritond_store::JobStatusKind;
+    const POLL: Duration = Duration::from_millis(100);
+    let mut remaining: Vec<Uuid> = job_ids.to_vec();
+    while !remaining.is_empty() {
+        let mut still_pending = Vec::with_capacity(remaining.len());
+        for id in &remaining {
+            let current = store.get_job(*id).await.map_err(store_err_to_action_err)?;
+            match current.status.kind() {
+                JobStatusKind::Completed => {}
+                JobStatusKind::Failed => {
+                    return Err(ActionError::action_failed(serde_json::json!({
+                        "kind": "migration.job_failed",
+                        "action": action_name,
+                        "job_id": id.to_string(),
+                        "reason": match &current.status {
+                            tritond_store::JobStatus::Failed { reason } => reason.clone(),
+                            _ => "(no reason)".to_string(),
+                        },
+                    })));
+                }
+                _ => still_pending.push(*id),
+            }
+        }
+        if still_pending.is_empty() {
+            return Ok(());
+        }
+        remaining = still_pending;
+        tokio::time::sleep(POLL).await;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -998,6 +1110,7 @@ mod tests {
             source_cn: Uuid::new_v4(),
             target_cn_hint: None,
             automatic: false,
+            cold: true,
         };
         let dag = build_dag(&params).expect("build_dag");
         // Round-trip through serde to confirm the saga record
@@ -1016,6 +1129,7 @@ mod tests {
             source_cn: Uuid::new_v4(),
             target_cn_hint: Some(Uuid::new_v4()),
             automatic: false,
+            cold: true,
         };
         let refs = build_references(&params);
         // 5 resources: tenant, project, instance, source_cn,
@@ -1041,6 +1155,7 @@ mod tests {
             source_cn: Uuid::new_v4(),
             target_cn_hint: None,
             automatic: false,
+            cold: true,
         };
         let refs = build_references(&params);
         // 4 resources without the target hint: tenant, project,
@@ -1058,6 +1173,7 @@ mod tests {
             source_cn: Uuid::new_v4(),
             target_cn_hint: Some(Uuid::new_v4()),
             automatic: true,
+            cold: true,
         };
         let json = serde_json::to_value(&params).unwrap();
         let back: MigrationSagaParams = serde_json::from_value(json).unwrap();
@@ -1065,6 +1181,7 @@ mod tests {
         assert_eq!(back.instance_id, params.instance_id);
         assert_eq!(back.target_cn_hint, params.target_cn_hint);
         assert_eq!(back.automatic, params.automatic);
+        assert_eq!(back.cold, params.cold);
     }
 
     /// Smoke test: a fresh MigrationRecord can be created and

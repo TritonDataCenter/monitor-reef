@@ -891,6 +891,7 @@ pub(crate) async fn migrate_project_instance(
         source_cn,
         target_cn_hint: body.target_server_uuid,
         automatic: false,
+        cold: body.cold,
     };
     let saga_dag = crate::sagas::migration::build_dag(&saga_params)
         .map_err(|e| HttpError::for_internal_error(format!("migrate saga dag build: {e}")))?;
