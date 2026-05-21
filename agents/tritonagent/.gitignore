@@ -1,0 +1,4 @@
+# tritonagent release binary is 38 MB; well under GitHub's 100 MB
+# limit, but we still .gitignore it to keep the source-of-truth as
+# the Manta-hosted artifact, not the checked-in copy.
+proto/opt/triton/tritonagent/bin/

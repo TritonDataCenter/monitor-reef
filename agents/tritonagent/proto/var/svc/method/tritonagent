@@ -1,0 +1,54 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# SMF start method for site/tritonagent.
+#
+# Configuration source: /opt/triton/tritonagent/etc/agent.env
+# (key=value, one per line). Required keys:
+#
+#   TRITONAGENT_ENDPOINT      tritond URL (e.g. http://172.16.96.4:8080)
+#
+# Optional keys (passed through as env to the agent):
+#   TRITONAGENT_CREDENTIAL_PATH   default /var/lib/tritonagent/credentials
+#   TRITONAGENT_POLL_INTERVAL_SECS
+#   TRITONAGENT_CONSOLE_PORT      default 9101
+#   TRITONAGENT_DRY_RUN           set to 1 for dry-run mode
+#
+# `tcadm setup` writes the env file when it installs this agent on
+# a CN; operators can edit it directly and `svcadm restart
+# site/tritonagent` to apply.
+
+set -eu
+
+AGENT_BIN=/opt/triton/tritonagent/bin/tritonagent
+AGENT_ENV=/opt/triton/tritonagent/etc/agent.env
+AGENT_LOG_DIR=/var/log/tritonagent
+AGENT_STATE_DIR=/var/lib/tritonagent
+
+mkdir -p "$AGENT_LOG_DIR" "$AGENT_STATE_DIR"
+
+if [ ! -f "$AGENT_ENV" ]; then
+    echo "tritonagent: missing $AGENT_ENV — run 'tcadm agent configure tritonagent --endpoint URL'" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+. "$AGENT_ENV"
+
+[ -n "${TRITONAGENT_ENDPOINT:-}" ] \
+    || { echo "tritonagent: TRITONAGENT_ENDPOINT not set in $AGENT_ENV" >&2; exit 1; }
+
+export TRITONAGENT_ENDPOINT
+[ -n "${TRITONAGENT_CREDENTIAL_PATH:-}" ] && export TRITONAGENT_CREDENTIAL_PATH
+[ -n "${TRITONAGENT_POLL_INTERVAL_SECS:-}" ] && export TRITONAGENT_POLL_INTERVAL_SECS
+[ -n "${TRITONAGENT_CONSOLE_PORT:-}" ] && export TRITONAGENT_CONSOLE_PORT
+[ -n "${TRITONAGENT_DRY_RUN:-}" ] && export TRITONAGENT_DRY_RUN
+export RUST_LOG="${RUST_LOG:-info,tritonagent=debug}"
+
+"$AGENT_BIN" >>"$AGENT_LOG_DIR/agent.out" 2>&1 &
+echo "tritonagent: launched pid=$! endpoint=$TRITONAGENT_ENDPOINT" >&2
+exit 0
