@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# SMF start method for site/admin-backend. Co-located with tritond
+# in the same zone; talks to tritond over loopback.
+#
+# Reads (optional) from mdata-get:
+#   triton:admin_bind_address     defaults to "0.0.0.0:8081"
+#   triton:tritond_url            defaults to "http://127.0.0.1:8080"
+#   triton:admin_log_filter       defaults to "info,admin_backend=debug"
+#
+# admin-backend is a small Axum HTTP server with the React SPA
+# embedded via rust_embed at compile time. Hot-swap of the SPA from
+# /data is a future enhancement; today the bundled dist is what
+# ships with the zone image.
+
+set -eu
+
+ADMIN_BIN=/opt/triton/admin-backend/bin/admin-backend
+ADMIN_LOG_DIR=/data/state/admin-backend
+
+mkdir -p "$ADMIN_LOG_DIR"
+
+ADMIN_BIND_ADDRESS="$(mdata-get triton:admin_bind_address 2>/dev/null || echo "0.0.0.0:8081")"
+TRITOND_URL="$(mdata-get triton:tritond_url 2>/dev/null || echo "http://127.0.0.1:8080")"
+RUST_LOG="$(mdata-get triton:admin_log_filter 2>/dev/null || echo "info,admin_backend=debug")"
+
+export ADMIN_BIND_ADDRESS TRITOND_URL RUST_LOG
+
+"$ADMIN_BIN" >>"$ADMIN_LOG_DIR/server.out" 2>&1 &
+echo "admin-backend: launched pid=$! bind=$ADMIN_BIND_ADDRESS tritond=$TRITOND_URL" >&2
+
+exit 0

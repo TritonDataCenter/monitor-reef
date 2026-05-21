@@ -35,6 +35,7 @@ ZONES_POOL=${ZONES_POOL:-zones}
 
 TRITOND_BIN_URL=${TRITOND_BIN_URL:-https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/sources/tritond-illumos.bin}
 FDB_BITS_URL=${FDB_BITS_URL:-https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/sources/fdb-bits-7.3-illumos.tar.gz}
+ADMIN_BACKEND_URL=${ADMIN_BACKEND_URL:-https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/sources/admin-backend-illumos.bin}
 
 IMAGE_NAME=triton-tritond
 IMAGE_DESC="Triton Cloud control-plane daemon (triton-tritond)"
@@ -62,6 +63,16 @@ if [ ! -x "$PROTO_DIR/opt/triton/tritond/bin/tritond" ]; then
     mkdir -p "$PROTO_DIR/opt/triton/tritond/bin"
     curl -fsSL "$TRITOND_BIN_URL" -o "$PROTO_DIR/opt/triton/tritond/bin/tritond"
     chmod 0755 "$PROTO_DIR/opt/triton/tritond/bin/tritond"
+fi
+
+# Fetch admin-backend on demand. The React frontend is embedded in
+# the binary via rust_embed at compile time so this is a single
+# self-contained Rust executable.
+if [ ! -x "$PROTO_DIR/opt/triton/admin-backend/bin/admin-backend" ]; then
+    echo "==> fetching admin-backend binary from $ADMIN_BACKEND_URL"
+    mkdir -p "$PROTO_DIR/opt/triton/admin-backend/bin"
+    curl -fsSL "$ADMIN_BACKEND_URL" -o "$PROTO_DIR/opt/triton/admin-backend/bin/admin-backend"
+    chmod 0755 "$PROTO_DIR/opt/triton/admin-backend/bin/admin-backend"
 fi
 
 # Fetch the full fdb/lib/ set from the shared FDB tarball. libfdb_c.so
@@ -118,10 +129,13 @@ rsync -aH "$PROTO_DIR/" "$WORK_ROOT/"
 
 chown -R root:root "$WORK_ROOT/opt" "$WORK_ROOT/var/svc/method"
 chmod 0755 "$WORK_ROOT/var/svc/method/triton-tritond"
+chmod 0755 "$WORK_ROOT/var/svc/method/admin-backend"
 chmod 0755 "$WORK_ROOT/opt/triton/tritond/bin/tritond"
 chmod 0755 "$WORK_ROOT/opt/triton/tritond/lib"/*.so*
+chmod 0755 "$WORK_ROOT/opt/triton/admin-backend/bin/admin-backend"
 chmod 0644 "$WORK_ROOT/opt/triton/tritond/smf/triton-tritond.xml"
 chmod 0644 "$WORK_ROOT/opt/triton/tritond/etc/config.toml.tmpl"
+chmod 0644 "$WORK_ROOT/opt/triton/admin-backend/smf/admin-backend.xml"
 
 echo "==> snapshotting $WORK_DS@final"
 zfs snapshot "$WORK_DS@final"

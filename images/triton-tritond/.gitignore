@@ -1,4 +1,7 @@
 # tritond release binary and libfdb_c.so are too large for github.
-# build.sh fetches both at build time from Manta-hosted sources.
+# admin-backend binary embeds the React frontend dist (~5 MB) via
+# rust_embed at compile time, pushing it past github's 100 MB limit.
+# build.sh fetches all three from Manta-hosted sources.
 proto/opt/triton/tritond/bin/
 proto/opt/triton/tritond/lib/
+proto/opt/triton/admin-backend/bin/
