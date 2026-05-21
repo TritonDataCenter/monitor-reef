@@ -1929,6 +1929,49 @@
         }
       }
     },
+    "/v2/instances/{instance_id}/migrations": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Per-instance migration history (newest first). Includes",
+        "description": "terminal records so an operator can see the VM's full migration timeline.",
+        "operationId": "list_instance_migrations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_MigrationRecord",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MigrationRecord"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/instances/{instance_id}/realized-meta": {
       "get": {
         "tags": [
@@ -2177,6 +2220,164 @@
         "responses": {
           "204": {
             "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/migrations": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "List recent live-migration records across the fleet,",
+        "description": "newest-first, paged by id cursor. Operator-only at LM-1; per-tenant scoping is a follow-up once the per-instance route below covers the customer-facing view.",
+        "operationId": "list_migrations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after_id",
+            "description": "Continuation token: return migrations strictly after this id in the global newest-first ordering. `None` for the first page.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of items to return. Defaults to 50 if absent; the server caps the maximum to bound response size.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_MigrationRecord",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MigrationRecord"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/migrations/{migration_id}": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "One migration by id.",
+        "operationId": "get_migration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "migration_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRecord"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v2/migrations/{migration_id}/progress": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Page the per-migration progress event log. Operators poll",
+        "description": "this from the adminUI / `tcadm migrations get --watch` by passing the highest `seq` they've already seen as `after_seq`.",
+        "operationId": "list_migration_progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "migration_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "description": "Return only events whose `seq` is greater than this value. `None` (or `0`) returns from the beginning.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of events to return. Defaults to 200; the server caps the maximum to bound response size.",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_MigrationProgressEvent",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MigrationProgressEvent"
+                  }
+                }
+              }
+            }
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -11085,6 +11286,244 @@
           "value"
         ]
       },
+      "MigrationAction": {
+        "description": "Operator-initiated action against a migration record. The HTTP handler at `POST /v2/instances/{id}/actions/migrate` (LM-1 task #16 / LM-5) dispatches on this enum; `Begin` starts a saga, the others address an existing migration.",
+        "type": "string",
+        "enum": [
+          "begin",
+          "estimate",
+          "sync",
+          "pause",
+          "switch",
+          "abort",
+          "rollback",
+          "finalize",
+          "unknown"
+        ]
+      },
+      "MigrationPhase": {
+        "description": "Coarse-grained phase the migration is in. The saga catalog at `services/tritond/src/sagas/migration.rs` (LM-5) drives the transitions; `Begin` covers designate / pre-flight / target zone create / initial ZFS, `Sync` covers iterative ZFS + memory transfer, `Switch` covers pause / handoff / resume / cleanup.",
+        "type": "string",
+        "enum": [
+          "begin",
+          "sync",
+          "switch",
+          "unknown"
+        ]
+      },
+      "MigrationProgressEvent": {
+        "description": "One progress entry appended to the per-migration event log. The agent's progress POSTs (LM-3) write one of these per phase transition + per N-byte threshold during streaming; the admin UI + `tcadm migrations get` pages through them via the `?since=<seq>` query parameter.\n\nThe shape mirrors the legacy `MigrationProgress` JSON in `vmapi-api::types::migrations` so existing operators see the fields they expect.",
+        "type": "object",
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "eta_ms": {
+            "nullable": true,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "percentage": {
+            "nullable": true,
+            "type": "number",
+            "format": "double"
+          },
+          "phase": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
+          },
+          "seq": {
+            "description": "Monotonic per-migration sequence number. CAS-increments on each append; the FDB key trailer matches.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "state": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "total_bytes": {
+            "nullable": true,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "transferred_bytes": {
+            "nullable": true,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "type": {
+            "description": "Free-form type label (e.g. `\"progress\"`, `\"phase_transition\"`, `\"end\"`). Legacy VMAPI wrote arbitrary strings here; we keep it as `String` so we don't have to bump the wire on every new event kind.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "timestamp",
+          "type"
+        ]
+      },
+      "MigrationRecord": {
+        "description": "First-class FDB row tracking one live migration. Created by the `migrate-instance` saga's first action (LM-5) and mutated by subsequent actions; on terminal-state transitions the saga clears the `migration/active/<instance>` guard so a fresh migration can start.\n\nPersisted via the keys documented in `libs/tritond-store/src/fdb.rs`:\n\n```text migration/by_id/<uuid>                          JSON-encoded MigrationRecord migration/by_instance/<inst>/<inv_ts>/<uuid>    uuid bytes (history, newest-first) migration/by_source_cn/<cn>/<inv_ts>/<uuid>     uuid bytes migration/by_target_cn/<cn>/<inv_ts>/<uuid>     uuid bytes migration/active/<instance>                     uuid bytes (presence == active) migration/progress/<migration>/<seq>            JSON-encoded MigrationProgressEvent ```\n\nThe active guard plus `Instance.migration_in_progress` (added in LM-5) is the cross-handler advisory lock that keeps start/stop/restart/delete from racing a migration.",
+        "type": "object",
+        "properties": {
+          "action_requested": {
+            "description": "Last action the operator asked for. The list of valid transitions per state is enforced by the dispatch handler; invalid combinations return 409.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationAction"
+              }
+            ]
+          },
+          "automatic": {
+            "description": "True if the migration was triggered automatically (eg. by the rebalance / evacuate driver) rather than by an operator. Used for audit log labels and metrics.",
+            "default": false,
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "disallow_retry": {
+            "description": "Once set (typically after the switch action commits), the migration cannot be retried in either direction. Prevents accidental re-migration after a successful cutover.",
+            "default": false,
+            "type": "boolean"
+          },
+          "error": {
+            "nullable": true,
+            "description": "Populated on `Failed` / `Aborted` / `RolledBack` terminal states with the kind+message string that surfaced from the failing saga node.",
+            "default": null,
+            "type": "string"
+          },
+          "finished_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_progress_seq": {
+            "description": "Cursor into the `migration/progress/<id>/<seq>` event log. Each agent progress POST CAS-increments this; the watch endpoint pages from `since=<seq>`.",
+            "default": 0,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "phase": {
+            "$ref": "#/components/schemas/MigrationPhase"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reserved_nics": {
+            "description": "NIC uuids whose `host_cn_uuid` is being moved by this migration. Tracked here for audit visibility and abort undo; the source-of-truth for current NIC location remains the `Nic` row.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "saga_id": {
+            "nullable": true,
+            "description": "Steno saga id, bound after `saga_execute` returns.",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_cn": {
+            "description": "CN the instance currently lives on. Pinned at saga create.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_filesystem_details": {
+            "nullable": true,
+            "description": "Captured source dataset state. `None` for migrations that haven't completed the snapshot_source_quota saga node yet.",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SourceFilesystemDetails"
+              }
+            ]
+          },
+          "started_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MigrationState"
+          },
+          "target_cn": {
+            "nullable": true,
+            "description": "CN the saga designates as the target. `None` until the designate action commits (LM-5).",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "action_requested",
+          "created_at",
+          "id",
+          "instance_id",
+          "phase",
+          "project_id",
+          "source_cn",
+          "state",
+          "tenant_id"
+        ]
+      },
+      "MigrationState": {
+        "description": "Lifecycle state of a migration row.\n\nThe state machine is:\n\n```text begin → sync ⇄ paused │       │ │       └──→ switch → successful | failed │ └──→ aborted | failed | rolled_back ```\n\n`running` is a holding state used in legacy JSON for in-flight records that don't fit the strict phase enum; vnext writes the concrete phase but accepts `running` on read for forward compat. `unknown` catches values we don't recognise yet.",
+        "type": "string",
+        "enum": [
+          "begin",
+          "estimate",
+          "sync",
+          "paused",
+          "switch",
+          "aborted",
+          "rollback",
+          "successful",
+          "failed",
+          "running",
+          "unknown"
+        ]
+      },
       "NatGateway": {
         "description": "Project-owned VPC egress point. A NAT gateway reserves one public address from the same Phase 0 public pool used by [`FloatingIp`], then downstream edge realization decides where and how that address is programmed.\n\nThe stored record carries `desired_generation`; [`Self::realized`] is computed from the realization rows at read time.",
         "type": "object",
@@ -13624,6 +14063,48 @@
           "name"
         ]
       },
+      "SourceFilesystemDetails": {
+        "description": "Source-dataset details captured at migration start so the saga can restore them on abort or rollback. The quota dance for bhyve (legacy compatibility — see plan §5) requires temporarily zeroing the source's `quota` and `refreservation` so snapshot send works; the original values live here and the terminal action either restores them on the source (abort) or applies them to the target (successful migration).",
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "description": "`zones/<instance>` or similar — the dataset that hosts the instance's root.",
+            "type": "string"
+          },
+          "encrypted": {
+            "description": "Whether the source dataset had `encryption=on`. v1 rejects encrypted-source migrations at the API edge; the flag is recorded so audits can show why.",
+            "default": false,
+            "type": "boolean"
+          },
+          "original_quota_bytes": {
+            "nullable": true,
+            "description": "Original `quota` in bytes, if any.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "original_refreservation_bytes": {
+            "nullable": true,
+            "description": "Original `refreservation` in bytes, if any.",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "snapshots": {
+            "description": "Snapshots taken during the migration (in send/receive order). On terminal cleanup these are destroyed on whichever side loses authority over the dataset.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
       "SshKey": {
         "description": "User-supplied SSH public key, registered into one of five possible scopes (see [`SshKeyScope`]) so instance launches can pick keys to inject into authorized_keys. The User scope is the load-bearing one in practice (every user has their own personal keys); the other scopes mirror [`Image`] for symmetry and to support shared deployment keys.\n\nThe server validates the openssh wire format at create time and computes the SHA-256 fingerprint. The raw `public_key` string is stored verbatim so it can be handed to cloud-init without reformatting.",
         "type": "object",
@@ -14695,6 +15176,9 @@
     },
     {
       "name": "meta"
+    },
+    {
+      "name": "migrations"
     },
     {
       "name": "nat-gateways"
