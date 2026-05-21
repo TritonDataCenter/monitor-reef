@@ -377,10 +377,20 @@ impl TalosClient {
             }
         }
 
-        let mut yaml = Vec::new();
-        GzDecoder::new(compressed.as_slice())
-            .read_to_end(&mut yaml)
-            .context("decompress kubeconfig gzip")?;
-        Ok(yaml)
+        // Talos wraps the kubeconfig in a tar.gz archive; decompress and
+        // extract the first regular file (the kubeconfig YAML).
+        let gz = GzDecoder::new(compressed.as_slice());
+        let mut archive = tar::Archive::new(gz);
+        for entry in archive.entries().context("read kubeconfig tar entries")? {
+            let mut entry = entry.context("read kubeconfig tar entry")?;
+            if matches!(entry.header().entry_type(), tar::EntryType::Regular | tar::EntryType::GNUSparse) {
+                let mut yaml = Vec::new();
+                entry
+                    .read_to_end(&mut yaml)
+                    .context("read kubeconfig from tar")?;
+                return Ok(yaml);
+            }
+        }
+        anyhow::bail!("no regular file found in Talos kubeconfig tar archive")
     }
 }
