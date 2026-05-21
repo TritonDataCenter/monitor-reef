@@ -1,0 +1,32 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "triton-channel"
+version = "0.1.0"
+edition.workspace = true
+description = "Typed schema, signature verification, and content checks for the Triton Cloud release-channel JSON published to Manta under ~~/public/tritoncloud/channels/."
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono = { workspace = true }
+hex = { workspace = true }
+minisign-verify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+# Full-featured minisign (signing + verify). Used only in tests so we
+# can generate an ephemeral keypair, sign a fixture, and exercise
+# verify_minisign end-to-end without committing a static signature
+# blob (which would couple the test to exact bytes of the fixture).
+minisign = "0.9"

@@ -1,0 +1,58 @@
+{
+  "channel": "edge",
+  "schema": 1,
+  "updated_at": "2026-05-21T14:00:00Z",
+  "publisher": "nick.wilkens@mnxsolutions.com",
+  "images": {
+    "triton-tritond": {
+      "stamp": "20260521T140000Z",
+      "uuid": "9c3b8f00-1111-4222-8333-444555666777",
+      "manifest_url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/images/triton-tritond/20260521T140000Z.json",
+      "content_url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/images/triton-tritond/20260521T140000Z.zfs.gz",
+      "sha256": "ab12cd34ef56789012345678901234567890abcdef0123456789abcdef012345",
+      "size_bytes": 287654321,
+      "pi_min": "20260518T184011Z",
+      "data_format_version": 1,
+      "data_format_min_read": 1
+    },
+    "triton-fdb": {
+      "stamp": "20260521T140000Z",
+      "uuid": "abcdef00-2222-4222-8333-444555666778",
+      "manifest_url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/images/triton-fdb/20260521T140000Z.json",
+      "content_url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/images/triton-fdb/20260521T140000Z.zfs.gz",
+      "sha256": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "size_bytes": 412345678,
+      "data_format_version": 730,
+      "data_format_min_read": 730
+    }
+  },
+  "agents": {
+    "tritonagent": {
+      "stamp": "20260521T140000Z",
+      "url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/agents/tritonagent/20260521T140000Z.tar.gz",
+      "sha256": "cd3411223344556677889900aabbccddeeff00112233445566778899aabbccdd",
+      "size_bytes": 12345678,
+      "pi_min": "20260518T184011Z"
+    },
+    "proteusadm": {
+      "stamp": "20260521T140000Z",
+      "url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/agents/proteusadm/20260521T140000Z.tar.gz",
+      "sha256": "ef5611223344556677889900aabbccddeeff00112233445566778899aabbccdd",
+      "size_bytes": 3456789
+    }
+  },
+  "tcadm": {
+    "x86_64-unknown-illumos": {
+      "stamp": "20260521T140000Z",
+      "url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/tcadm/20260521T140000Z-x86_64-unknown-illumos.tar.gz",
+      "sha256": "ef561122334455667788990011223344556677889900aabbccddeeff00112233",
+      "size_bytes": 8765432
+    },
+    "aarch64-apple-darwin": {
+      "stamp": "20260521T140000Z",
+      "url": "https://us-central.manta.mnx.io/nick.wilkens@mnxsolutions.com/public/tritoncloud/tcadm/20260521T140000Z-aarch64-apple-darwin.tar.gz",
+      "sha256": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+      "size_bytes": 9123456
+    }
+  }
+}

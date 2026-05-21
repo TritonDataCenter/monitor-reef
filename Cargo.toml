@@ -32,6 +32,7 @@ members = [
     "libs/tritond-saga",
     "libs/tritond-store",
     "libs/tritond-vmm-migrate",
+    "libs/triton-channel",
     "client-generator",
     "openapi-manager",
     "services/bugview-service",
@@ -39,6 +40,7 @@ members = [
     "services/tritond",
     "services/tritonagent",
     "cli/tcadm",
+    "cli/tritoncloud-publish",
     "cli/tritonimg-build",
 
     # To be modernized:
@@ -128,6 +130,10 @@ indicatif = "0.18"
 ipnetwork = { version = "0.21", default-features = false, features = ["serde"] }
 libc = "0.2"
 md-5 = "0.10"
+# Minisign signature verification (Ed25519). Pure Rust, tiny, no
+# additional crypto dependencies. Used by triton-channel to verify
+# publisher signatures on release-channel JSON.
+minisign-verify = "0.2"
 notify = "8.2"
 openapiv3 = "2.0"
 p256 = { version = "0.13", features = ["ecdsa"] }
@@ -241,5 +247,6 @@ tritond-saga = { path = "libs/tritond-saga" }
 tritond-store = { path = "libs/tritond-store" }
 tritond-vmm-migrate = { path = "libs/tritond-vmm-migrate" }
 tritonagent = { path = "services/tritonagent" }
+triton-channel = { path = "libs/triton-channel" }
 vmapi-api = { path = "apis/vmapi-api" }
 vmapi-client = { path = "clients/internal/vmapi-client" }
