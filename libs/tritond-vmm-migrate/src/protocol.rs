@@ -46,6 +46,22 @@ pub const PROTOCOL_V0: &str = "vmm-migrate-ron/0";
 /// preserved.
 pub const HIGHMEM_BASE_GPA: u64 = 4 * 1024 * 1024 * 1024;
 
+/// LM-4 — size of one `Message::ZfsChunk` payload, in bytes.
+///
+/// 256 KiB strikes a balance:
+///
+/// * Each WebSocket binary frame has a small (~2-14 byte) framing
+///   overhead — at 256 KiB chunks that's <0.005% overhead.
+/// * The frame is well under tungstenite's default 16 MiB cap and
+///   well under the OS socket buffer, so backpressure on the
+///   sender propagates cleanly to `zfs send` via stdout-pipe
+///   blocking.
+/// * A dropped connection mid-chunk requires retransmitting at
+///   most this much — the dataset transfer has no resume, so the
+///   chunk granularity is the unit of work we're willing to
+///   lose on a transient.
+pub const ZFS_CHUNK_SIZE: usize = 256 * 1024;
+
 /// Hash one contiguous byte slice with xxh3-64.
 ///
 /// `data` must be the entire region the caller wants represented;

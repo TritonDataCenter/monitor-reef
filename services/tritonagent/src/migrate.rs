@@ -66,10 +66,12 @@ use serde::Deserialize;
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{info, warn};
 use tritond_auth::{MIGRATE_TICKET_KEY_BYTES, MigrateRole, MigrateTicketKey};
+use tritond_vmm_migrate::zfs_stream::ZfsReceiver;
 use tritond_vmm_migrate::{Message, Transport};
 use uuid::Uuid;
 
 use crate::console_creds::ConsoleTls;
+use crate::zfs;
 
 /// Default port the listener binds. Plan §D.3: 4568 picks a fresh
 /// number rather than reusing legacy's 4567 so mixed-version
@@ -110,11 +112,35 @@ struct MigrateParams {
     vm: Uuid,
 }
 
+/// Query parameters on `GET /migrate/{migration_id}/zfs`.
+#[derive(Debug, Deserialize)]
+struct MigrateZfsParams {
+    /// Migrate ticket scoped to [`MigrateRole::ZfsSource`].
+    ticket: String,
+    /// Source CN uuid.
+    source_cn: Uuid,
+    /// VM uuid (used to bind the ticket).
+    vm: Uuid,
+    /// Local dataset name to `zfs recv` into (e.g.
+    /// `zones/7c9a4f88-1ab2-4cd4-9b21-7e2c8f9a1b3d-disk0`). The
+    /// migration saga supplies this; the listener doesn't
+    /// re-derive it from `vm` because the dataset path layout
+    /// depends on the storage profile / pool the saga chose.
+    dataset: String,
+}
+
 /// Build the Axum router. Exposed for tests so they can serve it
 /// over plain HTTP; production wraps it in TLS via [`serve`].
 fn build_router(state: Arc<MigrateState>) -> Router {
     Router::new()
+        // Memory channel — the LM-3 WebSocket the migration's
+        // OutboundMigration state machine connects to.
         .route("/migrate/{migration_id}", get(migrate_ws))
+        // ZFS channel — the LM-4 WebSocket the source agent's
+        // ZfsSender connects to. Separate route + separate
+        // ticket role (`MigrateRole::ZfsTarget`) so a leaked
+        // memory-channel ticket can't be replayed against it.
+        .route("/migrate/{migration_id}/zfs", get(migrate_zfs_ws))
         .with_state(state)
 }
 
@@ -188,6 +214,109 @@ async fn migrate_ws(
     })
 }
 
+/// `GET /migrate/{migration_id}/zfs` — verify the ticket
+/// (role=`ZfsSource`), spawn `zfs recv` against the requested
+/// dataset, and pipe the WebSocket binary frames straight into
+/// the child's stdin via a `ZfsReceiver`. The handler waits for
+/// the receiver to drain + the child to exit before closing.
+async fn migrate_zfs_ws(
+    ws: WebSocketUpgrade,
+    AxumPath(migration_id): AxumPath<Uuid>,
+    Query(params): Query<MigrateZfsParams>,
+    State(state): State<Arc<MigrateState>>,
+) -> Response {
+    let key = MigrateTicketKey::from_bytes(state.migrate_ticket_key);
+    if let Err(e) = key.verify(
+        &params.ticket,
+        params.source_cn,
+        state.server_uuid,
+        params.vm,
+        migration_id,
+        MigrateRole::ZfsSource,
+    ) {
+        warn!(
+            %migration_id, source_cn = %params.source_cn, vm = %params.vm,
+            dataset = %params.dataset, error = %e,
+            "migrate-zfs: rejecting ticket",
+        );
+        return (StatusCode::UNAUTHORIZED, "invalid migrate-zfs ticket").into_response();
+    }
+
+    info!(
+        %migration_id, source_cn = %params.source_cn, vm = %params.vm,
+        dataset = %params.dataset,
+        "migrate-zfs: upgrading websocket",
+    );
+
+    // Spawn `zfs recv` BEFORE upgrading the WebSocket so a spawn
+    // failure (zfs missing, bad dataset name) surfaces as a 503
+    // body, not as an opaque WebSocket close-with-no-explanation.
+    let mut child = match zfs::spawn_recv(&params.dataset) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(
+                %migration_id, dataset = %params.dataset, error = %e,
+                "migrate-zfs: spawn zfs recv failed",
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("zfs recv spawn failed: {e}"),
+            )
+                .into_response();
+        }
+    };
+    let stdin = match child.stdin.take() {
+        Some(s) => s,
+        None => {
+            warn!(%migration_id, "migrate-zfs: zfs recv child has no piped stdin");
+            // Best-effort cleanup: kill the process so we don't leak.
+            let _ = child.start_kill();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "zfs recv child missing stdin",
+            )
+                .into_response();
+        }
+    };
+
+    ws.on_upgrade(move |socket| async move {
+        let transport = AxumWsTransport::new(socket);
+        let receiver = ZfsReceiver::new(transport, stdin);
+        match receiver.run().await {
+            Ok(bytes) => {
+                info!(
+                    %migration_id, dataset = %params.dataset, bytes,
+                    "migrate-zfs: stream complete, waiting for zfs recv to exit",
+                );
+            }
+            Err(e) => {
+                warn!(
+                    %migration_id, dataset = %params.dataset, error = %e,
+                    "migrate-zfs: receiver errored; killing zfs recv",
+                );
+                let _ = child.start_kill();
+            }
+        }
+        match child.wait().await {
+            Ok(status) if status.success() => {
+                info!(%migration_id, dataset = %params.dataset, "migrate-zfs: zfs recv exited 0");
+            }
+            Ok(status) => {
+                warn!(
+                    %migration_id, dataset = %params.dataset, ?status,
+                    "migrate-zfs: zfs recv exited non-zero",
+                );
+            }
+            Err(e) => {
+                warn!(
+                    %migration_id, dataset = %params.dataset, error = %e,
+                    "migrate-zfs: zfs recv child wait failed",
+                );
+            }
+        }
+    })
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Outbound dialer.
 // ──────────────────────────────────────────────────────────────────
@@ -228,6 +357,42 @@ pub struct DialParams {
 pub async fn dial(_params: DialParams) -> io::Result<Box<dyn Transport>> {
     Err(io::Error::other(
         "migrate::dial not wired yet: LM-3 lands the listener, LM-5 wires the source side",
+    ))
+}
+
+/// Parameters for [`dial_zfs`]: the source side opens the ZFS
+/// WebSocket against the target's `/migrate/{id}/zfs` endpoint,
+/// then a separate caller pipes the local `zfs send` stdout into
+/// a `ZfsSender` wrapping the returned transport.
+///
+/// LM-4 ships the parameter shape; the body lands with LM-5 for
+/// the same reason as [`dial`] — without a saga to invoke it,
+/// the dialer has no live use case to test against. Splitting
+/// into a stub keeps the signature stable so LM-5 doesn't need
+/// to invent a new module.
+pub struct DialZfsParams {
+    /// `https://<target_admin_ip>:<port>`.
+    pub base_url: String,
+    /// Migration record id.
+    pub migration_id: Uuid,
+    /// Source CN uuid (binding claim).
+    pub source_cn: Uuid,
+    /// VM uuid (binding claim).
+    pub vm_uuid: Uuid,
+    /// Target dataset name (`zones/<inst>` etc.). Threaded
+    /// through to the target's `?dataset=` query parameter so the
+    /// listener can `zfs recv` it.
+    pub target_dataset: String,
+    /// HS256 JWT minted by tritond with `MigrateRole::ZfsSource`.
+    pub ticket: String,
+}
+
+/// LM-4 stub for the source-side ZFS dialer; see [`dial`]'s doc
+/// comment for the LM-5 wiring shape (the body is the same modulo
+/// the route + the role).
+pub async fn dial_zfs(_params: DialZfsParams) -> io::Result<Box<dyn Transport>> {
+    Err(io::Error::other(
+        "migrate::dial_zfs not wired yet: LM-4 lands the listener + Transport adapter, LM-5 wires the source dialer",
     ))
 }
 
@@ -335,6 +500,21 @@ mod tests {
             ticket: String::new(),
         };
         let result = tokio_test_block_on(dial(params));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn dial_zfs_stub_returns_error_until_lm5() {
+        // LM-4 ZFS dialer stub: same shape as `dial`.
+        let params = DialZfsParams {
+            base_url: "https://127.0.0.1:4568".to_string(),
+            migration_id: Uuid::nil(),
+            source_cn: Uuid::nil(),
+            vm_uuid: Uuid::nil(),
+            target_dataset: "zones/x".to_string(),
+            ticket: String::new(),
+        };
+        let result = tokio_test_block_on(dial_zfs(params));
         assert!(result.is_err());
     }
 

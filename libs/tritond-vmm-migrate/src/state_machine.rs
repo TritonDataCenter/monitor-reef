@@ -633,6 +633,14 @@ fn variant_name(msg: &Message) -> &'static str {
         Message::RamHash(_) => "RamHash",
         Message::PauseComplete(_) => "PauseComplete",
         Message::SwitchComplete(_) => "SwitchComplete",
+        // Memory-channel state machine never expects these on its
+        // wire — the ZFS variants ride a separate Transport
+        // instance (the `GET /migrate/{id}/zfs` listener). If one
+        // shows up here it means the caller mis-wired the two
+        // channels; surface the variant name so the audit log
+        // says "ZfsChunk in ram-push phase".
+        Message::ZfsChunk(_) => "ZfsChunk",
+        Message::ZfsEnd => "ZfsEnd",
     }
 }
 

@@ -87,6 +87,20 @@ pub enum Message {
     /// `target_activated_at` for the split-brain detection rule
     /// (plan §H.4: `pause_complete_at < target_activated_at`).
     SwitchComplete(u64),
+    /// **New for LM-4.** One chunk of the `zfs send` byte stream.
+    /// Carried on the dedicated ZFS-channel WebSocket
+    /// (`GET /migrate/{id}/zfs`); never appears on the
+    /// memory-channel connection. The payload is whatever bytes
+    /// the source's `zfs send` stdout produced in one
+    /// [`crate::protocol::ZFS_CHUNK_SIZE`] window — the target
+    /// pipes them straight into `zfs recv` stdin in order.
+    ZfsChunk(Vec<u8>),
+    /// **New for LM-4.** End-of-stream marker for the ZFS channel.
+    /// Source sends after `zfs send` exits 0; target uses it to
+    /// flush + close `zfs recv` stdin without relying on
+    /// WebSocket close ambiguity (we want a clean "no more bytes"
+    /// signal distinct from a network drop).
+    ZfsEnd,
 }
 
 // Tag bytes. The first block (0x00–0x7f) is shared with the legacy
@@ -103,6 +117,8 @@ const TAG_PAUSE_SIGNAL: u8 = 12;
 const TAG_RAM_HASH: u8 = 0x80;
 const TAG_PAUSE_COMPLETE: u8 = 0x81;
 const TAG_SWITCH_COMPLETE: u8 = 0x82;
+const TAG_ZFS_CHUNK: u8 = 0x83;
+const TAG_ZFS_END: u8 = 0x84;
 
 /// Error returned by [`Message::decode`] for malformed frames.
 #[derive(Debug, thiserror::Error)]
@@ -176,6 +192,13 @@ impl Message {
                 buf.push(TAG_SWITCH_COMPLETE);
                 buf
             }
+            Message::ZfsChunk(data) => {
+                let mut buf = Vec::with_capacity(data.len() + 1);
+                buf.extend_from_slice(data);
+                buf.push(TAG_ZFS_CHUNK);
+                buf
+            }
+            Message::ZfsEnd => vec![TAG_ZFS_END],
         }
     }
 
@@ -255,6 +278,8 @@ impl Message {
                     payload.try_into().expect("8 bytes"),
                 )))
             }
+            TAG_ZFS_CHUNK => Ok(Message::ZfsChunk(payload.to_vec())),
+            TAG_ZFS_END => Ok(Message::ZfsEnd),
             other => Err(DecodeError::UnknownTag(other)),
         }
     }
@@ -366,6 +391,24 @@ mod tests {
     #[test]
     fn roundtrip_switch_complete_lm2() {
         roundtrip(Message::SwitchComplete(1_700_000_000_500_000_000));
+    }
+
+    #[test]
+    fn roundtrip_zfs_chunk_lm4() {
+        // Arbitrary bytes: the codec must round-trip them
+        // verbatim (the bytes are `zfs send` output, opaque to us).
+        let payload: Vec<u8> = (0..256).map(|i| (i & 0xff) as u8).collect();
+        roundtrip(Message::ZfsChunk(payload));
+    }
+
+    #[test]
+    fn roundtrip_zfs_chunk_empty() {
+        roundtrip(Message::ZfsChunk(Vec::new()));
+    }
+
+    #[test]
+    fn roundtrip_zfs_end_lm4() {
+        roundtrip(Message::ZfsEnd);
     }
 
     #[test]

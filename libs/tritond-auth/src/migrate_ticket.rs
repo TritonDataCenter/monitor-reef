@@ -60,26 +60,60 @@ pub const MIGRATE_TICKET_KEY_BYTES: usize = 32;
 /// enough that a captured ticket isn't a serious threat. Plan §D.2.
 pub const DEFAULT_MIGRATE_TICKET_TTL_SECS: i64 = 600;
 
-/// Whether a ticket authorises the source-side dial or the
-/// target-side accept. Wire form is lowercase
-/// (`outbound` / `inbound`).
+/// Which side + which data channel a ticket authorises.
+///
+/// Two parallel channels run during a live migration:
+///
+/// * **memory channel** (`Outbound` / `Inbound`) — carries the
+///   bhyve memory pages, device-state nvlists, RAM-hash, time
+///   data, and the [`PauseComplete`] / [`SwitchComplete`] cutover
+///   fence. Source dials, target listens.
+/// * **ZFS channel** (`ZfsSource` / `ZfsTarget`) — carries the raw
+///   `zfs send` byte stream that the target's `zfs recv` consumes.
+///   Source dials, target listens.
+///
+/// Roles are distinct so a leaked memory-channel ticket cannot be
+/// replayed against the ZFS endpoint of the same migration (and
+/// vice versa).
+///
+/// Wire form is lowercase (`outbound` / `inbound` / `zfs-source` /
+/// `zfs-target`).
+///
+/// [`PauseComplete`]: tritond-vmm-migrate's Message::PauseComplete
+/// [`SwitchComplete`]: tritond-vmm-migrate's Message::SwitchComplete
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum MigrateRole {
-    /// Source side — presented by the dialer when connecting.
+    /// Memory channel, source side — presented by the dialer when
+    /// connecting to the target's `GET /migrate/{id}` route.
     Outbound,
-    /// Target side — held by the listener; identifies which
-    /// migration an inbound connection is fulfilling.
+    /// Memory channel, target side — held by the listener;
+    /// identifies which migration an inbound connection is
+    /// fulfilling.
     Inbound,
+    /// ZFS channel, source side — presented by the dialer when
+    /// connecting to the target's `GET /migrate/{id}/zfs` route.
+    /// LM-4.
+    ZfsSource,
+    /// ZFS channel, target side — held by the listener for the
+    /// ZFS dataset-receive endpoint. LM-4.
+    ZfsTarget,
 }
 
 impl MigrateRole {
-    /// Stable lowercase wire name (`"outbound"` / `"inbound"`).
+    /// Stable lowercase wire name. Matches the serde
+    /// representation; exposed separately so callers can use the
+    /// string in non-JSON contexts (URL paths, log lines, ticket
+    /// claim debug dumps) without round-tripping through
+    /// `serde_json`.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             MigrateRole::Outbound => "outbound",
             MigrateRole::Inbound => "inbound",
+            MigrateRole::ZfsSource => "zfs-source",
+            MigrateRole::ZfsTarget => "zfs-target",
         }
     }
 }
@@ -482,7 +516,67 @@ mod tests {
             serde_json::to_string(&MigrateRole::Inbound).unwrap(),
             "\"inbound\""
         );
+        assert_eq!(
+            serde_json::to_string(&MigrateRole::ZfsSource).unwrap(),
+            "\"zfs-source\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MigrateRole::ZfsTarget).unwrap(),
+            "\"zfs-target\""
+        );
         assert_eq!(MigrateRole::Outbound.as_str(), "outbound");
         assert_eq!(MigrateRole::Inbound.to_string(), "inbound");
+        assert_eq!(MigrateRole::ZfsSource.as_str(), "zfs-source");
+        assert_eq!(MigrateRole::ZfsTarget.to_string(), "zfs-target");
+    }
+
+    // ---- LM-4 ZFS channel roles ----
+
+    #[test]
+    fn zfs_roles_round_trip() {
+        let key = MigrateTicketKey::generate();
+        let (scn, tcn, vm, mig) = quad();
+        for role in [MigrateRole::ZfsSource, MigrateRole::ZfsTarget] {
+            let t = key
+                .mint(scn, tcn, vm, mig, role, DEFAULT_MIGRATE_TICKET_TTL_SECS)
+                .unwrap();
+            assert_eq!(key.verify(&t, scn, tcn, vm, mig, role), Ok(()));
+        }
+    }
+
+    #[test]
+    fn memory_ticket_rejected_for_zfs_role() {
+        // The "leaked memory ticket replayed against ZFS"
+        // scenario the role split exists to prevent.
+        let key = MigrateTicketKey::generate();
+        let (scn, tcn, vm, mig) = quad();
+        let mem_outbound = key
+            .mint(
+                scn,
+                tcn,
+                vm,
+                mig,
+                MigrateRole::Outbound,
+                DEFAULT_MIGRATE_TICKET_TTL_SECS,
+            )
+            .unwrap();
+        assert_eq!(
+            key.verify(&mem_outbound, scn, tcn, vm, mig, MigrateRole::ZfsSource),
+            Err(MigrateTicketError::ScopeMismatch),
+        );
+        let zfs_source = key
+            .mint(
+                scn,
+                tcn,
+                vm,
+                mig,
+                MigrateRole::ZfsSource,
+                DEFAULT_MIGRATE_TICKET_TTL_SECS,
+            )
+            .unwrap();
+        assert_eq!(
+            key.verify(&zfs_source, scn, tcn, vm, mig, MigrateRole::Outbound),
+            Err(MigrateTicketError::ScopeMismatch),
+        );
     }
 }

@@ -36,10 +36,12 @@ pub mod protocol;
 pub mod state_machine;
 pub mod transport;
 pub mod vmm_dev;
+pub mod zfs_stream;
 
 pub use codec::{DecodeError, Message, MigrationPreamble, PAGE_BATCH_FLAG_ZSTD};
 pub use protocol::{
-    BATCH_SIZE, HIGHMEM_BASE_GPA, PAGE_SIZE, PROTOCOL_V0, ZSTD_LEVEL, hash_guest_ram, hash_region,
+    BATCH_SIZE, HIGHMEM_BASE_GPA, PAGE_SIZE, PROTOCOL_V0, ZFS_CHUNK_SIZE, ZSTD_LEVEL,
+    hash_guest_ram, hash_region,
 };
 pub use state_machine::{
     InboundMigration, MigrateError, NoopSourceHooks, NoopTargetHooks, OutboundMigration, Phase,
@@ -47,3 +49,4 @@ pub use state_machine::{
 };
 pub use transport::{Transport, inmem};
 pub use vmm_dev::{MemLayout, MemRegion, SharedVmm, VmmDev};
+pub use zfs_stream::{ZfsReceiver, ZfsSender};
