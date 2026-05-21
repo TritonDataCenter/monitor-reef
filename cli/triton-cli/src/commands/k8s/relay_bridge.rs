@@ -60,7 +60,10 @@ pub async fn run(args: RelayBridgeArgs, client: &TypedClient, base_url: &str) ->
     // Build the relay WebSocket URL from the base URL the CLI is pointed at.
     let relay_url = format!(
         "{}/v1/k8s/relay/connect",
-        base_url.trim_end_matches('/').replace("http://", "ws://").replace("https://", "wss://")
+        base_url
+            .trim_end_matches('/')
+            .replace("http://", "ws://")
+            .replace("https://", "wss://")
     );
 
     info!("cluster '{}' endpoint: {}", cluster.name, endpoint);
