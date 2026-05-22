@@ -59,6 +59,15 @@ struct ConsoleCredsFile {
     /// [`load_console_ticket_key`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     console_ticket_key_hex: Option<String>,
+    /// Per-CN migrate-ticket key, lowercase hex (64 chars). Same
+    /// "delivered once, persist forever" contract as the console
+    /// ticket key. Absent on agents that registered before LM-6c
+    /// added the field; the migrate listener refuses to start
+    /// when the key is missing so an operator has to `tcadm cn
+    /// disable` and re-approve to mint one. See
+    /// [`load_migrate_ticket_key`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    migrate_ticket_key_hex: Option<String>,
     /// PEM-encoded self-signed TLS leaf cert.
     tls_cert_pem: String,
     /// PEM-encoded TLS private key.
@@ -241,6 +250,7 @@ pub fn load_or_init_tls(credential_path: &Path, admin_ip: Option<Ipv4Addr>) -> R
             &path,
             &ConsoleCredsFile {
                 console_ticket_key_hex: existing.console_ticket_key_hex,
+                migrate_ticket_key_hex: existing.migrate_ticket_key_hex,
                 tls_cert_pem: cert_pem,
                 tls_key_pem: key_pem,
             },
@@ -248,15 +258,17 @@ pub fn load_or_init_tls(credential_path: &Path, admin_ip: Option<Ipv4Addr>) -> R
         return Ok(tls);
     }
 
-    // Fresh CN: generate and persist (no console-ticket key yet — it
-    // arrives in the registration response and is folded in via
-    // `save_console_ticket_key`).
+    // Fresh CN: generate and persist (no console-ticket key or
+    // migrate-ticket key yet — both arrive in the registration
+    // response and are folded in via `save_console_ticket_key` /
+    // `save_migrate_ticket_key`).
     let (cert_pem, key_pem) = generate_self_signed(admin_ip)?;
     let tls = tls_from_pem(&cert_pem, &key_pem)?;
     write_file(
         &path,
         &ConsoleCredsFile {
             console_ticket_key_hex: None,
+            migrate_ticket_key_hex: None,
             tls_cert_pem: cert_pem,
             tls_key_pem: key_pem,
         },
@@ -277,18 +289,86 @@ pub fn save_console_ticket_key(
 ) -> Result<()> {
     let path = console_creds_path(credential_path);
     let key_hex = hex::encode(key_bytes);
-    let (tls_cert_pem, tls_key_pem) = match read_file(&path)? {
-        Some(existing) => (existing.tls_cert_pem, existing.tls_key_pem),
-        None => (String::new(), String::new()),
+    let (tls_cert_pem, tls_key_pem, migrate_ticket_key_hex) = match read_file(&path)? {
+        Some(existing) => (
+            existing.tls_cert_pem,
+            existing.tls_key_pem,
+            existing.migrate_ticket_key_hex,
+        ),
+        None => (String::new(), String::new(), None),
     };
     write_file(
         &path,
         &ConsoleCredsFile {
             console_ticket_key_hex: Some(key_hex),
+            migrate_ticket_key_hex,
             tls_cert_pem,
             tls_key_pem,
         },
     )
+}
+
+/// Persist the per-CN migrate-ticket key alongside the
+/// console-ticket key + TLS material. Same atomic write
+/// semantics. Mirrors [`save_console_ticket_key`] but on the
+/// `migrate_ticket_key_hex` field; preserves every other field
+/// in the file so the two keys + the TLS material can be
+/// written in any order without race-overwriting each other.
+pub fn save_migrate_ticket_key(
+    credential_path: &Path,
+    key_bytes: &[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES],
+) -> Result<()> {
+    let path = console_creds_path(credential_path);
+    let key_hex = hex::encode(key_bytes);
+    let (tls_cert_pem, tls_key_pem, console_ticket_key_hex) = match read_file(&path)? {
+        Some(existing) => (
+            existing.tls_cert_pem,
+            existing.tls_key_pem,
+            existing.console_ticket_key_hex,
+        ),
+        None => (String::new(), String::new(), None),
+    };
+    write_file(
+        &path,
+        &ConsoleCredsFile {
+            console_ticket_key_hex,
+            migrate_ticket_key_hex: Some(key_hex),
+            tls_cert_pem,
+            tls_key_pem,
+        },
+    )
+}
+
+/// Load the per-CN migrate-ticket key, if it has been persisted.
+///
+/// Returns `Ok(None)` when the file is absent *or* the migrate
+/// key field is absent — the latter is the "agent registered
+/// before LM-6c" case the caller logs a warning about (the
+/// migrate listener does not start without a key, so the CN
+/// must be re-approved to get one).
+pub fn load_migrate_ticket_key(
+    credential_path: &Path,
+) -> Result<Option<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]>> {
+    let path = console_creds_path(credential_path);
+    let Some(file) = read_file(&path)? else {
+        return Ok(None);
+    };
+    let Some(hex_str) = file.migrate_ticket_key_hex else {
+        return Ok(None);
+    };
+    let bytes = hex::decode(hex_str.trim())
+        .with_context(|| format!("decode migrate-ticket key hex in {}", path.display()))?;
+    if bytes.len() != tritond_auth::MIGRATE_TICKET_KEY_BYTES {
+        bail!(
+            "migrate-ticket key in {} is {} bytes, expected {}",
+            path.display(),
+            bytes.len(),
+            tritond_auth::MIGRATE_TICKET_KEY_BYTES,
+        );
+    }
+    let mut out = [0u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(Some(out))
 }
 
 /// Load the per-CN console-ticket key, if it has been persisted.

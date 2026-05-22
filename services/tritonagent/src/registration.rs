@@ -76,6 +76,13 @@ pub struct RegistrationOutcome {
     /// imds-credentials file was lost). The IMDS listener is not
     /// started in that case. See `IMDS_DESIGN.md` §3.
     pub imds_token_key: Option<[u8; tritond_auth::IMDS_TOKEN_KEY_BYTES]>,
+    /// Per-CN HS256 live-migration ticket key. Same delivery
+    /// contract as `console_ticket_key`; `None` when the agent
+    /// resumed from a credential file written before LM-6c
+    /// shipped. The migrate listener is not started in that
+    /// case; the operator must `tcadm cn disable` and re-approve
+    /// to mint one.
+    pub migrate_ticket_key: Option<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]>,
 }
 
 /// Resolve the agent's per-CN API key + console-ticket key, registering
@@ -133,6 +140,13 @@ pub async fn register_or_resume(
                     credential_path.display()
                 )
             })?;
+        let migrate_ticket_key = console_creds::load_migrate_ticket_key(credential_path)
+            .with_context(|| {
+                format!(
+                    "load migrate-ticket key alongside {}",
+                    credential_path.display()
+                )
+            })?;
         if console_ticket_key.is_none() {
             warn!(
                 "no per-CN console-ticket key on disk (agent registered before consoles \
@@ -141,10 +155,18 @@ pub async fn register_or_resume(
                  (`tcadm cn disable` then approve again)",
             );
         }
+        if migrate_ticket_key.is_none() {
+            warn!(
+                "no per-CN migrate-ticket key on disk (agent registered before LM-6c, or \
+                 the console-credentials file was lost); live VM migration is unavailable \
+                 for this CN until it re-registers (`tcadm cn disable` then approve again)",
+            );
+        }
         return Ok(RegistrationOutcome {
             api_key: existing,
             console_ticket_key,
             imds_token_key,
+            migrate_ticket_key,
         });
     }
 
@@ -194,7 +216,7 @@ pub async fn register_or_resume(
         );
     }
 
-    let (key, console_ticket_key_hex, imds_token_key_hex) =
+    let (key, console_ticket_key_hex, imds_token_key_hex, migrate_ticket_key_hex) =
         await_credential(&client, &poll_token, register_timeout).await?;
 
     credentials::save(credential_path, &key)
@@ -265,6 +287,36 @@ pub async fn register_or_resume(
         }
     };
 
+    // Decode + persist the per-CN migrate-ticket key. Same
+    // delivery contract + same fallback as the other ticket keys.
+    let migrate_ticket_key = match migrate_ticket_key_hex {
+        Some(hex_str) => match decode_migrate_ticket_key(&hex_str) {
+            Ok(bytes) => {
+                console_creds::save_migrate_ticket_key(credential_path, &bytes).with_context(
+                    || {
+                        format!(
+                            "persist migrate-ticket key alongside {}",
+                            credential_path.display()
+                        )
+                    },
+                )?;
+                info!("persisted per-CN migrate-ticket key");
+                Some(bytes)
+            }
+            Err(e) => {
+                warn!(error = %e, "tritond returned a malformed migrate-ticket key; live migration disabled");
+                None
+            }
+        },
+        None => {
+            warn!(
+                "registration response carried no migrate-ticket key; live VM migration is \
+                 unavailable for this CN",
+            );
+            None
+        }
+    };
+
     // Drop the scrape file now that the operator no longer needs it.
     // Best-effort: it might not exist (auto-approve) and it might be
     // on a read-only mount in tests. Either way we do not fail.
@@ -274,6 +326,7 @@ pub async fn register_or_resume(
         api_key: key,
         console_ticket_key,
         imds_token_key,
+        migrate_ticket_key,
     })
 }
 
@@ -304,6 +357,24 @@ fn decode_console_ticket_key(hex_str: &str) -> Result<[u8; CONSOLE_TICKET_KEY_BY
         );
     }
     let mut out = [0u8; CONSOLE_TICKET_KEY_BYTES];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// Decode a lowercase-hex (64-char) migrate-ticket key into 32 bytes.
+fn decode_migrate_ticket_key(
+    hex_str: &str,
+) -> Result<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]> {
+    let bytes =
+        hex::decode(hex_str.trim()).context("migrate-ticket key is not valid lowercase hex")?;
+    if bytes.len() != tritond_auth::MIGRATE_TICKET_KEY_BYTES {
+        anyhow::bail!(
+            "migrate-ticket key is {} bytes, expected {}",
+            bytes.len(),
+            tritond_auth::MIGRATE_TICKET_KEY_BYTES,
+        );
+    }
+    let mut out = [0u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES];
     out.copy_from_slice(&bytes);
     Ok(out)
 }
@@ -381,7 +452,7 @@ async fn await_credential(
     client: &Client,
     poll_token: &str,
     register_timeout: Duration,
-) -> Result<(String, Option<String>, Option<String>)> {
+) -> Result<(String, Option<String>, Option<String>, Option<String>)> {
     let deadline = Instant::now() + register_timeout;
     let mut last_logged_state: Option<CnState> = None;
 
@@ -439,6 +510,7 @@ async fn await_credential(
                         key,
                         response.console_ticket_key_hex,
                         response.imds_token_key_hex,
+                        response.migrate_ticket_key_hex,
                     ));
                 }
                 // Approved but no api_key means tritond already handed

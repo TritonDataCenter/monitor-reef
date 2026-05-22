@@ -6321,6 +6321,7 @@ impl Store for FdbStore {
                                     console_tls_spki_sha256: None,
                                     console_ticket_key: None,
                                     imds_token_key: None,
+                                    migrate_ticket_key: None,
                                 };
                                 let value = serde_json::to_vec(&cn).map_err(|e| {
                                     FdbBindingError::CustomError(
@@ -6383,6 +6384,7 @@ impl Store for FdbStore {
                         console_tls_spki_sha256: None,
                         console_ticket_key: None,
                         imds_token_key: None,
+                        migrate_ticket_key: None,
                     };
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())
@@ -6586,6 +6588,7 @@ impl Store for FdbStore {
         pending_credential: String,
         console_ticket_key: [u8; 32],
         imds_token_key: [u8; 32],
+        migrate_ticket_key: [u8; 32],
         approved_at: chrono::DateTime<Utc>,
     ) -> Result<Cn, StoreError> {
         enum Outcome {
@@ -6640,6 +6643,7 @@ impl Store for FdbStore {
                     cn.pending_credential = Some(pending_credential);
                     cn.console_ticket_key = Some(console_ticket_key);
                     cn.imds_token_key = Some(imds_token_key);
+                    cn.migrate_ticket_key = Some(migrate_ticket_key);
 
                     let value = serde_json::to_vec(&cn).map_err(|e| {
                         FdbBindingError::CustomError(format!("serialize cn: {e}").into())
@@ -9114,7 +9118,15 @@ mod cn_tests {
             .await
             .expect("register");
         store
-            .approve_cn(id, Uuid::new_v4(), "tcadm_xxx".into(), [0u8; 32], now)
+            .approve_cn(
+                id,
+                Uuid::new_v4(),
+                "tcadm_xxx".into(),
+                [0u8; 32],
+                [0u8; 32],
+                [0u8; 32],
+                now,
+            )
             .await
             .expect("approve");
 
@@ -9185,7 +9197,15 @@ mod cn_tests {
             .expect("register");
         let key_id = Uuid::new_v4();
         let approved = store
-            .approve_cn(id, key_id, "tcadm_secret".into(), [0u8; 32], now)
+            .approve_cn(
+                id,
+                key_id,
+                "tcadm_secret".into(),
+                [0u8; 32],
+                [0u8; 32],
+                [0u8; 32],
+                now,
+            )
             .await
             .expect("approve");
         assert_eq!(approved.state, CnState::Approved);
@@ -9222,7 +9242,15 @@ mod cn_tests {
         purge_cn(&store, id).await;
 
         let err = store
-            .approve_cn(id, Uuid::new_v4(), "x".into(), [0u8; 32], Utc::now())
+            .approve_cn(
+                id,
+                Uuid::new_v4(),
+                "x".into(),
+                [0u8; 32],
+                [0u8; 32],
+                [0u8; 32],
+                Utc::now(),
+            )
             .await
             .expect_err("approve before register should fail");
         assert!(matches!(err, StoreError::NotFound));
@@ -9368,7 +9396,15 @@ mod cn_tests {
             .await
             .expect("register approved-target");
         store
-            .approve_cn(aid, Uuid::new_v4(), "k".into(), [0u8; 32], now)
+            .approve_cn(
+                aid,
+                Uuid::new_v4(),
+                "k".into(),
+                [0u8; 32],
+                [0u8; 32],
+                [0u8; 32],
+                now,
+            )
             .await
             .expect("approve");
 

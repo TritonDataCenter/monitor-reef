@@ -119,6 +119,18 @@ struct Cli {
     )]
     console_listen_port: u16,
 
+    /// TCP port the per-CN live-migration WebSocket listener
+    /// binds on the admin IP. The source-side agent dials
+    /// `wss://<target_admin_ip>:<port>/migrate/{id}` (memory
+    /// channel) and `/migrate/{id}/zfs` (ZFS channel). Plan §D.3
+    /// picks 4568 to avoid colliding with legacy's 4567.
+    #[arg(
+        long,
+        env = "TRITONAGENT_MIGRATE_PORT",
+        default_value_t = tritonagent::migrate::DEFAULT_MIGRATE_LISTEN_PORT,
+    )]
+    migrate_listen_port: u16,
+
     /// Bind address for the in-VM IMDSv2 HTTP listener
     /// (`IMDS_DESIGN.md` §3). The proteus `RouteTarget::LocalImds`
     /// redirect lands traffic here; production wires this to the
@@ -253,6 +265,8 @@ async fn main() -> Result<()> {
         imds_token_key_bytes: outcome.imds_token_key,
         imds_bindings_path: cli.imds_bindings_path,
         peer_resolver_enabled: matches!(cli.peer_resolver, PeerResolverMode::On),
+        migrate_ticket_key: outcome.migrate_ticket_key,
+        migrate_listen_port: cli.migrate_listen_port,
     };
     tritonagent::run(cfg).await
 }

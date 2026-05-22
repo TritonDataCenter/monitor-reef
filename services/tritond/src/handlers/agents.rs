@@ -674,11 +674,15 @@ pub(crate) async fn agent_register_status(
             let imds_token_key_hex = credential
                 .as_ref()
                 .map(|_| hex::encode(cn.imds_token_key.unwrap_or_default()));
+            let migrate_ticket_key_hex = credential
+                .as_ref()
+                .map(|_| hex::encode(cn.migrate_ticket_key.unwrap_or_default()));
             return Ok(HttpResponseOk(RegisterStatusResponse {
                 state: cn.state,
                 api_key: credential,
                 console_ticket_key_hex,
                 imds_token_key_hex,
+                migrate_ticket_key_hex,
             }));
         }
         if cn.state == CnState::Disabled {
@@ -687,6 +691,7 @@ pub(crate) async fn agent_register_status(
                 api_key: None,
                 console_ticket_key_hex: None,
                 imds_token_key_hex: None,
+                migrate_ticket_key_hex: None,
             }));
         }
 
@@ -696,6 +701,7 @@ pub(crate) async fn agent_register_status(
                 api_key: None,
                 console_ticket_key_hex: None,
                 imds_token_key_hex: None,
+                migrate_ticket_key_hex: None,
             }));
         }
         tokio::time::sleep(poll_interval).await;

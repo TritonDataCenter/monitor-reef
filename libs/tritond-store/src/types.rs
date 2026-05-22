@@ -2080,6 +2080,29 @@ pub enum JobKind {
         #[serde(default)]
         from_snap: Option<String>,
         to_snap: String,
+        /// Source-only: `wss://<target_admin_ip>:<port>` base for
+        /// the dial. The target side of the pair leaves this
+        /// `None` — its handler listens, doesn't dial. The saga
+        /// reads `Cn.admin_ip` + `migrate_listen_port` for the
+        /// target CN and writes this when enqueuing the Source
+        /// job.
+        #[serde(default)]
+        peer_endpoint: Option<String>,
+        /// Source-only: lowercase-hex SHA-256 of the target's
+        /// migrate-listener leaf-cert SPKI. The saga reads
+        /// `Cn.console_tls_spki_sha256` (the migrate listener
+        /// reuses the same cert as the console listener). The
+        /// dialer pins it so an admin-IP hijack can't MITM.
+        #[serde(default)]
+        peer_spki_sha256_hex: Option<String>,
+        /// Source-only: HS256 migrate-ticket minted by the saga
+        /// with `MigrateRole::ZfsSource` using the *target* CN's
+        /// `migrate_ticket_key`. The target's listener verifies
+        /// the ticket on the WS upgrade; a bad / expired ticket
+        /// surfaces as a 401 the dial reports as
+        /// `ConnectionRefused`. ~10 min TTL.
+        #[serde(default)]
+        ticket: Option<String>,
     },
     /// One run of the bhyve memory-stream state machine
     /// (`OutboundMigration` on source, `InboundMigration` on
@@ -2249,10 +2272,35 @@ mod job_kind_tests {
             dataset: "zones/abcd".to_string(),
             from_snap: Some("zones/abcd@migration-base".to_string()),
             to_snap: "zones/abcd@migration-final".to_string(),
+            peer_endpoint: Some("wss://10.0.0.40:4568".to_string()),
+            peer_spki_sha256_hex: Some("ab".repeat(32)),
+            ticket: Some("jwt-stub".to_string()),
         };
         let json = serde_json::to_value(&kind).unwrap();
         assert_eq!(json["kind"].as_str(), Some("migrate_zfs_send"));
         assert_eq!(json["role"].as_str(), Some("source"));
+        let decoded: JobKind = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, kind);
+    }
+
+    #[test]
+    fn migrate_zfs_send_target_round_trips_without_peer_fields() {
+        // Target side: `peer_endpoint`, `peer_spki_sha256_hex`,
+        // `ticket` all None. The agent's target arm doesn't dial;
+        // it just waits for the inbound connection to its own
+        // listener.
+        let kind = JobKind::MigrateZfsSend {
+            migration_id: Uuid::new_v4(),
+            instance_id: Uuid::new_v4(),
+            role: MigrationJobRole::Target,
+            dataset: "zones/abcd".to_string(),
+            from_snap: None,
+            to_snap: "zones/abcd@migration-base".to_string(),
+            peer_endpoint: None,
+            peer_spki_sha256_hex: None,
+            ticket: None,
+        };
+        let json = serde_json::to_value(&kind).unwrap();
         let decoded: JobKind = serde_json::from_value(json).unwrap();
         assert_eq!(decoded, kind);
     }
@@ -3399,6 +3447,18 @@ pub struct Cn {
     /// never appears in any wire-level view.
     #[serde(default)]
     pub imds_token_key: Option<[u8; 32]>,
+    /// Per-CN HS256 key for minting / verifying live-migration
+    /// tickets (`tritond_auth::MigrateTicketKey`). Generated
+    /// alongside `console_ticket_key` when the CN is approved
+    /// and delivered to the agent on its first long-poll-after-
+    /// approval. Distinct from the console key so a compromised
+    /// console-cred file doesn't grant cross-CN ZFS-receive
+    /// dial access.
+    ///
+    /// Secret. Same at-rest storage caveat as `console_ticket_key`;
+    /// never appears in any wire-level view.
+    #[serde(default)]
+    pub migrate_ticket_key: Option<[u8; 32]>,
 }
 
 /// Wire-safe view of a [`Cn`]: strips the transient plaintext

@@ -364,14 +364,10 @@ pub async fn dial(_params: DialParams) -> io::Result<Box<dyn Transport>> {
 /// WebSocket against the target's `/migrate/{id}/zfs` endpoint,
 /// then a separate caller pipes the local `zfs send` stdout into
 /// a `ZfsSender` wrapping the returned transport.
-///
-/// LM-4 ships the parameter shape; the body lands with LM-5 for
-/// the same reason as [`dial`] — without a saga to invoke it,
-/// the dialer has no live use case to test against. Splitting
-/// into a stub keeps the signature stable so LM-5 doesn't need
-/// to invent a new module.
 pub struct DialZfsParams {
-    /// `https://<target_admin_ip>:<port>`.
+    /// `wss://<target_admin_ip>:<port>` — the target's migrate
+    /// listener URL prefix. The dialer appends `/migrate/{id}/zfs`
+    /// and the query string.
     pub base_url: String,
     /// Migration record id.
     pub migration_id: Uuid,
@@ -385,15 +381,232 @@ pub struct DialZfsParams {
     pub target_dataset: String,
     /// HS256 JWT minted by tritond with `MigrateRole::ZfsSource`.
     pub ticket: String,
+    /// Lowercase-hex SHA-256 (64 chars) of the target listener's
+    /// leaf-cert SubjectPublicKeyInfo. tritond learns this from
+    /// the target agent's registration payload and passes it in
+    /// the saga's job dispatch; the dialer pins it so a process
+    /// that hijacks the admin IP cannot present a different
+    /// (even validly-signed) certificate.
+    pub target_spki_sha256_hex: String,
 }
 
-/// LM-4 stub for the source-side ZFS dialer; see [`dial`]'s doc
-/// comment for the LM-5 wiring shape (the body is the same modulo
-/// the route + the role).
-pub async fn dial_zfs(_params: DialZfsParams) -> io::Result<Box<dyn Transport>> {
-    Err(io::Error::other(
-        "migrate::dial_zfs not wired yet: LM-4 lands the listener + Transport adapter, LM-5 wires the source dialer",
-    ))
+/// Open the WebSocket to the target tritonagent's
+/// `GET /migrate/{id}/zfs` route, presenting the migrate ticket
+/// and pinning the target's TLS SPKI fingerprint.
+///
+/// Returns a [`Transport`] the caller wraps in a
+/// [`tritond_vmm_migrate::ZfsSender`] and feeds `zfs send` stdout
+/// into. On a successful handshake the target's listener has
+/// already spawned `zfs recv` (the spawn happens before the WS
+/// upgrade — see `migrate_zfs_ws`); a 401/400 surfaces here as
+/// an [`io::Error`].
+pub async fn dial_zfs(params: DialZfsParams) -> io::Result<Box<dyn Transport>> {
+    let pinned_spki = decode_spki_pin(&params.target_spki_sha256_hex)?;
+    let tls_config = build_pinned_client_config(pinned_spki)?;
+    let connector = tokio_tungstenite::Connector::Rustls(Arc::new(tls_config));
+
+    let url = format!(
+        "{}/migrate/{}/zfs?ticket={}&source_cn={}&vm={}&dataset={}",
+        params.base_url.trim_end_matches('/'),
+        params.migration_id,
+        urlencoding::encode(&params.ticket),
+        params.source_cn,
+        params.vm_uuid,
+        urlencoding::encode(&params.target_dataset),
+    );
+
+    let (ws, _resp) =
+        tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(connector))
+            .await
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::ConnectionRefused,
+                    format!("dial_zfs {url}: {e}"),
+                )
+            })?;
+    Ok(Box::new(TungsteniteTransport::new(ws)))
+}
+
+/// Decode the target's SPKI pin (lowercase hex, 64 chars → 32
+/// bytes) into a usable byte array. Surfaces a structured
+/// error rather than panicking when tritond ships malformed
+/// pin data (defensive — should never happen in practice).
+fn decode_spki_pin(hex_str: &str) -> io::Result<[u8; 32]> {
+    let bytes = hex::decode(hex_str.trim())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("spki hex: {e}")))?;
+    if bytes.len() != 32 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("spki pin is {} bytes, expected 32", bytes.len()),
+        ));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+/// Build a rustls `ClientConfig` that ignores the system trust
+/// store entirely and only accepts a TLS leaf whose SPKI matches
+/// the supplied 32-byte fingerprint. Mirrors the verifier in
+/// `services/tritond/src/console.rs` — same threat model: the
+/// target's self-signed cert is pinned at CN registration, and a
+/// MITM presenting a "valid" cert from a different CN must be
+/// rejected here.
+fn build_pinned_client_config(expected_spki: [u8; 32]) -> io::Result<rustls::ClientConfig> {
+    let provider = rustls::crypto::CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+    let cfg = rustls::ClientConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .map_err(|e| io::Error::other(format!("rustls builder: {e}")))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(SpkiPinVerifier {
+            expected: expected_spki,
+            sig_algs: provider.signature_verification_algorithms,
+        }))
+        .with_no_client_auth();
+    Ok(cfg)
+}
+
+/// Trait-object-friendly `Transport` adapter for the tungstenite
+/// client-side WebSocket. Counterpart to the server-side
+/// [`AxumWsTransport`]; same wire format (binary frames carrying
+/// `Message::encode()` bytes), different underlying stream type.
+struct TungsteniteTransport {
+    socket: TokioMutex<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    >,
+}
+
+impl TungsteniteTransport {
+    fn new(
+        socket: tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> Self {
+        Self {
+            socket: TokioMutex::new(socket),
+        }
+    }
+}
+
+#[async_trait]
+impl Transport for TungsteniteTransport {
+    async fn send(&mut self, msg: Message) -> io::Result<()> {
+        use futures_util::SinkExt as _;
+        use tokio_tungstenite::tungstenite::Message as WsMessage;
+        let bytes = msg.encode();
+        let mut g = self.socket.lock().await;
+        g.send(WsMessage::Binary(bytes.into()))
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::BrokenPipe, format!("ws send: {e}")))
+    }
+
+    async fn recv(&mut self) -> io::Result<Option<Message>> {
+        use futures_util::StreamExt as _;
+        use tokio_tungstenite::tungstenite::Message as WsMessage;
+        let mut g = self.socket.lock().await;
+        loop {
+            match g.next().await {
+                Some(Ok(WsMessage::Binary(b))) => {
+                    let msg = Message::decode(&b).map_err(|e| {
+                        io::Error::new(io::ErrorKind::InvalidData, format!("ws decode: {e}"))
+                    })?;
+                    return Ok(Some(msg));
+                }
+                Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => continue,
+                Some(Ok(WsMessage::Text(t))) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("unexpected text frame: {t}"),
+                    ));
+                }
+                Some(Ok(WsMessage::Close(_) | WsMessage::Frame(_))) | None => return Ok(None),
+                Some(Err(e)) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        format!("ws recv: {e}"),
+                    ));
+                }
+            }
+        }
+    }
+
+    async fn close(&mut self) -> io::Result<()> {
+        use futures_util::SinkExt as _;
+        let mut g = self.socket.lock().await;
+        g.close(None)
+            .await
+            .map_err(|e| io::Error::other(format!("ws close: {e}")))
+    }
+}
+
+/// SPKI pin verifier for the dialer side; functionally identical
+/// to the tritond-side verifier in
+/// `services/tritond/src/console.rs::SpkiPinVerifier`. Kept inline
+/// here rather than promoted to `tritond-auth` because (a) the
+/// shape is small and self-contained, (b) the rustls + x509-parser
+/// dependency arrow is already on the agent, and (c) the tritond
+/// version is currently `pub(crate)` and not exported. A future
+/// refactor can hoist a single shared impl into a lib once a third
+/// caller arrives.
+#[derive(Debug)]
+struct SpkiPinVerifier {
+    expected: [u8; 32],
+    sig_algs: rustls::crypto::WebPkiSupportedAlgorithms,
+}
+
+impl rustls::client::danger::ServerCertVerifier for SpkiPinVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        use sha2::{Digest, Sha256};
+        let (_, cert) = x509_parser::parse_x509_certificate(end_entity.as_ref()).map_err(|_| {
+            rustls::Error::InvalidCertificate(rustls::CertificateError::BadEncoding)
+        })?;
+        let spki_der = cert.tbs_certificate.subject_pki.raw;
+        let got: [u8; 32] = Sha256::digest(spki_der).into();
+        let mut diff = 0u8;
+        for i in 0..32 {
+            diff |= got[i] ^ self.expected[i];
+        }
+        if diff == 0 {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General(
+                "migrate listener cert SPKI pin mismatch".to_string(),
+            ))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.sig_algs)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.sig_algs)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.sig_algs.supported_schemes()
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -504,18 +717,39 @@ mod tests {
     }
 
     #[test]
-    fn dial_zfs_stub_returns_error_until_lm5() {
-        // LM-4 ZFS dialer stub: same shape as `dial`.
+    fn dial_zfs_refuses_unreachable_peer() {
+        // LM-6c lands the real `dial_zfs` body. The smoke test
+        // here just confirms the call fails fast against a port
+        // nobody is listening on, rather than panicking — and
+        // that the SPKI-hex parsing rejects garbage cleanly.
         let params = DialZfsParams {
-            base_url: "https://127.0.0.1:4568".to_string(),
+            base_url: "wss://127.0.0.1:1".to_string(),
             migration_id: Uuid::nil(),
             source_cn: Uuid::nil(),
             vm_uuid: Uuid::nil(),
             target_dataset: "zones/x".to_string(),
             ticket: String::new(),
+            target_spki_sha256_hex: "00".repeat(32),
         };
         let result = tokio_test_block_on(dial_zfs(params));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn dial_zfs_rejects_malformed_spki_hex() {
+        let params = DialZfsParams {
+            base_url: "wss://127.0.0.1:4568".to_string(),
+            migration_id: Uuid::nil(),
+            source_cn: Uuid::nil(),
+            vm_uuid: Uuid::nil(),
+            target_dataset: "zones/x".to_string(),
+            ticket: String::new(),
+            target_spki_sha256_hex: "not-hex".to_string(),
+        };
+        let err = tokio_test_block_on(dial_zfs(params))
+            .err()
+            .expect("dial should reject bad hex");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
     /// Tiny block-on for the dial-stub test. tokio_test is not in

@@ -51,6 +51,24 @@ pub trait Transport: Send {
     }
 }
 
+/// `Box<dyn Transport>` impl so callers that erase the transport
+/// type (e.g. the agent's job dispatcher, which gets a
+/// `Box<dyn Transport>` back from `migrate::dial_zfs`) can pass
+/// the boxed value into generic state machines like
+/// [`crate::ZfsSender<T, _>`] without an extra type parameter.
+#[async_trait]
+impl Transport for Box<dyn Transport> {
+    async fn send(&mut self, msg: Message) -> io::Result<()> {
+        (**self).send(msg).await
+    }
+    async fn recv(&mut self) -> io::Result<Option<Message>> {
+        (**self).recv().await
+    }
+    async fn close(&mut self) -> io::Result<()> {
+        (**self).close().await
+    }
+}
+
 /// In-memory transport pair used by the loopback test. Source-side
 /// and target-side halves are returned from [`channel_pair`].
 pub mod inmem {

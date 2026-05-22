@@ -10753,8 +10753,26 @@
                 "type": "string",
                 "format": "uuid"
               },
+              "peer_endpoint": {
+                "nullable": true,
+                "description": "Source-only: `wss://<target_admin_ip>:<port>` base for the dial. The target side of the pair leaves this `None` — its handler listens, doesn't dial. The saga reads `Cn.admin_ip` + `migrate_listen_port` for the target CN and writes this when enqueuing the Source job.",
+                "default": null,
+                "type": "string"
+              },
+              "peer_spki_sha256_hex": {
+                "nullable": true,
+                "description": "Source-only: lowercase-hex SHA-256 of the target's migrate-listener leaf-cert SPKI. The saga reads `Cn.console_tls_spki_sha256` (the migrate listener reuses the same cert as the console listener). The dialer pins it so an admin-IP hijack can't MITM.",
+                "default": null,
+                "type": "string"
+              },
               "role": {
                 "$ref": "#/components/schemas/MigrationJobRole"
+              },
+              "ticket": {
+                "nullable": true,
+                "description": "Source-only: HS256 migrate-ticket minted by the saga with `MigrateRole::ZfsSource` using the *target* CN's `migrate_ticket_key`. The target's listener verifies the ticket on the WS upgrade; a bad / expired ticket surfaces as a 401 the dial reports as `ConnectionRefused`. ~10 min TTL.",
+                "default": null,
+                "type": "string"
               },
               "to_snap": {
                 "type": "string"
@@ -13887,6 +13905,12 @@
           "imds_token_key_hex": {
             "nullable": true,
             "description": "Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes / 64 hex chars). Same delivery contract as `console_ticket_key_hex` -- handed exactly once alongside `api_key`, then `None` thereafter. The agent uses it to mint + verify the IMDSv2 session tokens guests obtain via `PUT /latest/api/token`. Secret -- never logged. See `IMDS_DESIGN.md` §3.",
+            "default": null,
+            "type": "string"
+          },
+          "migrate_ticket_key_hex": {
+            "nullable": true,
+            "description": "Per-CN HS256 live-migration ticket key, lowercase hex (32 bytes / 64 hex chars). Same one-shot delivery contract as `console_ticket_key_hex` / `imds_token_key_hex`. The agent persists this alongside the other ticket keys and uses it to verify migrate tickets the source-side agent presents when dialing the target's `/migrate/{id}` and `/migrate/{id}/zfs` listener routes. Secret — never logged. See `tritond_auth::MigrateTicketKey`.",
             "default": null,
             "type": "string"
           },

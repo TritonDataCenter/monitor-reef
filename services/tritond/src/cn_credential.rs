@@ -136,6 +136,8 @@ pub(crate) async fn mint_and_attach_cn_credential(
     let console_ticket_key_bytes = *console_ticket_key.bytes();
     let imds_token_key = tritond_auth::ImdsTokenKey::generate();
     let imds_token_key_bytes = *imds_token_key.bytes();
+    let migrate_ticket_key = tritond_auth::MigrateTicketKey::generate();
+    let migrate_ticket_key_bytes = *migrate_ticket_key.bytes();
 
     let now = chrono::Utc::now();
     let updated = match ctx
@@ -146,6 +148,7 @@ pub(crate) async fn mint_and_attach_cn_credential(
             material.plaintext,
             console_ticket_key_bytes,
             imds_token_key_bytes,
+            migrate_ticket_key_bytes,
             now,
         )
         .await

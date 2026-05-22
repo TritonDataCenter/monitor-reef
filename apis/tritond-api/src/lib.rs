@@ -924,6 +924,16 @@ pub struct RegisterStatusResponse {
     /// `IMDS_DESIGN.md` §3.
     #[serde(default)]
     pub imds_token_key_hex: Option<String>,
+    /// Per-CN HS256 live-migration ticket key, lowercase hex (32
+    /// bytes / 64 hex chars). Same one-shot delivery contract as
+    /// `console_ticket_key_hex` / `imds_token_key_hex`. The agent
+    /// persists this alongside the other ticket keys and uses it
+    /// to verify migrate tickets the source-side agent presents
+    /// when dialing the target's `/migrate/{id}` and
+    /// `/migrate/{id}/zfs` listener routes. Secret — never logged.
+    /// See `tritond_auth::MigrateTicketKey`.
+    #[serde(default)]
+    pub migrate_ticket_key_hex: Option<String>,
 }
 
 /// Path parameter for endpoints that operate on a single CN.

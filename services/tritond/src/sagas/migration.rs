@@ -706,6 +706,19 @@ async fn initial_zfs_send(ctx: Ctx) -> Result<(), ActionError> {
             let dataset = format!("zones/{}", params.instance_id);
             let base_snap = format!("{dataset}@migration-base");
 
+            // Mint a fresh ZfsSource ticket + read the target's
+            // admin IP + SPKI pin so the source agent can dial
+            // the target's listener directly. The peer info
+            // rides on the Source job's payload.
+            let peer = resolve_zfs_peer(
+                &store,
+                target_cn,
+                params.source_cn,
+                params.instance_id,
+                params.migration_id,
+            )
+            .await?;
+
             // Paired enqueue: Source CN runs `zfs send`, Target
             // CN runs `zfs receive`, both connected via the
             // per-CN migrate WebSocket transport (see
@@ -724,6 +737,9 @@ async fn initial_zfs_send(ctx: Ctx) -> Result<(), ActionError> {
                         dataset: dataset.clone(),
                         from_snap: None,
                         to_snap: base_snap.clone(),
+                        peer_endpoint: Some(peer.endpoint),
+                        peer_spki_sha256_hex: Some(peer.spki_hex),
+                        ticket: Some(peer.ticket),
                     },
                     target_cn_uuid: Some(params.source_cn),
                 })
@@ -738,6 +754,9 @@ async fn initial_zfs_send(ctx: Ctx) -> Result<(), ActionError> {
                         dataset,
                         from_snap: None,
                         to_snap: base_snap,
+                        peer_endpoint: None,
+                        peer_spki_sha256_hex: None,
+                        ticket: None,
                     },
                     target_cn_uuid: Some(target_cn),
                 })
@@ -780,6 +799,17 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
             let base_snap = format!("{dataset}@migration-base");
             let final_snap = format!("{dataset}@migration-final");
 
+            // Mint a fresh source ticket for the incremental
+            // pass (separate TTL window from the base pass).
+            let peer = resolve_zfs_peer(
+                &store,
+                target_cn,
+                params.source_cn,
+                params.instance_id,
+                params.migration_id,
+            )
+            .await?;
+
             let src_job = store
                 .enqueue_job(tritond_store::NewJob {
                     kind: tritond_store::JobKind::MigrateZfsSend {
@@ -789,6 +819,9 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
                         dataset: dataset.clone(),
                         from_snap: Some(base_snap.clone()),
                         to_snap: final_snap.clone(),
+                        peer_endpoint: Some(peer.endpoint),
+                        peer_spki_sha256_hex: Some(peer.spki_hex),
+                        ticket: Some(peer.ticket),
                     },
                     target_cn_uuid: Some(params.source_cn),
                 })
@@ -803,6 +836,9 @@ async fn final_zfs_increment(ctx: Ctx) -> Result<(), ActionError> {
                         dataset,
                         from_snap: Some(base_snap),
                         to_snap: final_snap,
+                        peer_endpoint: None,
+                        peer_spki_sha256_hex: None,
+                        ticket: None,
                     },
                     target_cn_uuid: Some(target_cn),
                 })
@@ -1039,6 +1075,91 @@ async fn finish(ctx: Ctx) -> Result<MigrationRecord, ActionError> {
         Ok(stored)
     })
     .await
+}
+
+/// Source-side ZFS-job peer info bundle: the wss base URL, the
+/// pinned TLS SPKI, and the freshly-minted migrate ticket the
+/// source agent needs to dial the target's
+/// `/migrate/{id}/zfs` listener route. Built once per saga node
+/// (initial + incremental each mint a fresh ticket so the 10-min
+/// TTL covers each transfer independently) and embedded into the
+/// Source job's [`tritond_store::JobKind::MigrateZfsSend`]
+/// variant.
+struct ZfsPeerInfo {
+    endpoint: String,
+    spki_hex: String,
+    ticket: String,
+}
+
+/// Default agent migrate-listener port. Mirrors
+/// `tritonagent::migrate::DEFAULT_MIGRATE_LISTEN_PORT = 4568`
+/// (plan §D.3). A future slice persists the per-CN port on the
+/// `Cn` record (analogous to `console_listen_port`) for
+/// dynamically-bound deployments; for LM-6c we rely on the
+/// invariant that every agent runs with the documented default.
+const DEFAULT_AGENT_MIGRATE_PORT: u16 = 4568;
+
+/// Resolve the target CN's reachable migrate endpoint + SPKI pin
+/// + a freshly-minted Source-role migrate ticket for the saga's
+/// ZFS handoff steps. The ticket is bound to
+/// (source_cn, target_cn, instance_id, migration_id,
+/// [`MigrateRole::ZfsSource`]) using the **target** CN's
+/// migrate-ticket key — the target's listener verifies against
+/// its own key, so the source has to mint with the target's
+/// key. Reading that key out of FDB here is safe: the saga
+/// process is the tritond process and holds the same trust as
+/// the CN approval path that wrote the key.
+async fn resolve_zfs_peer(
+    store: &std::sync::Arc<dyn tritond_store::Store>,
+    target_cn: Uuid,
+    source_cn: Uuid,
+    instance_id: Uuid,
+    migration_id: Uuid,
+) -> Result<ZfsPeerInfo, ActionError> {
+    let cn = store
+        .get_cn(target_cn)
+        .await
+        .map_err(store_err_to_action_err)?;
+    let admin_ip = cn.admin_ip.ok_or_else(|| {
+        ActionError::action_failed(serde_json::json!({
+            "kind": "migration.zfs.target_cn_no_admin_ip",
+            "target_cn": target_cn.to_string(),
+        }))
+    })?;
+    let migrate_ticket_key_bytes = cn.migrate_ticket_key.ok_or_else(|| {
+        ActionError::action_failed(serde_json::json!({
+            "kind": "migration.zfs.target_cn_no_migrate_ticket_key",
+            "reason": "target CN registered before LM-6c — re-approve to mint a key",
+            "target_cn": target_cn.to_string(),
+        }))
+    })?;
+    let spki_bytes = cn.console_tls_spki_sha256.ok_or_else(|| {
+        ActionError::action_failed(serde_json::json!({
+            "kind": "migration.zfs.target_cn_no_spki",
+            "reason": "target CN never reported a TLS leaf cert SPKI",
+            "target_cn": target_cn.to_string(),
+        }))
+    })?;
+    let ticket = tritond_auth::MigrateTicketKey::from_bytes(migrate_ticket_key_bytes)
+        .mint(
+            source_cn,
+            target_cn,
+            instance_id,
+            migration_id,
+            tritond_auth::MigrateRole::ZfsSource,
+            tritond_auth::DEFAULT_MIGRATE_TICKET_TTL_SECS,
+        )
+        .map_err(|e| {
+            ActionError::action_failed(serde_json::json!({
+                "kind": "migration.zfs.ticket_mint_failed",
+                "error": e.to_string(),
+            }))
+        })?;
+    Ok(ZfsPeerInfo {
+        endpoint: format!("wss://{admin_ip}:{DEFAULT_AGENT_MIGRATE_PORT}"),
+        spki_hex: hex::encode(spki_bytes),
+        ticket,
+    })
 }
 
 /// Poll a set of `ProvisioningJob` ids until every one reaches a

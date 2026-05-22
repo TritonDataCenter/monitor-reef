@@ -180,6 +180,15 @@ pub struct AgentConfig {
     /// `PROTEUS_PLAN.md` §11.7.1; no VM/kmod restart required to
     /// flip.
     pub peer_resolver_enabled: bool,
+    /// Per-CN HS256 migrate-ticket key. `None` for an agent that
+    /// registered before LM-6c shipped — the migrate listener is
+    /// skipped. tritond delivers the bytes alongside the
+    /// console-ticket key at CN approval.
+    pub migrate_ticket_key: Option<[u8; tritond_auth::MIGRATE_TICKET_KEY_BYTES]>,
+    /// TCP port the live-migration WebSocket listener binds (on
+    /// `admin_ip`). Source-side agents dial
+    /// `wss://<target_admin_ip>:<this_port>/migrate/{id}`.
+    pub migrate_listen_port: u16,
 }
 
 impl AgentConfig {
@@ -326,6 +335,7 @@ pub async fn run(cfg: AgentConfig) -> Result<()> {
     // detached — its lifetime is the process; a serve() error is logged
     // (it would mean the bind failed) but is not fatal to the agent.
     maybe_spawn_console_listener(&cfg);
+    maybe_spawn_migrate_listener(&cfg);
 
     // DHCP-event ticker: drains the Proteus event ring and forwards
     // observed DHCP requests to tritond so lease records' renewal
@@ -407,6 +417,59 @@ fn maybe_spawn_console_listener(cfg: &AgentConfig) {
     tokio::spawn(async move {
         if let Err(e) = console::serve(listener_cfg).await {
             error!(error = %format!("{e:#}"), "console listener exited");
+        }
+    });
+}
+
+/// Spawn the per-CN live-migration WebSocket listener if and only if
+/// the config has all the pieces. Mirrors
+/// [`maybe_spawn_console_listener`]'s contract: a missing piece is a
+/// warn-and-skip (a CN with no migrate listener is degraded — it can
+/// be a migration *source* but not a *target* — not broken).
+fn maybe_spawn_migrate_listener(cfg: &AgentConfig) {
+    if !cfg.spawn_heartbeater {
+        return;
+    }
+    let Some(admin_ip) = cfg.admin_ip else {
+        warn!("no admin IP known; live-migration listener not started");
+        return;
+    };
+    let Some(migrate_ticket_key) = cfg.migrate_ticket_key else {
+        warn!(
+            "no per-CN migrate-ticket key; live-migration listener not started \
+             (re-register this CN to obtain one)",
+        );
+        return;
+    };
+    // The migrate listener reuses the console listener's TLS material
+    // (one cert per CN serves both ports); a missing TLS bag means the
+    // CN couldn't generate one at startup, which is a strictly worse
+    // failure than the missing-key case above and we already logged it
+    // from the console-listener path. Just skip.
+    let Some(tls) = cfg.console_tls.clone() else {
+        warn!("no TLS material; live-migration listener not started");
+        return;
+    };
+    let server_uuid = match Uuid::parse_str(&cfg.agent_id) {
+        Ok(u) => u,
+        Err(_) => {
+            warn!(
+                agent_id = %cfg.agent_id,
+                "agent_id is not a UUID; live-migration listener not started",
+            );
+            return;
+        }
+    };
+    let bind = SocketAddr::new(IpAddr::V4(admin_ip), cfg.migrate_listen_port);
+    let listener_cfg = migrate::MigrateListenerConfig {
+        bind,
+        tls,
+        migrate_ticket_key,
+        server_uuid,
+    };
+    tokio::spawn(async move {
+        if let Err(e) = migrate::serve(listener_cfg).await {
+            error!(error = %format!("{e:#}"), "live-migration listener exited");
         }
     });
 }
@@ -781,21 +844,91 @@ async fn drive_job(
             dataset,
             from_snap,
             to_snap,
-        } => {
-            // LM-6c step 4 will wire the real ZFS transfer:
-            // Source spawns `zfs send`, dials the target's
-            // `/migrate/{id}/zfs` listener over the migrate
-            // WebSocket, pipes stdout through `ZfsSender`.
-            // Target's job arm becomes "wait for the listener
-            // route to finish receiving" (the route is already
-            // wired and runs `zfs recv` against the dataset).
-            // Step 3 stub: log + report completed so the saga
-            // walks past the await without timing out.
-            info!(
-                %migration_id, %instance_id, ?role, dataset, ?from_snap, %to_snap,
-                "migrate-zfs-send: LM-6c step 4 dispatcher pending — completing stub",
-            );
-        }
+            peer_endpoint,
+            peer_spki_sha256_hex,
+            ticket,
+        } => match role {
+            tritond_client::types::MigrationJobRole::Source => {
+                // Snapshot the source dataset (idempotent — `zfs
+                // snapshot` errors if the snapshot already exists,
+                // which a re-claimed job after a crash hits; we
+                // ignore that specific error).
+                if let Err(e) = zfs::snapshot_for_migration(
+                    dataset,
+                    to_snap.trim_start_matches(&format!("{dataset}@migration-")),
+                )
+                .await
+                {
+                    let msg = e.to_string();
+                    if !msg.contains("dataset already exists") {
+                        anyhow::bail!("snapshot {to_snap} failed: {msg}");
+                    }
+                    info!(
+                        %migration_id, %to_snap,
+                        "migrate-zfs-send: snapshot already exists; reusing",
+                    );
+                }
+
+                let peer_endpoint = peer_endpoint.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("Source-role MigrateZfsSend missing peer_endpoint")
+                })?;
+                let peer_spki = peer_spki_sha256_hex.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("Source-role MigrateZfsSend missing peer_spki_sha256_hex")
+                })?;
+                let ticket = ticket
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Source-role MigrateZfsSend missing ticket"))?;
+
+                let server_uuid = Uuid::parse_str(&cfg.agent_id)
+                    .context("agent_id is not a UUID; cannot present source_cn in dial")?;
+                let transport = migrate::dial_zfs(migrate::DialZfsParams {
+                    base_url: peer_endpoint.clone(),
+                    migration_id: *migration_id,
+                    source_cn: server_uuid,
+                    vm_uuid: *instance_id,
+                    target_dataset: dataset.clone(),
+                    ticket: ticket.clone(),
+                    target_spki_sha256_hex: peer_spki.clone(),
+                })
+                .await
+                .context("dial target /migrate/{id}/zfs")?;
+
+                let mut child = match from_snap {
+                    Some(from) => zfs::spawn_send_incremental(from, to_snap)
+                        .context("spawn zfs send -i for incremental")?,
+                    None => zfs::spawn_send_full(to_snap).context("spawn zfs send for full")?,
+                };
+                let stdout = child
+                    .stdout
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("zfs send child has no piped stdout"))?;
+                let sender = tritond_vmm_migrate::zfs_stream::ZfsSender::new(transport, stdout);
+                let bytes = sender.run().await.context("ZfsSender::run")?;
+                let status = child.wait().await.context("await zfs send exit")?;
+                if !status.success() {
+                    anyhow::bail!("zfs send exited non-zero: {status}");
+                }
+                info!(
+                    %migration_id, %instance_id, %dataset, %to_snap, bytes,
+                    "migrate-zfs-send/source: stream completed",
+                );
+            }
+            tritond_client::types::MigrationJobRole::Target => {
+                // The migrate listener's `/migrate/{id}/zfs` route
+                // already spawns `zfs recv` and pumps the WS
+                // frames into it (`ZfsReceiver`); the source side
+                // dials that route. From the target *job's*
+                // perspective there's nothing to do here — the
+                // dispatcher reports completed immediately so the
+                // saga's await pair can resolve once the source
+                // side reports its own completion. The listener
+                // running on this CN is the actual workload.
+                info!(
+                    %migration_id, %instance_id, %dataset,
+                    "migrate-zfs-send/target: dispatcher is a no-op; listener handles transfer",
+                );
+            }
+        },
         JobKind::MigrateVmmStream {
             migration_id,
             instance_id,

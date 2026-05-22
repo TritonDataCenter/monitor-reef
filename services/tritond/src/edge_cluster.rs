@@ -425,6 +425,7 @@ mod edge_underlay_tests {
             console_tls_spki_sha256: None,
             console_ticket_key: None,
             imds_token_key: None,
+            migrate_ticket_key: None,
         }
     }
 

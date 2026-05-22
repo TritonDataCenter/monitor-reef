@@ -3151,6 +3151,7 @@ impl Store for MemStore {
                 console_tls_spki_sha256: None,
                 console_ticket_key: None,
                 imds_token_key: None,
+                migrate_ticket_key: None,
             };
             guard
                 .cn_server_uuid_by_claim_code
@@ -3196,6 +3197,7 @@ impl Store for MemStore {
             console_tls_spki_sha256: None,
             console_ticket_key: None,
             imds_token_key: None,
+            migrate_ticket_key: None,
         };
         if let Some(code) = &claim_code {
             guard
@@ -3285,6 +3287,7 @@ impl Store for MemStore {
         pending_credential: String,
         console_ticket_key: [u8; 32],
         imds_token_key: [u8; 32],
+        migrate_ticket_key: [u8; 32],
         approved_at: chrono::DateTime<Utc>,
     ) -> Result<Cn, StoreError> {
         let mut guard = self.inner.write().await;
@@ -3320,6 +3323,7 @@ impl Store for MemStore {
         cn.pending_credential = Some(pending_credential);
         cn.console_ticket_key = Some(console_ticket_key);
         cn.imds_token_key = Some(imds_token_key);
+        cn.migrate_ticket_key = Some(migrate_ticket_key);
         guard.cns_by_server_uuid.insert(server_uuid, cn.clone());
         Ok(cn)
     }
@@ -8718,6 +8722,7 @@ mod tests {
                 "tcadm_xxx".into(),
                 [0u8; 32],
                 [0u8; 32],
+                [0u8; 32],
                 now,
             )
             .await
@@ -8752,7 +8757,15 @@ mod tests {
             .unwrap();
         let key_id = Uuid::new_v4();
         let approved = store
-            .approve_cn(id, key_id, "tcadm_secret".into(), [0u8; 32], [0u8; 32], now)
+            .approve_cn(
+                id,
+                key_id,
+                "tcadm_secret".into(),
+                [0u8; 32],
+                [0u8; 32],
+                [0u8; 32],
+                now,
+            )
             .await
             .unwrap();
         assert_eq!(approved.state, CnState::Approved);
@@ -8792,6 +8805,7 @@ mod tests {
                 id,
                 Uuid::new_v4(),
                 "x".into(),
+                [0u8; 32],
                 [0u8; 32],
                 [0u8; 32],
                 Utc::now(),
@@ -8905,6 +8919,7 @@ mod tests {
                 a.server_uuid,
                 Uuid::new_v4(),
                 "k".into(),
+                [0u8; 32],
                 [0u8; 32],
                 [0u8; 32],
                 now,

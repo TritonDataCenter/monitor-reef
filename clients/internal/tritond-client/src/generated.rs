@@ -3982,8 +3982,29 @@ pub mod types {
     #[doc = "          \"type\": \"string\","]
     #[doc = "          \"format\": \"uuid\""]
     #[doc = "        },"]
+    #[doc = "        \"peer_endpoint\": {"]
+    #[doc = "          \"description\": \"Source-only: `wss://<target_admin_ip>:<port>` base for the dial. The target side of the pair leaves this `None` — its handler listens, doesn't dial. The saga reads `Cn.admin_ip` + `migrate_listen_port` for the target CN and writes this when enqueuing the Source job.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
+    #[doc = "        \"peer_spki_sha256_hex\": {"]
+    #[doc = "          \"description\": \"Source-only: lowercase-hex SHA-256 of the target's migrate-listener leaf-cert SPKI. The saga reads `Cn.console_tls_spki_sha256` (the migrate listener reuses the same cert as the console listener). The dialer pins it so an admin-IP hijack can't MITM.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
+    #[doc = "        },"]
     #[doc = "        \"role\": {"]
     #[doc = "          \"$ref\": \"#/components/schemas/MigrationJobRole\""]
+    #[doc = "        },"]
+    #[doc = "        \"ticket\": {"]
+    #[doc = "          \"description\": \"Source-only: HS256 migrate-ticket minted by the saga with `MigrateRole::ZfsSource` using the *target* CN's `migrate_ticket_key`. The target's listener verifies the ticket on the WS upgrade; a bad / expired ticket surfaces as a 401 the dial reports as `ConnectionRefused`. ~10 min TTL.\","]
+    #[doc = "          \"type\": ["]
+    #[doc = "            \"string\","]
+    #[doc = "            \"null\""]
+    #[doc = "          ]"]
     #[doc = "        },"]
     #[doc = "        \"to_snap\": {"]
     #[doc = "          \"type\": \"string\""]
@@ -4176,7 +4197,16 @@ pub mod types {
             from_snap: ::std::option::Option<::std::string::String>,
             instance_id: ::uuid::Uuid,
             migration_id: ::uuid::Uuid,
+            #[doc = "Source-only: `wss://<target_admin_ip>:<port>` base for the dial. The target side of the pair leaves this `None` — its handler listens, doesn't dial. The saga reads `Cn.admin_ip` + `migrate_listen_port` for the target CN and writes this when enqueuing the Source job."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            peer_endpoint: ::std::option::Option<::std::string::String>,
+            #[doc = "Source-only: lowercase-hex SHA-256 of the target's migrate-listener leaf-cert SPKI. The saga reads `Cn.console_tls_spki_sha256` (the migrate listener reuses the same cert as the console listener). The dialer pins it so an admin-IP hijack can't MITM."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            peer_spki_sha256_hex: ::std::option::Option<::std::string::String>,
             role: MigrationJobRole,
+            #[doc = "Source-only: HS256 migrate-ticket minted by the saga with `MigrateRole::ZfsSource` using the *target* CN's `migrate_ticket_key`. The target's listener verifies the ticket on the WS upgrade; a bad / expired ticket surfaces as a 401 the dial reports as `ConnectionRefused`. ~10 min TTL."]
+            #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+            ticket: ::std::option::Option<::std::string::String>,
             to_snap: ::std::string::String,
         },
         #[doc = "One run of the bhyve memory-stream state machine (`OutboundMigration` on source, `InboundMigration` on target) over the LM-2/LM-3 memory-channel WebSocket."]
@@ -9632,6 +9662,13 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"migrate_ticket_key_hex\": {"]
+    #[doc = "      \"description\": \"Per-CN HS256 live-migration ticket key, lowercase hex (32 bytes / 64 hex chars). Same one-shot delivery contract as `console_ticket_key_hex` / `imds_token_key_hex`. The agent persists this alongside the other ticket keys and uses it to verify migrate tickets the source-side agent presents when dialing the target's `/migrate/{id}` and `/migrate/{id}/zfs` listener routes. Secret — never logged. See `tritond_auth::MigrateTicketKey`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"$ref\": \"#/components/schemas/CnState\""]
     #[doc = "    }"]
@@ -9651,6 +9688,9 @@ pub mod types {
         #[doc = "Per-CN HS256 IMDSv2 session-token key, lowercase hex (32 bytes / 64 hex chars). Same delivery contract as `console_ticket_key_hex` -- handed exactly once alongside `api_key`, then `None` thereafter. The agent uses it to mint + verify the IMDSv2 session tokens guests obtain via `PUT /latest/api/token`. Secret -- never logged. See `IMDS_DESIGN.md` §3."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub imds_token_key_hex: ::std::option::Option<::std::string::String>,
+        #[doc = "Per-CN HS256 live-migration ticket key, lowercase hex (32 bytes / 64 hex chars). Same one-shot delivery contract as `console_ticket_key_hex` / `imds_token_key_hex`. The agent persists this alongside the other ticket keys and uses it to verify migrate tickets the source-side agent presents when dialing the target's `/migrate/{id}` and `/migrate/{id}/zfs` listener routes. Secret — never logged. See `tritond_auth::MigrateTicketKey`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub migrate_ticket_key_hex: ::std::option::Option<::std::string::String>,
         pub state: CnState,
     }
 
@@ -22404,6 +22444,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            migrate_ticket_key_hex: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             state: ::std::result::Result<super::CnState, ::std::string::String>,
         }
 
@@ -22413,6 +22457,7 @@ pub mod types {
                     api_key: Ok(Default::default()),
                     console_ticket_key_hex: Ok(Default::default()),
                     imds_token_key_hex: Ok(Default::default()),
+                    migrate_ticket_key_hex: Ok(Default::default()),
                     state: Err("no value supplied for state".to_string()),
                 }
             }
@@ -22449,6 +22494,16 @@ pub mod types {
                 });
                 self
             }
+            pub fn migrate_ticket_key_hex<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.migrate_ticket_key_hex = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for migrate_ticket_key_hex: {e}")
+                });
+                self
+            }
             pub fn state<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<super::CnState>,
@@ -22470,6 +22525,7 @@ pub mod types {
                     api_key: value.api_key?,
                     console_ticket_key_hex: value.console_ticket_key_hex?,
                     imds_token_key_hex: value.imds_token_key_hex?,
+                    migrate_ticket_key_hex: value.migrate_ticket_key_hex?,
                     state: value.state?,
                 })
             }
@@ -22481,6 +22537,7 @@ pub mod types {
                     api_key: Ok(value.api_key),
                     console_ticket_key_hex: Ok(value.console_ticket_key_hex),
                     imds_token_key_hex: Ok(value.imds_token_key_hex),
+                    migrate_ticket_key_hex: Ok(value.migrate_ticket_key_hex),
                     state: Ok(value.state),
                 }
             }

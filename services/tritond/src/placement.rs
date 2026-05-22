@@ -614,6 +614,7 @@ mod tests {
             console_tls_spki_sha256: None,
             console_ticket_key: None,
             imds_token_key: None,
+            migrate_ticket_key: None,
         };
         let capacity = CnCapacity {
             server_uuid: cn.server_uuid,
@@ -802,6 +803,7 @@ mod tests {
                     server_uuid,
                     Uuid::new_v4(),
                     "pwd".into(),
+                    [0u8; 32],
                     [0u8; 32],
                     [0u8; 32],
                     Utc::now(),
