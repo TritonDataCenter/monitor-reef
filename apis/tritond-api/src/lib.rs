@@ -1778,6 +1778,55 @@ pub struct RealizedMetaEntry {
     pub from: tritond_store::MetaProvenance,
 }
 
+/// Compact reference to an instance, used in the affected-instances
+/// payload below. Carries the operator-relevant identity tuple
+/// (`tenant_id`, `project_id`, `id`) plus the human-readable `name`
+/// so the UI can render the row without a follow-up lookup.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AffectedInstanceRef {
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+}
+
+/// One row of the `shadowed` list returned by
+/// `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the
+/// instance plus the scope that actually wins for it (a narrower
+/// scope's override, or `System` for a computed system key that
+/// shadows operator metadata).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ShadowedInstance {
+    #[serde(flatten)]
+    pub instance: AffectedInstanceRef,
+    /// Which scope's value actually wins for this instance, given
+    /// that the request-scope's value is being shadowed. Always one
+    /// of the *narrower* scopes for a non-System winner; never the
+    /// request-scope itself (those instances appear in `wins`).
+    pub winner_scope: tritond_store::MetaProvenance,
+}
+
+/// Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K`
+/// — the affected-instances reverse-index. Answers the question
+/// "if I edit `key` at this scope, which instances does that change
+/// actually flow to, and which are shielded by a narrower override?"
+/// See `IMDS_DESIGN.md` §1.5 for the precedence rules.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AffectedInstancesResponse {
+    /// The value stored at the request scope (`null` when the key is
+    /// not set there). Returned for context — the UI doesn't have to
+    /// make a separate `GET /v2/meta/.../entry` call.
+    pub value_at_scope: Option<tritond_store::MetaValue>,
+    /// Instances under the request scope where this scope's value
+    /// is the realized winner (no narrower scope overrides it).
+    pub wins: Vec<AffectedInstanceRef>,
+    /// Instances under the request scope where a narrower scope
+    /// already overrides this key. Each row names the narrower
+    /// scope so the UI can render "tenant wins" / "project wins" /
+    /// "instance wins" at a glance.
+    pub shadowed: Vec<ShadowedInstance>,
+}
+
 #[dropshot::api_description]
 pub trait TritondApi {
     /// Context type for request handlers.
@@ -4304,4 +4353,25 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<InstanceRealizedMetaPath>,
     ) -> Result<HttpResponseOk<Vec<RealizedMetaEntry>>, HttpError>;
+
+    /// The affected-instances reverse-index for one (scope, key) pair.
+    /// Walks every instance under the request scope and partitions
+    /// them by whether the request scope's value wins for that
+    /// instance or a narrower scope's value shadows it. RBAC: same
+    /// as [`Self::list_meta`] at the request scope.
+    ///
+    /// Used by the operator console's IMDS authoring surface to
+    /// answer "if I edit here, what changes?" *before* the operator
+    /// commits — see `IMDS_DESIGN.md` §1.5 and the admin v3 design
+    /// chat.
+    #[endpoint {
+        method = GET,
+        path = "/v2/meta/{scope}/{scope_id}/affected",
+        tags = ["meta"],
+    }]
+    async fn get_affected_instances(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MetaScopePath>,
+        query: Query<MetaKeyQuery>,
+    ) -> Result<HttpResponseOk<AffectedInstancesResponse>, HttpError>;
 }

@@ -2066,6 +2066,61 @@
         }
       }
     },
+    "/v2/meta/{scope}/{scope_id}/affected": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "The affected-instances reverse-index for one (scope, key) pair.",
+        "description": "Walks every instance under the request scope and partitions them by whether the request scope's value wins for that instance or a narrower scope's value shadows it. RBAC: same as [`Self::list_meta`] at the request scope.\n\nUsed by the operator console's IMDS authoring surface to answer \"if I edit here, what changes?\" *before* the operator commits — see `IMDS_DESIGN.md` §1.5 and the admin v3 design chat.",
+        "operationId": "get_affected_instances",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetaScope"
+            }
+          },
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AffectedInstancesResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/meta/{scope}/{scope_id}/entry": {
       "get": {
         "tags": [
@@ -8964,6 +9019,66 @@
           }
         ]
       },
+      "AffectedInstanceRef": {
+        "description": "Compact reference to an instance, used in the affected-instances payload below. Carries the operator-relevant identity tuple (`tenant_id`, `project_id`, `id`) plus the human-readable `name` so the UI can render the row without a follow-up lookup.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "project_id",
+          "tenant_id"
+        ]
+      },
+      "AffectedInstancesResponse": {
+        "description": "Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\" See `IMDS_DESIGN.md` §1.5 for the precedence rules.",
+        "type": "object",
+        "properties": {
+          "shadowed": {
+            "description": "Instances under the request scope where a narrower scope already overrides this key. Each row names the narrower scope so the UI can render \"tenant wins\" / \"project wins\" / \"instance wins\" at a glance.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ShadowedInstance"
+            }
+          },
+          "value_at_scope": {
+            "nullable": true,
+            "description": "The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v2/meta/.../entry` call.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetaValue"
+              }
+            ]
+          },
+          "wins": {
+            "description": "Instances under the request scope where this scope's value is the realized winner (no narrower scope overrides it).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AffectedInstanceRef"
+            }
+          }
+        },
+        "required": [
+          "shadowed",
+          "wins"
+        ]
+      },
       "AgentPeerInvalidation": {
         "description": "One invalidation directive the agent should apply against the kmod's v2p cache. Fired by tritond on NIC teardown / migration. `(vni, peer_ip)` identifies the entry to drop; the agent applies it to every local port that might have cached the peer.",
         "type": "object",
@@ -14371,6 +14486,42 @@
         "required": [
           "access_key_id",
           "secret_access_key"
+        ]
+      },
+      "ShadowedInstance": {
+        "description": "One row of the `shadowed` list returned by `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata).",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "winner_scope": {
+            "description": "Which scope's value actually wins for this instance, given that the request-scope's value is being shadowed. Always one of the *narrower* scopes for a non-System winner; never the request-scope itself (those instances appear in `wins`).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetaProvenance"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "project_id",
+          "tenant_id",
+          "winner_scope"
         ]
       },
       "Silo": {

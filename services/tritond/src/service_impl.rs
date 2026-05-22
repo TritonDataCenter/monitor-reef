@@ -688,6 +688,14 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::meta::get_instance_realized_meta(rqctx, path).await
     }
 
+    async fn get_affected_instances(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::MetaScopePath>,
+        query: Query<tritond_api::MetaKeyQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::AffectedInstancesResponse>, HttpError> {
+        crate::handlers::meta::get_affected_instances(rqctx, path, query).await
+    }
+
     async fn agent_get_instance_realized_meta(
         rqctx: RequestContext<Self::Context>,
         path: Path<tritond_api::InstanceRealizedMetaPath>,

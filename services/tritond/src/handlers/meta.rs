@@ -216,6 +216,154 @@ pub(crate) async fn agent_get_instance_realized_meta(
     realized_meta_response(&rqctx, instance_id).await
 }
 
+/// Build the affected-instances reverse-index for one (scope, key)
+/// pair. Walks every instance under the request scope, computes its
+/// realized view, and partitions on whether the request scope's
+/// value wins or a narrower scope shadows it.
+///
+/// Cost: O(N) realized-view builds, where N is the number of
+/// instances under the scope. For a single-CN dev silo this is a few
+/// dozen calls; at fleet scale it'll need an index (deferred per
+/// `IMDS_DESIGN.md` — the design uses per-scope generation counters
+/// rather than a reverse-index, but the affected-instances list is
+/// the load-bearing affordance for the operator console's IMDS
+/// authoring surface and an on-demand scan is correct, just not
+/// yet optimised).
+pub(crate) async fn get_affected_instances(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<MetaScopePath>,
+    query: Query<MetaKeyQuery>,
+) -> Result<HttpResponseOk<tritond_api::AffectedInstancesResponse>, HttpError> {
+    let MetaScopePath { scope, scope_id } = path.into_inner();
+    let key = query.into_inner().key;
+    // Validation upfront — return 400 for an obviously bad key rather
+    // than scanning the whole scope just to discover the key is
+    // syntactically illegal.
+    if let Err(e) = tritond_store::validate_meta_key(scope, &key) {
+        return Err(meta_error_to_http(e));
+    }
+    // Same RBAC as `list_meta` — anyone who can read the scope's
+    // metadata can ask "where does this value flow."
+    authorize_meta(&rqctx, scope, scope_id, Action::MetaList).await?;
+    let ctx = rqctx.context();
+    let store = ctx.store.as_ref();
+
+    // Pull the value at the request scope first; absent → empty wins
+    // and shadowed lists (the operator is asking about a key that
+    // isn't authored here, so nothing flows from here either way).
+    let value_at_scope = match store.get_meta(scope, scope_id, &key).await {
+        Ok(v) => Some(v),
+        Err(StoreError::NotFound) => None,
+        Err(e) => return Err(store_error_to_http(e)),
+    };
+
+    // Collect every instance under the request scope. For Silo and
+    // Tenant we need to fan out through the tenancy tree; for
+    // Project there is one list call; for Instance the "list" is the
+    // singleton {scope_id}.
+    let instances: Vec<tritond_store::Instance> = match scope {
+        MetaScope::Silo => {
+            let tenants = store
+                .list_tenants_in_silo(scope_id)
+                .await
+                .map_err(store_error_to_http)?;
+            let mut out = Vec::new();
+            for t in tenants {
+                let projects = store
+                    .list_projects_in_tenant(t.id)
+                    .await
+                    .map_err(store_error_to_http)?;
+                for p in projects {
+                    let insts = store
+                        .list_instances_in_project(p.id)
+                        .await
+                        .map_err(store_error_to_http)?;
+                    out.extend(insts);
+                }
+            }
+            out
+        }
+        MetaScope::Tenant => {
+            let projects = store
+                .list_projects_in_tenant(scope_id)
+                .await
+                .map_err(store_error_to_http)?;
+            let mut out = Vec::new();
+            for p in projects {
+                let insts = store
+                    .list_instances_in_project(p.id)
+                    .await
+                    .map_err(store_error_to_http)?;
+                out.extend(insts);
+            }
+            out
+        }
+        MetaScope::Project => store
+            .list_instances_in_project(scope_id)
+            .await
+            .map_err(store_error_to_http)?,
+        MetaScope::Instance => match store.get_instance(scope_id).await {
+            Ok(i) => vec![i],
+            Err(e) => return Err(store_error_to_http(e)),
+        },
+    };
+
+    let mut wins = Vec::new();
+    let mut shadowed = Vec::new();
+
+    // The provenance kind that the request scope produces — anything
+    // matching this in an instance's realized view means "this scope
+    // wins for this instance." Anything else (a narrower scope or
+    // `System`) means "this scope is shadowed."
+    let want_provenance = match scope {
+        MetaScope::Silo => tritond_store::MetaProvenance::Silo,
+        MetaScope::Tenant => tritond_store::MetaProvenance::Tenant,
+        MetaScope::Project => tritond_store::MetaProvenance::Project,
+        MetaScope::Instance => tritond_store::MetaProvenance::Instance,
+    };
+
+    for inst in instances {
+        let view = match crate::build_instance_realized_view(store, inst.id).await {
+            Ok(v) => v,
+            Err(StoreError::NotFound) => continue,
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+        let inst_ref = tritond_api::AffectedInstanceRef {
+            id: inst.id,
+            tenant_id: inst.tenant_id,
+            project_id: inst.project_id,
+            name: inst.name.clone(),
+        };
+        match view.get(&key) {
+            Some((_value, prov)) if *prov == want_provenance => {
+                wins.push(inst_ref);
+            }
+            Some((_value, prov)) => {
+                shadowed.push(tritond_api::ShadowedInstance {
+                    instance: inst_ref,
+                    winner_scope: *prov,
+                });
+            }
+            None => {
+                // Key is not in this instance's realized view at all
+                // — neither the request scope nor any narrower scope
+                // has it. Don't list this instance: it's irrelevant
+                // to the operator's "if I edit here, what changes?"
+                // question. (We could surface a third "unaware"
+                // bucket but the UI doesn't need it: an empty wins
+                // + empty shadowed already tells the operator the
+                // edit affects nothing under this scope.)
+            }
+        }
+    }
+
+    Ok(HttpResponseOk(tritond_api::AffectedInstancesResponse {
+        value_at_scope,
+        wins,
+        shadowed,
+    }))
+}
+
 async fn realized_meta_response(
     rqctx: &RequestContext<ApiContext>,
     instance_id: Uuid,

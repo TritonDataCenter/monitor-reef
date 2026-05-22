@@ -337,6 +337,121 @@ pub mod types {
         No { reason: ::std::string::String },
     }
 
+    #[doc = "Compact reference to an instance, used in the affected-instances payload below. Carries the operator-relevant identity tuple (`tenant_id`, `project_id`, `id`) plus the human-readable `name` so the UI can render the row without a follow-up lookup."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Compact reference to an instance, used in the affected-instances payload below. Carries the operator-relevant identity tuple (`tenant_id`, `project_id`, `id`) plus the human-readable `name` so the UI can render the row without a follow-up lookup.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"tenant_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AffectedInstanceRef {
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
+    }
+
+    impl AffectedInstanceRef {
+        pub fn builder() -> builder::AffectedInstanceRef {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\" See `IMDS_DESIGN.md` §1.5 for the precedence rules."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response body for `GET /v2/meta/{scope}/{scope_id}/affected?key=K` — the affected-instances reverse-index. Answers the question \\\"if I edit `key` at this scope, which instances does that change actually flow to, and which are shielded by a narrower override?\\\" See `IMDS_DESIGN.md` §1.5 for the precedence rules.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"shadowed\","]
+    #[doc = "    \"wins\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"shadowed\": {"]
+    #[doc = "      \"description\": \"Instances under the request scope where a narrower scope already overrides this key. Each row names the narrower scope so the UI can render \\\"tenant wins\\\" / \\\"project wins\\\" / \\\"instance wins\\\" at a glance.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/ShadowedInstance\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"value_at_scope\": {"]
+    #[doc = "      \"description\": \"The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v2/meta/.../entry` call.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetaValue\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"wins\": {"]
+    #[doc = "      \"description\": \"Instances under the request scope where this scope's value is the realized winner (no narrower scope overrides it).\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/AffectedInstanceRef\""]
+    #[doc = "      }"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AffectedInstancesResponse {
+        #[doc = "Instances under the request scope where a narrower scope already overrides this key. Each row names the narrower scope so the UI can render \"tenant wins\" / \"project wins\" / \"instance wins\" at a glance."]
+        pub shadowed: ::std::vec::Vec<ShadowedInstance>,
+        #[doc = "The value stored at the request scope (`null` when the key is not set there). Returned for context — the UI doesn't have to make a separate `GET /v2/meta/.../entry` call."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub value_at_scope: ::std::option::Option<MetaValue>,
+        #[doc = "Instances under the request scope where this scope's value is the realized winner (no narrower scope overrides it)."]
+        pub wins: ::std::vec::Vec<AffectedInstanceRef>,
+    }
+
+    impl AffectedInstancesResponse {
+        pub fn builder() -> builder::AffectedInstancesResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "One invalidation directive the agent should apply against the kmod's v2p cache. Fired by tritond on NIC teardown / migration. `(vni, peer_ip)` identifies the entry to drop; the agent applies it to every local port that might have cached the peer."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -10393,6 +10508,67 @@ pub mod types {
         }
     }
 
+    #[doc = "One row of the `shadowed` list returned by `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One row of the `shadowed` list returned by `GET /v2/meta/{scope}/{scope_id}/affected?key=K`. Carries the instance plus the scope that actually wins for it (a narrower scope's override, or `System` for a computed system key that shadows operator metadata).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"id\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"project_id\","]
+    #[doc = "    \"tenant_id\","]
+    #[doc = "    \"winner_scope\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"winner_scope\": {"]
+    #[doc = "      \"description\": \"Which scope's value actually wins for this instance, given that the request-scope's value is being shadowed. Always one of the *narrower* scopes for a non-System winner; never the request-scope itself (those instances appear in `wins`).\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MetaProvenance\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ShadowedInstance {
+        pub id: ::uuid::Uuid,
+        pub name: ::std::string::String,
+        pub project_id: ::uuid::Uuid,
+        pub tenant_id: ::uuid::Uuid,
+        #[doc = "Which scope's value actually wins for this instance, given that the request-scope's value is being shadowed. Always one of the *narrower* scopes for a non-System winner; never the request-scope itself (those instances appear in `wins`)."]
+        pub winner_scope: MetaProvenance,
+    }
+
+    impl ShadowedInstance {
+        pub fn builder() -> builder::ShadowedInstance {
+            Default::default()
+        }
+    }
+
     #[doc = "A tenancy boundary. Every Triton Cloud resource ultimately rolls up to a silo; in production each silo is bound to its own identity provider. Phase 0 carries only the bare-minimum identifying fields."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -12476,6 +12652,175 @@ pub mod types {
                 Self {
                     id: Ok(value.id),
                     poked_nodes: Ok(value.poked_nodes),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AffectedInstanceRef {
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AffectedInstanceRef {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
+                }
+            }
+        }
+
+        impl AffectedInstanceRef {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AffectedInstanceRef> for super::AffectedInstanceRef {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AffectedInstanceRef,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    tenant_id: value.tenant_id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AffectedInstanceRef> for AffectedInstanceRef {
+            fn from(value: super::AffectedInstanceRef) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    tenant_id: Ok(value.tenant_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct AffectedInstancesResponse {
+            shadowed: ::std::result::Result<
+                ::std::vec::Vec<super::ShadowedInstance>,
+                ::std::string::String,
+            >,
+            value_at_scope: ::std::result::Result<
+                ::std::option::Option<super::MetaValue>,
+                ::std::string::String,
+            >,
+            wins: ::std::result::Result<
+                ::std::vec::Vec<super::AffectedInstanceRef>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for AffectedInstancesResponse {
+            fn default() -> Self {
+                Self {
+                    shadowed: Err("no value supplied for shadowed".to_string()),
+                    value_at_scope: Ok(Default::default()),
+                    wins: Err("no value supplied for wins".to_string()),
+                }
+            }
+        }
+
+        impl AffectedInstancesResponse {
+            pub fn shadowed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::ShadowedInstance>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.shadowed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for shadowed: {e}"));
+                self
+            }
+            pub fn value_at_scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MetaValue>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value_at_scope = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for value_at_scope: {e}")
+                });
+                self
+            }
+            pub fn wins<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::AffectedInstanceRef>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.wins = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for wins: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AffectedInstancesResponse> for super::AffectedInstancesResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AffectedInstancesResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    shadowed: value.shadowed?,
+                    value_at_scope: value.value_at_scope?,
+                    wins: value.wins?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AffectedInstancesResponse> for AffectedInstancesResponse {
+            fn from(value: super::AffectedInstancesResponse) -> Self {
+                Self {
+                    shadowed: Ok(value.shadowed),
+                    value_at_scope: Ok(value.value_at_scope),
+                    wins: Ok(value.wins),
                 }
             }
         }
@@ -23266,6 +23611,107 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ShadowedInstance {
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            winner_scope: ::std::result::Result<super::MetaProvenance, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ShadowedInstance {
+            fn default() -> Self {
+                Self {
+                    id: Err("no value supplied for id".to_string()),
+                    name: Err("no value supplied for name".to_string()),
+                    project_id: Err("no value supplied for project_id".to_string()),
+                    tenant_id: Err("no value supplied for tenant_id".to_string()),
+                    winner_scope: Err("no value supplied for winner_scope".to_string()),
+                }
+            }
+        }
+
+        impl ShadowedInstance {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.project_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for project_id: {e}"));
+                self
+            }
+            pub fn tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tenant_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tenant_id: {e}"));
+                self
+            }
+            pub fn winner_scope<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MetaProvenance>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.winner_scope = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for winner_scope: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ShadowedInstance> for super::ShadowedInstance {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ShadowedInstance,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    name: value.name?,
+                    project_id: value.project_id?,
+                    tenant_id: value.tenant_id?,
+                    winner_scope: value.winner_scope?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ShadowedInstance> for ShadowedInstance {
+            fn from(value: super::ShadowedInstance) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                    project_id: Ok(value.project_id),
+                    tenant_id: Ok(value.tenant_id),
+                    winner_scope: Ok(value.winner_scope),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Silo {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -25927,6 +26373,11 @@ impl Client {
     #[doc = "List every metadata entry stored at one scope. RBAC: silo-member\n\nfor `scope=silo`; tenant-member (of the scope's owning tenant) for `scope=tenant|project|instance`.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}`\n\n```ignore\nlet response = client.list_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .send()\n    .await;\n```"]
     pub fn list_meta(&self) -> builder::ListMeta<'_> {
         builder::ListMeta::new(self)
+    }
+
+    #[doc = "The affected-instances reverse-index for one (scope, key) pair\n\nWalks every instance under the request scope and partitions them by whether the request scope's value wins for that instance or a narrower scope's value shadows it. RBAC: same as [`Self::list_meta`] at the request scope.\n\nUsed by the operator console's IMDS authoring surface to answer \"if I edit here, what changes?\" *before* the operator commits — see `IMDS_DESIGN.md` §1.5 and the admin v3 design chat.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}/affected`\n\n```ignore\nlet response = client.get_affected_instances()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
+    pub fn get_affected_instances(&self) -> builder::GetAffectedInstances<'_> {
+        builder::GetAffectedInstances::new(self)
     }
 
     #[doc = "Read one metadata entry by key (query parameter). The key may\n\ncontain `/` (`config/ntp-servers`, `state/active-color`, …), hence the query-string placement.\n\nSends a `GET` request to `/v2/meta/{scope}/{scope_id}/entry`\n\n```ignore\nlet response = client.get_meta()\n    .scope(scope)\n    .scope_id(scope_id)\n    .key(key)\n    .send()\n    .await;\n```"]
@@ -30511,6 +30962,110 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "list_meta",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::get_affected_instances`]\n\n[`Client::get_affected_instances`]: super::Client::get_affected_instances"]
+    #[derive(Debug, Clone)]
+    pub struct GetAffectedInstances<'a> {
+        client: &'a super::Client,
+        scope: Result<types::MetaScope, String>,
+        scope_id: Result<::uuid::Uuid, String>,
+        key: Result<::std::string::String, String>,
+    }
+
+    impl<'a> GetAffectedInstances<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                scope: Err("scope was not initialized".to_string()),
+                scope_id: Err("scope_id was not initialized".to_string()),
+                key: Err("key was not initialized".to_string()),
+            }
+        }
+
+        pub fn scope<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::MetaScope>,
+        {
+            self.scope = value
+                .try_into()
+                .map_err(|_| "conversion to `MetaScope` for scope failed".to_string());
+            self
+        }
+
+        pub fn scope_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.scope_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for scope_id failed".to_string());
+            self
+        }
+
+        pub fn key<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.key = value.try_into().map_err(|_| {
+                "conversion to `:: std :: string :: String` for key failed".to_string()
+            });
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v2/meta/{scope}/{scope_id}/affected`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::AffectedInstancesResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                scope,
+                scope_id,
+                key,
+            } = self;
+            let scope = scope.map_err(Error::InvalidRequest)?;
+            let scope_id = scope_id.map_err(Error::InvalidRequest)?;
+            let key = key.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/meta/{}/{}/affected",
+                client.baseurl,
+                encode_path(&scope.to_string()),
+                encode_path(&scope_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .query(&progenitor_client::QueryParam::new("key", &key))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "get_affected_instances",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;
