@@ -140,7 +140,11 @@ fn fetch_channel(channel_url: &str) -> Result<(Vec<u8>, Vec<u8>)> {
 /// into the self-update path because the caller is a top-level CLI
 /// command with no async story; reqwest's blocking client is fine.
 fn http_get(url: &str) -> Result<Vec<u8>> {
-    let resp = reqwest::blocking::get(url).with_context(|| format!("fetching {url}"))?;
+    let client = crate::http::blocking_client()?;
+    let resp = client
+        .get(url)
+        .send()
+        .with_context(|| format!("fetching {url}"))?;
     if !resp.status().is_success() {
         bail!("GET {url} -> {}", resp.status());
     }

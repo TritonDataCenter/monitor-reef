@@ -28,7 +28,16 @@ dialoguer = { workspace = true }
 dirs = { workspace = true }
 flate2 = "1"
 hex = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["blocking", "rustls"] }
+# We construct the rustls ClientConfig ourselves and pass it via
+# Client::use_preconfigured_tls so we can substitute the Mozilla
+# webpki-roots trust store for reqwest's default
+# rustls-platform-verifier. That verifier looks for a system trust
+# store and fails on illumos with "No CA certificates were loaded
+# from the system." Bundling Mozilla roots is consistent across
+# mac / linux / illumos and removes the platform-trust-store
+# dependency entirely.
+webpki-roots = { workspace = true }
 rpassword = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
@@ -42,7 +51,6 @@ tracing-subscriber = { workspace = true }
 triton-channel = { workspace = true }
 tritond-client = { workspace = true }
 uuid = { workspace = true }
-webpki-roots = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }

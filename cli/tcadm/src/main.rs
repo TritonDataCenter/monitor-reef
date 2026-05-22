@@ -23,6 +23,8 @@
 
 mod commands;
 mod config;
+mod http;
+mod install;
 mod self_update;
 mod session;
 
@@ -176,6 +178,28 @@ enum Commands {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Install an image or agent from the signed Manta release
+    /// channel onto this host. Auto-detects whether `<name>` is a
+    /// zone image (drives imgadm install) or a GZ agent tarball
+    /// (extracts at /, imports SMF, enables service). With `--list`,
+    /// enumerates channel contents alongside installed status.
+    Install {
+        /// Name of the image or agent (e.g. `triton-fdb`,
+        /// `tritonagent`). Required unless `--list` is given.
+        name: Option<String>,
+        /// Pin to a specific stamp. Channel must already point at
+        /// this stamp; we refuse to download arbitrary stamps the
+        /// channel doesn't currently advertise.
+        #[arg(long)]
+        stamp: Option<String>,
+        /// Override the channel manifest URL.
+        #[arg(long)]
+        channel_url: Option<String>,
+        /// List channel contents + installed status; do not install.
+        #[arg(long)]
+        list: bool,
+    },
+
     /// Update this `tcadm` binary against the signed Manta release
     /// channel. Verifies the channel signature against the publisher
     /// pubkey baked into the binary; refuses to act on a tampered or
@@ -3385,6 +3409,25 @@ async fn main() -> Result<()> {
                 commands::config_reset(cli.endpoint, cli.api_key, key).await
             }
         },
+        Commands::Install {
+            name,
+            stamp,
+            channel_url,
+            list,
+        } => {
+            // install is sync (blocking reqwest + child processes).
+            // Run on a blocking-task slot.
+            tokio::task::spawn_blocking(move || {
+                install::run(install::InstallOpts {
+                    name,
+                    stamp,
+                    channel_url,
+                    list,
+                })
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("install task panicked: {e}"))?
+        }
         Commands::SelfUpdate {
             channel_url,
             install_dir,
