@@ -1,0 +1,38 @@
+{
+  "v": 2,
+  "uuid": "f7c19252-c998-11e4-be95-3315493f3741",
+  "owner": "00000000-0000-0000-0000-000000000000",
+  "name": "lx-centos-6",
+  "version": "20150313",
+  "state": "active",
+  "disabled": false,
+  "public": true,
+  "published_at": "2015-03-13T15:52:35Z",
+  "type": "lx-dataset",
+  "os": "linux",
+  "files": [
+    {
+      "sha1": "bb3cd4538e3fca05ff09cc600ff43e2d09ea262b",
+      "size": 204876515,
+      "compression": "gzip"
+    }
+  ],
+  "description": "Container-native CentOS 6.6 64-bit image. Built to run on containers with bare metal speed, while offering all the services of a typical unix host.",
+  "homepage": "https://docs.joyent.com/images",
+  "requirements": {
+    "networks": [
+      {
+        "name": "net0",
+        "description": "public"
+      }
+    ],
+    "min_platform": {
+      "7.0": "20140807T151857Z"
+    },
+    "brand": "lx"
+  },
+  "tags": {
+    "role": "os",
+    "kernel_version": "2.6.32"
+  }
+}

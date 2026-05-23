@@ -1,0 +1,45 @@
+{
+  "v": 2,
+  "uuid": "6dde8b1a-0780-11e4-a57b-6b7ac24a7cd4",
+  "owner": "00000000-0000-0000-0000-000000000000",
+  "name": "debian-7",
+  "version": "20140709",
+  "state": "active",
+  "disabled": false,
+  "public": true,
+  "published_at": "2014-07-09T15:48:10Z",
+  "type": "zvol",
+  "os": "linux",
+  "files": [
+    {
+      "sha1": "6e4ac8f1080a69d8fcb8274f9f33269d426223e7",
+      "size": 284362786,
+      "compression": "gzip"
+    }
+  ],
+  "description": "Debian 7.5 (wheezy) 64-bit image with just essential packages installed, built to run on KVM virtual machines.",
+  "homepage": "https://docs.joyent.com/images/linux/debian",
+  "urn": "sdc:sdc:debian-7:20140709",
+  "requirements": {
+    "networks": [
+      {
+        "name": "net0",
+        "description": "public"
+      }
+    ],
+    "ssh_key": true,
+    "brand": "kvm"
+  },
+  "users": [
+    {
+      "name": "root"
+    }
+  ],
+  "nic_driver": "virtio",
+  "disk_driver": "virtio",
+  "cpu_type": "host",
+  "image_size": 10240,
+  "tags": {
+    "role": "os"
+  }
+}

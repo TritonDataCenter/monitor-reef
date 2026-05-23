@@ -2579,6 +2579,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "imgapi-manifest"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "indent_write"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

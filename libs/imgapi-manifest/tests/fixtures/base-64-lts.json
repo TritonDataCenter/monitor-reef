@@ -1,0 +1,38 @@
+{
+  "v": 2,
+  "uuid": "c02a2044-c1bd-11e4-bd8c-dfc1db8b0182",
+  "owner": "00000000-0000-0000-0000-000000000000",
+  "name": "base-64-lts",
+  "version": "14.4.0",
+  "state": "active",
+  "disabled": false,
+  "public": true,
+  "published_at": "2015-03-03T15:55:44Z",
+  "type": "zone-dataset",
+  "os": "smartos",
+  "files": [
+    {
+      "sha1": "609064eec1dcb47828e2cab2daf132b5d82b135d",
+      "size": 128572734,
+      "compression": "gzip"
+    }
+  ],
+  "description": "A 64-bit SmartOS image with just essential packages installed. Ideal for users who are comfortable with setting up their own environment and tools.",
+  "homepage": "https://docs.joyent.com/images/smartos/base",
+  "urn": "sdc:sdc:base-64-lts:14.4.0",
+  "requirements": {
+    "min_platform": {
+      "7.0": "20141030T081701Z"
+    },
+    "networks": [
+      {
+        "name": "net0",
+        "description": "public"
+      }
+    ]
+  },
+  "tags": {
+    "role": "os",
+    "group": "base-64-lts"
+  }
+}
