@@ -5377,7 +5377,9 @@ pub enum MetaError {
         "config/imds/hop-limit must be an integer in {IMDS_HOP_LIMIT_MIN}..={IMDS_HOP_LIMIT_MAX}"
     )]
     ImdsHopLimitOutOfRange,
-    #[error("guest_writable is only allowed for guest/* keys at instance scope")]
+    #[error(
+        "guest_writable is only allowed for guest/* keys at tenant/project/instance scope (not silo)"
+    )]
     GuestWritableNotAllowed,
     #[error("metadata value exceeds {MAX_META_VALUE_BYTES} bytes")]
     ValueTooLarge,
@@ -5456,24 +5458,24 @@ fn classify_meta_key(key: &str) -> Result<MetaNamespace, MetaError> {
 /// Validate that `key` may be **set** at `scope` (syntax + namespace +
 /// scope rules). Does not validate the value — see
 /// [`validate_meta_entry`].
+///
+/// Scope rules:
+///   * `config/`, `state/`, `instance/`, `guest/` — allowed at every
+///     scope. The cascade handles inheritance: anything authored at a
+///     wider scope flows downstream until a narrower scope overrides.
+///   * `user-data` — instance scope only (cloud-init payload is by
+///     nature per-instance; authoring it at silo / tenant / project
+///     would conflate operator config with per-VM bootstrap data).
+///   * `meta-data/*` / `system/*` / `dynamic/*` — reserved (computed
+///     by tritond at request time, not operator-set).
 pub fn validate_meta_key(scope: MetaScope, key: &str) -> Result<(), MetaError> {
     let ns = classify_meta_key(key)?;
     match ns {
-        MetaNamespace::Config | MetaNamespace::State => Ok(()),
-        MetaNamespace::Instance => {
-            if scope.is_instance() {
-                Ok(())
-            } else {
-                Err(MetaError::ScopeNotInstance("instance/"))
-            }
-        }
-        MetaNamespace::Guest => {
-            if scope.is_instance() {
-                Ok(())
-            } else {
-                Err(MetaError::ScopeNotInstance("guest/"))
-            }
-        }
+        // The four operator namespaces all travel the cascade.
+        MetaNamespace::Config
+        | MetaNamespace::State
+        | MetaNamespace::Instance
+        | MetaNamespace::Guest => Ok(()),
         MetaNamespace::UserData => {
             if scope.is_instance() {
                 Ok(())
@@ -5494,11 +5496,23 @@ pub fn validate_meta_key(scope: MetaScope, key: &str) -> Result<(), MetaError> {
     }
 }
 
-/// True if `key` may carry `guest_writable == true` at `scope`: only
-/// `guest/*` keys at instance scope. (Whether writeback is *enabled*
-/// on the instance is a separate, higher-layer check.)
+/// True if `key` may carry `guest_writable == true` at `scope`.
+///
+/// Two conditions, both required:
+///   * The key must be under the `guest/` namespace. `config/`,
+///     `state/`, `instance/` are operator-author-only as far as the
+///     guest is concerned — the guest may read them when they're
+///     `guest_visible`, but the agent will never write them back.
+///   * The scope must be tenant, project, or instance. Silo-scope
+///     keys are operator-policy keys (DNS, NTP, cluster defaults);
+///     allowing guests to mutate them through the writeback path
+///     would let one tenant's instance break the silo for every
+///     other tenant in the silo.
+///
+/// (Whether writeback is *enabled* on the instance is a separate,
+/// higher-layer check — see `agent_set_instance_guest_meta`.)
 pub fn meta_key_guest_writable_allowed(scope: MetaScope, key: &str) -> bool {
-    scope.is_instance() && key.starts_with("guest/")
+    !matches!(scope, MetaScope::Silo) && key.starts_with("guest/")
 }
 
 /// The conventional default for `MetaValue.guest_visible` given the
@@ -5595,23 +5609,23 @@ mod meta_tests {
     }
 
     #[test]
-    fn instance_only_namespaces_are_rejected_above_instance() {
-        for key in ["instance/role", "guest/leader", "user-data"] {
-            for scope in [MetaScope::Silo, MetaScope::Tenant, MetaScope::Project] {
-                assert!(matches!(
-                    validate_meta_key(scope, key),
-                    Err(MetaError::ScopeNotInstance(_))
-                ));
-            }
-            validate_meta_key(MetaScope::Instance, key).unwrap();
+    fn user_data_is_rejected_above_instance() {
+        // user-data is per-VM cloud-init payload — authoring it at a
+        // wider scope would conflate operator config with bootstrap
+        // data. The other operator namespaces (config/, state/,
+        // instance/, guest/) all travel the cascade and are tested in
+        // `config_state_instance_guest_allowed_at_every_scope`.
+        for scope in [MetaScope::Silo, MetaScope::Tenant, MetaScope::Project] {
+            assert!(matches!(
+                validate_meta_key(scope, "user-data"),
+                Err(MetaError::ScopeNotInstance("user-data"))
+            ));
         }
-        // instance/* and guest/* are not guest-visible by default at
-        // upper scopes (moot — they can't be set there) but ARE at
-        // instance scope.
+        validate_meta_key(MetaScope::Instance, "user-data").unwrap();
+        // instance/* and guest/* are guest-visible-by-default at
+        // instance scope; not at silo scope.
         assert!(default_guest_visible(MetaScope::Instance, "instance/role"));
         assert!(default_guest_visible(MetaScope::Instance, "user-data"));
-        // ...whereas a hypothetical non-config/state key at silo scope
-        // would default invisible.
         assert!(!default_guest_visible(MetaScope::Silo, "instance/role"));
     }
 
@@ -5719,26 +5733,46 @@ mod meta_tests {
     }
 
     #[test]
-    fn guest_writable_only_for_guest_keys_at_instance_scope() {
-        assert!(meta_key_guest_writable_allowed(
-            MetaScope::Instance,
+    fn guest_writable_for_guest_keys_at_tenant_project_instance() {
+        // Allowed at the three narrower scopes when the key is under
+        // `guest/`.
+        for scope in [MetaScope::Tenant, MetaScope::Project, MetaScope::Instance] {
+            assert!(
+                meta_key_guest_writable_allowed(scope, "guest/role"),
+                "guest/role should be writable at {scope:?}"
+            );
+        }
+        // Rejected at silo even for guest/ keys — silo-scope keys are
+        // operator-policy and guests never mutate them.
+        assert!(!meta_key_guest_writable_allowed(
+            MetaScope::Silo,
             "guest/role"
         ));
+        // Wrong namespace at the right scope is still rejected — the
+        // guest writeback path only ever touches `guest/*`.
         assert!(!meta_key_guest_writable_allowed(
             MetaScope::Instance,
             "config/x"
         ));
         assert!(!meta_key_guest_writable_allowed(
-            MetaScope::Project,
-            "guest/role"
+            MetaScope::Tenant,
+            "config/x"
         ));
-        validate_meta_entry(
-            MetaScope::Instance,
-            "guest/role",
-            &serde_json::json!("replica"),
-            true,
-        )
-        .unwrap();
+
+        // validate_meta_entry mirrors the same rule end-to-end.
+        for scope in [MetaScope::Tenant, MetaScope::Project, MetaScope::Instance] {
+            validate_meta_entry(scope, "guest/role", &serde_json::json!("replica"), true)
+                .unwrap_or_else(|e| panic!("expected guest/role to validate at {scope:?}: {e}"));
+        }
+        assert!(matches!(
+            validate_meta_entry(
+                MetaScope::Silo,
+                "guest/role",
+                &serde_json::json!("replica"),
+                true,
+            ),
+            Err(MetaError::GuestWritableNotAllowed)
+        ));
         assert!(matches!(
             validate_meta_entry(
                 MetaScope::Instance,
@@ -5748,6 +5782,42 @@ mod meta_tests {
             ),
             Err(MetaError::GuestWritableNotAllowed)
         ));
+    }
+
+    #[test]
+    fn config_state_instance_guest_allowed_at_every_scope() {
+        // The four operator namespaces travel the full cascade — set
+        // any of them at any scope and validation accepts the syntax.
+        for scope in [
+            MetaScope::Silo,
+            MetaScope::Tenant,
+            MetaScope::Project,
+            MetaScope::Instance,
+        ] {
+            for key in [
+                "config/dns-resolvers",
+                "state/marker",
+                "instance/role",
+                "guest/role",
+            ] {
+                validate_meta_key(scope, key)
+                    .unwrap_or_else(|e| panic!("expected {key} to validate at {scope:?}: {e}"));
+            }
+        }
+    }
+
+    #[test]
+    fn user_data_is_instance_only() {
+        // user-data is per-VM cloud-init; authoring it at silo /
+        // tenant / project would conflate operator config with
+        // bootstrap payload.
+        validate_meta_key(MetaScope::Instance, "user-data").unwrap();
+        for scope in [MetaScope::Silo, MetaScope::Tenant, MetaScope::Project] {
+            assert!(matches!(
+                validate_meta_key(scope, "user-data"),
+                Err(MetaError::ScopeNotInstance("user-data"))
+            ));
+        }
     }
 
     #[test]

@@ -439,19 +439,24 @@ pub(crate) async fn agent_set_instance_guest_meta(
     // the corresponding scope_id for the calling instance's
     // hierarchy. `System` entries are computed (not stored) so
     // there's nothing to write back to.
+    //
+    // Silo writeback is explicitly forbidden: an instance must never
+    // be able to mutate silo-scope metadata even if a stale
+    // silo-scope `guest_writable: true` exists (the
+    // `meta_key_guest_writable_allowed` rule prevents new silo
+    // writable keys, but old data could exist from before the rule
+    // tightened). Allowed targets are tenant / project / instance,
+    // all resolved from the calling instance's own hierarchy —
+    // never another tenant's, never above the silo line.
     let (scope, scope_id) = match provenance {
         tritond_store::MetaProvenance::Silo => {
-            let instance = ctx
-                .store
-                .get_instance(instance_id)
-                .await
-                .map_err(store_error_to_http)?;
-            let tenant = ctx
-                .store
-                .get_tenant(instance.tenant_id)
-                .await
-                .map_err(store_error_to_http)?;
-            (MetaScope::Silo, tenant.silo_id)
+            return Err(HttpError::for_client_error(
+                None,
+                ClientErrorStatusCode::FORBIDDEN,
+                format!(
+                    "agent writeback rejected: key `{key}` lives at silo scope; instances cannot write silo-scope metadata"
+                ),
+            ));
         }
         tritond_store::MetaProvenance::Tenant => {
             let instance = ctx
