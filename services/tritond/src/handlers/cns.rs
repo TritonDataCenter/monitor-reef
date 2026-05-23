@@ -371,8 +371,8 @@ pub(crate) async fn drain_preview(
             Ok(outcome) => match outcome.chosen {
                 Some(target) => {
                     placeable.push(tritond_api::DrainMigrationRow {
-                        target_cn_uuid: Some(target.server_uuid),
-                        target_cn_hostname: hostname_for.get(&target.server_uuid).cloned(),
+                        target_cn_uuid: Some(target),
+                        target_cn_hostname: hostname_for.get(&target).cloned(),
                         ..row_skel
                     });
                 }
