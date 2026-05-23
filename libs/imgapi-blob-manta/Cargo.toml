@@ -1,0 +1,29 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "imgapi-blob-manta"
+version = "0.1.0"
+edition.workspace = true
+description = "Manta-backed blob storage for IMGAPI image content"
+
+[lints]
+workspace = true
+
+[lib]
+name = "imgapi_blob_manta"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+sha1 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "process"] }
+tracing = { workspace = true }
+uuid = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }

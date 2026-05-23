@@ -26,6 +26,7 @@ members = [
     "libs/tritond-cn-platform",
     "libs/edge-manifest",
     "libs/imgapi-manifest",
+    "libs/imgapi-blob-manta",
     "libs/tritond-image-manifest",
     "libs/tritond-logs",
     "libs/tritond-metrics",
@@ -241,6 +242,7 @@ tritond-auth = { path = "libs/tritond-auth" }
 tritond-client = { path = "clients/internal/tritond-client" }
 tritond-cn-platform = { path = "libs/tritond-cn-platform" }
 imgapi-manifest = { path = "libs/imgapi-manifest" }
+imgapi-blob-manta = { path = "libs/imgapi-blob-manta" }
 tritond-image-manifest = { path = "libs/tritond-image-manifest" }
 tritond-logs = { path = "libs/tritond-logs" }
 tritond-metrics = { path = "libs/tritond-metrics" }
