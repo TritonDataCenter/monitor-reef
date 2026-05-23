@@ -1505,6 +1505,45 @@
         }
       }
     },
+    "/v2/cns/{server_uuid}/drain/preview": {
+      "post": {
+        "tags": [
+          "cns"
+        ],
+        "summary": "Dry-run the drain plan for one CN. For each instance currently",
+        "description": "hosted on this CN the placement engine picks a candidate target (excluding the source CN); the response partitions into `placeable` (a target was found) and `not_placeable` (no eligible CN). Also surfaces a quorum heuristic so the operator can spot vault / etcd / fdb / etc. members before committing the drain. Read-only — no reservations are written.\n\nUsed by the operator console's BlastRadiusCard on Compute Node detail (admin v3 design) to show \"12 instances would migrate to: monroe-r2-s01 × 7, monroe-r2-s02 × 5; capacity OK; quorum at risk: vault-primary\" before the operator commits.",
+        "operationId": "drain_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainPreviewResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/cns/{server_uuid}/metrics": {
       "get": {
         "tags": [
@@ -10048,6 +10087,110 @@
               "data"
             ]
           }
+        ]
+      },
+      "DrainMigrationRow": {
+        "description": "One row of the drain-preview migration plan. `target_cn_*` are populated when the placement engine found an eligible CN for the instance; otherwise `reason` carries the no-eligible-CN explanation.",
+        "type": "object",
+        "properties": {
+          "instance_cpu": {
+            "description": "CPU vCPUs the instance reserves (1 vCPU = 100 placement units).",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "instance_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instance_name": {
+            "type": "string"
+          },
+          "instance_project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instance_ram_mb": {
+            "description": "RAM the instance reserves, in MiB.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "instance_tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "nullable": true,
+            "description": "Set when no CN could be picked. One-line operator-readable summary; full explain report is available via the operations endpoint if the operator wants the chain detail.",
+            "type": "string"
+          },
+          "target_cn_hostname": {
+            "nullable": true,
+            "type": "string"
+          },
+          "target_cn_uuid": {
+            "nullable": true,
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "instance_cpu",
+          "instance_id",
+          "instance_name",
+          "instance_project_id",
+          "instance_ram_mb",
+          "instance_tenant_id"
+        ]
+      },
+      "DrainPreviewResponse": {
+        "description": "Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\n\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true).",
+        "type": "object",
+        "properties": {
+          "capacity_ok": {
+            "description": "True when every instance can be placed off this CN.",
+            "type": "boolean"
+          },
+          "instances_on_cn": {
+            "description": "Total instances currently pinned to this CN.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "not_placeable": {
+            "description": "Instances the placement engine could not place anywhere.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DrainMigrationRow"
+            }
+          },
+          "placeable": {
+            "description": "Instances the placement engine could find a target for.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DrainMigrationRow"
+            }
+          },
+          "quorum_at_risk": {
+            "description": "Names of instances whose name matches a quorum-service heuristic (vault / etcd / consul / tritond-sec / fdb / cockroach). Coarse — replaces nothing in the placement engine, just a UI hint that the operator should look twice.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quorum_ok": {
+            "description": "True when the heuristic finds no quorum members on this CN.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "capacity_ok",
+          "instances_on_cn",
+          "not_placeable",
+          "placeable",
+          "quorum_at_risk",
+          "quorum_ok"
         ]
       },
       "Error": {

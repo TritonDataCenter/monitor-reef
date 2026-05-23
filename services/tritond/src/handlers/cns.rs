@@ -258,6 +258,160 @@ pub(crate) async fn disable_cn(
     Ok(HttpResponseOk(CnView::from(cn)))
 }
 
+/// Dry-run a drain plan. For each instance hosted on `server_uuid`,
+/// ask the placement engine where the instance *would* move (with
+/// the source CN excluded via `avoid_cn`), and partition by whether
+/// a target was found. Also surfaces a quorum-services heuristic
+/// based on instance names.
+///
+/// Read-only — runs `pick()` with `Commit::No` so no reservations
+/// are written. Used by the operator console's BlastRadiusCard on
+/// the Compute Node detail page.
+pub(crate) async fn drain_preview(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<CnPath>,
+) -> Result<HttpResponseOk<tritond_api::DrainPreviewResponse>, HttpError> {
+    let ctx = rqctx.context();
+    // Read-only — same authorization as `get_cn`.
+    authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnGet).await?;
+    let server_uuid = path.into_inner().server_uuid;
+
+    let store: Arc<dyn tritond_store::Store> = ctx.store.clone();
+    let instances = store
+        .list_instances_for_cn(server_uuid)
+        .await
+        .map_err(store_error_to_http)?;
+
+    // Build a CN-uuid → hostname map upfront so each placement
+    // outcome can carry the readable name without an extra
+    // get_cn per row.
+    let approved_cns = store
+        .list_cns(Some(tritond_store::CnState::Approved))
+        .await
+        .map_err(store_error_to_http)?;
+    let hostname_for: std::collections::HashMap<uuid::Uuid, String> = approved_cns
+        .iter()
+        .map(|c| (c.server_uuid, c.hostname.clone()))
+        .collect();
+
+    // Heuristic: name substring match against known quorum services.
+    // Replaces nothing in the placement engine — this is just a UI
+    // hint so the operator looks twice at vault / etcd / fdb / ...
+    const QUORUM_HINTS: &[&str] = &["vault", "etcd", "consul", "tritond-sec", "fdb", "cockroach"];
+    let quorum_at_risk: Vec<String> = instances
+        .iter()
+        .filter(|i| {
+            let lower = i.name.to_lowercase();
+            QUORUM_HINTS.iter().any(|h| lower.contains(h))
+        })
+        .map(|i| i.name.clone())
+        .collect();
+
+    let mut placeable: Vec<tritond_api::DrainMigrationRow> = Vec::new();
+    let mut not_placeable: Vec<tritond_api::DrainMigrationRow> = Vec::new();
+
+    for inst in &instances {
+        let inst_silo = match store.get_tenant(inst.tenant_id).await {
+            Ok(t) => t.silo_id,
+            Err(e) => return Err(store_error_to_http(e)),
+        };
+
+        // Build a placement request modelled on the migration saga's
+        // construction (services/tritond/src/sagas/migration.rs).
+        // `avoid_cn = [server_uuid]` keeps the chain from picking the
+        // drain source itself; `Commit::No` means no reservation is
+        // written.
+        let request = tritond_placement::PlacementRequest {
+            instance_id: inst.id,
+            silo_uuid: inst_silo,
+            tenant_uuid: inst.tenant_id,
+            project_uuid: inst.project_id,
+            role: tritond_placement::types::CnRoleView::Tenant,
+            cpu_units: (inst.cpu as u32) * 100,
+            ram_mb: (inst.memory_bytes / (1024 * 1024)) as u64,
+            disk: std::collections::BTreeMap::new(),
+            required_traits: std::collections::BTreeMap::new(),
+            required_nic_tags: Vec::new(),
+            required_underlay: tritond_placement::types::UnderlayCapability {
+                ipv4: true,
+                ipv6: false,
+            },
+            required_devices: Vec::new(),
+            needs_hvm: matches!(inst.brand, tritond_store::InstanceBrand::Bhyve),
+            min_platform: None,
+            affinity: tritond_store::InstanceAffinity::empty(
+                inst.id,
+                inst.tenant_id,
+                chrono::Utc::now(),
+            ),
+            strategy_override: None,
+            force_cn: None,
+            ignore_scope_pin: false,
+            // Dry-run only — TTL value is moot since we never commit.
+            deadline: chrono::Utc::now() + chrono::Duration::hours(1),
+            avoid_cn: vec![server_uuid],
+            // Migration compat unset — the dry-run is for capacity
+            // planning, not for the bhyve migration filter chain.
+            migration: None,
+        };
+
+        let row_skel = tritond_api::DrainMigrationRow {
+            instance_id: inst.id,
+            instance_name: inst.name.clone(),
+            instance_tenant_id: inst.tenant_id,
+            instance_project_id: inst.project_id,
+            instance_cpu: inst.cpu as u32,
+            instance_ram_mb: (inst.memory_bytes / (1024 * 1024)) as u64,
+            target_cn_uuid: None,
+            target_cn_hostname: None,
+            reason: None,
+        };
+
+        match crate::placement::pick(&store, request, crate::placement::Commit::No).await {
+            Ok(outcome) => match outcome.chosen {
+                Some(target) => {
+                    placeable.push(tritond_api::DrainMigrationRow {
+                        target_cn_uuid: Some(target.server_uuid),
+                        target_cn_hostname: hostname_for.get(&target.server_uuid).cloned(),
+                        ..row_skel
+                    });
+                }
+                None => {
+                    // chain succeeded but picked nothing — treat as no-eligible-CN
+                    not_placeable.push(tritond_api::DrainMigrationRow {
+                        reason: Some("no eligible CN in dry-run".to_string()),
+                        ..row_skel
+                    });
+                }
+            },
+            Err(crate::placement::PickError::NoEligibleCn { .. }) => {
+                not_placeable.push(tritond_api::DrainMigrationRow {
+                    reason: Some(
+                        "no eligible CN — capacity, affinity, or scope pin rejected every candidate"
+                            .to_string(),
+                    ),
+                    ..row_skel
+                });
+            }
+            Err(crate::placement::PickError::Store(e)) => {
+                return Err(store_error_to_http(e));
+            }
+        }
+    }
+
+    let capacity_ok = not_placeable.is_empty() && !instances.is_empty();
+    let quorum_ok = quorum_at_risk.is_empty();
+
+    Ok(HttpResponseOk(tritond_api::DrainPreviewResponse {
+        instances_on_cn: instances.len(),
+        placeable,
+        not_placeable,
+        capacity_ok,
+        quorum_at_risk,
+        quorum_ok,
+    }))
+}
+
 pub(crate) async fn set_cn_role(
     rqctx: RequestContext<ApiContext>,
     path: Path<CnPath>,

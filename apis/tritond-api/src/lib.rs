@@ -942,6 +942,56 @@ pub struct CnPath {
     pub server_uuid: Uuid,
 }
 
+/// One row of the drain-preview migration plan. `target_cn_*` are
+/// populated when the placement engine found an eligible CN for the
+/// instance; otherwise `reason` carries the no-eligible-CN explanation.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DrainMigrationRow {
+    pub instance_id: Uuid,
+    pub instance_name: String,
+    pub instance_tenant_id: Uuid,
+    pub instance_project_id: Uuid,
+    /// CPU vCPUs the instance reserves (1 vCPU = 100 placement units).
+    pub instance_cpu: u32,
+    /// RAM the instance reserves, in MiB.
+    pub instance_ram_mb: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_cn_uuid: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_cn_hostname: Option<String>,
+    /// Set when no CN could be picked. One-line operator-readable
+    /// summary; full explain report is available via the operations
+    /// endpoint if the operator wants the chain detail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by
+/// the operator console's `BlastRadiusCard` to show the actual
+/// migration plan + capacity / quorum signals before commit.
+///
+/// `placeable` + `not_placeable` partition the instances currently
+/// hosted on the source CN. Iff `not_placeable` is empty the drain
+/// can proceed without operator intervention (capacity_ok = true).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DrainPreviewResponse {
+    /// Total instances currently pinned to this CN.
+    pub instances_on_cn: usize,
+    /// Instances the placement engine could find a target for.
+    pub placeable: Vec<DrainMigrationRow>,
+    /// Instances the placement engine could not place anywhere.
+    pub not_placeable: Vec<DrainMigrationRow>,
+    /// True when every instance can be placed off this CN.
+    pub capacity_ok: bool,
+    /// Names of instances whose name matches a quorum-service
+    /// heuristic (vault / etcd / consul / tritond-sec / fdb /
+    /// cockroach). Coarse — replaces nothing in the placement
+    /// engine, just a UI hint that the operator should look twice.
+    pub quorum_at_risk: Vec<String>,
+    /// True when the heuristic finds no quorum members on this CN.
+    pub quorum_ok: bool,
+}
+
 /// Optional state filter for `GET /v2/cns`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CnListQuery {
@@ -2393,6 +2443,28 @@ pub trait TritondApi {
         path: Path<CnPath>,
         body: TypedBody<SetCnRoleRequest>,
     ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
+    /// Dry-run the drain plan for one CN. For each instance currently
+    /// hosted on this CN the placement engine picks a candidate target
+    /// (excluding the source CN); the response partitions into
+    /// `placeable` (a target was found) and `not_placeable` (no
+    /// eligible CN). Also surfaces a quorum heuristic so the operator
+    /// can spot vault / etcd / fdb / etc. members before committing
+    /// the drain. Read-only — no reservations are written.
+    ///
+    /// Used by the operator console's BlastRadiusCard on Compute Node
+    /// detail (admin v3 design) to show "12 instances would migrate
+    /// to: monroe-r2-s01 × 7, monroe-r2-s02 × 5; capacity OK; quorum
+    /// at risk: vault-primary" before the operator commits.
+    #[endpoint {
+        method = POST,
+        path = "/v2/cns/{server_uuid}/drain/preview",
+        tags = ["cns"],
+    }]
+    async fn drain_preview(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<DrainPreviewResponse>, HttpError>;
 
     /// Read the current auto-approve window, if open.
     /// Returns `200 OK` with `null` when no window is open.

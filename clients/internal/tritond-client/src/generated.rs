@@ -2553,6 +2553,181 @@ pub mod types {
         }
     }
 
+    #[doc = "One row of the drain-preview migration plan. `target_cn_*` are populated when the placement engine found an eligible CN for the instance; otherwise `reason` carries the no-eligible-CN explanation."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One row of the drain-preview migration plan. `target_cn_*` are populated when the placement engine found an eligible CN for the instance; otherwise `reason` carries the no-eligible-CN explanation.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"instance_cpu\","]
+    #[doc = "    \"instance_id\","]
+    #[doc = "    \"instance_name\","]
+    #[doc = "    \"instance_project_id\","]
+    #[doc = "    \"instance_ram_mb\","]
+    #[doc = "    \"instance_tenant_id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"instance_cpu\": {"]
+    #[doc = "      \"description\": \"CPU vCPUs the instance reserves (1 vCPU = 100 placement units).\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"instance_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_project_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"instance_ram_mb\": {"]
+    #[doc = "      \"description\": \"RAM the instance reserves, in MiB.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"instance_tenant_id\": {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"reason\": {"]
+    #[doc = "      \"description\": \"Set when no CN could be picked. One-line operator-readable summary; full explain report is available via the operations endpoint if the operator wants the chain detail.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"target_cn_hostname\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"target_cn_uuid\": {"]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DrainMigrationRow {
+        #[doc = "CPU vCPUs the instance reserves (1 vCPU = 100 placement units)."]
+        pub instance_cpu: u32,
+        pub instance_id: ::uuid::Uuid,
+        pub instance_name: ::std::string::String,
+        pub instance_project_id: ::uuid::Uuid,
+        #[doc = "RAM the instance reserves, in MiB."]
+        pub instance_ram_mb: u64,
+        pub instance_tenant_id: ::uuid::Uuid,
+        #[doc = "Set when no CN could be picked. One-line operator-readable summary; full explain report is available via the operations endpoint if the operator wants the chain detail."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub reason: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub target_cn_hostname: ::std::option::Option<::std::string::String>,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub target_cn_uuid: ::std::option::Option<::uuid::Uuid>,
+    }
+
+    impl DrainMigrationRow {
+        pub fn builder() -> builder::DrainMigrationRow {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\n\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response from `POST /v2/cns/{server_uuid}/drain/preview`. Used by the operator console's `BlastRadiusCard` to show the actual migration plan + capacity / quorum signals before commit.\\n\\n`placeable` + `not_placeable` partition the instances currently hosted on the source CN. Iff `not_placeable` is empty the drain can proceed without operator intervention (capacity_ok = true).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"capacity_ok\","]
+    #[doc = "    \"instances_on_cn\","]
+    #[doc = "    \"not_placeable\","]
+    #[doc = "    \"placeable\","]
+    #[doc = "    \"quorum_at_risk\","]
+    #[doc = "    \"quorum_ok\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"capacity_ok\": {"]
+    #[doc = "      \"description\": \"True when every instance can be placed off this CN.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"instances_on_cn\": {"]
+    #[doc = "      \"description\": \"Total instances currently pinned to this CN.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"not_placeable\": {"]
+    #[doc = "      \"description\": \"Instances the placement engine could not place anywhere.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DrainMigrationRow\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"placeable\": {"]
+    #[doc = "      \"description\": \"Instances the placement engine could find a target for.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/DrainMigrationRow\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"quorum_at_risk\": {"]
+    #[doc = "      \"description\": \"Names of instances whose name matches a quorum-service heuristic (vault / etcd / consul / tritond-sec / fdb / cockroach). Coarse — replaces nothing in the placement engine, just a UI hint that the operator should look twice.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"quorum_ok\": {"]
+    #[doc = "      \"description\": \"True when the heuristic finds no quorum members on this CN.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DrainPreviewResponse {
+        #[doc = "True when every instance can be placed off this CN."]
+        pub capacity_ok: bool,
+        #[doc = "Total instances currently pinned to this CN."]
+        pub instances_on_cn: u32,
+        #[doc = "Instances the placement engine could not place anywhere."]
+        pub not_placeable: ::std::vec::Vec<DrainMigrationRow>,
+        #[doc = "Instances the placement engine could find a target for."]
+        pub placeable: ::std::vec::Vec<DrainMigrationRow>,
+        #[doc = "Names of instances whose name matches a quorum-service heuristic (vault / etcd / consul / tritond-sec / fdb / cockroach). Coarse — replaces nothing in the placement engine, just a UI hint that the operator should look twice."]
+        pub quorum_at_risk: ::std::vec::Vec<::std::string::String>,
+        #[doc = "True when the heuristic finds no quorum members on this CN."]
+        pub quorum_ok: bool,
+    }
+
+    impl DrainPreviewResponse {
+        pub fn builder() -> builder::DrainPreviewResponse {
+            Default::default()
+        }
+    }
+
     #[doc = "Error information from a response."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -15243,6 +15418,296 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct DrainMigrationRow {
+            instance_cpu: ::std::result::Result<u32, ::std::string::String>,
+            instance_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            instance_name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            instance_project_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            instance_ram_mb: ::std::result::Result<u64, ::std::string::String>,
+            instance_tenant_id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            reason: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            target_cn_hostname: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            target_cn_uuid:
+                ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DrainMigrationRow {
+            fn default() -> Self {
+                Self {
+                    instance_cpu: Err("no value supplied for instance_cpu".to_string()),
+                    instance_id: Err("no value supplied for instance_id".to_string()),
+                    instance_name: Err("no value supplied for instance_name".to_string()),
+                    instance_project_id: Err(
+                        "no value supplied for instance_project_id".to_string()
+                    ),
+                    instance_ram_mb: Err("no value supplied for instance_ram_mb".to_string()),
+                    instance_tenant_id: Err("no value supplied for instance_tenant_id".to_string()),
+                    reason: Ok(Default::default()),
+                    target_cn_hostname: Ok(Default::default()),
+                    target_cn_uuid: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl DrainMigrationRow {
+            pub fn instance_cpu<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_cpu = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_cpu: {e}"));
+                self
+            }
+            pub fn instance_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_id: {e}"));
+                self
+            }
+            pub fn instance_name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for instance_name: {e}"));
+                self
+            }
+            pub fn instance_project_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_project_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for instance_project_id: {e}")
+                });
+                self
+            }
+            pub fn instance_ram_mb<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_ram_mb = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for instance_ram_mb: {e}")
+                });
+                self
+            }
+            pub fn instance_tenant_id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instance_tenant_id = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for instance_tenant_id: {e}")
+                });
+                self
+            }
+            pub fn reason<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.reason = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for reason: {e}"));
+                self
+            }
+            pub fn target_cn_hostname<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.target_cn_hostname = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for target_cn_hostname: {e}")
+                });
+                self
+            }
+            pub fn target_cn_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.target_cn_uuid = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for target_cn_uuid: {e}")
+                });
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DrainMigrationRow> for super::DrainMigrationRow {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DrainMigrationRow,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    instance_cpu: value.instance_cpu?,
+                    instance_id: value.instance_id?,
+                    instance_name: value.instance_name?,
+                    instance_project_id: value.instance_project_id?,
+                    instance_ram_mb: value.instance_ram_mb?,
+                    instance_tenant_id: value.instance_tenant_id?,
+                    reason: value.reason?,
+                    target_cn_hostname: value.target_cn_hostname?,
+                    target_cn_uuid: value.target_cn_uuid?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DrainMigrationRow> for DrainMigrationRow {
+            fn from(value: super::DrainMigrationRow) -> Self {
+                Self {
+                    instance_cpu: Ok(value.instance_cpu),
+                    instance_id: Ok(value.instance_id),
+                    instance_name: Ok(value.instance_name),
+                    instance_project_id: Ok(value.instance_project_id),
+                    instance_ram_mb: Ok(value.instance_ram_mb),
+                    instance_tenant_id: Ok(value.instance_tenant_id),
+                    reason: Ok(value.reason),
+                    target_cn_hostname: Ok(value.target_cn_hostname),
+                    target_cn_uuid: Ok(value.target_cn_uuid),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DrainPreviewResponse {
+            capacity_ok: ::std::result::Result<bool, ::std::string::String>,
+            instances_on_cn: ::std::result::Result<u32, ::std::string::String>,
+            not_placeable: ::std::result::Result<
+                ::std::vec::Vec<super::DrainMigrationRow>,
+                ::std::string::String,
+            >,
+            placeable: ::std::result::Result<
+                ::std::vec::Vec<super::DrainMigrationRow>,
+                ::std::string::String,
+            >,
+            quorum_at_risk: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            quorum_ok: ::std::result::Result<bool, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for DrainPreviewResponse {
+            fn default() -> Self {
+                Self {
+                    capacity_ok: Err("no value supplied for capacity_ok".to_string()),
+                    instances_on_cn: Err("no value supplied for instances_on_cn".to_string()),
+                    not_placeable: Err("no value supplied for not_placeable".to_string()),
+                    placeable: Err("no value supplied for placeable".to_string()),
+                    quorum_at_risk: Err("no value supplied for quorum_at_risk".to_string()),
+                    quorum_ok: Err("no value supplied for quorum_ok".to_string()),
+                }
+            }
+        }
+
+        impl DrainPreviewResponse {
+            pub fn capacity_ok<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.capacity_ok = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for capacity_ok: {e}"));
+                self
+            }
+            pub fn instances_on_cn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.instances_on_cn = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for instances_on_cn: {e}")
+                });
+                self
+            }
+            pub fn not_placeable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DrainMigrationRow>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.not_placeable = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for not_placeable: {e}"));
+                self
+            }
+            pub fn placeable<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::DrainMigrationRow>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.placeable = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for placeable: {e}"));
+                self
+            }
+            pub fn quorum_at_risk<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.quorum_at_risk = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for quorum_at_risk: {e}")
+                });
+                self
+            }
+            pub fn quorum_ok<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.quorum_ok = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for quorum_ok: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DrainPreviewResponse> for super::DrainPreviewResponse {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DrainPreviewResponse,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    capacity_ok: value.capacity_ok?,
+                    instances_on_cn: value.instances_on_cn?,
+                    not_placeable: value.not_placeable?,
+                    placeable: value.placeable?,
+                    quorum_at_risk: value.quorum_at_risk?,
+                    quorum_ok: value.quorum_ok?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DrainPreviewResponse> for DrainPreviewResponse {
+            fn from(value: super::DrainPreviewResponse) -> Self {
+                Self {
+                    capacity_ok: Ok(value.capacity_ok),
+                    instances_on_cn: Ok(value.instances_on_cn),
+                    not_placeable: Ok(value.not_placeable),
+                    placeable: Ok(value.placeable),
+                    quorum_at_risk: Ok(value.quorum_at_risk),
+                    quorum_ok: Ok(value.quorum_ok),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Error {
             error_code: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -26305,6 +26770,11 @@ impl Client {
         builder::DisableCn::new(self)
     }
 
+    #[doc = "Dry-run the drain plan for one CN. For each instance currently\n\nhosted on this CN the placement engine picks a candidate target (excluding the source CN); the response partitions into `placeable` (a target was found) and `not_placeable` (no eligible CN). Also surfaces a quorum heuristic so the operator can spot vault / etcd / fdb / etc. members before committing the drain. Read-only — no reservations are written.\n\nUsed by the operator console's BlastRadiusCard on Compute Node detail (admin v3 design) to show \"12 instances would migrate to: monroe-r2-s01 × 7, monroe-r2-s02 × 5; capacity OK; quorum at risk: vault-primary\" before the operator commits.\n\nSends a `POST` request to `/v2/cns/{server_uuid}/drain/preview`\n\n```ignore\nlet response = client.drain_preview()\n    .server_uuid(server_uuid)\n    .send()\n    .await;\n```"]
+    pub fn drain_preview(&self) -> builder::DrainPreview<'_> {
+        builder::DrainPreview::new(self)
+    }
+
     #[doc = "Range query for the per-CN metrics dashboard (NodeDetail\n\npage's Metrics tab). Returns one series per CPU mode for the requested CN's global zone -- host services + kernel time not charged to a tenant zone. Mirrors the legacy cmon `/v1/discover` -> per-CN scrape pattern, just typed.\n\nAuth: requires fleet-read access to the CN (same scope as `get_cn`). No tenant filter -- per-CN samples are operator surface.\n\nSends a `GET` request to `/v2/cns/{server_uuid}/metrics`\n\nArguments:\n- `server_uuid`\n- `range`: Short range identifier (e.g. `1h`).\n- `schema`: Schema name. Defaults to `triton.cpu_per_zone`.\n```ignore\nlet response = client.cn_metrics_range()\n    .server_uuid(server_uuid)\n    .range(range)\n    .schema(schema)\n    .send()\n    .await;\n```"]
     pub fn cn_metrics_range(&self) -> builder::CnMetricsRange<'_> {
         builder::CnMetricsRange::new(self)
@@ -29910,6 +30380,80 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "disable_cn",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::drain_preview`]\n\n[`Client::drain_preview`]: super::Client::drain_preview"]
+    #[derive(Debug, Clone)]
+    pub struct DrainPreview<'a> {
+        client: &'a super::Client,
+        server_uuid: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DrainPreview<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                server_uuid: Err("server_uuid was not initialized".to_string()),
+            }
+        }
+
+        pub fn server_uuid<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.server_uuid = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for server_uuid failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/cns/{server_uuid}/drain/preview`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::DrainPreviewResponse>, Error<types::Error>> {
+            let Self {
+                client,
+                server_uuid,
+            } = self;
+            let server_uuid = server_uuid.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/cns/{}/drain/preview",
+                client.baseurl,
+                encode_path(&server_uuid.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "drain_preview",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

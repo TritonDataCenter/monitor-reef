@@ -1058,6 +1058,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::cns::set_cn_role(rqctx, path, body).await
     }
 
+    async fn drain_preview(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<CnPath>,
+    ) -> Result<HttpResponseOk<tritond_api::DrainPreviewResponse>, HttpError> {
+        crate::handlers::cns::drain_preview(rqctx, path).await
+    }
+
     async fn get_auto_approve_window(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<Option<AutoApproveWindow>>, HttpError> {
