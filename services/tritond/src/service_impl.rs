@@ -32,16 +32,16 @@ use tritond_api::{
     CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
     InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
     LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
-    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
-    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
-    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
-    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
-    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
-    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
-    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
-    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    NewIdpConfig, NewImageFromBundle, NewImageFromImgapi, OpenAutoApproveRequest,
+    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
+    RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath,
+    SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
+    StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
+    StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
+    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
+    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, Instance, LegacyVm, NatGateway,
@@ -746,6 +746,14 @@ impl TritondApi for TritondServiceImpl {
         body: TypedBody<NewImageFromBundle>,
     ) -> Result<HttpResponseCreated<Image>, HttpError> {
         crate::handlers::images::create_silo_image_from_bundle(rqctx, path, body).await
+    }
+
+    async fn create_silo_image_from_imgapi(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewImageFromImgapi>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError> {
+        crate::handlers::images::create_silo_image_from_imgapi(rqctx, path, body).await
     }
 
     async fn list_tenant_images(

@@ -2877,6 +2877,55 @@
         }
       }
     },
+    "/v2/silos/{silo_id}/imgapi-images": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Register a `Silo`-scoped image from an IMGAPI v2",
+        "description": "manifest. The operator (or `tcadm image fetch-nocloud`) uploads the blob to Manta first, then POSTs the manifest + the public Manta URL + the SHA-256 of the bytes here. tritond derives every Image-record field from the manifest and persists `manta_url` as `source_url`. The per-CN agent then uses the existing source_url / sha256 fetch + verify path at provision time.\n\nReturns 400 on a manifest validation failure, sha256 shape error, or `files[]` count mismatch; 409 on a uuid or content collision within the silo.\n\nPath is `/imgapi-images` (sibling resource) to mirror the `image-bundles` precedent and sidestep any Dropshot literal-vs-`{image_id}` ambiguity at `/v2/silos/{silo_id}/images/...`.",
+        "operationId": "create_silo_image_from_imgapi",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "silo_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewImageFromImgapi"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v2/silos/{silo_id}/ssh-keys": {
       "get": {
         "tags": [
@@ -9664,6 +9713,16 @@
           "outcome"
         ]
       },
+      "Compression": {
+        "description": "Compression applied to a `File`'s bytes.",
+        "type": "string",
+        "enum": [
+          "gzip",
+          "bzip2",
+          "xz",
+          "none"
+        ]
+      },
       "ConfigEntry": {
         "description": "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console.",
         "type": "object",
@@ -10212,6 +10271,36 @@
           "request_id"
         ]
       },
+      "File": {
+        "description": "A single content blob.",
+        "type": "object",
+        "properties": {
+          "compression": {
+            "description": "Compression applied to the underlying ZFS stream.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Compression"
+              }
+            ]
+          },
+          "sha1": {
+            "description": "Lowercase 40-char hex SHA-1 of the compressed bytes (i.e. of what's on disk after the compression in [`File::compression`]).\n\nSHA-1 is the IMGAPI wire format. Our blob backend additionally computes SHA-256 and stores it on the out-of-band side-record for tamper-evidence; the on-wire manifest stays IMGAPI-faithful.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Size of the compressed bytes in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "compression",
+          "sha1",
+          "size"
+        ],
+        "additionalProperties": true
+      },
       "FirewallAction": {
         "type": "string",
         "enum": [
@@ -10679,6 +10768,46 @@
             "required": [
               "kind",
               "user_id"
+            ]
+          }
+        ]
+      },
+      "ImageType": {
+        "description": "Image content shape. Drives the brand selection at provision time and the `zfs receive` invocation on the agent.",
+        "oneOf": [
+          {
+            "description": "Zone-dataset image (`joyent` / `joyent-minimal` brand).",
+            "type": "string",
+            "enum": [
+              "zone-dataset"
+            ]
+          },
+          {
+            "description": "LX-branded zone dataset (`lx` brand).",
+            "type": "string",
+            "enum": [
+              "lx-dataset"
+            ]
+          },
+          {
+            "description": "Raw zvol image (`kvm` / `bhyve` brand).",
+            "type": "string",
+            "enum": [
+              "zvol"
+            ]
+          },
+          {
+            "description": "Docker layer image. Preserved for round-trip; not provisionable in our deployment.",
+            "type": "string",
+            "enum": [
+              "docker"
+            ]
+          },
+          {
+            "description": "Catch-all for less common image types. Preserved verbatim for round-trip via [`Manifest::extra`].",
+            "type": "string",
+            "enum": [
+              "other"
             ]
           }
         ]
@@ -11739,6 +11868,170 @@
           "tenant_id"
         ]
       },
+      "Manifest": {
+        "description": "An IMGAPI v2 image manifest.\n\nField order and `#[serde(default)]` placement matches the shape produced by `images.smartos.org` so we round-trip real-world manifests byte-equivalently (modulo whitespace).",
+        "type": "object",
+        "properties": {
+          "acl": {
+            "description": "Per-account ACL for non-public images. tritond extends this with silo/tenant/project visibility when serving `GET /images`.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "channels": {
+            "description": "Channels this image is published to (IMGAPI-channel flavor — distinct from our Manta publish channel). Preserved for round-trip; tritond currently ignores.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cpu_type": {
+            "nullable": true,
+            "description": "vmadm `cpu_type` (e.g. `host`, `qemu64`). zvol-only.",
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "description": "Optional human-readable description. Shown in `tritonadm image list` and the admin UI.",
+            "type": "string"
+          },
+          "disabled": {
+            "description": "When true, the image cannot be used to provision new instances. Existing instances are unaffected. Separate from `state` because an admin can flip `disabled` without changing the lifecycle, and vice versa.",
+            "default": false,
+            "type": "boolean"
+          },
+          "disk_driver": {
+            "nullable": true,
+            "description": "vmadm `disk_driver` (e.g. `virtio`). zvol-only.",
+            "type": "string"
+          },
+          "files": {
+            "description": "Content blobs. Conventionally exactly one entry; multiple entries are reserved for future split-blob images.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/File"
+            }
+          },
+          "homepage": {
+            "nullable": true,
+            "description": "Optional vendor or product homepage URL.",
+            "type": "string"
+          },
+          "image_size": {
+            "nullable": true,
+            "description": "Size of the boot disk in MiB, as provided to vmadm. zvol-only.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "name": {
+            "description": "Operator-facing name. Conventionally `<os>-<variant>` (e.g. `base-64-lts`, `ubuntu-24.04`).",
+            "type": "string"
+          },
+          "nic_driver": {
+            "nullable": true,
+            "description": "vmadm `nic_driver` (e.g. `virtio`). zvol-only.",
+            "type": "string"
+          },
+          "os": {
+            "description": "Guest OS family. Informational only on the agent side; tritond uses it for filtering in `GET /images?os=...`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Os"
+              }
+            ]
+          },
+          "owner": {
+            "description": "Owner of the image. Public unscoped images use [`ANONYMOUS_OWNER`]. In our deployment, this is the silo UUID.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "public": {
+            "description": "When true, the image is visible to everyone in the deployment regardless of `owner` / `acl`.",
+            "default": false,
+            "type": "boolean"
+          },
+          "published_at": {
+            "description": "When the image was published. Zero value means \"unpublished draft\" — generally only seen on `Creating` or `Unactivated` states.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "requirements": {
+            "nullable": true,
+            "description": "Provisioning constraints (brand, min/max platform, ssh requirement, network shape). The agent enforces these at provision time before calling vmadm.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Requirements"
+              }
+            ]
+          },
+          "state": {
+            "description": "Lifecycle state. `Active` is the only state a CN-side fetcher should ever see; the others are tritond-internal transitions.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/State"
+              }
+            ]
+          },
+          "tags": {
+            "description": "Free-form key/value tags. Surfaces in `tritonadm image list --tag …`.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "description": "Image content shape; selects the vmadm brand at provision time and which `zfs receive` target the agent uses.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageType"
+              }
+            ]
+          },
+          "urn": {
+            "nullable": true,
+            "description": "Optional legacy URN (`sdc:<vendor>:<name>:<version>`); preserved for round- trip but not used by the agent.",
+            "type": "string"
+          },
+          "users": {
+            "description": "Default users present in the guest image. `[{\"name\": \"root\"}, ...]`. Only meaningful for `Zvol`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "uuid": {
+            "description": "Globally unique image identifier. Operators and the per-CN agent both treat this as the primary key.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "v": {
+            "description": "Always equals [`SCHEMA_VERSION`]. The parser rejects any other value via [`Manifest::validate`].",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "version": {
+            "description": "Build / release version string. Free-form; conventionally either a semver-ish string or a date stamp.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "files",
+          "name",
+          "os",
+          "owner",
+          "published_at",
+          "state",
+          "type",
+          "uuid",
+          "v",
+          "version"
+        ],
+        "additionalProperties": true
+      },
       "MetaEntry": {
         "description": "One metadata entry as it appears on the wire (list / get responses). `value` is JSON; the flags + audit fields are flat at the top level so the OpenAPI schema reads cleanly.",
         "type": "object",
@@ -12232,6 +12525,25 @@
           "status"
         ]
       },
+      "NetworkRequirement": {
+        "description": "One network slot the image expects.",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "description": "Operator-facing description of intended purpose.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Nic name inside the guest (`net0`, `net1`, ...).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": true
+      },
       "NetworkResourceId": {
         "description": "Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (§6); the `#[non_exhaustive]` posture allows post-v1 additions.\n\nWire shape: `{ \"kind\": \"nat_gateway\", \"id\": \"<uuid>\" }`.",
         "oneOf": [
@@ -12700,6 +13012,33 @@
         },
         "required": [
           "bundle_url"
+        ]
+      },
+      "NewImageFromImgapi": {
+        "description": "Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.\n\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\n\n## Why we carry our own sha256\n\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\n\n## URL derivation\n\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless.",
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "description": "Full IMGAPI v2 manifest as it would appear at `GET /images/{uuid}` on any IMGAPI server. tritond re-validates the manifest with `imgapi_manifest::Manifest::validate` before persisting.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Manifest"
+              }
+            ]
+          },
+          "manta_url": {
+            "description": "Public HTTPS URL where the blob in `manifest.files[0]` can be fetched. Persisted on the Image record as `source_url`.",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "Lowercase 64-char hex SHA-256 of the blob bytes (the same bytes whose SHA-1 appears in `manifest.files[0].sha1`). Required because the agent's existing integrity check verifies SHA-256.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manifest",
+          "manta_url",
+          "sha256"
         ]
       },
       "NewInstance": {
@@ -13447,6 +13786,19 @@
           "version"
         ]
       },
+      "Os": {
+        "description": "Guest OS family. Informational metadata for filtering; no validation logic depends on this value.",
+        "type": "string",
+        "enum": [
+          "smartos",
+          "linux",
+          "windows",
+          "bsd",
+          "illumos",
+          "plan9",
+          "other"
+        ]
+      },
       "Outcome": {
         "description": "Outcome of the action after the handler finished.",
         "oneOf": [
@@ -14180,6 +14532,44 @@
           "state"
         ]
       },
+      "Requirements": {
+        "description": "Provisioning constraints. The agent rejects a provision job when any of these fail against the host or the requested instance shape.",
+        "type": "object",
+        "properties": {
+          "brand": {
+            "nullable": true,
+            "description": "SmartOS brand the image is built for (e.g. `joyent-minimal`, `lx`, `kvm`, `bhyve`). Compared against the requested instance brand.",
+            "type": "string"
+          },
+          "max_platform": {
+            "description": "Ceiling platform per major release line. Same shape as `min_platform`; `<=` semantics.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "min_platform": {
+            "description": "Floor platform per major release line, e.g. `{\"7.0\": \"20141030T081701Z\"}`. The host's platform stamp must be lexicographically `>=` the entry for the host's major.",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "networks": {
+            "description": "Network requirements. Preserved for round-trip; tritond uses the count for \"must have at least N nics\" checks.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetworkRequirement"
+            }
+          },
+          "ssh_key": {
+            "nullable": true,
+            "description": "When true, instance creation must provide `ssh_authorized_keys`. Image rejects provisions without it. Conventional for cloud-init images.",
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
       "ResourceReference": {
         "description": "One resource a saga touches. Mirrors `tritond_saga::ResourceRef` on the wire; the type lives here so the API doesn't depend on the saga crate's serde shape directly.",
         "type": "object",
@@ -14877,6 +15267,46 @@
             "required": [
               "kind",
               "user_id"
+            ]
+          }
+        ]
+      },
+      "State": {
+        "description": "IMGAPI lifecycle states. `Active` is the only state a CN agent should encounter via a `GET /images/:uuid` from tritond; the others are intermediate transitions tritond drives internally.",
+        "oneOf": [
+          {
+            "description": "Newly-created manifest; no file content uploaded yet.",
+            "type": "string",
+            "enum": [
+              "creating"
+            ]
+          },
+          {
+            "description": "File uploaded but not yet activated for provision.",
+            "type": "string",
+            "enum": [
+              "unactivated"
+            ]
+          },
+          {
+            "description": "Ready for provision.",
+            "type": "string",
+            "enum": [
+              "active"
+            ]
+          },
+          {
+            "description": "Soft-deleted / archived; preserved for audit / rollback.",
+            "type": "string",
+            "enum": [
+              "disabled"
+            ]
+          },
+          {
+            "description": "Creation failed; left in place for forensics.",
+            "type": "string",
+            "enum": [
+              "failed"
             ]
           }
         ]
@@ -15582,6 +16012,19 @@
           "refresh_expires_at",
           "refresh_token"
         ]
+      },
+      "User": {
+        "description": "A default user present in the guest image (zvol-only).",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": true
       },
       "VerifyOutcome": {
         "description": "Result of [`crate::Chain::verify`].",

@@ -33,16 +33,16 @@ use tritond_api::{
     CnListQuery, CnPath, CompleteJobRequest, ConfigEntry, ConfigKeyPath, HealthResponse, ImagePath,
     InstanceDeleteQuery, InstanceLogsPath, LegacyCnSummary, LegacyVmListQuery, LegacyVmPath,
     LogTailQuery, LoginRequest, MetricsRangeQuery, NetworkRealizationRequest, NewApiKey,
-    NewIdpConfig, NewImageFromBundle, OpenAutoApproveRequest, ProvisioningBlueprint,
-    RefreshRequest, RegisterCnRequest, RegisterCnResponse, RegisterStatusQuery,
-    RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath, SiloTenantPath,
-    SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath, StorageClusterNodePath,
-    StorageClusterPath, StorageClusterUserPath, StorageClusterUserPolicyPath, TenantIdpPath,
-    TenantPath, TenantProjectFloatingIpPath, TenantProjectInstanceDiskPath,
-    TenantProjectInstanceNicPath, TenantProjectInstancePath, TenantProjectPath,
-    TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath, TenantProjectVpcNatGatewayPath,
-    TenantProjectVpcPath, TenantProjectVpcRouteTablePath, TenantProjectVpcRouteTableRoutePath,
-    TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
+    NewIdpConfig, NewImageFromBundle, NewImageFromImgapi, OpenAutoApproveRequest,
+    ProvisioningBlueprint, RefreshRequest, RegisterCnRequest, RegisterCnResponse,
+    RegisterStatusQuery, RegisterStatusResponse, SetCnRoleRequest, SetConfigRequest, SiloPath,
+    SiloTenantPath, SshKeyPath, StorageClusterAccessKeyPath, StorageClusterBucketPath,
+    StorageClusterNodePath, StorageClusterPath, StorageClusterUserPath,
+    StorageClusterUserPolicyPath, TenantIdpPath, TenantPath, TenantProjectFloatingIpPath,
+    TenantProjectInstanceDiskPath, TenantProjectInstanceNicPath, TenantProjectInstancePath,
+    TenantProjectPath, TenantProjectVpcDhcpMacPath, TenantProjectVpcFirewallRulePath,
+    TenantProjectVpcNatGatewayPath, TenantProjectVpcPath, TenantProjectVpcRouteTablePath,
+    TenantProjectVpcRouteTableRoutePath, TenantProjectVpcSubnetPath, TokenResponse, TritondApi,
     types::{
         ApiKeyView, AuditEvent, AutoApproveWindow, CnView, DhcpLease, DhcpPool, DhcpReservation,
         Disk, FirewallRule, FloatingIp, IdpConfigView, Image, ImageScope, Instance, JobKind,
@@ -335,6 +335,85 @@ pub(crate) async fn create_silo_image_from_bundle(
                         "name": image.name,
                         "sha256": image.sha256,
                         "bundle_url": req.bundle_url,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(image))
+        }
+        Err(e) => {
+            audit_image_create_failure(ctx, &principal, request_id, &e).await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+pub(crate) async fn create_silo_image_from_imgapi(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<SiloPath>,
+    body: TypedBody<NewImageFromImgapi>,
+) -> Result<HttpResponseCreated<Image>, HttpError> {
+    let ctx = rqctx.context();
+    let silo_id = path.into_inner().silo_id;
+    let principal = authenticate_and_authorize_in_silo(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::ImageCreate,
+        silo_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+    let manifest_uuid = req.manifest.uuid;
+    let manifest_name = req.manifest.name.clone();
+    let manta_url = req.manta_url.clone();
+
+    let new_image = match crate::imgapi_ingest::translate(req) {
+        Ok(n) => n,
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::ImageCreate,
+                    request_id,
+                    None,
+                    AuditOutcome::ClientError {
+                        code: 400,
+                        message: format!("imgapi ingest: {e:#}"),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "manifest_uuid": manifest_uuid,
+                        "manifest_name": manifest_name,
+                        "manta_url": manta_url,
+                    }),
+                )
+                .await;
+            return Err(HttpError::for_bad_request(
+                Some("BadRequest".to_string()),
+                format!("imgapi ingest: {e:#}"),
+            ));
+        }
+    };
+
+    match ctx.store.create_image_silo(silo_id, new_image).await {
+        Ok(image) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::ImageCreate,
+                    request_id,
+                    Some(format!("Image::\"{}\"", image.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Image::\"{}\"", image.id)),
+                    },
+                    serde_json::json!({
+                        "silo_id": silo_id,
+                        "name": image.name,
+                        "sha256": image.sha256,
+                        "manta_url": manta_url,
+                        "manifest_uuid": manifest_uuid,
                     }),
                 )
                 .await;

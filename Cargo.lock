@@ -6330,6 +6330,7 @@ dependencies = [
  "hex",
  "hmac",
  "http",
+ "imgapi-manifest",
  "jsonwebtoken",
  "mantad-client",
  "postcard",
@@ -6377,6 +6378,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dropshot",
+ "imgapi-manifest",
  "schemars 0.8.22",
  "serde",
  "serde_json",

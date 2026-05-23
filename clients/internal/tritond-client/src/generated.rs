@@ -1717,6 +1717,96 @@ pub mod types {
         }
     }
 
+    #[doc = "Compression applied to a `File`'s bytes."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Compression applied to a `File`'s bytes.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"gzip\","]
+    #[doc = "    \"bzip2\","]
+    #[doc = "    \"xz\","]
+    #[doc = "    \"none\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum Compression {
+        #[serde(rename = "gzip")]
+        Gzip,
+        #[serde(rename = "bzip2")]
+        Bzip2,
+        #[serde(rename = "xz")]
+        Xz,
+        #[serde(rename = "none")]
+        None,
+    }
+
+    impl ::std::fmt::Display for Compression {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Gzip => f.write_str("gzip"),
+                Self::Bzip2 => f.write_str("bzip2"),
+                Self::Xz => f.write_str("xz"),
+                Self::None => f.write_str("none"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for Compression {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "gzip" => Ok(Self::Gzip),
+                "bzip2" => Ok(Self::Bzip2),
+                "xz" => Ok(Self::Xz),
+                "none" => Ok(Self::None),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for Compression {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for Compression {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for Compression {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "One cluster-wide configuration key with its current value, default, description, and operational metadata. Returned by the `/v2/config` endpoints; consumed by `tcadm config` and the admin console."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2770,6 +2860,61 @@ pub mod types {
         }
     }
 
+    #[doc = "A single content blob."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A single content blob.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"compression\","]
+    #[doc = "    \"sha1\","]
+    #[doc = "    \"size\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"compression\": {"]
+    #[doc = "      \"description\": \"Compression applied to the underlying ZFS stream.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Compression\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"sha1\": {"]
+    #[doc = "      \"description\": \"Lowercase 40-char hex SHA-1 of the compressed bytes (i.e. of what's on disk after the compression in [`File::compression`]).\\n\\nSHA-1 is the IMGAPI wire format. Our blob backend additionally computes SHA-256 and stores it on the out-of-band side-record for tamper-evidence; the on-wire manifest stays IMGAPI-faithful.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"size\": {"]
+    #[doc = "      \"description\": \"Size of the compressed bytes in bytes.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": true"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct File {
+        #[doc = "Compression applied to the underlying ZFS stream."]
+        pub compression: Compression,
+        #[doc = "Lowercase 40-char hex SHA-1 of the compressed bytes (i.e. of what's on disk after the compression in [`File::compression`]).\n\nSHA-1 is the IMGAPI wire format. Our blob backend additionally computes SHA-256 and stores it on the out-of-band side-record for tamper-evidence; the on-wire manifest stays IMGAPI-faithful."]
+        pub sha1: ::std::string::String,
+        #[doc = "Size of the compressed bytes in bytes."]
+        pub size: u64,
+    }
+
+    impl File {
+        pub fn builder() -> builder::File {
+            Default::default()
+        }
+    }
+
     #[doc = "`FirewallAction`"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3773,6 +3918,135 @@ pub mod types {
         Project { project_id: ::uuid::Uuid },
         #[serde(rename = "user")]
         User { user_id: ::uuid::Uuid },
+    }
+
+    #[doc = "Image content shape. Drives the brand selection at provision time and the `zfs receive` invocation on the agent."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Image content shape. Drives the brand selection at provision time and the `zfs receive` invocation on the agent.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Zone-dataset image (`joyent` / `joyent-minimal` brand).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"zone-dataset\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"LX-branded zone dataset (`lx` brand).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"lx-dataset\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Raw zvol image (`kvm` / `bhyve` brand).\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"zvol\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Docker layer image. Preserved for round-trip; not provisionable in our deployment.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"docker\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Catch-all for less common image types. Preserved verbatim for round-trip via [`Manifest::extra`].\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"other\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum ImageType {
+        #[doc = "Zone-dataset image (`joyent` / `joyent-minimal` brand)."]
+        #[serde(rename = "zone-dataset")]
+        ZoneDataset,
+        #[doc = "LX-branded zone dataset (`lx` brand)."]
+        #[serde(rename = "lx-dataset")]
+        LxDataset,
+        #[doc = "Raw zvol image (`kvm` / `bhyve` brand)."]
+        #[serde(rename = "zvol")]
+        Zvol,
+        #[doc = "Docker layer image. Preserved for round-trip; not provisionable in our deployment."]
+        #[serde(rename = "docker")]
+        Docker,
+        #[doc = "Catch-all for less common image types. Preserved verbatim for round-trip via [`Manifest::extra`]."]
+        #[serde(rename = "other")]
+        Other,
+    }
+
+    impl ::std::fmt::Display for ImageType {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::ZoneDataset => f.write_str("zone-dataset"),
+                Self::LxDataset => f.write_str("lx-dataset"),
+                Self::Zvol => f.write_str("zvol"),
+                Self::Docker => f.write_str("docker"),
+                Self::Other => f.write_str("other"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for ImageType {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "zone-dataset" => Ok(Self::ZoneDataset),
+                "lx-dataset" => Ok(Self::LxDataset),
+                "zvol" => Ok(Self::Zvol),
+                "docker" => Ok(Self::Docker),
+                "other" => Ok(Self::Other),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for ImageType {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for ImageType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for ImageType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
     }
 
     #[doc = "Per-port IMDS binding shipped from tritond to tritonagent in the provisioning blueprint -- the data the agent's `imds_bindings` reverse-lookup table needs so the IMDS HTTP listener can resolve caller identity from a connection's peer address (the design's \"Nitro card\" caller-ID rule). See `IMDS_DESIGN.md` §2.1.\n\n`pseudo_src` is the CN-unique address the proteus kmod SNATs this port's IMDS-bound traffic to; `port_id` is the kmod-side port identifier; `instance_id` is the VM this port belongs to.\n\nOn the wire this is one entry per port that has IMDS wired; a blueprint may carry zero, one, or several (one per VPC the instance has a NIC on, when multi-VPC IMDS lands; today: 0 or 1)."]
@@ -5216,6 +5490,275 @@ pub mod types {
         }
     }
 
+    #[doc = "An IMGAPI v2 image manifest.\n\nField order and `#[serde(default)]` placement matches the shape produced by `images.smartos.org` so we round-trip real-world manifests byte-equivalently (modulo whitespace)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"An IMGAPI v2 image manifest.\\n\\nField order and `#[serde(default)]` placement matches the shape produced by `images.smartos.org` so we round-trip real-world manifests byte-equivalently (modulo whitespace).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"files\","]
+    #[doc = "    \"name\","]
+    #[doc = "    \"os\","]
+    #[doc = "    \"owner\","]
+    #[doc = "    \"published_at\","]
+    #[doc = "    \"state\","]
+    #[doc = "    \"type\","]
+    #[doc = "    \"uuid\","]
+    #[doc = "    \"v\","]
+    #[doc = "    \"version\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"acl\": {"]
+    #[doc = "      \"description\": \"Per-account ACL for non-public images. tritond extends this with silo/tenant/project visibility when serving `GET /images`.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"channels\": {"]
+    #[doc = "      \"description\": \"Channels this image is published to (IMGAPI-channel flavor — distinct from our Manta publish channel). Preserved for round-trip; tritond currently ignores.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"cpu_type\": {"]
+    #[doc = "      \"description\": \"vmadm `cpu_type` (e.g. `host`, `qemu64`). zvol-only.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"Optional human-readable description. Shown in `tritonadm image list` and the admin UI.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"disabled\": {"]
+    #[doc = "      \"description\": \"When true, the image cannot be used to provision new instances. Existing instances are unaffected. Separate from `state` because an admin can flip `disabled` without changing the lifecycle, and vice versa.\","]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"disk_driver\": {"]
+    #[doc = "      \"description\": \"vmadm `disk_driver` (e.g. `virtio`). zvol-only.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"files\": {"]
+    #[doc = "      \"description\": \"Content blobs. Conventionally exactly one entry; multiple entries are reserved for future split-blob images.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/File\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"homepage\": {"]
+    #[doc = "      \"description\": \"Optional vendor or product homepage URL.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"image_size\": {"]
+    #[doc = "      \"description\": \"Size of the boot disk in MiB, as provided to vmadm. zvol-only.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Operator-facing name. Conventionally `<os>-<variant>` (e.g. `base-64-lts`, `ubuntu-24.04`).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"nic_driver\": {"]
+    #[doc = "      \"description\": \"vmadm `nic_driver` (e.g. `virtio`). zvol-only.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"os\": {"]
+    #[doc = "      \"description\": \"Guest OS family. Informational only on the agent side; tritond uses it for filtering in `GET /images?os=...`.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Os\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"owner\": {"]
+    #[doc = "      \"description\": \"Owner of the image. Public unscoped images use [`ANONYMOUS_OWNER`]. In our deployment, this is the silo UUID.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"public\": {"]
+    #[doc = "      \"description\": \"When true, the image is visible to everyone in the deployment regardless of `owner` / `acl`.\","]
+    #[doc = "      \"default\": false,"]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"published_at\": {"]
+    #[doc = "      \"description\": \"When the image was published. Zero value means \\\"unpublished draft\\\" — generally only seen on `Creating` or `Unactivated` states.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"requirements\": {"]
+    #[doc = "      \"description\": \"Provisioning constraints (brand, min/max platform, ssh requirement, network shape). The agent enforces these at provision time before calling vmadm.\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Requirements\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"Lifecycle state. `Active` is the only state a CN-side fetcher should ever see; the others are tritond-internal transitions.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/State\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"tags\": {"]
+    #[doc = "      \"description\": \"Free-form key/value tags. Surfaces in `tritonadm image list --tag …`.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"type\": {"]
+    #[doc = "      \"description\": \"Image content shape; selects the vmadm brand at provision time and which `zfs receive` target the agent uses.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/ImageType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"urn\": {"]
+    #[doc = "      \"description\": \"Optional legacy URN (`sdc:<vendor>:<name>:<version>`); preserved for round- trip but not used by the agent.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"users\": {"]
+    #[doc = "      \"description\": \"Default users present in the guest image. `[{\\\"name\\\": \\\"root\\\"}, ...]`. Only meaningful for `Zvol`.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/User\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"uuid\": {"]
+    #[doc = "      \"description\": \"Globally unique image identifier. Operators and the per-CN agent both treat this as the primary key.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"v\": {"]
+    #[doc = "      \"description\": \"Always equals [`SCHEMA_VERSION`]. The parser rejects any other value via [`Manifest::validate`].\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Build / release version string. Free-form; conventionally either a semver-ish string or a date stamp.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": true"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Manifest {
+        #[doc = "Per-account ACL for non-public images. tritond extends this with silo/tenant/project visibility when serving `GET /images`."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub acl: ::std::vec::Vec<::uuid::Uuid>,
+        #[doc = "Channels this image is published to (IMGAPI-channel flavor — distinct from our Manta publish channel). Preserved for round-trip; tritond currently ignores."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub channels: ::std::vec::Vec<::std::string::String>,
+        #[doc = "vmadm `cpu_type` (e.g. `host`, `qemu64`). zvol-only."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub cpu_type: ::std::option::Option<::std::string::String>,
+        #[doc = "Optional human-readable description. Shown in `tritonadm image list` and the admin UI."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "When true, the image cannot be used to provision new instances. Existing instances are unaffected. Separate from `state` because an admin can flip `disabled` without changing the lifecycle, and vice versa."]
+        #[serde(default)]
+        pub disabled: bool,
+        #[doc = "vmadm `disk_driver` (e.g. `virtio`). zvol-only."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub disk_driver: ::std::option::Option<::std::string::String>,
+        #[doc = "Content blobs. Conventionally exactly one entry; multiple entries are reserved for future split-blob images."]
+        pub files: ::std::vec::Vec<File>,
+        #[doc = "Optional vendor or product homepage URL."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub homepage: ::std::option::Option<::std::string::String>,
+        #[doc = "Size of the boot disk in MiB, as provided to vmadm. zvol-only."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub image_size: ::std::option::Option<u64>,
+        #[doc = "Operator-facing name. Conventionally `<os>-<variant>` (e.g. `base-64-lts`, `ubuntu-24.04`)."]
+        pub name: ::std::string::String,
+        #[doc = "vmadm `nic_driver` (e.g. `virtio`). zvol-only."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub nic_driver: ::std::option::Option<::std::string::String>,
+        #[doc = "Guest OS family. Informational only on the agent side; tritond uses it for filtering in `GET /images?os=...`."]
+        pub os: Os,
+        #[doc = "Owner of the image. Public unscoped images use [`ANONYMOUS_OWNER`]. In our deployment, this is the silo UUID."]
+        pub owner: ::uuid::Uuid,
+        #[doc = "When true, the image is visible to everyone in the deployment regardless of `owner` / `acl`."]
+        #[serde(default)]
+        pub public: bool,
+        #[doc = "When the image was published. Zero value means \"unpublished draft\" — generally only seen on `Creating` or `Unactivated` states."]
+        pub published_at: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Provisioning constraints (brand, min/max platform, ssh requirement, network shape). The agent enforces these at provision time before calling vmadm."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub requirements: ::std::option::Option<Requirements>,
+        #[doc = "Lifecycle state. `Active` is the only state a CN-side fetcher should ever see; the others are tritond-internal transitions."]
+        pub state: State,
+        #[doc = "Free-form key/value tags. Surfaces in `tritonadm image list --tag …`."]
+        #[serde(
+            default,
+            skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
+        )]
+        pub tags: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        #[doc = "Image content shape; selects the vmadm brand at provision time and which `zfs receive` target the agent uses."]
+        #[serde(rename = "type")]
+        pub type_: ImageType,
+        #[doc = "Optional legacy URN (`sdc:<vendor>:<name>:<version>`); preserved for round- trip but not used by the agent."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub urn: ::std::option::Option<::std::string::String>,
+        #[doc = "Default users present in the guest image. `[{\"name\": \"root\"}, ...]`. Only meaningful for `Zvol`."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub users: ::std::vec::Vec<User>,
+        #[doc = "Globally unique image identifier. Operators and the per-CN agent both treat this as the primary key."]
+        pub uuid: ::uuid::Uuid,
+        #[doc = "Always equals [`SCHEMA_VERSION`]. The parser rejects any other value via [`Manifest::validate`]."]
+        pub v: u32,
+        #[doc = "Build / release version string. Free-form; conventionally either a semver-ish string or a date stamp."]
+        pub version: ::std::string::String,
+    }
+
+    impl Manifest {
+        pub fn builder() -> builder::Manifest {
+            Default::default()
+        }
+    }
+
     #[doc = "One metadata entry as it appears on the wire (list / get responses). `value` is JSON; the flags + audit fields are flat at the top level so the OpenAPI schema reads cleanly."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6564,6 +7107,51 @@ pub mod types {
         }
     }
 
+    #[doc = "One network slot the image expects."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"One network slot the image expects.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"Operator-facing description of intended purpose.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Nic name inside the guest (`net0`, `net1`, ...).\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": true"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NetworkRequirement {
+        #[doc = "Operator-facing description of intended purpose."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "Nic name inside the guest (`net0`, `net1`, ...)."]
+        pub name: ::std::string::String,
+    }
+
+    impl NetworkRequirement {
+        pub fn builder() -> builder::NetworkRequirement {
+            Default::default()
+        }
+    }
+
     #[doc = "Tagged identity of a network resource that may have realization rows. The realization endpoint (Slice H-13) dispatches into the matching record by `(kind, id)`. v1 ships variants for every resource the design doc names (§6); the `#[non_exhaustive]` posture allows post-v1 additions.\n\nWire shape: `{ \"kind\": \"nat_gateway\", \"id\": \"<uuid>\" }`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7312,6 +7900,58 @@ pub mod types {
 
     impl NewImageFromBundle {
         pub fn builder() -> builder::NewImageFromBundle {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.\n\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\n\n## Why we carry our own sha256\n\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\n\n## URL derivation\n\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.\\n\\nThe IMGAPI v2 manifest is the canonical Joyent / Triton image wire format. Operators (and the `tcadm image fetch-nocloud` pipeline once it lands) upload the binary blob to Manta out of band, then POST this body to register the image with tritond. tritond derives every `Image` field from the manifest plus the operator-supplied integrity metadata.\\n\\n## Why we carry our own sha256\\n\\nIMGAPI's `files[].sha1` is the spec-mandated digest; our per-CN agent verifies SHA-256 for defense-in-depth (the existing bundle ingest path uses SHA-256 too). The publisher computes both digests during the same streaming hash on the way to Manta and supplies both, so the agent's existing verifier needs no SHA-1 path.\\n\\n## URL derivation\\n\\n`manta_url` is the public HTTPS URL the per-CN agent will fetch the blob from. Conventionally `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does not enforce a layout — operators may host blobs anywhere HTTPS-reachable. The agent re-hashes the bytes against `sha256` regardless.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"manifest\","]
+    #[doc = "    \"manta_url\","]
+    #[doc = "    \"sha256\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"manifest\": {"]
+    #[doc = "      \"description\": \"Full IMGAPI v2 manifest as it would appear at `GET /images/{uuid}` on any IMGAPI server. tritond re-validates the manifest with `imgapi_manifest::Manifest::validate` before persisting.\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Manifest\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"manta_url\": {"]
+    #[doc = "      \"description\": \"Public HTTPS URL where the blob in `manifest.files[0]` can be fetched. Persisted on the Image record as `source_url`.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"sha256\": {"]
+    #[doc = "      \"description\": \"Lowercase 64-char hex SHA-256 of the blob bytes (the same bytes whose SHA-1 appears in `manifest.files[0].sha1`). Required because the agent's existing integrity check verifies SHA-256.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NewImageFromImgapi {
+        #[doc = "Full IMGAPI v2 manifest as it would appear at `GET /images/{uuid}` on any IMGAPI server. tritond re-validates the manifest with `imgapi_manifest::Manifest::validate` before persisting."]
+        pub manifest: Manifest,
+        #[doc = "Public HTTPS URL where the blob in `manifest.files[0]` can be fetched. Persisted on the Image record as `source_url`."]
+        pub manta_url: ::std::string::String,
+        #[doc = "Lowercase 64-char hex SHA-256 of the blob bytes (the same bytes whose SHA-1 appears in `manifest.files[0].sha1`). Required because the agent's existing integrity check verifies SHA-256."]
+        pub sha256: ::std::string::String,
+    }
+
+    impl NewImageFromImgapi {
+        pub fn builder() -> builder::NewImageFromImgapi {
             Default::default()
         }
     }
@@ -8725,6 +9365,111 @@ pub mod types {
         }
     }
 
+    #[doc = "Guest OS family. Informational metadata for filtering; no validation logic depends on this value."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Guest OS family. Informational metadata for filtering; no validation logic depends on this value.\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"smartos\","]
+    #[doc = "    \"linux\","]
+    #[doc = "    \"windows\","]
+    #[doc = "    \"bsd\","]
+    #[doc = "    \"illumos\","]
+    #[doc = "    \"plan9\","]
+    #[doc = "    \"other\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum Os {
+        #[serde(rename = "smartos")]
+        Smartos,
+        #[serde(rename = "linux")]
+        Linux,
+        #[serde(rename = "windows")]
+        Windows,
+        #[serde(rename = "bsd")]
+        Bsd,
+        #[serde(rename = "illumos")]
+        Illumos,
+        #[serde(rename = "plan9")]
+        Plan9,
+        #[serde(rename = "other")]
+        Other,
+    }
+
+    impl ::std::fmt::Display for Os {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Smartos => f.write_str("smartos"),
+                Self::Linux => f.write_str("linux"),
+                Self::Windows => f.write_str("windows"),
+                Self::Bsd => f.write_str("bsd"),
+                Self::Illumos => f.write_str("illumos"),
+                Self::Plan9 => f.write_str("plan9"),
+                Self::Other => f.write_str("other"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for Os {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "smartos" => Ok(Self::Smartos),
+                "linux" => Ok(Self::Linux),
+                "windows" => Ok(Self::Windows),
+                "bsd" => Ok(Self::Bsd),
+                "illumos" => Ok(Self::Illumos),
+                "plan9" => Ok(Self::Plan9),
+                "other" => Ok(Self::Other),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for Os {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for Os {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for Os {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Outcome of the action after the handler finished."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -9990,6 +10735,100 @@ pub mod types {
         }
     }
 
+    #[doc = "Provisioning constraints. The agent rejects a provision job when any of these fail against the host or the requested instance shape."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Provisioning constraints. The agent rejects a provision job when any of these fail against the host or the requested instance shape.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"brand\": {"]
+    #[doc = "      \"description\": \"SmartOS brand the image is built for (e.g. `joyent-minimal`, `lx`, `kvm`, `bhyve`). Compared against the requested instance brand.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"max_platform\": {"]
+    #[doc = "      \"description\": \"Ceiling platform per major release line. Same shape as `min_platform`; `<=` semantics.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"min_platform\": {"]
+    #[doc = "      \"description\": \"Floor platform per major release line, e.g. `{\\\"7.0\\\": \\\"20141030T081701Z\\\"}`. The host's platform stamp must be lexicographically `>=` the entry for the host's major.\","]
+    #[doc = "      \"type\": \"object\","]
+    #[doc = "      \"additionalProperties\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"networks\": {"]
+    #[doc = "      \"description\": \"Network requirements. Preserved for round-trip; tritond uses the count for \\\"must have at least N nics\\\" checks.\","]
+    #[doc = "      \"type\": \"array\","]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"$ref\": \"#/components/schemas/NetworkRequirement\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"ssh_key\": {"]
+    #[doc = "      \"description\": \"When true, instance creation must provide `ssh_authorized_keys`. Image rejects provisions without it. Conventional for cloud-init images.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": true"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct Requirements {
+        #[doc = "SmartOS brand the image is built for (e.g. `joyent-minimal`, `lx`, `kvm`, `bhyve`). Compared against the requested instance brand."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub brand: ::std::option::Option<::std::string::String>,
+        #[doc = "Ceiling platform per major release line. Same shape as `min_platform`; `<=` semantics."]
+        #[serde(
+            default,
+            skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
+        )]
+        pub max_platform: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        #[doc = "Floor platform per major release line, e.g. `{\"7.0\": \"20141030T081701Z\"}`. The host's platform stamp must be lexicographically `>=` the entry for the host's major."]
+        #[serde(
+            default,
+            skip_serializing_if = ":: std :: collections :: HashMap::is_empty"
+        )]
+        pub min_platform: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        #[doc = "Network requirements. Preserved for round-trip; tritond uses the count for \"must have at least N nics\" checks."]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
+        pub networks: ::std::vec::Vec<NetworkRequirement>,
+        #[doc = "When true, instance creation must provide `ssh_authorized_keys`. Image rejects provisions without it. Conventional for cloud-init images."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ssh_key: ::std::option::Option<bool>,
+    }
+
+    impl ::std::default::Default for Requirements {
+        fn default() -> Self {
+            Self {
+                brand: Default::default(),
+                max_platform: Default::default(),
+                min_platform: Default::default(),
+                networks: Default::default(),
+                ssh_key: Default::default(),
+            }
+        }
+    }
+
+    impl Requirements {
+        pub fn builder() -> builder::Requirements {
+            Default::default()
+        }
+    }
+
     #[doc = "One resource a saga touches. Mirrors `tritond_saga::ResourceRef` on the wire; the type lives here so the API doesn't depend on the saga crate's serde shape directly."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -11069,6 +11908,135 @@ pub mod types {
         Project { project_id: ::uuid::Uuid },
         #[serde(rename = "user")]
         User { user_id: ::uuid::Uuid },
+    }
+
+    #[doc = "IMGAPI lifecycle states. `Active` is the only state a CN agent should encounter via a `GET /images/:uuid` from tritond; the others are intermediate transitions tritond drives internally."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"IMGAPI lifecycle states. `Active` is the only state a CN agent should encounter via a `GET /images/:uuid` from tritond; the others are intermediate transitions tritond drives internally.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Newly-created manifest; no file content uploaded yet.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"creating\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"File uploaded but not yet activated for provision.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unactivated\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Ready for provision.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"active\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Soft-deleted / archived; preserved for audit / rollback.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"disabled\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Creation failed; left in place for forensics.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"failed\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum State {
+        #[doc = "Newly-created manifest; no file content uploaded yet."]
+        #[serde(rename = "creating")]
+        Creating,
+        #[doc = "File uploaded but not yet activated for provision."]
+        #[serde(rename = "unactivated")]
+        Unactivated,
+        #[doc = "Ready for provision."]
+        #[serde(rename = "active")]
+        Active,
+        #[doc = "Soft-deleted / archived; preserved for audit / rollback."]
+        #[serde(rename = "disabled")]
+        Disabled,
+        #[doc = "Creation failed; left in place for forensics."]
+        #[serde(rename = "failed")]
+        Failed,
+    }
+
+    impl ::std::fmt::Display for State {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Creating => f.write_str("creating"),
+                Self::Unactivated => f.write_str("unactivated"),
+                Self::Active => f.write_str("active"),
+                Self::Disabled => f.write_str("disabled"),
+                Self::Failed => f.write_str("failed"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for State {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "creating" => Ok(Self::Creating),
+                "unactivated" => Ok(Self::Unactivated),
+                "active" => Ok(Self::Active),
+                "disabled" => Ok(Self::Disabled),
+                "failed" => Ok(Self::Failed),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for State {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for State {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for State {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
     }
 
     #[doc = "Per-step status used in [`OperationStep::status`]. Lifecycle: `pending → running → (succeeded | failed)`. If the saga unwinds, each prior-Succeeded step transitions `succeeded → undo_running → (undone | undo_failed)`. A `succeeded` step that didn't need to be unwound (the saga succeeded overall) stays `succeeded`."]
@@ -12450,6 +13418,39 @@ pub mod types {
 
     impl TokenResponse {
         pub fn builder() -> builder::TokenResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "A default user present in the guest image (zvol-only)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A default user present in the guest image (zvol-only).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  },"]
+    #[doc = "  \"additionalProperties\": true"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct User {
+        pub name: ::std::string::String,
+    }
+
+    impl User {
+        pub fn builder() -> builder::User {
             Default::default()
         }
     }
@@ -15784,6 +16785,77 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct File {
+            compression: ::std::result::Result<super::Compression, ::std::string::String>,
+            sha1: ::std::result::Result<::std::string::String, ::std::string::String>,
+            size: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for File {
+            fn default() -> Self {
+                Self {
+                    compression: Err("no value supplied for compression".to_string()),
+                    sha1: Err("no value supplied for sha1".to_string()),
+                    size: Err("no value supplied for size".to_string()),
+                }
+            }
+        }
+
+        impl File {
+            pub fn compression<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Compression>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.compression = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for compression: {e}"));
+                self
+            }
+            pub fn sha1<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sha1 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sha1: {e}"));
+                self
+            }
+            pub fn size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<File> for super::File {
+            type Error = super::error::ConversionError;
+            fn try_from(value: File) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    compression: value.compression?,
+                    sha1: value.sha1?,
+                    size: value.size?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::File> for File {
+            fn from(value: super::File) -> Self {
+                Self {
+                    compression: Ok(value.compression),
+                    sha1: Ok(value.sha1),
+                    size: Ok(value.size),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct FirewallIcmpFilter {
             code: ::std::result::Result<u8, ::std::string::String>,
             type_: ::std::result::Result<u8, ::std::string::String>,
@@ -17800,6 +18872,405 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct Manifest {
+            acl: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            channels: ::std::result::Result<
+                ::std::vec::Vec<::std::string::String>,
+                ::std::string::String,
+            >,
+            cpu_type: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            disabled: ::std::result::Result<bool, ::std::string::String>,
+            disk_driver: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            files: ::std::result::Result<::std::vec::Vec<super::File>, ::std::string::String>,
+            homepage: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            image_size: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            nic_driver: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            os: ::std::result::Result<super::Os, ::std::string::String>,
+            owner: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            public: ::std::result::Result<bool, ::std::string::String>,
+            published_at: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            requirements: ::std::result::Result<
+                ::std::option::Option<super::Requirements>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<super::State, ::std::string::String>,
+            tags: ::std::result::Result<
+                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                ::std::string::String,
+            >,
+            type_: ::std::result::Result<super::ImageType, ::std::string::String>,
+            urn: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            users: ::std::result::Result<::std::vec::Vec<super::User>, ::std::string::String>,
+            uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            v: ::std::result::Result<u32, ::std::string::String>,
+            version: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Manifest {
+            fn default() -> Self {
+                Self {
+                    acl: Ok(Default::default()),
+                    channels: Ok(Default::default()),
+                    cpu_type: Ok(Default::default()),
+                    description: Ok(Default::default()),
+                    disabled: Ok(Default::default()),
+                    disk_driver: Ok(Default::default()),
+                    files: Err("no value supplied for files".to_string()),
+                    homepage: Ok(Default::default()),
+                    image_size: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                    nic_driver: Ok(Default::default()),
+                    os: Err("no value supplied for os".to_string()),
+                    owner: Err("no value supplied for owner".to_string()),
+                    public: Ok(Default::default()),
+                    published_at: Err("no value supplied for published_at".to_string()),
+                    requirements: Ok(Default::default()),
+                    state: Err("no value supplied for state".to_string()),
+                    tags: Ok(Default::default()),
+                    type_: Err("no value supplied for type_".to_string()),
+                    urn: Ok(Default::default()),
+                    users: Ok(Default::default()),
+                    uuid: Err("no value supplied for uuid".to_string()),
+                    v: Err("no value supplied for v".to_string()),
+                    version: Err("no value supplied for version".to_string()),
+                }
+            }
+        }
+
+        impl Manifest {
+            pub fn acl<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.acl = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for acl: {e}"));
+                self
+            }
+            pub fn channels<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.channels = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for channels: {e}"));
+                self
+            }
+            pub fn cpu_type<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.cpu_type = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for cpu_type: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn disabled<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disabled = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disabled: {e}"));
+                self
+            }
+            pub fn disk_driver<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.disk_driver = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for disk_driver: {e}"));
+                self
+            }
+            pub fn files<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::File>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.files = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for files: {e}"));
+                self
+            }
+            pub fn homepage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.homepage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for homepage: {e}"));
+                self
+            }
+            pub fn image_size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.image_size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for image_size: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn nic_driver<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.nic_driver = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for nic_driver: {e}"));
+                self
+            }
+            pub fn os<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Os>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.os = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for os: {e}"));
+                self
+            }
+            pub fn owner<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.owner = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for owner: {e}"));
+                self
+            }
+            pub fn public<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.public = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for public: {e}"));
+                self
+            }
+            pub fn published_at<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.published_at = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for published_at: {e}"));
+                self
+            }
+            pub fn requirements<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::Requirements>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.requirements = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for requirements: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::State>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
+            pub fn tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
+                self
+            }
+            pub fn type_<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::ImageType>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.type_ = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for type_: {e}"));
+                self
+            }
+            pub fn urn<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.urn = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for urn: {e}"));
+                self
+            }
+            pub fn users<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::User>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.users = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for users: {e}"));
+                self
+            }
+            pub fn uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for uuid: {e}"));
+                self
+            }
+            pub fn v<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.v = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for v: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Manifest> for super::Manifest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Manifest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    acl: value.acl?,
+                    channels: value.channels?,
+                    cpu_type: value.cpu_type?,
+                    description: value.description?,
+                    disabled: value.disabled?,
+                    disk_driver: value.disk_driver?,
+                    files: value.files?,
+                    homepage: value.homepage?,
+                    image_size: value.image_size?,
+                    name: value.name?,
+                    nic_driver: value.nic_driver?,
+                    os: value.os?,
+                    owner: value.owner?,
+                    public: value.public?,
+                    published_at: value.published_at?,
+                    requirements: value.requirements?,
+                    state: value.state?,
+                    tags: value.tags?,
+                    type_: value.type_?,
+                    urn: value.urn?,
+                    users: value.users?,
+                    uuid: value.uuid?,
+                    v: value.v?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Manifest> for Manifest {
+            fn from(value: super::Manifest) -> Self {
+                Self {
+                    acl: Ok(value.acl),
+                    channels: Ok(value.channels),
+                    cpu_type: Ok(value.cpu_type),
+                    description: Ok(value.description),
+                    disabled: Ok(value.disabled),
+                    disk_driver: Ok(value.disk_driver),
+                    files: Ok(value.files),
+                    homepage: Ok(value.homepage),
+                    image_size: Ok(value.image_size),
+                    name: Ok(value.name),
+                    nic_driver: Ok(value.nic_driver),
+                    os: Ok(value.os),
+                    owner: Ok(value.owner),
+                    public: Ok(value.public),
+                    published_at: Ok(value.published_at),
+                    requirements: Ok(value.requirements),
+                    state: Ok(value.state),
+                    tags: Ok(value.tags),
+                    type_: Ok(value.type_),
+                    urn: Ok(value.urn),
+                    users: Ok(value.users),
+                    uuid: Ok(value.uuid),
+                    v: Ok(value.v),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct MetaEntry {
             guest_visible: ::std::result::Result<bool, ::std::string::String>,
             guest_writable: ::std::result::Result<bool, ::std::string::String>,
@@ -19018,6 +20489,68 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NetworkRequirement {
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NetworkRequirement {
+            fn default() -> Self {
+                Self {
+                    description: Ok(Default::default()),
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl NetworkRequirement {
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NetworkRequirement> for super::NetworkRequirement {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NetworkRequirement,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    description: value.description?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NetworkRequirement> for NetworkRequirement {
+            fn from(value: super::NetworkRequirement) -> Self {
+                Self {
+                    description: Ok(value.description),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct NewApiKey {
             description: ::std::result::Result<::std::string::String, ::std::string::String>,
             scope: ::std::result::Result<super::ApiKeyScope, ::std::string::String>,
@@ -19822,6 +21355,79 @@ pub mod types {
             fn from(value: super::NewImageFromBundle) -> Self {
                 Self {
                     bundle_url: Ok(value.bundle_url),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct NewImageFromImgapi {
+            manifest: ::std::result::Result<super::Manifest, ::std::string::String>,
+            manta_url: ::std::result::Result<::std::string::String, ::std::string::String>,
+            sha256: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NewImageFromImgapi {
+            fn default() -> Self {
+                Self {
+                    manifest: Err("no value supplied for manifest".to_string()),
+                    manta_url: Err("no value supplied for manta_url".to_string()),
+                    sha256: Err("no value supplied for sha256".to_string()),
+                }
+            }
+        }
+
+        impl NewImageFromImgapi {
+            pub fn manifest<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::Manifest>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.manifest = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for manifest: {e}"));
+                self
+            }
+            pub fn manta_url<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.manta_url = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for manta_url: {e}"));
+                self
+            }
+            pub fn sha256<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.sha256 = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for sha256: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NewImageFromImgapi> for super::NewImageFromImgapi {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NewImageFromImgapi,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    manifest: value.manifest?,
+                    manta_url: value.manta_url?,
+                    sha256: value.sha256?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NewImageFromImgapi> for NewImageFromImgapi {
+            fn from(value: super::NewImageFromImgapi) -> Self {
+                Self {
+                    manifest: Ok(value.manifest),
+                    manta_url: Ok(value.manta_url),
+                    sha256: Ok(value.sha256),
                 }
             }
         }
@@ -23354,6 +24960,123 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct Requirements {
+            brand: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            max_platform: ::std::result::Result<
+                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                ::std::string::String,
+            >,
+            min_platform: ::std::result::Result<
+                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                ::std::string::String,
+            >,
+            networks: ::std::result::Result<
+                ::std::vec::Vec<super::NetworkRequirement>,
+                ::std::string::String,
+            >,
+            ssh_key: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for Requirements {
+            fn default() -> Self {
+                Self {
+                    brand: Ok(Default::default()),
+                    max_platform: Ok(Default::default()),
+                    min_platform: Ok(Default::default()),
+                    networks: Ok(Default::default()),
+                    ssh_key: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl Requirements {
+            pub fn brand<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.brand = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for brand: {e}"));
+                self
+            }
+            pub fn max_platform<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.max_platform = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for max_platform: {e}"));
+                self
+            }
+            pub fn min_platform<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.min_platform = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for min_platform: {e}"));
+                self
+            }
+            pub fn networks<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::vec::Vec<super::NetworkRequirement>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.networks = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for networks: {e}"));
+                self
+            }
+            pub fn ssh_key<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ssh_key = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ssh_key: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<Requirements> for super::Requirements {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: Requirements,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    brand: value.brand?,
+                    max_platform: value.max_platform?,
+                    min_platform: value.min_platform?,
+                    networks: value.networks?,
+                    ssh_key: value.ssh_key?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::Requirements> for Requirements {
+            fn from(value: super::Requirements) -> Self {
+                Self {
+                    brand: Ok(value.brand),
+                    max_platform: Ok(value.max_platform),
+                    min_platform: Ok(value.min_platform),
+                    networks: Ok(value.networks),
+                    ssh_key: Ok(value.ssh_key),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ResourceReference {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             scope: ::std::result::Result<super::ResourceScope, ::std::string::String>,
@@ -26311,6 +28034,47 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct User {
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for User {
+            fn default() -> Self {
+                Self {
+                    name: Err("no value supplied for name".to_string()),
+                }
+            }
+        }
+
+        impl User {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<User> for super::User {
+            type Error = super::error::ConversionError;
+            fn try_from(value: User) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { name: value.name? })
+            }
+        }
+
+        impl ::std::convert::From<super::User> for User {
+            fn from(value: super::User) -> Self {
+                Self {
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Vpc {
             created_at: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -26923,6 +28687,11 @@ impl Client {
     #[doc = "Register a `Silo`-scoped image\n\nSends a `POST` request to `/v2/silos/{silo_id}/images`\n\n```ignore\nlet response = client.create_silo_image()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn create_silo_image(&self) -> builder::CreateSiloImage<'_> {
         builder::CreateSiloImage::new(self)
+    }
+
+    #[doc = "Register a `Silo`-scoped image from an IMGAPI v2\n\nmanifest. The operator (or `tcadm image fetch-nocloud`) uploads the blob to Manta first, then POSTs the manifest + the public Manta URL + the SHA-256 of the bytes here. tritond derives every Image-record field from the manifest and persists `manta_url` as `source_url`. The per-CN agent then uses the existing source_url / sha256 fetch + verify path at provision time.\n\nReturns 400 on a manifest validation failure, sha256 shape error, or `files[]` count mismatch; 409 on a uuid or content collision within the silo.\n\nPath is `/imgapi-images` (sibling resource) to mirror the `image-bundles` precedent and sidestep any Dropshot literal-vs-`{image_id}` ambiguity at `/v2/silos/{silo_id}/images/...`.\n\nSends a `POST` request to `/v2/silos/{silo_id}/imgapi-images`\n\n```ignore\nlet response = client.create_silo_image_from_imgapi()\n    .silo_id(silo_id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_silo_image_from_imgapi(&self) -> builder::CreateSiloImageFromImgapi<'_> {
+        builder::CreateSiloImageFromImgapi::new(self)
     }
 
     #[doc = "List the SSH keys whose scope is exactly `Silo { silo_id }`\n\n(does NOT include Public — use `/v2/tenants/{tenant_id}/ssh-keys` for the unioned tenant view).\n\nSends a `GET` request to `/v2/silos/{silo_id}/ssh-keys`\n\n```ignore\nlet response = client.list_silo_ssh_keys()\n    .silo_id(silo_id)\n    .send()\n    .await;\n```"]
@@ -32962,6 +34731,107 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "create_silo_image",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::create_silo_image_from_imgapi`]\n\n[`Client::create_silo_image_from_imgapi`]: super::Client::create_silo_image_from_imgapi"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSiloImageFromImgapi<'a> {
+        client: &'a super::Client,
+        silo_id: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::NewImageFromImgapi, String>,
+    }
+
+    impl<'a> CreateSiloImageFromImgapi<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                silo_id: Err("silo_id was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn silo_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo_id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewImageFromImgapi>,
+            <V as std::convert::TryInto<types::NewImageFromImgapi>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewImageFromImgapi` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::NewImageFromImgapi,
+                ) -> types::builder::NewImageFromImgapi,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v2/silos/{silo_id}/imgapi-images`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+            let Self {
+                client,
+                silo_id,
+                body,
+            } = self;
+            let silo_id = silo_id.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewImageFromImgapi::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v2/silos/{}/imgapi-images",
+                client.baseurl,
+                encode_path(&silo_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_silo_image_from_imgapi",
             };
             client.pre(&mut request, &info).await?;
             let result = client.exec(request, &info).await;

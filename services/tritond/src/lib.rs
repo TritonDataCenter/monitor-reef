@@ -44,6 +44,7 @@ mod edge_cluster;
 mod error;
 mod handlers;
 mod imds_config;
+mod imgapi_ingest;
 mod lifecycle;
 mod principal;
 mod realized_meta;

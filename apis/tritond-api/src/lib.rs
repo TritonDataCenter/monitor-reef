@@ -118,6 +118,52 @@ pub struct NewImageFromBundle {
     pub bundle_url: String,
 }
 
+/// Request body for `POST /v2/silos/{silo_id}/images/from-imgapi`.
+///
+/// The IMGAPI v2 manifest is the canonical Joyent / Triton image
+/// wire format. Operators (and the `tcadm image fetch-nocloud`
+/// pipeline once it lands) upload the binary blob to Manta out
+/// of band, then POST this body to register the image with
+/// tritond. tritond derives every `Image` field from the
+/// manifest plus the operator-supplied integrity metadata.
+///
+/// ## Why we carry our own sha256
+///
+/// IMGAPI's `files[].sha1` is the spec-mandated digest; our
+/// per-CN agent verifies SHA-256 for defense-in-depth (the
+/// existing bundle ingest path uses SHA-256 too). The publisher
+/// computes both digests during the same streaming hash on the
+/// way to Manta and supplies both, so the agent's existing
+/// verifier needs no SHA-1 path.
+///
+/// ## URL derivation
+///
+/// `manta_url` is the public HTTPS URL the per-CN agent will
+/// fetch the blob from. Conventionally
+/// `<imgapi-blob-manta prefix>/<uuid>/file`, but tritond does
+/// not enforce a layout — operators may host blobs anywhere
+/// HTTPS-reachable. The agent re-hashes the bytes against
+/// `sha256` regardless.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct NewImageFromImgapi {
+    /// Full IMGAPI v2 manifest as it would appear at
+    /// `GET /images/{uuid}` on any IMGAPI server. tritond
+    /// re-validates the manifest with `imgapi_manifest::Manifest::validate`
+    /// before persisting.
+    pub manifest: imgapi_manifest::Manifest,
+
+    /// Public HTTPS URL where the blob in `manifest.files[0]`
+    /// can be fetched. Persisted on the Image record as
+    /// `source_url`.
+    pub manta_url: String,
+
+    /// Lowercase 64-char hex SHA-256 of the blob bytes
+    /// (the same bytes whose SHA-1 appears in
+    /// `manifest.files[0].sha1`). Required because the agent's
+    /// existing integrity check verifies SHA-256.
+    pub sha256: String,
+}
+
 /// Request body for `POST /v2/auth/api-keys`.
 ///
 /// `scope` defaults to [`ApiKeyScope::Full`] when omitted on the
@@ -3342,6 +3388,34 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<SiloPath>,
         body: TypedBody<NewImageFromBundle>,
+    ) -> Result<HttpResponseCreated<Image>, HttpError>;
+
+    /// Register a `Silo`-scoped image from an IMGAPI v2
+    /// manifest. The operator (or `tcadm image fetch-nocloud`)
+    /// uploads the blob to Manta first, then POSTs the manifest
+    /// + the public Manta URL + the SHA-256 of the bytes here.
+    /// tritond derives every Image-record field from the
+    /// manifest and persists `manta_url` as `source_url`. The
+    /// per-CN agent then uses the existing source_url / sha256
+    /// fetch + verify path at provision time.
+    ///
+    /// Returns 400 on a manifest validation failure, sha256
+    /// shape error, or `files[]` count mismatch; 409 on a uuid
+    /// or content collision within the silo.
+    ///
+    /// Path is `/imgapi-images` (sibling resource) to mirror
+    /// the `image-bundles` precedent and sidestep any Dropshot
+    /// literal-vs-`{image_id}` ambiguity at
+    /// `/v2/silos/{silo_id}/images/...`.
+    #[endpoint {
+        method = POST,
+        path = "/v2/silos/{silo_id}/imgapi-images",
+        tags = ["images"],
+    }]
+    async fn create_silo_image_from_imgapi(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<SiloPath>,
+        body: TypedBody<NewImageFromImgapi>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
     /// List images visible to the tenant: Public + Silo (of

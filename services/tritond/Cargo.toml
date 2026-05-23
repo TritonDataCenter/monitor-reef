@@ -64,6 +64,7 @@ tracing-subscriber = { workspace = true }
 tritond-api = { workspace = true }
 tritond-audit = { workspace = true }
 tritond-auth = { workspace = true }
+imgapi-manifest = { workspace = true }
 tritond-image-manifest = { workspace = true }
 tritond-logs = { workspace = true }
 tritond-metrics = { workspace = true, features = ["clickhouse"] }
