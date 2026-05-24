@@ -292,11 +292,64 @@ pub(crate) async fn create_project_instance(
     path: Path<TenantProjectPath>,
     body: TypedBody<NewInstance>,
 ) -> Result<HttpResponseCreated<Instance>, HttpError> {
-    let ctx = rqctx.context();
     let TenantProjectPath {
         tenant_id,
         project_id,
     } = path.into_inner();
+    create_instance_inner(rqctx, tenant_id, project_id, body.into_inner()).await
+}
+
+/// RFD 00007 AP-2d: `POST /v1/instances?tenant=&project=` body
+/// handler. Unpacks the query selectors, requires both `tenant=` and
+/// `project=` (the customer surface always requires a project scope
+/// for creates), then delegates to the same inner machinery as the
+/// v2 path-scoped handler. `silo=` is rejected with 400
+/// `ScopeNotAccepted` here per RFD 00007 D-Ap-8.
+pub(crate) async fn create_instance_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::ScopeSelectors>,
+    body: TypedBody<NewInstance>,
+) -> Result<HttpResponseCreated<Instance>, HttpError> {
+    let scope = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is not accepted on the customer surface; \
+             /v1/instances always creates inside the principal's silo"
+                .to_string(),
+        ));
+    }
+    let tenant_id = scope.tenant.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/instances requires `?tenant=<uuid>&project=<uuid>` selectors"
+                .to_string(),
+        )
+    })?;
+    let project_id = scope.project.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/instances requires `?tenant=<uuid>&project=<uuid>` selectors"
+                .to_string(),
+        )
+    })?;
+    create_instance_inner(rqctx, tenant_id, project_id, body.into_inner()).await
+}
+
+/// Shared inner-impl for instance creation. Used by both the v2
+/// path-scoped handler and the v1 query-scoped handler. Carries the
+/// full validate -> Cedar -> saga flow; the wrappers only differ in
+/// how they reconstruct the (tenant_id, project_id) pair.
+async fn create_instance_inner(
+    rqctx: RequestContext<ApiContext>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    req: NewInstance,
+) -> Result<HttpResponseCreated<Instance>, HttpError> {
+    let ctx = rqctx.context();
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
@@ -307,7 +360,6 @@ pub(crate) async fn create_project_instance(
     )
     .await?;
     let request_id = parse_request_id(&rqctx);
-    let req = body.into_inner();
 
     // API-edge size invariants (the store doesn't re-validate).
     if req.cpu == 0 {

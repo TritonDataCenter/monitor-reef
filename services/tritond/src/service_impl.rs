@@ -856,6 +856,14 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::get_instance_v1(rqctx, path).await
     }
 
+    async fn create_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::ScopeSelectors>,
+        body: TypedBody<NewInstance>,
+    ) -> Result<HttpResponseCreated<Instance>, HttpError> {
+        crate::handlers::instances::create_instance_v1(rqctx, query, body).await
+    }
+
     async fn delete_instance_v1(
         rqctx: RequestContext<Self::Context>,
         path: Path<tritond_api::v1::InstancePath>,

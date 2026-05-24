@@ -93,6 +93,74 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "instances"
+        ],
+        "summary": "RFD 00007 `POST /v1/instances?tenant=&project=`. Create an",
+        "description": "instance in the named tenant + project. Equivalent semantics to the v2 `POST /v2/tenants/{t}/projects/{p}/instances`; the only difference is the URL shape (scope as selectors, not path segments). The handler still validates that the resolved tenant / project exist and live in the principal's silo, surfacing cross-tenant 404 as before.\n\n`tenant` and `project` are required selectors at AP-2d. AP-3a swaps to a `NameOrId` newtype.",
+        "operationId": "create_instance_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewInstance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/v1/instances/{instance_id}": {

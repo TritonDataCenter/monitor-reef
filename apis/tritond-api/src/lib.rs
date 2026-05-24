@@ -3652,6 +3652,27 @@ pub trait TritondApi {
         path: Path<crate::v1::InstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
+    /// RFD 00007 `POST /v1/instances?tenant=&project=`. Create an
+    /// instance in the named tenant + project. Equivalent semantics
+    /// to the v2 `POST /v2/tenants/{t}/projects/{p}/instances`; the
+    /// only difference is the URL shape (scope as selectors, not
+    /// path segments). The handler still validates that the
+    /// resolved tenant / project exist and live in the principal's
+    /// silo, surfacing cross-tenant 404 as before.
+    ///
+    /// `tenant` and `project` are required selectors at AP-2d.
+    /// AP-3a swaps to a `NameOrId` newtype.
+    #[endpoint {
+        method = POST,
+        path = "/v1/instances",
+        tags = ["instances"],
+    }]
+    async fn create_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::ScopeSelectors>,
+        body: TypedBody<NewInstance>,
+    ) -> Result<HttpResponseCreated<Instance>, HttpError>;
+
     /// RFD 00007 `DELETE /v1/instances/{instance_id}`.
     #[endpoint {
         method = DELETE,
