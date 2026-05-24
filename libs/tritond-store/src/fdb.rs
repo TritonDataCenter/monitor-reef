@@ -149,6 +149,26 @@
 //! meta/gen/<scope>/<uuid>           -> big-endian u64 generation,
 //!                                      bumped per metadata write
 //!                                      (absent == 0)
+//!
+//! ## RFD 00007 AP-1c secondary indexes
+//!
+//! Each row is written in the same transaction as the indexed
+//! primary row (no async indexer, no rebuild step). Payloads are
+//! empty unless the index needs to carry a reverse pointer the
+//! reader cannot reconstruct from the key alone.
+//!
+//! instance/in_image/<image>/<inst>  -> empty
+//!                                      (drives ?image= filters)
+//! nic/in_subnet/<subnet>/<nic>      -> empty
+//!                                      (drives ?subnet= filters)
+//! nic/by_ip/<ip>                    -> nic_uuid hyphenated bytes
+//!                                      (unique by invariant; one
+//!                                       NIC per IP per rack)
+//! dhcp_lease/by_mac/<mac>           -> vpc_uuid hyphenated bytes
+//!                                      (combined with the MAC,
+//!                                       reconstructs the lease's
+//!                                       (vpc_id, mac) primary key
+//!                                       without a per-VPC scan)
 //! ```
 //!
 //! Each multi-key write happens in a single transaction so name
@@ -666,8 +686,46 @@ impl FdbStore {
         format!("instance/in_host_cn/{host_cn_uuid}/").into_bytes()
     }
 
+    // RFD 00007 AP-1c: image -> instance secondary index. Membership
+    // key (empty payload); the existence of the row is the assertion.
+    // Written by create_instance in the same transaction as the row,
+    // cleared by delete_instance.
+    fn instance_in_image_key(image_id: Uuid, instance_id: Uuid) -> Vec<u8> {
+        format!("instance/in_image/{image_id}/{instance_id}").into_bytes()
+    }
+
+    fn instance_in_image_prefix(image_id: Uuid) -> Vec<u8> {
+        format!("instance/in_image/{image_id}/").into_bytes()
+    }
+
     fn nic_by_id_key(id: Uuid) -> Vec<u8> {
         format!("nic/by_id/{id}").into_bytes()
+    }
+
+    // RFD 00007 AP-1c: subnet -> nic secondary index.
+    fn nic_in_subnet_key(subnet_id: Uuid, nic_id: Uuid) -> Vec<u8> {
+        format!("nic/in_subnet/{subnet_id}/{nic_id}").into_bytes()
+    }
+
+    fn nic_in_subnet_prefix(subnet_id: Uuid) -> Vec<u8> {
+        format!("nic/in_subnet/{subnet_id}/").into_bytes()
+    }
+
+    // RFD 00007 AP-1c: IP -> nic unique index. The value carries the
+    // owning NIC's UUID hyphenated bytes so a point read resolves the
+    // owner without re-deserialising the NIC row. The IP is rendered
+    // in its canonical text form (`Display`) so equal addresses hash
+    // to equal keys regardless of how the caller constructed them.
+    fn nic_by_ip_key(ip: std::net::IpAddr) -> Vec<u8> {
+        format!("nic/by_ip/{ip}").into_bytes()
+    }
+
+    // RFD 00007 AP-1c: MAC -> dhcp_lease index. The value is the
+    // owning VPC's UUID hyphenated bytes; combined with the MAC
+    // itself this reconstructs the lease's composite primary key
+    // `(vpc_id, mac)` without a scan.
+    fn dhcp_lease_by_mac_key(mac: &str) -> Vec<u8> {
+        format!("dhcp_lease/by_mac/{mac}").into_bytes()
     }
 
     fn nic_in_instance_key(instance_id: Uuid, nic_id: Uuid) -> Vec<u8> {
@@ -4547,17 +4605,38 @@ impl Store for FdbStore {
                     tr.set(&by_id_key, &instance_value);
                     tr.set(&by_name_key, &id_bytes);
                     tr.set(&in_project_key, b"");
+                    // RFD 00007 AP-1c: image -> instance membership
+                    // index. Image_id is fixed on the instance row;
+                    // delete_instance clears the matching key.
+                    tr.set(
+                        &Self::instance_in_image_key(req.image_id, instance_id),
+                        b"",
+                    );
                     tr.set(&nic_by_id_key, &nic_value);
                     tr.set(&nic_in_instance_key, b"");
+                    // RFD 00007 AP-1c: subnet -> nic membership and
+                    // ip -> nic unique indexes for the primary NIC.
+                    tr.set(
+                        &Self::nic_in_subnet_key(subnet.id, nic_id),
+                        b"",
+                    );
                     tr.set(&disk_by_id_key, &disk_value);
                     tr.set(&disk_in_instance_key, b"");
                     if let Some(ip) = primary_ipv4 {
                         let alloc_key = Self::nic_ip_alloc_v4_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
+                        tr.set(
+                            &Self::nic_by_ip_key(std::net::IpAddr::V4(ip)),
+                            nic_id.to_string().as_bytes(),
+                        );
                     }
                     if let Some(ip) = primary_ipv6 {
                         let alloc_key = Self::nic_ip_alloc_v6_key(subnet.id, ip);
                         tr.set(&alloc_key, b"");
+                        tr.set(
+                            &Self::nic_by_ip_key(std::net::IpAddr::V6(ip)),
+                            nic_id.to_string().as_bytes(),
+                        );
                     }
 
                     // Extra NICs. Same pattern as the primary,
@@ -4680,13 +4759,27 @@ impl Store for FdbStore {
                         };
                         tr.set(&plan.nic_by_id_key, &extra_value);
                         tr.set(&plan.nic_in_instance_key, b"");
+                        // RFD 00007 AP-1c: subnet/IP indexes for the
+                        // extra NIC, same as the primary above.
+                        tr.set(
+                            &Self::nic_in_subnet_key(extra_subnet.id, plan.nic_id),
+                            b"",
+                        );
                         if let Some(ip) = extra_v4 {
                             let alloc_key = Self::nic_ip_alloc_v4_key(extra_subnet.id, ip);
                             tr.set(&alloc_key, b"");
+                            tr.set(
+                                &Self::nic_by_ip_key(std::net::IpAddr::V4(ip)),
+                                plan.nic_id.to_string().as_bytes(),
+                            );
                         }
                         if let Some(ip) = extra_v6 {
                             let alloc_key = Self::nic_ip_alloc_v6_key(extra_subnet.id, ip);
                             tr.set(&alloc_key, b"");
+                            tr.set(
+                                &Self::nic_by_ip_key(std::net::IpAddr::V6(ip)),
+                                plan.nic_id.to_string().as_bytes(),
+                            );
                         }
                         nic_records.push(extra_nic);
                     }
@@ -4877,24 +4970,54 @@ impl Store for FdbStore {
         }
     }
 
-    // RFD 00007 AP-1b stub impls. The FDB backend already maintains
-    // an `instance/in_host_cn/` membership index that `list_instances_for_cn`
-    // reads, so the host_cn axis is effectively already wired - the
-    // method below could delegate to that range read. But the image,
-    // subnet, ip, and mac axes need new keyspaces and write-side
-    // hooks inside existing transactions in `create_instance`,
-    // `create_nic`, and `record_dhcp_lease`. Those follow in slice
-    // AP-1c. For now these methods return `StoreError::Backend` so
-    // callers that compile with `--features foundationdb` and reach
-    // them get an explicit "not yet implemented" rather than a
-    // silently empty result.
+    // RFD 00007 AP-1c: index-backed readers. Each method performs a
+    // single FDB range read against the secondary index, parses the
+    // uuid suffix(es), then point-reads the matching primary rows.
     async fn list_instances_by_image(
         &self,
-        _image_id: Uuid,
+        image_id: Uuid,
     ) -> Result<Vec<Instance>, StoreError> {
-        Err(StoreError::Backend(
-            "list_instances_by_image: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
-        ))
+        let prefix = Self::instance_in_image_prefix(image_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("instance image index uuid: {e}")))?;
+            let by_id_key = Self::instance_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let instance: Instance = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize instance: {e}")))?;
+                out.push(instance);
+            }
+        }
+        Ok(out)
     }
 
     async fn list_instances_by_cn(
@@ -4906,22 +5029,84 @@ impl Store for FdbStore {
         self.list_instances_for_cn(cn_uuid).await
     }
 
-    async fn list_nics_by_subnet(&self, _subnet_id: Uuid) -> Result<Vec<Nic>, StoreError> {
-        Err(StoreError::Backend(
-            "list_nics_by_subnet: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
-        ))
+    async fn list_nics_by_subnet(&self, subnet_id: Uuid) -> Result<Vec<Nic>, StoreError> {
+        let prefix = Self::nic_in_subnet_prefix(subnet_id);
+        let (begin, end) = prefix_range(&prefix);
+        let prefix_len = prefix.len();
+
+        let id_strs: Result<Vec<String>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut ids = Vec::new();
+                    for kv in kvs.iter() {
+                        let suffix = &kv.key()[prefix_len..];
+                        if let Ok(s) = std::str::from_utf8(suffix) {
+                            ids.push(s.to_string());
+                        }
+                    }
+                    Ok(ids)
+                }
+            })
+            .await;
+        let id_strs = id_strs.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut out = Vec::with_capacity(id_strs.len());
+        for s in id_strs {
+            let id = Uuid::parse_str(&s)
+                .map_err(|e| StoreError::Backend(format!("nic subnet index uuid: {e}")))?;
+            let by_id_key = Self::nic_by_id_key(id);
+            if let Some(bytes) = self.read_bytes(&by_id_key).await? {
+                let nic: Nic = serde_json::from_slice(&bytes)
+                    .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))?;
+                out.push(nic);
+            }
+        }
+        Ok(out)
     }
 
-    async fn find_nic_by_ip(&self, _ip: std::net::IpAddr) -> Result<Nic, StoreError> {
-        Err(StoreError::Backend(
-            "find_nic_by_ip: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
-        ))
+    async fn find_nic_by_ip(&self, ip: std::net::IpAddr) -> Result<Nic, StoreError> {
+        let key = Self::nic_by_ip_key(ip);
+        let bytes = self.read_bytes(&key).await?.ok_or(StoreError::NotFound)?;
+        let id_str = std::str::from_utf8(&bytes)
+            .map_err(|e| StoreError::Backend(format!("nic by_ip index utf8: {e}")))?;
+        let nic_id = Uuid::parse_str(id_str)
+            .map_err(|e| StoreError::Backend(format!("nic by_ip index uuid: {e}")))?;
+        let nic_key = Self::nic_by_id_key(nic_id);
+        let nic_bytes = self
+            .read_bytes(&nic_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&nic_bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize nic: {e}")))
     }
 
-    async fn find_dhcp_lease_by_mac(&self, _mac: &str) -> Result<DhcpLease, StoreError> {
-        Err(StoreError::Backend(
-            "find_dhcp_lease_by_mac: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
-        ))
+    async fn find_dhcp_lease_by_mac(&self, mac: &str) -> Result<DhcpLease, StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let by_mac_key = Self::dhcp_lease_by_mac_key(&mac);
+        let bytes = self
+            .read_bytes(&by_mac_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        let vpc_str = std::str::from_utf8(&bytes)
+            .map_err(|e| StoreError::Backend(format!("dhcp_lease by_mac utf8: {e}")))?;
+        let vpc_id = Uuid::parse_str(vpc_str)
+            .map_err(|e| StoreError::Backend(format!("dhcp_lease by_mac uuid: {e}")))?;
+        let lease_key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+        let lease_bytes = self
+            .read_bytes(&lease_key)
+            .await?
+            .ok_or(StoreError::NotFound)?;
+        serde_json::from_slice(&lease_bytes)
+            .map_err(|e| StoreError::Backend(format!("deserialize dhcp lease: {e}")))
     }
 
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
@@ -5058,10 +5243,15 @@ impl Store for FdbStore {
                         };
                         if let Some(ip) = nic.primary_ipv4 {
                             tr.clear(&Self::nic_ip_alloc_v4_key(nic.subnet_id, ip));
+                            // RFD 00007 AP-1c: drop the IP index entry.
+                            tr.clear(&Self::nic_by_ip_key(std::net::IpAddr::V4(ip)));
                         }
                         if let Some(ip) = nic.primary_ipv6 {
                             tr.clear(&Self::nic_ip_alloc_v6_key(nic.subnet_id, ip));
+                            tr.clear(&Self::nic_by_ip_key(std::net::IpAddr::V6(ip)));
                         }
+                        // RFD 00007 AP-1c: drop the subnet membership index.
+                        tr.clear(&Self::nic_in_subnet_key(nic.subnet_id, nic.id));
                         tr.clear(&nic_key);
                         tr.clear(&nic_in_instance_key);
                     }
@@ -5144,6 +5334,8 @@ impl Store for FdbStore {
                     tr.clear(&by_id_key);
                     tr.clear(&by_name_key);
                     tr.clear(&in_project_key);
+                    // RFD 00007 AP-1c: drop the image index entry.
+                    tr.clear(&Self::instance_in_image_key(instance.image_id, instance.id));
                     if let Some(host_cn_uuid) = instance.host_cn_uuid {
                         tr.clear(&Self::instance_in_host_cn_key(host_cn_uuid, instance.id));
                     }
@@ -8133,14 +8325,22 @@ impl Store for FdbStore {
         let key = Self::dhcp_lease_by_vpc_mac_key(lease.vpc_id, &lease.mac);
         let value = serde_json::to_vec(&lease)
             .map_err(|e| StoreError::Backend(format!("serialize dhcp lease: {e}")))?;
+        // RFD 00007 AP-1c: MAC -> vpc index. Stored as the canonical
+        // lease key components so a reader can resolve a bare MAC to
+        // its parent VPC without scanning every VPC's lease prefix.
+        let by_mac_key = Self::dhcp_lease_by_mac_key(&lease.mac);
+        let vpc_str = lease.vpc_id.to_string();
 
         let result: Result<(), FdbBindingError> = self
             .db
             .run(|tr, _| {
                 let key = key.clone();
                 let value = value.clone();
+                let by_mac_key = by_mac_key.clone();
+                let vpc_str = vpc_str.clone();
                 async move {
                     tr.set(&key, &value);
+                    tr.set(&by_mac_key, vpc_str.as_bytes());
                     Ok(())
                 }
             })
@@ -8152,6 +8352,7 @@ impl Store for FdbStore {
     async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
         let key = Self::dhcp_lease_by_vpc_mac_key(vpc_id, &mac);
+        let by_mac_key = Self::dhcp_lease_by_mac_key(&mac);
 
         enum Out {
             Deleted,
@@ -8161,11 +8362,23 @@ impl Store for FdbStore {
             .db
             .run(|tr, _| {
                 let key = key.clone();
+                let by_mac_key = by_mac_key.clone();
+                let vpc_str = vpc_id.to_string();
                 async move {
                     if tr.get(&key, false).await?.is_none() {
                         return Ok(Out::Missing);
                     }
                     tr.clear(&key);
+                    // RFD 00007 AP-1c: drop the MAC index entry only
+                    // if it still points at this VPC (a concurrent
+                    // re-issue against a different VPC would have
+                    // overwritten the index; checking the value first
+                    // keeps the index honest).
+                    if let Some(current) = tr.get(&by_mac_key, false).await?
+                        && current.as_ref() == vpc_str.as_bytes()
+                    {
+                        tr.clear(&by_mac_key);
+                    }
                     Ok(Out::Deleted)
                 }
             })
