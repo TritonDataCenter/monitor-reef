@@ -2860,6 +2860,51 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// RFD 00007 `GET /v1/floating-ips?tenant=&project=`. Flat FIP list.
+    #[endpoint {
+        method = GET,
+        path = "/v1/floating-ips",
+        tags = ["floating-ips"],
+    }]
+    async fn list_floating_ips_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::FloatingIpQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<FloatingIp>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/floating-ips/{floating_ip_id}`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/floating-ips/{floating_ip_id}",
+        tags = ["floating-ips"],
+    }]
+    async fn get_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::FloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
+    /// RFD 00007 `POST /v1/floating-ips/{floating_ip_id}/attach`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/floating-ips/{floating_ip_id}/attach",
+        tags = ["floating-ips"],
+    }]
+    async fn attach_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::FloatingIpPath>,
+        body: TypedBody<AttachFloatingIpRequest>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
+    /// RFD 00007 `POST /v1/floating-ips/{floating_ip_id}/detach`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/floating-ips/{floating_ip_id}/detach",
+        tags = ["floating-ips"],
+    }]
+    async fn detach_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::FloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
     /// RFD 00007 `GET /v1/images?scope=public[&silo=&tenant=&project=]`.
     /// AP-2h: `scope=public` only.
     #[endpoint {

@@ -380,6 +380,35 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::delete_vpc_subnet(rqctx, path).await
     }
 
+    async fn list_floating_ips_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::FloatingIpQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<FloatingIp>>, HttpError> {
+        crate::handlers::instances::list_floating_ips_v1(rqctx, query).await
+    }
+
+    async fn get_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::FloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+        crate::handlers::instances::get_floating_ip_v1(rqctx, path).await
+    }
+
+    async fn attach_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::FloatingIpPath>,
+        body: TypedBody<AttachFloatingIpRequest>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+        crate::handlers::instances::attach_floating_ip_v1(rqctx, path, body).await
+    }
+
+    async fn detach_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::FloatingIpPath>,
+    ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+        crate::handlers::instances::detach_floating_ip_v1(rqctx, path).await
+    }
+
     async fn list_images_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::ImageQuery>,

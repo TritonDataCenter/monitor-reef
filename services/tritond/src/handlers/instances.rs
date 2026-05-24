@@ -1815,6 +1815,148 @@ async fn map_fip_saga_err<T>(
     Err(http_err)
 }
 
+/// RFD 00007 AP-2i: `GET /v1/floating-ips?tenant=&project=`. Flat
+/// floating-IP list scoped to a project. Both selectors required.
+pub(crate) async fn list_floating_ips_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::FloatingIpQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<FloatingIp>>, HttpError> {
+    use tritond_api::v1::{FloatingIpQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let FloatingIpQuery { scope } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let tenant_id = scope.tenant.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/floating-ips requires `?tenant=<uuid>&project=<uuid>`".to_string(),
+        )
+    })?;
+    let project_id = scope.project.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/floating-ips requires `?tenant=<uuid>&project=<uuid>`".to_string(),
+        )
+    })?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FloatingIpList,
+        tenant_id,
+    )
+    .await?;
+    let project = ctx
+        .store
+        .get_project(project_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if project.tenant_id != tenant_id {
+        return Err(not_found());
+    }
+    let fips = ctx
+        .store
+        .list_floating_ips_in_project(project_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(fips)))
+}
+
+/// RFD 00007 AP-2i: `GET /v1/floating-ips/{floating_ip_id}`. Flat
+/// single-FIP read.
+pub(crate) async fn get_floating_ip_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::FloatingIpPath>,
+) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::FloatingIpPath { floating_ip_id } = path.into_inner();
+    let fip = ctx
+        .store
+        .get_floating_ip(floating_ip_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FloatingIpGet,
+        fip.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(fip))
+}
+
+/// RFD 00007 AP-2i: `POST /v1/floating-ips/{floating_ip_id}/attach`.
+/// Body is the same `AttachFloatingIpRequest` as v2.
+pub(crate) async fn attach_floating_ip_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::FloatingIpPath>,
+    body: TypedBody<AttachFloatingIpRequest>,
+) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::FloatingIpPath { floating_ip_id } = path.into_inner();
+    let fip = ctx
+        .store
+        .get_floating_ip(floating_ip_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FloatingIpAttach,
+        fip.tenant_id,
+    )
+    .await?;
+    let req = body.into_inner();
+    let attached = ctx
+        .store
+        .attach_floating_ip(floating_ip_id, req.nic_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(attached))
+}
+
+/// RFD 00007 AP-2i: `POST /v1/floating-ips/{floating_ip_id}/detach`.
+pub(crate) async fn detach_floating_ip_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::FloatingIpPath>,
+) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::FloatingIpPath { floating_ip_id } = path.into_inner();
+    let fip = ctx
+        .store
+        .get_floating_ip(floating_ip_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FloatingIpDetach,
+        fip.tenant_id,
+    )
+    .await?;
+    let detached = ctx
+        .store
+        .detach_floating_ip(floating_ip_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(detached))
+}
+
 pub(crate) async fn get_project_floating_ip(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectFloatingIpPath>,

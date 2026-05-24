@@ -85,6 +85,20 @@ pub struct SubnetQuery {
     pub vpc: Option<Uuid>,
 }
 
+/// Path parameters for `/v1/floating-ips/{floating_ip_id}` and its
+/// `/attach` / `/detach` action sub-paths.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FloatingIpPath {
+    pub floating_ip_id: Uuid,
+}
+
+/// Query parameters for `GET /v1/floating-ips?tenant=&project=`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct FloatingIpQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+}
+
 /// Image scope selector for `/v1/images?scope=...`. Per RFD 00007
 /// D-Ap-1 + Locked Decision #33 the five legacy image URL surfaces
 /// collapse into one path discriminated by this enum. AP-2h ships
