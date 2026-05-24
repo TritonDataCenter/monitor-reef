@@ -895,6 +895,62 @@ pub trait Store: Send + Sync + 'static {
     /// placer to spread new VMs across eligible hosts.
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError>;
 
+    /// RFD 00007 AP-1b: list every instance referencing `image_id`.
+    /// Backed by the `idx/image/<image_uuid>/<instance_id>` secondary
+    /// index; the lookup is a single FDB range read on the production
+    /// backend. Returns `Vec<Instance>` in arbitrary order; the caller
+    /// sorts as needed for the response shape.
+    ///
+    /// Drives `/v1/system/images/{image}/instances` and the
+    /// `?image=` selector on `/v1/instances` /
+    /// `/v1/system/instances`.
+    async fn list_instances_by_image(
+        &self,
+        image_id: Uuid,
+    ) -> Result<Vec<Instance>, StoreError>;
+
+    /// RFD 00007 AP-1b: list every instance currently placed on
+    /// `cn_uuid`. Backed by the `idx/host_cn/<cn>/<instance>` index;
+    /// instances without a host CN (`host_cn_uuid == None`) are not
+    /// in the index and not returned.
+    ///
+    /// Drives `/v1/system/cns/{cn}/instances` and the `?cn=` selector.
+    /// Distinct from [`Self::list_instances_for_cn`] in implementation
+    /// (uses the secondary index rather than a full scan) but
+    /// equivalent in semantics; the older method may be deprecated
+    /// in a follow-up.
+    async fn list_instances_by_cn(
+        &self,
+        cn_uuid: Uuid,
+    ) -> Result<Vec<Instance>, StoreError>;
+
+    /// RFD 00007 AP-1b: list every NIC attached to `subnet_id`.
+    /// Backed by the `idx/subnet/<subnet>/<nic>` index.
+    ///
+    /// Drives `?subnet=` on `/v1/nics` / `/v1/system/networking/nics`.
+    async fn list_nics_by_subnet(&self, subnet_id: Uuid) -> Result<Vec<Nic>, StoreError>;
+
+    /// RFD 00007 AP-1b: find the NIC owning `ip`. Returns
+    /// [`StoreError::NotFound`] if no NIC has been allocated that IP.
+    /// IP allocation is unique by invariant (one NIC per IP per
+    /// rack), so the lookup returns at most one row.
+    ///
+    /// Drives the `?ip=` selector on `/v1/nics` and the
+    /// `/v1/system/networking/nics?ip=` operator query.
+    async fn find_nic_by_ip(&self, ip: std::net::IpAddr) -> Result<Nic, StoreError>;
+
+    /// RFD 00007 AP-1b: find the DHCP lease keyed by `mac` (across
+    /// every VPC). Returns [`StoreError::NotFound`] if no lease has
+    /// this MAC. `mac` is normalised to canonical lowercase colon
+    /// form before lookup.
+    ///
+    /// Drives the bare-MAC lookup on `/v1/vpc-dhcp-leases/{mac}` and
+    /// `?mac=` selectors. Distinct from [`Self::get_dhcp_lease`]
+    /// which requires the parent VPC id (the API verb takes
+    /// `(vpc_id, mac)`); this variant resolves the lease without
+    /// scanning every VPC's lease set.
+    async fn find_dhcp_lease_by_mac(&self, mac: &str) -> Result<DhcpLease, StoreError>;
+
     /// Set an instance's [`Instance::brand`] (and bump `updated_at`).
     ///
     /// Used by the agent-status backfill: instances created before the

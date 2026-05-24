@@ -4877,6 +4877,53 @@ impl Store for FdbStore {
         }
     }
 
+    // RFD 00007 AP-1b stub impls. The FDB backend already maintains
+    // an `instance/in_host_cn/` membership index that `list_instances_for_cn`
+    // reads, so the host_cn axis is effectively already wired - the
+    // method below could delegate to that range read. But the image,
+    // subnet, ip, and mac axes need new keyspaces and write-side
+    // hooks inside existing transactions in `create_instance`,
+    // `create_nic`, and `record_dhcp_lease`. Those follow in slice
+    // AP-1c. For now these methods return `StoreError::Backend` so
+    // callers that compile with `--features foundationdb` and reach
+    // them get an explicit "not yet implemented" rather than a
+    // silently empty result.
+    async fn list_instances_by_image(
+        &self,
+        _image_id: Uuid,
+    ) -> Result<Vec<Instance>, StoreError> {
+        Err(StoreError::Backend(
+            "list_instances_by_image: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
+        ))
+    }
+
+    async fn list_instances_by_cn(
+        &self,
+        cn_uuid: Uuid,
+    ) -> Result<Vec<Instance>, StoreError> {
+        // Existing `instance/in_host_cn/<cn>/<inst>` index already
+        // covers this; delegate.
+        self.list_instances_for_cn(cn_uuid).await
+    }
+
+    async fn list_nics_by_subnet(&self, _subnet_id: Uuid) -> Result<Vec<Nic>, StoreError> {
+        Err(StoreError::Backend(
+            "list_nics_by_subnet: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
+        ))
+    }
+
+    async fn find_nic_by_ip(&self, _ip: std::net::IpAddr) -> Result<Nic, StoreError> {
+        Err(StoreError::Backend(
+            "find_nic_by_ip: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
+        ))
+    }
+
+    async fn find_dhcp_lease_by_mac(&self, _mac: &str) -> Result<DhcpLease, StoreError> {
+        Err(StoreError::Backend(
+            "find_dhcp_lease_by_mac: FDB index keyspace lands in RFD 00007 AP-1c".to_string(),
+        ))
+    }
+
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
         let prefix = Self::instance_in_host_cn_prefix(host_cn_uuid);
         let (begin, end) = prefix_range(&prefix);

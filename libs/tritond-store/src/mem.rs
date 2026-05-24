@@ -232,6 +232,36 @@ struct Inner {
     /// lowest-numbered free address.
     allocated_ipv4_by_subnet: HashMap<Uuid, HashSet<Ipv4Addr>>,
     allocated_ipv6_by_subnet: HashMap<Uuid, HashSet<Ipv6Addr>>,
+    // ---- RFD 00007 AP-1b secondary indexes ----
+    // Each index is maintained in lockstep with the indexed row's
+    // primary store (create_instance / delete_instance, etc.), so a
+    // reader can never see an index entry pointing at a row that was
+    // rolled back. The FDB backend writes the equivalent keys inside
+    // the same transaction as the row write (the MemStore is single-
+    // RwLock so the equivalent guarantee is the write guard).
+    /// `image_id` → set of `instance_id`. Drives `?image=` filters.
+    instance_ids_by_image: HashMap<Uuid, HashSet<Uuid>>,
+    /// `host_cn_uuid` → set of `instance_id`. Drives `?cn=` filters
+    /// and the `/v1/system/cns/{cn}/instances` fixed-axis view.
+    /// Maintained only when `Instance.host_cn_uuid` is `Some(...)`;
+    /// pre-placement instances (`None`) do not appear in the index.
+    instance_ids_by_host_cn: HashMap<Uuid, HashSet<Uuid>>,
+    // The tag index (RFD 00007 §02 §4.1) lands when `Instance` gains a
+    // tags field (see VM_BACKLOG.md). The data model does not carry
+    // tags yet; documenting the index in the keyspace without writers
+    // would emit empty results for tag queries, falsely indicating
+    // "no instances have this tag." Add `instance_ids_by_tag` here
+    // when tags ship.
+    /// `subnet_id` → set of `nic_id`. Drives `?subnet=` filters.
+    nic_ids_by_subnet: HashMap<Uuid, HashSet<Uuid>>,
+    /// `ip_addr` → `nic_id`. Unique by invariant (one NIC per IP).
+    nic_id_by_ip: HashMap<IpAddr, Uuid>,
+    /// `mac` (canonical lowercase colon form) → `(vpc_id, mac)`
+    /// composite key into `dhcp_leases`. The DHCP lease type does not
+    /// carry its own UUID; its identity is `(vpc_id, mac)`. The index
+    /// lets a caller resolve a bare MAC to its lease record without
+    /// scanning every VPC's lease set.
+    dhcp_lease_key_by_mac: HashMap<String, (Uuid, String)>,
     disks_by_id: HashMap<Uuid, Disk>,
     floating_ips_by_id: HashMap<Uuid, FloatingIp>,
     /// `(project_id, name)` → fip_id index for within-project name
@@ -2399,8 +2429,40 @@ impl Store for MemStore {
             .instance_id_by_project_name
             .insert(name_key, instance.id);
         guard.instances_by_id.insert(instance.id, instance.clone());
+        // RFD 00007 AP-1b: maintain the image and host_cn secondary
+        // indexes in lockstep with the instance row. Both are
+        // populated on create; the image index covers `?image=`
+        // filters, the host_cn index covers `?cn=` filters and is
+        // only populated when placement has already chosen a CN.
+        guard
+            .instance_ids_by_image
+            .entry(instance.image_id)
+            .or_default()
+            .insert(instance.id);
+        if let Some(cn) = instance.host_cn_uuid {
+            guard
+                .instance_ids_by_host_cn
+                .entry(cn)
+                .or_default()
+                .insert(instance.id);
+        }
         for n in &nic_records {
             guard.nics_by_id.insert(n.id, n.clone());
+            // RFD 00007 AP-1b: NIC secondary indexes. Subnet → set
+            // of NICs (drives `?subnet=` filters); IP → NIC (unique
+            // by invariant: one NIC per IP). Both v4 and v6 unify
+            // through `IpAddr`.
+            guard
+                .nic_ids_by_subnet
+                .entry(n.subnet_id)
+                .or_default()
+                .insert(n.id);
+            if let Some(v4) = n.primary_ipv4 {
+                guard.nic_id_by_ip.insert(IpAddr::V4(v4), n.id);
+            }
+            if let Some(v6) = n.primary_ipv6 {
+                guard.nic_id_by_ip.insert(IpAddr::V6(v6), n.id);
+            }
 
             // γ.4: write a DhcpLease record per NIC that got an IPv4
             // so the operator-visible IPAM surface reflects the
@@ -2414,7 +2476,7 @@ impl Store for MemStore {
             {
                 let lease = DhcpLease {
                     vpc_id: n.vpc_id,
-                    mac,
+                    mac: mac.clone(),
                     ipv4,
                     instance_id: instance.id,
                     nic_id: n.id,
@@ -2426,6 +2488,14 @@ impl Store for MemStore {
                 guard
                     .dhcp_leases
                     .insert((lease.vpc_id, lease.mac.clone()), lease);
+                // RFD 00007 AP-1b: MAC → (vpc_id, mac) lease index.
+                // The DhcpLease type does not carry its own UUID;
+                // identity is `(vpc_id, mac)`. The index lets
+                // `find_dhcp_lease_by_mac(mac)` resolve to the lease
+                // without scanning every VPC's lease set.
+                guard
+                    .dhcp_lease_key_by_mac
+                    .insert(mac.clone(), (n.vpc_id, mac));
             }
         }
         guard.disks_by_id.insert(boot_disk.id, boot_disk.clone());
@@ -2464,13 +2534,42 @@ impl Store for MemStore {
         host_cn_uuid: Option<Uuid>,
     ) -> Result<Instance, StoreError> {
         let mut guard = self.inner.write().await;
-        let instance = guard
-            .instances_by_id
-            .get_mut(&instance_id)
-            .ok_or(StoreError::NotFound)?;
-        instance.host_cn_uuid = host_cn_uuid;
-        instance.updated_at = Utc::now();
-        Ok(instance.clone())
+        let prev_cn;
+        let updated;
+        {
+            let instance = guard
+                .instances_by_id
+                .get_mut(&instance_id)
+                .ok_or(StoreError::NotFound)?;
+            prev_cn = instance.host_cn_uuid;
+            instance.host_cn_uuid = host_cn_uuid;
+            instance.updated_at = Utc::now();
+            updated = instance.clone();
+        }
+        // RFD 00007 AP-1b: keep the host_cn index consistent through
+        // placement / live migration. On the transition Some -> Some
+        // (migration) the old CN's entry drops and the new CN's
+        // entry adds; on Some -> None (unplaced after CN drain) the
+        // index entry drops; on None -> Some (first placement) the
+        // index entry adds.
+        if prev_cn != host_cn_uuid {
+            if let Some(old) = prev_cn
+                && let Some(set) = guard.instance_ids_by_host_cn.get_mut(&old)
+            {
+                set.remove(&instance_id);
+                if set.is_empty() {
+                    guard.instance_ids_by_host_cn.remove(&old);
+                }
+            }
+            if let Some(new) = host_cn_uuid {
+                guard
+                    .instance_ids_by_host_cn
+                    .entry(new)
+                    .or_default()
+                    .insert(instance_id);
+            }
+        }
+        Ok(updated)
     }
 
     async fn list_instances_for_cn(&self, host_cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
@@ -2481,6 +2580,73 @@ impl Store for MemStore {
             .filter(|i| i.host_cn_uuid == Some(host_cn_uuid))
             .cloned()
             .collect())
+    }
+
+    // RFD 00007 AP-1b: index-backed lookups. MemStore reads the
+    // in-memory index map directly; FdbStore performs a single
+    // range read against the equivalent `idx/...` keyspace.
+    async fn list_instances_by_image(
+        &self,
+        image_id: Uuid,
+    ) -> Result<Vec<Instance>, StoreError> {
+        let guard = self.inner.read().await;
+        let Some(set) = guard.instance_ids_by_image.get(&image_id) else {
+            return Ok(Vec::new());
+        };
+        Ok(set
+            .iter()
+            .filter_map(|id| guard.instances_by_id.get(id).cloned())
+            .collect())
+    }
+
+    async fn list_instances_by_cn(
+        &self,
+        cn_uuid: Uuid,
+    ) -> Result<Vec<Instance>, StoreError> {
+        let guard = self.inner.read().await;
+        let Some(set) = guard.instance_ids_by_host_cn.get(&cn_uuid) else {
+            return Ok(Vec::new());
+        };
+        Ok(set
+            .iter()
+            .filter_map(|id| guard.instances_by_id.get(id).cloned())
+            .collect())
+    }
+
+    async fn list_nics_by_subnet(&self, subnet_id: Uuid) -> Result<Vec<Nic>, StoreError> {
+        let guard = self.inner.read().await;
+        let Some(set) = guard.nic_ids_by_subnet.get(&subnet_id) else {
+            return Ok(Vec::new());
+        };
+        Ok(set
+            .iter()
+            .filter_map(|id| guard.nics_by_id.get(id).cloned())
+            .collect())
+    }
+
+    async fn find_nic_by_ip(&self, ip: IpAddr) -> Result<Nic, StoreError> {
+        let guard = self.inner.read().await;
+        let nic_id = guard.nic_id_by_ip.get(&ip).copied().ok_or(StoreError::NotFound)?;
+        guard
+            .nics_by_id
+            .get(&nic_id)
+            .cloned()
+            .ok_or(StoreError::NotFound)
+    }
+
+    async fn find_dhcp_lease_by_mac(&self, mac: &str) -> Result<DhcpLease, StoreError> {
+        let mac = crate::types::canonical_mac(mac)?;
+        let guard = self.inner.read().await;
+        let key = guard
+            .dhcp_lease_key_by_mac
+            .get(&mac)
+            .cloned()
+            .ok_or(StoreError::NotFound)?;
+        guard
+            .dhcp_leases
+            .get(&key)
+            .cloned()
+            .ok_or(StoreError::NotFound)
     }
 
     async fn set_instance_brand(
@@ -2545,6 +2711,24 @@ impl Store for MemStore {
                 {
                     set.remove(&ip);
                 }
+                // RFD 00007 AP-1b: clean up NIC secondary indexes.
+                // Note we do NOT touch the DHCP lease here: γ.2
+                // sticky-by-MAC IPAM keeps the lease record alive
+                // through instance delete so a recreated instance
+                // with the same MAC can be re-allocated its prior
+                // IP. The MAC-index entry stays alongside it.
+                if let Some(set) = guard.nic_ids_by_subnet.get_mut(&nic.subnet_id) {
+                    set.remove(&nic.id);
+                    if set.is_empty() {
+                        guard.nic_ids_by_subnet.remove(&nic.subnet_id);
+                    }
+                }
+                if let Some(v4) = nic.primary_ipv4 {
+                    guard.nic_id_by_ip.remove(&IpAddr::V4(v4));
+                }
+                if let Some(v6) = nic.primary_ipv6 {
+                    guard.nic_id_by_ip.remove(&IpAddr::V6(v6));
+                }
             }
         }
 
@@ -2583,7 +2767,25 @@ impl Store for MemStore {
             }
         }
 
-        guard.instances_by_id.remove(&instance_id);
+        // Drop the instance and its secondary-index entries. The
+        // image entry is unconditional; the host_cn entry is only
+        // present when placement had chosen a CN.
+        if let Some(removed) = guard.instances_by_id.remove(&instance_id) {
+            if let Some(set) = guard.instance_ids_by_image.get_mut(&removed.image_id) {
+                set.remove(&instance_id);
+                if set.is_empty() {
+                    guard.instance_ids_by_image.remove(&removed.image_id);
+                }
+            }
+            if let Some(cn) = removed.host_cn_uuid
+                && let Some(set) = guard.instance_ids_by_host_cn.get_mut(&cn)
+            {
+                set.remove(&instance_id);
+                if set.is_empty() {
+                    guard.instance_ids_by_host_cn.remove(&cn);
+                }
+            }
+        }
         guard
             .instance_id_by_project_name
             .remove(&(project_id, name));
@@ -4064,17 +4266,33 @@ impl Store for MemStore {
         guard
             .dhcp_leases
             .insert((lease.vpc_id, lease.mac.clone()), lease.clone());
+        // RFD 00007 AP-1b: MAC index. The key is the canonical MAC;
+        // the value is the `(vpc_id, mac)` composite primary key into
+        // `dhcp_leases`.
+        guard
+            .dhcp_lease_key_by_mac
+            .insert(lease.mac.clone(), (lease.vpc_id, lease.mac.clone()));
         Ok(lease)
     }
 
     async fn delete_dhcp_lease(&self, vpc_id: Uuid, mac: &str) -> Result<(), StoreError> {
         let mac = crate::types::canonical_mac(mac)?;
         let mut guard = self.inner.write().await;
-        guard
+        let removed = guard
             .dhcp_leases
-            .remove(&(vpc_id, mac))
-            .map(|_| ())
-            .ok_or(StoreError::NotFound)
+            .remove(&(vpc_id, mac.clone()))
+            .ok_or(StoreError::NotFound)?;
+        // RFD 00007 AP-1b: drop the MAC index entry if it still
+        // points at this composite key (a concurrent re-issue against
+        // a different VPC would have overwritten the index already;
+        // checking the value before removing keeps the index honest).
+        if let Some(entry) = guard.dhcp_lease_key_by_mac.get(&mac)
+            && *entry == (vpc_id, mac.clone())
+        {
+            guard.dhcp_lease_key_by_mac.remove(&mac);
+        }
+        let _ = removed;
+        Ok(())
     }
 
     async fn delete_firewall_rule(&self, rule_id: Uuid) -> Result<(), StoreError> {
@@ -6844,6 +7062,118 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(new_nics[0].primary_ipv4, Some(original_ip));
+    }
+
+    #[tokio::test]
+    async fn ap1b_indexes_round_trip_through_create_set_cn_delete() {
+        // RFD 00007 AP-1b: the secondary indexes for image, host_cn,
+        // subnet, ip, and mac must round-trip through the normal
+        // create/place/delete lifecycle. This test exercises every
+        // index on the MemStore backend.
+        let store = MemStore::new();
+        let (tenant_id, project_id, image_id, subnet_id, ssh_key_id) =
+            make_instance_fixture(&store).await;
+        let cn_uuid = Uuid::new_v4();
+
+        // Create two instances against the same image+subnet so the
+        // index sets are exercised with more than one member.
+        let r1 = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web-01", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+        let r2 = store
+            .create_instance(
+                tenant_id,
+                project_id,
+                instance_req("web-02", image_id, subnet_id, ssh_key_id),
+            )
+            .await
+            .unwrap();
+
+        // image index: both instances by image.
+        let by_image = store.list_instances_by_image(image_id).await.unwrap();
+        assert_eq!(by_image.len(), 2);
+        let by_image_ids: HashSet<Uuid> = by_image.iter().map(|i| i.id).collect();
+        assert!(by_image_ids.contains(&r1.instance.id));
+        assert!(by_image_ids.contains(&r2.instance.id));
+
+        // host_cn index: empty before placement.
+        let pre_place = store.list_instances_by_cn(cn_uuid).await.unwrap();
+        assert!(pre_place.is_empty());
+
+        // Place r1 on cn_uuid; r2 stays unplaced.
+        store
+            .set_instance_host_cn(r1.instance.id, Some(cn_uuid))
+            .await
+            .unwrap();
+        let by_cn = store.list_instances_by_cn(cn_uuid).await.unwrap();
+        assert_eq!(by_cn.len(), 1);
+        assert_eq!(by_cn[0].id, r1.instance.id);
+
+        // Migrate r1 to a new CN; index follows.
+        let cn_new = Uuid::new_v4();
+        store
+            .set_instance_host_cn(r1.instance.id, Some(cn_new))
+            .await
+            .unwrap();
+        assert!(
+            store.list_instances_by_cn(cn_uuid).await.unwrap().is_empty(),
+            "old CN entry must drop on migration"
+        );
+        let on_new = store.list_instances_by_cn(cn_new).await.unwrap();
+        assert_eq!(on_new.len(), 1);
+        assert_eq!(on_new[0].id, r1.instance.id);
+
+        // Subnet index: both NICs are in the same subnet.
+        let nics_in_subnet = store.list_nics_by_subnet(subnet_id).await.unwrap();
+        assert_eq!(nics_in_subnet.len(), 2);
+
+        // IP index: each NIC's IPv4 resolves back to that NIC.
+        let nic1_ip = r1.nics[0].primary_ipv4.unwrap();
+        let found1 = store.find_nic_by_ip(IpAddr::V4(nic1_ip)).await.unwrap();
+        assert_eq!(found1.id, r1.nics[0].id);
+        let nic2_ip = r2.nics[0].primary_ipv4.unwrap();
+        let found2 = store.find_nic_by_ip(IpAddr::V4(nic2_ip)).await.unwrap();
+        assert_eq!(found2.id, r2.nics[0].id);
+
+        // MAC index: each NIC's MAC resolves to its DHCP lease.
+        let mac1 = &r1.nics[0].mac;
+        let lease1 = store.find_dhcp_lease_by_mac(mac1).await.unwrap();
+        assert_eq!(lease1.mac, *mac1);
+        assert_eq!(lease1.nic_id, r1.nics[0].id);
+
+        // Delete r2 and verify the image index drops it (r1 stays).
+        store
+            .transition_instance_lifecycle(
+                r2.instance.id,
+                &[LifecycleStateKind::Pending],
+                LifecycleState::Stopped,
+            )
+            .await
+            .unwrap();
+        store.delete_instance(r2.instance.id, false).await.unwrap();
+        let by_image_after = store.list_instances_by_image(image_id).await.unwrap();
+        assert_eq!(by_image_after.len(), 1);
+        assert_eq!(by_image_after[0].id, r1.instance.id);
+
+        // r2's IP/subnet index entries drop with the NIC; sticky lease
+        // stays (γ.2 invariant), and so does the MAC index.
+        let r2_ip = r2.nics[0].primary_ipv4.unwrap();
+        assert!(
+            store.find_nic_by_ip(IpAddr::V4(r2_ip)).await.is_err(),
+            "IP index entry must drop with the NIC"
+        );
+        let nics_in_subnet_after = store.list_nics_by_subnet(subnet_id).await.unwrap();
+        assert_eq!(nics_in_subnet_after.len(), 1);
+        let lease2 = store.find_dhcp_lease_by_mac(&r2.nics[0].mac).await;
+        assert!(
+            lease2.is_ok(),
+            "sticky-by-MAC: lease and its index entry persist through instance delete"
+        );
     }
 
     #[tokio::test]
