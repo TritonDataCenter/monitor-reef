@@ -41,6 +41,30 @@ pub struct InstancePath {
     pub instance_id: Uuid,
 }
 
+/// Path parameters for `/v1/disks/{disk_id}` (the flat disk-by-id
+/// surface introduced in AP-2e).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DiskPath {
+    pub disk_id: Uuid,
+}
+
+/// Query parameters for `GET /v1/disks?tenant=&project=&instance=`.
+///
+/// AP-2e ships the `instance=` reference selector, which drives the
+/// per-instance disk view. The `image=` selector lands when the
+/// disk index keyspace is extended in a follow-up (the AP-1c
+/// `idx/image/...` keyspace today only covers Instance rows).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct DiskQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to disks attached to a single instance. Backed by
+    /// the existing `disk/in_instance/<instance>/<disk>` membership
+    /// index.
+    #[serde(default)]
+    pub instance: Option<Uuid>,
+}
+
 /// A resource selector that accepts either a UUID or a name.
 ///
 /// Path segments in the `/v1/` surface (per RFD 00007 D-Ap-3)

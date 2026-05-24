@@ -992,6 +992,20 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::get_instance_disk(rqctx, path).await
     }
 
+    async fn list_disks_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::DiskQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Disk>>, HttpError> {
+        crate::handlers::instances::list_disks_v1(rqctx, query).await
+    }
+
+    async fn get_disk_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::DiskPath>,
+    ) -> Result<HttpResponseOk<Disk>, HttpError> {
+        crate::handlers::instances::get_disk_v1(rqctx, path).await
+    }
+
     async fn list_project_floating_ips(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectPath>,

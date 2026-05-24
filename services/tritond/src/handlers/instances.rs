@@ -1367,6 +1367,96 @@ pub(crate) async fn get_instance_nic(
     Ok(HttpResponseOk(nic))
 }
 
+/// RFD 00007 AP-2e: `GET /v1/disks?tenant=&project=&instance=`.
+/// Flat disk list. Requires `?instance=<uuid>` for now; a future
+/// slice expands to cross-project disk searches once the customer
+/// surface needs them.
+pub(crate) async fn list_disks_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::DiskQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Disk>>, HttpError> {
+    use tritond_api::v1::{DiskQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let DiskQuery { scope, instance } = query.into_inner();
+
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let instance_id = instance.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/disks requires `?instance=<uuid>` until the cross-project \
+             disk search lands in a later AP-2 slice"
+                .to_string(),
+        )
+    })?;
+    // Read the instance to recover the owning tenant, then auth in
+    // that tenant. Cross-tenant probes 404 because the auth check
+    // rejects when the principal's silo doesn't match.
+    let inst = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if let Some(t) = scope.tenant
+        && inst.tenant_id != t
+    {
+        return Err(not_found());
+    }
+    if let Some(p) = scope.project
+        && inst.project_id != p
+    {
+        return Err(not_found());
+    }
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DiskList,
+        inst.tenant_id,
+    )
+    .await?;
+    let disks = ctx
+        .store
+        .list_disks_for_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(disks)))
+}
+
+/// RFD 00007 AP-2e: `GET /v1/disks/{disk_id}`. Flat single-disk
+/// read by UUID; reads the disk row, derives the owning tenant via
+/// the parent instance, then auths against the principal's silo.
+pub(crate) async fn get_disk_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::DiskPath>,
+) -> Result<HttpResponseOk<Disk>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::DiskPath { disk_id } = path.into_inner();
+    let disk = ctx
+        .store
+        .get_disk(disk_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DiskGet,
+        disk.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(disk))
+}
+
 pub(crate) async fn list_instance_disks(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectInstancePath>,

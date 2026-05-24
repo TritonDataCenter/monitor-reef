@@ -6,6 +6,114 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v1/disks": {
+      "get": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "RFD 00007 `GET /v1/disks?tenant=&project=&instance=`. Flat",
+        "description": "disk list. AP-2e requires `?instance=<uuid>`; cross-project disk searches arrive when the customer surface needs them.",
+        "operationId": "list_disks_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instance",
+            "description": "Restrict to disks attached to a single instance. Backed by the existing `disk/in_instance/<instance>/<disk>` membership index.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Disk"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/disks/{disk_id}": {
+      "get": {
+        "tags": [
+          "disks"
+        ],
+        "summary": "RFD 00007 `GET /v1/disks/{disk_id}`. Flat single-disk read.",
+        "operationId": "get_disk_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disk_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Disk"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/instances": {
       "get": {
         "tags": [
@@ -14954,6 +15062,25 @@
           "route_table",
           "edge_cluster",
           "job"
+        ]
+      },
+      "ResultsPage_for_Disk": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Disk"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "ResultsPage_for_Instance": {

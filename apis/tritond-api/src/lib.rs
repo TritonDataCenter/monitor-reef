@@ -3866,6 +3866,30 @@ pub trait TritondApi {
         path: Path<TenantProjectInstanceDiskPath>,
     ) -> Result<HttpResponseOk<Disk>, HttpError>;
 
+    /// RFD 00007 `GET /v1/disks?tenant=&project=&instance=`. Flat
+    /// disk list. AP-2e requires `?instance=<uuid>`; cross-project
+    /// disk searches arrive when the customer surface needs them.
+    #[endpoint {
+        method = GET,
+        path = "/v1/disks",
+        tags = ["disks"],
+    }]
+    async fn list_disks_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::DiskQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Disk>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/disks/{disk_id}`. Flat single-disk read.
+    #[endpoint {
+        method = GET,
+        path = "/v1/disks/{disk_id}",
+        tags = ["disks"],
+    }]
+    async fn get_disk_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::DiskPath>,
+    ) -> Result<HttpResponseOk<Disk>, HttpError>;
+
     /// List FloatingIps owned by a project.
     #[endpoint {
         method = GET,
