@@ -85,6 +85,51 @@ pub struct SubnetQuery {
     pub vpc: Option<Uuid>,
 }
 
+/// Image scope selector for `/v1/images?scope=...`. Per RFD 00007
+/// D-Ap-1 + Locked Decision #33 the five legacy image URL surfaces
+/// collapse into one path discriminated by this enum. AP-2h ships
+/// the `public` variant only; the silo/tenant/project/user variants
+/// land when the scope-resolution helper arrives in AP-3a.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImageScopeSelector {
+    Public,
+    Silo,
+    Tenant,
+    Project,
+    User,
+}
+
+/// Path parameters for `/v1/images/{image_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImagePath {
+    pub image_id: Uuid,
+}
+
+/// Path parameters for `/v1/ssh-keys/{key_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SshKeyPath {
+    pub key_id: Uuid,
+}
+
+/// Query parameters for `GET /v1/images?scope=&silo=&tenant=&project=`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct ImageQuery {
+    /// Required at AP-2h: only `public` is accepted. Other scopes
+    /// land in AP-3a with the scope-resolution helper.
+    pub scope: ImageScopeSelector,
+    #[serde(flatten)]
+    pub selectors: ScopeSelectors,
+}
+
+/// Query parameters for `GET /v1/ssh-keys?scope=&silo=&tenant=&project=`.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SshKeyQuery {
+    pub scope: ImageScopeSelector,
+    #[serde(flatten)]
+    pub selectors: ScopeSelectors,
+}
+
 /// Query parameters for `GET /v1/nics?...`.
 ///
 /// AP-2f wires the three indexed selectors landed in AP-1c: `subnet=`,

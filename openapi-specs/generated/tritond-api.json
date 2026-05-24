@@ -114,6 +114,113 @@
         }
       }
     },
+    "/v1/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "RFD 00007 `GET /v1/images?scope=public[&silo=&tenant=&project=]`.",
+        "description": "AP-2h: `scope=public` only.",
+        "operationId": "list_images_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "description": "Required at AP-2h: only `public` is accepted. Other scopes land in AP-3a with the scope-resolution helper.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ImageScopeSelector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/images/{image_id}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "RFD 00007 `GET /v1/images/{image_id}`. Flat single-image read.",
+        "operationId": "get_image_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/instances": {
       "get": {
         "tags": [
@@ -575,6 +682,111 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Nic"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/ssh-keys": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "RFD 00007 `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`.",
+        "operationId": "list_ssh_keys_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ImageScopeSelector"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/ssh-keys/{key_id}": {
+      "get": {
+        "tags": [
+          "ssh-keys"
+        ],
+        "summary": "RFD 00007 `GET /v1/ssh-keys/{key_id}`. Flat single-key read.",
+        "operationId": "get_ssh_key_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SshKey"
                 }
               }
             }
@@ -15415,6 +15627,25 @@
           "items"
         ]
       },
+      "ResultsPage_for_Image": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Image"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
       "ResultsPage_for_Instance": {
         "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
         "type": "object",
@@ -15442,6 +15673,25 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Nic"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ResultsPage_for_SshKey": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SshKey"
             }
           },
           "next_page": {
@@ -17052,6 +17302,17 @@
           "project_id",
           "tenant_id",
           "vni"
+        ]
+      },
+      "ImageScopeSelector": {
+        "description": "Image scope selector for `/v1/images?scope=...`. Per RFD 00007 D-Ap-1 + Locked Decision #33 the five legacy image URL surfaces collapse into one path discriminated by this enum. AP-2h ships the `public` variant only; the silo/tenant/project/user variants land when the scope-resolution helper arrives in AP-3a.",
+        "type": "string",
+        "enum": [
+          "public",
+          "silo",
+          "tenant",
+          "project",
+          "user"
         ]
       },
       "ConsoleKind": {

@@ -380,6 +380,34 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::delete_vpc_subnet(rqctx, path).await
     }
 
+    async fn list_images_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::ImageQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Image>>, HttpError> {
+        crate::handlers::images::list_images_v1(rqctx, query).await
+    }
+
+    async fn get_image_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::ImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError> {
+        crate::handlers::images::get_image_v1(rqctx, path).await
+    }
+
+    async fn list_ssh_keys_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::SshKeyQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<SshKey>>, HttpError> {
+        crate::handlers::ssh_keys::list_ssh_keys_v1(rqctx, query).await
+    }
+
+    async fn get_ssh_key_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SshKeyPath>,
+    ) -> Result<HttpResponseOk<SshKey>, HttpError> {
+        crate::handlers::ssh_keys::get_ssh_key_v1(rqctx, path).await
+    }
+
     async fn list_vpcs_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::VpcQuery>,

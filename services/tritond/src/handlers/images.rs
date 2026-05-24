@@ -666,6 +666,70 @@ pub(crate) async fn create_my_image(
     }
 }
 
+/// RFD 00007 AP-2h: `GET /v1/images?scope=public[&silo=...&tenant=...&project=...]`.
+/// Flat image list discriminated by `scope`. AP-2h only accepts
+/// `scope=public`; the silo / tenant / project / user variants need
+/// the AP-3a scope-resolution helper and land then.
+pub(crate) async fn list_images_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::ImageQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Image>>, HttpError> {
+    use tritond_api::v1::{ImageQuery, ImageScopeSelector, ResultsPage};
+    let ctx = rqctx.context();
+    let ImageQuery { scope, selectors: _ } = query.into_inner();
+    match scope {
+        ImageScopeSelector::Public => {
+            authenticate_and_authorize(
+                &rqctx,
+                &ctx.auth,
+                &ctx.audit,
+                &ctx.store,
+                Action::ImageListPublic,
+            )
+            .await?;
+            let images = ctx
+                .store
+                .list_images_public()
+                .await
+                .map_err(store_error_to_http)?;
+            Ok(HttpResponseOk(ResultsPage::single(images)))
+        }
+        _ => Err(HttpError::for_client_error(
+            Some("ScopeNotImplemented".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "AP-2h ships scope=public only; scope=silo/tenant/project/user lands \
+             in AP-3a once the scope-resolution helper exists"
+                .to_string(),
+        )),
+    }
+}
+
+/// RFD 00007 AP-2h: `GET /v1/images/{image_id}`. Flat single-image
+/// read. Reuses the existing `image_visible_to` predicate so
+/// cross-scope visibility is unchanged from /v2.
+pub(crate) async fn get_image_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::ImagePath>,
+) -> Result<HttpResponseOk<Image>, HttpError> {
+    let ctx = rqctx.context();
+    let image_id = path.into_inner().image_id;
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::ImageGet)
+            .await?;
+    let image = ctx
+        .store
+        .get_image(image_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if !image_visible_to(&image, &principal, ctx.store.as_ref())
+        .await
+        .map_err(store_error_to_http)?
+    {
+        return Err(not_found());
+    }
+    Ok(HttpResponseOk(image))
+}
+
 pub(crate) async fn get_image(
     rqctx: RequestContext<ApiContext>,
     path: Path<ImagePath>,

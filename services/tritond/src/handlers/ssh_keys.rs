@@ -513,6 +513,66 @@ pub(crate) async fn create_my_ssh_key(
     }
 }
 
+/// RFD 00007 AP-2h: `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`.
+/// Same shape as `/v1/images`; only `scope=public` is wired today.
+pub(crate) async fn list_ssh_keys_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::SshKeyQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<SshKey>>, HttpError> {
+    use tritond_api::v1::{ImageScopeSelector, ResultsPage, SshKeyQuery};
+    let ctx = rqctx.context();
+    let SshKeyQuery { scope, selectors: _ } = query.into_inner();
+    match scope {
+        ImageScopeSelector::Public => {
+            authenticate_and_authorize(
+                &rqctx,
+                &ctx.auth,
+                &ctx.audit,
+                &ctx.store,
+                Action::SshKeyListPublic,
+            )
+            .await?;
+            let keys = ctx
+                .store
+                .list_ssh_keys_public()
+                .await
+                .map_err(store_error_to_http)?;
+            Ok(HttpResponseOk(ResultsPage::single(keys)))
+        }
+        _ => Err(HttpError::for_client_error(
+            Some("ScopeNotImplemented".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "AP-2h ships scope=public only; other scopes land in AP-3a"
+                .to_string(),
+        )),
+    }
+}
+
+/// RFD 00007 AP-2h: `GET /v1/ssh-keys/{key_id}`. Flat single-key
+/// read; reuses `ssh_key_visible_to` for cross-scope visibility.
+pub(crate) async fn get_ssh_key_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::SshKeyPath>,
+) -> Result<HttpResponseOk<SshKey>, HttpError> {
+    let ctx = rqctx.context();
+    let key_id = path.into_inner().key_id;
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::SshKeyGet)
+            .await?;
+    let key = ctx
+        .store
+        .get_ssh_key(key_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if !ssh_key_visible_to(&key, &principal, ctx.store.as_ref())
+        .await
+        .map_err(store_error_to_http)?
+    {
+        return Err(not_found());
+    }
+    Ok(HttpResponseOk(key))
+}
+
 pub(crate) async fn get_ssh_key(
     rqctx: RequestContext<ApiContext>,
     path: Path<SshKeyPath>,

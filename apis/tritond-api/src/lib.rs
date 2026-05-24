@@ -2860,6 +2860,51 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// RFD 00007 `GET /v1/images?scope=public[&silo=&tenant=&project=]`.
+    /// AP-2h: `scope=public` only.
+    #[endpoint {
+        method = GET,
+        path = "/v1/images",
+        tags = ["images"],
+    }]
+    async fn list_images_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::ImageQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Image>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/images/{image_id}`. Flat single-image read.
+    #[endpoint {
+        method = GET,
+        path = "/v1/images/{image_id}",
+        tags = ["images"],
+    }]
+    async fn get_image_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::ImagePath>,
+    ) -> Result<HttpResponseOk<Image>, HttpError>;
+
+    /// RFD 00007 `GET /v1/ssh-keys?scope=public[&silo=&tenant=&project=]`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/ssh-keys",
+        tags = ["ssh-keys"],
+    }]
+    async fn list_ssh_keys_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::SshKeyQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<SshKey>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/ssh-keys/{key_id}`. Flat single-key read.
+    #[endpoint {
+        method = GET,
+        path = "/v1/ssh-keys/{key_id}",
+        tags = ["ssh-keys"],
+    }]
+    async fn get_ssh_key_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SshKeyPath>,
+    ) -> Result<HttpResponseOk<SshKey>, HttpError>;
+
     /// RFD 00007 `GET /v1/vpcs?tenant=&project=`. Flat VPC list.
     #[endpoint {
         method = GET,
