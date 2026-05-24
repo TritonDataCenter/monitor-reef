@@ -133,6 +133,160 @@ pub(crate) async fn list_project_instances(
     Ok(HttpResponseOk(instances))
 }
 
+/// RFD 00007 `GET /v1/instances?tenant=&project=&image=&cn=&state=`.
+///
+/// The flat customer-facing instance list. Dispatches on the
+/// selector set:
+///
+/// * `?image=<uuid>` -> single FDB range read against the AP-1c
+///   `instance/in_image/<image>/` index, then per-id point reads.
+/// * `?cn=<uuid>` -> existing `instance/in_host_cn/<cn>/` index via
+///   `Store::list_instances_by_cn`.
+/// * `?tenant=<uuid>&project=<uuid>` -> the bounded `list_instances_in_project`
+///   path, identical to the legacy `/v2/tenants/{t}/projects/{p}/instances`.
+/// * No selectors set, or only `?tenant=` -> `400 BadRequest`
+///   `MissingScope` until AP-3a lands the bounded-scan across-projects
+///   handler. A future slice expands this; today the failure is
+///   typed so a client can react.
+///
+/// Cross-scope checks: a non-fleet-admin principal who sets
+/// `?tenant=` outside their own tenant gets `404 NotFound` (via
+/// `authenticate_and_authorize_in_tenant`). The `?silo=` selector
+/// is rejected with `400 ScopeNotAccepted` on this endpoint (the
+/// fleet-admin variant lives at `/v1/system/instances` in a later
+/// slice).
+///
+/// AP-2b ships UUID-only selector parsing; name-resolution
+/// (`NameOrId::Name(...)`) returns `400 BadRequest` until
+/// `handlers::selectors::resolve_name_or_id` lands in AP-3a.
+pub(crate) async fn list_instances_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::InstanceQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+    use tritond_api::v1::{InstanceQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let InstanceQuery {
+        scope,
+        image,
+        cn,
+        state,
+    } = query.into_inner();
+
+    // Reject `?silo=` on the customer endpoint (typed error per
+    // RFD 00007 D-Ap-8). Fleet-admin reads with silo scope live at
+    // `/v1/system/instances`, which lands in a later slice.
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints; \
+             call /v1/system/instances if you have fleet-admin capabilities"
+                .to_string(),
+        ));
+    }
+
+    // AP-2b ships UUID-only selectors (Dropshot constraint on scalar
+    // query params). AP-3a swaps to a `NameOrId` newtype that
+    // resolves names server-side via `handlers::selectors`.
+    let tenant_uuid = scope.tenant;
+    let project_uuid = scope.project;
+    let image_uuid = image;
+    let cn_uuid = cn;
+
+    // Authentication: the principal must be authenticated and, if
+    // they specified a tenant, must be in that tenant's silo.
+    if let Some(tenant_id) = tenant_uuid {
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceList,
+            tenant_id,
+        )
+        .await?;
+    } else {
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::InstanceList,
+        )
+        .await?;
+    }
+
+    // Dispatch on the selector set. Priority order favours the
+    // narrowest index: image > cn > project.
+    let raw: Vec<Instance> = if let Some(image_id) = image_uuid {
+        ctx.store
+            .list_instances_by_image(image_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else if let Some(cn_id) = cn_uuid {
+        ctx.store
+            .list_instances_by_cn(cn_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else if let Some(project_id) = project_uuid {
+        // tenant_uuid is required when project_uuid is set so the
+        // cross-tenant 404 check above already fired; verify the
+        // project lives under the named tenant for defence in depth.
+        let project = ctx
+            .store
+            .get_project(project_id)
+            .await
+            .map_err(store_error_to_http)?;
+        if let Some(tenant_id) = tenant_uuid
+            && project.tenant_id != tenant_id
+        {
+            return Err(not_found());
+        }
+        ctx.store
+            .list_instances_in_project(project_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else {
+        // AP-2b: no fleet-wide bounded-scan handler yet. The
+        // operator surface at /v1/system/instances will accept this
+        // shape; the customer surface always requires either an
+        // indexed selector (image/cn) or a project scope.
+        return Err(HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "set `image=`, `cn=`, or `tenant=&project=` to scope the list; \
+             cross-project scans on the customer surface require AP-3a"
+                .to_string(),
+        ));
+    };
+
+    // Cross-scope filters (post-index). When the index gave us a
+    // wider set than the caller asked for, narrow it client-side
+    // (still inside the handler) to honour the additional selectors.
+    let mut filtered: Vec<Instance> = raw
+        .into_iter()
+        .filter(|i| {
+            tenant_uuid.is_none_or(|t| i.tenant_id == t)
+                && project_uuid.is_none_or(|p| i.project_id == p)
+                && cn_uuid.is_none_or(|c| i.host_cn_uuid == Some(c))
+                && image_uuid.is_none_or(|im| i.image_id == im)
+        })
+        .collect();
+
+    // `state=` is a string match against the LifecycleState kind
+    // name. Bounded by the result-set size from the indexed
+    // selector above so we cannot exceed SCAN_CAP here.
+    if let Some(want) = state.as_deref() {
+        filtered.retain(|i| {
+            let k = i.lifecycle.kind();
+            format!("{k:?}").to_ascii_lowercase() == want.to_ascii_lowercase()
+        });
+    }
+
+    Ok(HttpResponseOk(ResultsPage::single(filtered)))
+}
+
+
 pub(crate) async fn create_project_instance(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectPath>,

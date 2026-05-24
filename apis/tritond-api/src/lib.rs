@@ -3575,6 +3575,31 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/instances?tenant=&project=&image=&cn=&state=`.
+    ///
+    /// Flat customer-facing instance list with scope and reference
+    /// selectors per RFD 00007 D-Ap-1. Dispatches on the selector
+    /// set: `image=` and `cn=` are indexed (AP-1c); `tenant=&project=`
+    /// uses the existing project membership index. AP-2b accepts
+    /// UUID-only selectors; name resolution (`NameOrId::Name`) lands
+    /// in AP-3a via `handlers::selectors::resolve_name_or_id`.
+    ///
+    /// Returns `400 ScopeNotAccepted` if `silo=` is set (that
+    /// selector is reserved for `/v1/system/instances`). Returns
+    /// `400 MissingScope` if no indexed selector or project scope
+    /// is set (cross-project scans on the customer surface are not
+    /// supported in AP-2b; the operator surface at `/v1/system/`
+    /// will accept them).
+    #[endpoint {
+        method = GET,
+        path = "/v1/instances",
+        tags = ["instances"],
+    }]
+    async fn list_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::InstanceQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Instance>>, HttpError>;
+
     /// Create an instance in a project.
     ///
     /// Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404

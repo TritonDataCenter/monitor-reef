@@ -137,17 +137,22 @@ pub struct RedirectHint {
 /// * Setting `silo` on a customer endpoint without `SystemRead`
 ///   returns `400 ScopeNotAccepted` (typed error, not silent
 ///   ignore).
+///
+/// AP-2b ships UUID-only selectors (Dropshot requires scalar query
+/// param types). AP-3a swaps these to a `NameOrId` newtype with a
+/// custom `Deserialize` that lands the name-or-uuid dispatch at the
+/// extractor edge.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct ScopeSelectors {
     /// Restrict to a single silo (fleet-admin only).
     #[serde(default)]
-    pub silo: Option<NameOrId>,
+    pub silo: Option<Uuid>,
     /// Restrict to a single tenant.
     #[serde(default)]
-    pub tenant: Option<NameOrId>,
+    pub tenant: Option<Uuid>,
     /// Restrict to a single project.
     #[serde(default)]
-    pub project: Option<NameOrId>,
+    pub project: Option<Uuid>,
 }
 
 /// Reference-selector query parameters on `/v1/instances` (and the
@@ -164,12 +169,12 @@ pub struct InstanceQuery {
     /// Restrict to instances whose `image_id` matches. Backed by
     /// `idx/image/<image>/<instance>` in FDB (AP-1c).
     #[serde(default)]
-    pub image: Option<NameOrId>,
+    pub image: Option<Uuid>,
     /// Restrict to instances placed on a single compute node.
     /// Backed by `instance/in_host_cn/<cn>/<instance>` (existing
     /// pre-RFD index; AP-1c added the matching read method).
     #[serde(default)]
-    pub cn: Option<NameOrId>,
+    pub cn: Option<Uuid>,
     /// Restrict to instances in a given lifecycle state. Bounded-scan
     /// within the resolved scope (cap [`tritond_store::SCAN_CAP`]);
     /// over-cap returns `400 ScanLimitExceeded`.
