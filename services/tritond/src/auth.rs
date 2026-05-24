@@ -999,6 +999,13 @@ impl AuthService {
                         issuer: claims.issuer.clone(),
                         subject: claims.subject.clone(),
                     }),
+                    // Federated users land with no operator
+                    // capabilities by default. The customer surface
+                    // does not require any capabilities; the operator
+                    // surface (`/v1/system/`) is unreachable until an
+                    // operator explicitly grants them. Per RFD 00007
+                    // D-Ap-13.
+                    capabilities: Default::default(),
                 };
                 match store.create_user(new_user).await {
                     Ok(u) => u,
@@ -2013,6 +2020,7 @@ mod tests {
             created_at: chrono::Utc::now(),
             tenant_id: None,
             federation: None,
+            capabilities: Default::default(),
         };
         let user_id = user.id;
         store.create_user(user).await.unwrap();

@@ -6,7 +6,7 @@
 
 //! Domain types shared between the storage layer and the wire surface.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use chrono::{DateTime, Utc};
@@ -99,6 +99,88 @@ pub struct User {
     /// `None` for password-auth users.
     #[serde(default)]
     pub federation: Option<Federation>,
+    /// Operator capabilities granted to this user. Gates the
+    /// `/v1/system/` operator surface per RFD 00007 D-Ap-13.
+    /// `is_root` users bypass capability checks (they implicitly carry
+    /// every capability); for non-root users the auth layer checks
+    /// `capabilities.contains(&required)` before serving any
+    /// `/v1/system/` endpoint. `fleet_admin == true` users migrate to
+    /// `{SystemRead, SystemOperate}` at AP-1; `SystemConfigWrite` and
+    /// `StorageAdmin` are granted explicitly per user.
+    ///
+    /// Defaults to the empty set so existing persisted user records
+    /// round-trip without churn; the AP-1 migration in
+    /// [`crate::Store::migrate_user_capabilities`] populates the set
+    /// from `fleet_admin` once at deploy time.
+    #[serde(default)]
+    pub capabilities: BTreeSet<Capability>,
+}
+
+/// Operator capability that gates access to `/v1/system/` endpoints.
+///
+/// Per RFD 00007 D-Ap-13, the v1 capability set is intentionally
+/// small. Each `/v1/system/` endpoint declares the capability it
+/// requires; the auth layer's `require_capability` helper checks
+/// `Principal::Operator.capabilities` against the requirement and
+/// returns `404 NotFound` on a mismatch (the same shape as
+/// cross-tenant deny; an attacker cannot distinguish "no access"
+/// from "no such resource").
+///
+/// Adding a new capability is non-breaking on deserialise
+/// (`#[serde(other)]` would mask the unknown variant, but we
+/// deliberately do *not* use it here — an unknown capability in a
+/// persisted row is a fail-loud signal that the cluster is reading
+/// data from a newer writer). Adding a variant is breaking on the
+/// auth-layer match (compile error if not classified), which is the
+/// fail-loud check.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Capability {
+    /// Read any `/v1/system/` resource: fleet inventories (instances,
+    /// disks, NICs, CNs), sagas, migrations, audit log, cluster
+    /// config reads, storage cluster inventory reads, silo +
+    /// utilization views. Includes drain-preview (dry-run).
+    SystemRead,
+    /// Mutate fleet resources at the per-resource level: CN approve,
+    /// CN disable, CN role change, CN auto-approve window open/close,
+    /// saga abandon, capability grant/revoke. Does NOT cover cluster
+    /// config writes or storage cluster administration.
+    SystemOperate,
+    /// Write cluster-wide settings (`PUT`/`DELETE /v1/system/config/{key}`).
+    /// Distinct from `SystemOperate` because changing cluster-wide
+    /// behaviour is a different blast radius than per-resource ops.
+    SystemConfigWrite,
+    /// Administer storage clusters: register, drain, reweight, remove
+    /// nodes; manage IAM users / access keys / policies on a cluster;
+    /// set presigners. Read access is covered by `SystemRead`.
+    StorageAdmin,
+}
+
+impl Capability {
+    /// Every variant, in declaration order. Used by the AP-1 root
+    /// migration to populate `User.capabilities` for the bootstrap
+    /// operator (root carries every capability) and by tests that
+    /// need to assert exhaustive coverage.
+    pub fn all() -> &'static [Capability] {
+        &[
+            Capability::SystemRead,
+            Capability::SystemOperate,
+            Capability::SystemConfigWrite,
+            Capability::StorageAdmin,
+        ]
+    }
 }
 
 /// External-IdP linkage for a federated [`User`]. Combined with
@@ -980,6 +1062,12 @@ pub struct UserView {
     pub username: String,
     pub is_root: bool,
     pub created_at: DateTime<Utc>,
+    /// The capability set this user carries. Surfaced on `tcadm whoami`
+    /// and `tcadm system user show` per RFD 00007. Empty set means no
+    /// `/v1/system/` access; `is_root: true` users bypass the check
+    /// regardless of the set.
+    #[serde(default)]
+    pub capabilities: BTreeSet<Capability>,
 }
 
 impl From<User> for UserView {
@@ -989,6 +1077,7 @@ impl From<User> for UserView {
             username: user.username,
             is_root: user.is_root,
             created_at: user.created_at,
+            capabilities: user.capabilities,
         }
     }
 }

@@ -54,6 +54,16 @@ pub(crate) fn store_error_to_http(err: StoreError) -> HttpError {
         StoreError::AlreadyExists(msg) => HttpError::for_internal_error(format!(
             "store reported AlreadyExists from a path that should never collide: {msg}"
         )),
+        // RFD 00007 D-Ap-7: bounded-scan list operations never silently
+        // truncate. The handler surfaces the cap and the narrowing hint
+        // in a structured 400 response. The body is intentionally
+        // operator-facing - it names the cap value and a specific
+        // selector the caller can set to scope the scan.
+        StoreError::ScanLimitExceeded { cap, hint } => HttpError::for_client_error(
+            Some("ScanLimitExceeded".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            format!("scan exceeded {cap} rows without completing; {hint}"),
+        ),
     }
 }
 
@@ -85,6 +95,10 @@ pub(crate) fn store_error_to_audit_outcome(err: &StoreError) -> AuditOutcome {
         },
         StoreError::AlreadyExists(msg) => AuditOutcome::ServerError {
             message: msg.clone(),
+        },
+        StoreError::ScanLimitExceeded { cap, hint } => AuditOutcome::ClientError {
+            code: 400,
+            message: format!("scan exceeded {cap} rows: {hint}"),
         },
     }
 }

@@ -534,6 +534,10 @@ fn store_err_to_action_err(e: tritond_store::StoreError) -> ActionError {
         tritond_store::StoreError::PinConflict { .. } => "conflict",
         tritond_store::StoreError::CapacityExhausted { .. } => "backend",
         tritond_store::StoreError::AlreadyExists(_) => "backend",
+        // ScanLimitExceeded should never reach a saga (sagas operate
+        // on bounded sets by uuid). Surfaces as `backend` for the
+        // unreachable case; a debugger will spot it in the saga log.
+        tritond_store::StoreError::ScanLimitExceeded { .. } => "backend",
     };
     let payload = serde_json::json!({
         "kind": "store_error",

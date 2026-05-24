@@ -31,7 +31,7 @@ use tritond_auth::{
     IDENTITY_HMAC_KEY_BYTES, IdentityHmacKey, JwtKey, RedactedString, generate_random_password,
     hash_password,
 };
-use tritond_store::{Store, StoreError, SystemKey, User};
+use tritond_store::{Capability, Store, StoreError, SystemKey, User};
 use uuid::Uuid;
 
 /// Username of the bootstrap root operator.
@@ -145,6 +145,10 @@ async fn ensure_root_user(store: &dyn Store) -> Result<()> {
         created_at: Utc::now(),
         tenant_id: None,
         federation: None,
+        // Root operator carries every capability so the /v1/system/
+        // surface is reachable. Non-root users default to the empty
+        // set; operators grant capabilities explicitly per user.
+        capabilities: Capability::all().iter().copied().collect(),
     };
     store
         .create_user(user)
@@ -234,6 +238,7 @@ mod tests {
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
+            capabilities: Default::default(),
         };
         store.create_user(user.clone()).await.unwrap();
 

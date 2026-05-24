@@ -33,9 +33,9 @@ pub use mem::MemStore;
 pub use types::{
     AUTO_APPROVE_WINDOW_MAX, AddressFamily, AdoptableState, AffinityKind, AffinityOp, AffinityRule,
     AffinityScope, AffinitySelector, ApiKey, ApiKeyScope, ApiKeyView, AutoApproveWindow,
-    BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Cn,
-    CnCapacity, CnLoadSummary, CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, CnView,
-    ConfigError, ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
+    BHYVE_M1_MIN_BOOT_DISK_BYTES, CLAIM_CODE_ALPHABET, CLAIM_CODE_LEN, CLAIM_CODE_TTL, Capability,
+    Cn, CnCapacity, CnLoadSummary, CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState,
+    CnView, ConfigError, ConfigKey, DEFAULT_DHCP_LEASE_GC_THRESHOLD_SECS,
     DEFAULT_DHCP_RECONCILE_INTERVAL_SECS, DEFAULT_IMDS_ENABLED, DEFAULT_IMDS_HOP_LIMIT,
     DEFAULT_STALE_CLAIM_THRESHOLD_SECS, DEFAULT_SWEEPER_INTERVAL_SECS, DeviceCapacity, DeviceKind,
     DeviceReservation, DhcpLease, DhcpOptionRaw, DhcpPool, DhcpReservation, Disk, DiskKind,
@@ -123,7 +123,36 @@ pub enum StoreError {
     /// catalog action never calls `designate` twice).
     #[error("already exists: {0}")]
     AlreadyExists(String),
+
+    /// A bounded-scan list operation exceeded [`SCAN_CAP`] without
+    /// completing. Per RFD 00007 D-Ap-7, list endpoints that fall back
+    /// to bounded scans never silently truncate; over-cap is always
+    /// an explicit error. The handler surfaces this as 400
+    /// `ScanLimitExceeded` with a body that names the cap and hints
+    /// which selector would narrow the scan.
+    #[error("scan limit exceeded ({cap} rows): {hint}")]
+    ScanLimitExceeded {
+        /// The cap value that was hit. Today `SCAN_CAP`; future
+        /// per-endpoint caps would surface their own value here.
+        cap: usize,
+        /// Operator-facing hint naming the selector that would
+        /// narrow the scan ("set --project= or --since=").
+        hint: String,
+    },
 }
+
+/// Maximum rows returned by a bounded-scan list operation per
+/// RFD 00007 D-Ap-7. Hit by `Store::list_*` methods that fall back
+/// to scanning a parent-keyed range (instances by project, sagas by
+/// state, audit-log by time, etc.) and exposed to handlers via
+/// [`StoreError::ScanLimitExceeded`].
+///
+/// Hard-coded at AP-1; future slices may make it per-endpoint
+/// configurable via cluster settings if real workloads exceed it.
+/// The current value matches Oxide's default page size guard and is
+/// large enough that a misconfigured operator query is the only way
+/// to legitimately hit it today.
+pub const SCAN_CAP: usize = 10_000;
 
 /// A handle to the control-plane state store.
 ///

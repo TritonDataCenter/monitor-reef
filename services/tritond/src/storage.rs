@@ -196,6 +196,16 @@ fn store_error_to_http(err: StoreError) -> HttpError {
             "unexpected cn-capacity exhausted on {server_uuid}: {reason}"
         )),
         StoreError::AlreadyExists(msg) => HttpError::for_internal_error(msg),
+        // ScanLimitExceeded is operator-visible at 400. The storage
+        // handlers do not yet trip bounded-scan paths (storage-cluster
+        // inventory is small), but the variant is reachable via the
+        // shared Store trait so we map it explicitly rather than fall
+        // through to a 500.
+        StoreError::ScanLimitExceeded { cap, hint } => HttpError::for_client_error(
+            Some("ScanLimitExceeded".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            format!("scan exceeded {cap} rows without completing; {hint}"),
+        ),
     }
 }
 

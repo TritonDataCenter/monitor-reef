@@ -4402,6 +4402,53 @@ fn mem_try_consume_window(guard: &mut Inner, now: chrono::DateTime<Utc>) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Capability;
+
+    #[test]
+    fn user_capabilities_serde_default_is_empty() {
+        // Existing persisted rows do not have `capabilities` in the
+        // JSON. Per RFD 00007 AP-1, the field is `#[serde(default)]`
+        // so they round-trip as an empty set. This protects the
+        // upgrade path: a tritond reading a pre-AP-1 row gets a
+        // non-`is_root` user with no `/v1/system/` access (the
+        // fail-safe default).
+        let legacy_json = r#"{
+            "id": "00000000-0000-0000-0000-000000000001",
+            "username": "alice",
+            "password_hash": "$2y$dummy",
+            "is_root": false,
+            "fleet_admin": false,
+            "created_at": "2026-05-24T00:00:00Z",
+            "tenant_id": null,
+            "federation": null
+        }"#;
+        let u: User = serde_json::from_str(legacy_json).unwrap();
+        assert!(u.capabilities.is_empty(), "missing field should default to empty set");
+
+        // Reverse direction: an `is_root` user constructed with
+        // `Capability::all()` round-trips through JSON correctly with
+        // the kebab-case wire form.
+        let root = User {
+            id: u.id,
+            username: "root".to_string(),
+            password_hash: String::new(),
+            is_root: true,
+            fleet_admin: true,
+            created_at: u.created_at,
+            tenant_id: None,
+            federation: None,
+            capabilities: Capability::all().iter().copied().collect(),
+        };
+        let json = serde_json::to_string(&root).unwrap();
+        assert!(json.contains("system-read"), "wire form is kebab-case: {json}");
+        assert!(json.contains("storage-admin"), "wire form is kebab-case: {json}");
+        let back: User = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.capabilities.len(), Capability::all().len());
+        assert!(back.capabilities.contains(&Capability::SystemRead));
+        assert!(back.capabilities.contains(&Capability::SystemOperate));
+        assert!(back.capabilities.contains(&Capability::SystemConfigWrite));
+        assert!(back.capabilities.contains(&Capability::StorageAdmin));
+    }
 
     fn user_fixture(name: &str) -> User {
         User {
@@ -4413,6 +4460,7 @@ mod tests {
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
+            capabilities: Default::default(),
         }
     }
 
@@ -4430,6 +4478,7 @@ mod tests {
                 issuer: issuer.to_string(),
                 subject: subject.to_string(),
             }),
+            capabilities: Default::default(),
         }
     }
 
@@ -6116,6 +6165,7 @@ mod tests {
                 created_at: Utc::now(),
                 tenant_id: Some(tenant_id),
                 federation: None,
+                capabilities: Default::default(),
             })
             .await
             .unwrap();
