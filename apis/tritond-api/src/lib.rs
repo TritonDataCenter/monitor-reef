@@ -2860,6 +2860,50 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// RFD 00007 `GET /v1/vpcs?tenant=&project=`. Flat VPC list.
+    #[endpoint {
+        method = GET,
+        path = "/v1/vpcs",
+        tags = ["vpcs"],
+    }]
+    async fn list_vpcs_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::VpcQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Vpc>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/vpcs/{vpc_id}`. Flat single-VPC read.
+    #[endpoint {
+        method = GET,
+        path = "/v1/vpcs/{vpc_id}",
+        tags = ["vpcs"],
+    }]
+    async fn get_vpc_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::VpcPath>,
+    ) -> Result<HttpResponseOk<Vpc>, HttpError>;
+
+    /// RFD 00007 `GET /v1/subnets?vpc=<uuid>`. Flat subnet list.
+    #[endpoint {
+        method = GET,
+        path = "/v1/subnets",
+        tags = ["subnets"],
+    }]
+    async fn list_subnets_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::SubnetQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Subnet>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/subnets/{subnet_id}`. Flat single-subnet read.
+    #[endpoint {
+        method = GET,
+        path = "/v1/subnets/{subnet_id}",
+        tags = ["subnets"],
+    }]
+    async fn get_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SubnetPath>,
+    ) -> Result<HttpResponseOk<Subnet>, HttpError>;
+
     /// List route tables inside a VPC.
     #[endpoint {
         method = GET,

@@ -199,6 +199,88 @@ pub(crate) async fn create_project_vpc(
     }
 }
 
+/// RFD 00007 AP-2g: `GET /v1/vpcs?tenant=&project=`. Flat VPC list
+/// scoped to a tenant + project. Both selectors required at AP-2g.
+pub(crate) async fn list_vpcs_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::VpcQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Vpc>>, HttpError> {
+    use tritond_api::v1::{ResultsPage, VpcQuery};
+    let ctx = rqctx.context();
+    let VpcQuery { scope } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let tenant_id = scope.tenant.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/vpcs requires `?tenant=<uuid>&project=<uuid>` selectors"
+                .to_string(),
+        )
+    })?;
+    let project_id = scope.project.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/vpcs requires `?tenant=<uuid>&project=<uuid>` selectors"
+                .to_string(),
+        )
+    })?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::VpcList,
+        tenant_id,
+    )
+    .await?;
+    let project = ctx
+        .store
+        .get_project(project_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if project.tenant_id != tenant_id {
+        return Err(not_found());
+    }
+    let vpcs = ctx
+        .store
+        .list_vpcs_in_project(project_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(vpcs)))
+}
+
+/// RFD 00007 AP-2g: `GET /v1/vpcs/{vpc_id}`. Flat single-VPC read.
+pub(crate) async fn get_vpc_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::VpcPath>,
+) -> Result<HttpResponseOk<Vpc>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::VpcPath { vpc_id } = path.into_inner();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::VpcGet,
+        vpc.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(vpc))
+}
+
 pub(crate) async fn get_project_vpc(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,

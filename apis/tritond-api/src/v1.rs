@@ -54,6 +54,37 @@ pub struct NicPath {
     pub nic_id: Uuid,
 }
 
+/// Path parameters for `/v1/vpcs/{vpc_id}` (AP-2g).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VpcPath {
+    pub vpc_id: Uuid,
+}
+
+/// Path parameters for `/v1/subnets/{subnet_id}` (AP-2g).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SubnetPath {
+    pub subnet_id: Uuid,
+}
+
+/// Query parameters for `GET /v1/vpcs?tenant=&project=`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct VpcQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+}
+
+/// Query parameters for `GET /v1/subnets?vpc=<uuid>`. AP-2g requires
+/// a `vpc=` selector (subnets are sub-resources of a VPC; cross-VPC
+/// subnet scans are deferred).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct SubnetQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to subnets in a given VPC. Required at AP-2g.
+    #[serde(default)]
+    pub vpc: Option<Uuid>,
+}
+
 /// Query parameters for `GET /v1/nics?...`.
 ///
 /// AP-2f wires the three indexed selectors landed in AP-1c: `subnet=`,

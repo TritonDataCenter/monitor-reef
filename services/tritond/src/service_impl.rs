@@ -380,6 +380,34 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::delete_vpc_subnet(rqctx, path).await
     }
 
+    async fn list_vpcs_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::VpcQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Vpc>>, HttpError> {
+        crate::handlers::network::vpc::list_vpcs_v1(rqctx, query).await
+    }
+
+    async fn get_vpc_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::VpcPath>,
+    ) -> Result<HttpResponseOk<Vpc>, HttpError> {
+        crate::handlers::network::vpc::get_vpc_v1(rqctx, path).await
+    }
+
+    async fn list_subnets_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::SubnetQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Subnet>>, HttpError> {
+        crate::handlers::network::subnet::list_subnets_v1(rqctx, query).await
+    }
+
+    async fn get_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SubnetPath>,
+    ) -> Result<HttpResponseOk<Subnet>, HttpError> {
+        crate::handlers::network::subnet::get_subnet_v1(rqctx, path).await
+    }
+
     async fn list_vpc_route_tables(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcPath>,
