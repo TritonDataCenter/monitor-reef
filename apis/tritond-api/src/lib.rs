@@ -16,6 +16,7 @@
 //! [`mod@types`] so wire types and storage types never drift.
 
 pub mod types;
+pub mod v1;
 
 use chrono::{DateTime, Utc};
 use dropshot::{

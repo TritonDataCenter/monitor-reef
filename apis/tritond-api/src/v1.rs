@@ -1,0 +1,265 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! Shared wire types for the `/v1/` API surface introduced by
+//! RFD 00007.
+//!
+//! The first stable Triton Cloud API ships at `/v1/`. The legacy
+//! `/v2/` paths in this trait stay during AP-3a..AP-3e (the
+//! coordinated rollover) and flip to `410 Gone` with a
+//! [`RedirectHint`] body at AP-3e.
+//!
+//! Per RFD 00007 the customer-facing surface is flat with selector
+//! query parameters (`?tenant=&project=&image=&cn=` etc.); the
+//! operator-cardinal surface lives at `/v1/system/` and is gated by
+//! [`Capability`]. The types here are the shared primitives both
+//! surfaces consume.
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+// Re-export `Capability` from the store layer so handler and CLI
+// code never has to drift on the wire type. Adding a new variant
+// is a fail-loud compile error in the auth-layer match (per the
+// types-module comment on the source enum).
+pub use tritond_store::Capability;
+
+/// A resource selector that accepts either a UUID or a name.
+///
+/// Path segments in the `/v1/` surface (per RFD 00007 D-Ap-3)
+/// accept either form transparently. UUID parsing is tried first
+/// (a 36-character hyphenated hex string is unambiguous); name
+/// lookup is the fallback, and on the customer surface requires
+/// enough scope context (silo + tenant + project for tenant
+/// resources) to disambiguate.
+///
+/// Operators type names; automation passes UUIDs; the same endpoint
+/// serves both.
+///
+/// Serialised as a bare string on the wire (`"web-01"` or
+/// `"0ab9...d2c4"`); deserialise dispatches by parsing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum NameOrId {
+    /// Parsed UUID. Wins on deserialise if the input parses as a UUID.
+    Id(Uuid),
+    /// Otherwise treat as a name; the handler resolves it against
+    /// the principal's scope via
+    /// `handlers::selectors::resolve_name_or_id`.
+    Name(String),
+}
+
+impl NameOrId {
+    /// Parse a single string into either an `Id` or a `Name`.
+    /// Used by CLI front-ends that take a single positional
+    /// argument and need to dispatch on its shape.
+    #[must_use]
+    pub fn parse(input: &str) -> Self {
+        match Uuid::parse_str(input) {
+            Ok(u) => NameOrId::Id(u),
+            Err(_) => NameOrId::Name(input.to_string()),
+        }
+    }
+
+    /// Return the UUID if this is an `Id` variant. Useful when the
+    /// caller has already resolved a name to a UUID via the store
+    /// and wants to short-circuit further work.
+    #[must_use]
+    pub fn as_uuid(&self) -> Option<Uuid> {
+        match self {
+            NameOrId::Id(u) => Some(*u),
+            NameOrId::Name(_) => None,
+        }
+    }
+
+    /// Return the name if this is a `Name` variant.
+    #[must_use]
+    pub fn as_name(&self) -> Option<&str> {
+        match self {
+            NameOrId::Name(s) => Some(s.as_str()),
+            NameOrId::Id(_) => None,
+        }
+    }
+}
+
+impl std::fmt::Display for NameOrId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameOrId::Id(u) => write!(f, "{u}"),
+            NameOrId::Name(s) => f.write_str(s),
+        }
+    }
+}
+
+/// Body of the `410 Gone` response served at every legacy `/v2/`
+/// path after the AP-3e cutover commit.
+///
+/// The hint carries the *new* path a client should call, with the
+/// path parameters from the *old* URL echoed into the query string.
+/// A confused caller (someone replaying a stale `curl` from notes)
+/// gets a clear next step without keeping the old handler alive.
+///
+/// The 410 body is intentionally machine-readable: `tcadm` and other
+/// generated clients can surface a typed retry suggestion rather
+/// than just a stringified error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RedirectHint {
+    /// HTTP method the caller should use for the replacement.
+    pub method: String,
+    /// New `/v1/` path.
+    pub path: String,
+    /// Query parameters to set on the replacement call. Built from
+    /// the `(tenant_id, project_id, ...)` segments of the old URL
+    /// so a `GET /v2/tenants/T/projects/P/instances` hint carries
+    /// `{"tenant": "T", "project": "P"}`.
+    pub query_params: std::collections::BTreeMap<String, String>,
+}
+
+/// Scope-selector query parameters carried by every customer-facing
+/// `/v1/` list endpoint. Per RFD 00007 D-Ap-1 + D-Ap-8.
+///
+/// Resolution rules (enforced in
+/// `services/tritond/src/handlers/selectors.rs`):
+///
+/// * A principal without `Capability::SystemRead` who omits
+///   `tenant` falls back to the principal's tenant. Setting
+///   `tenant` to a value outside the principal's tenant returns
+///   `404 NotFound` (cross-tenant probe invariant).
+/// * A principal without `Capability::SystemRead` who omits
+///   `project` returns resources across every project they can see
+///   in the resolved tenant.
+/// * A `SystemRead`-capable caller may omit any selector for a
+///   fleet-wide read.
+/// * Setting `silo` on a customer endpoint without `SystemRead`
+///   returns `400 ScopeNotAccepted` (typed error, not silent
+///   ignore).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct ScopeSelectors {
+    /// Restrict to a single silo (fleet-admin only).
+    #[serde(default)]
+    pub silo: Option<NameOrId>,
+    /// Restrict to a single tenant.
+    #[serde(default)]
+    pub tenant: Option<NameOrId>,
+    /// Restrict to a single project.
+    #[serde(default)]
+    pub project: Option<NameOrId>,
+}
+
+/// Reference-selector query parameters on `/v1/instances` (and the
+/// equivalent fleet-admin `/v1/system/instances`).
+///
+/// Per RFD 00007 02 §1.2: each selector narrows by a reference the
+/// `Instance` row carries to another resource. `image` and `cn` are
+/// the two indexed axes (AP-1c keyspaces); `state` is bounded-scan
+/// within scope.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct InstanceQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to instances whose `image_id` matches. Backed by
+    /// `idx/image/<image>/<instance>` in FDB (AP-1c).
+    #[serde(default)]
+    pub image: Option<NameOrId>,
+    /// Restrict to instances placed on a single compute node.
+    /// Backed by `instance/in_host_cn/<cn>/<instance>` (existing
+    /// pre-RFD index; AP-1c added the matching read method).
+    #[serde(default)]
+    pub cn: Option<NameOrId>,
+    /// Restrict to instances in a given lifecycle state. Bounded-scan
+    /// within the resolved scope (cap [`tritond_store::SCAN_CAP`]);
+    /// over-cap returns `400 ScanLimitExceeded`.
+    #[serde(default)]
+    pub state: Option<String>,
+}
+
+/// Paginated wire envelope for `/v1/` list endpoints. Mirrors
+/// Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor
+/// regen sees the same shape it's already used to across the Oxide
+/// API.
+///
+/// `items` is the rows for this page; `next_page` is an opaque
+/// cursor the caller passes back as `?page_token=...` to fetch the
+/// next page, or `None` when the result set is exhausted.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ResultsPage<T> {
+    pub items: Vec<T>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_page: Option<String>,
+}
+
+impl<T> ResultsPage<T> {
+    /// Construct a page with no continuation cursor. Used by
+    /// handlers that don't yet paginate (the result set is bounded
+    /// by [`tritond_store::SCAN_CAP`] regardless).
+    pub fn single(items: Vec<T>) -> Self {
+        Self {
+            items,
+            next_page: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_or_id_parses_uuid_first() {
+        let u = Uuid::new_v4();
+        let parsed = NameOrId::parse(&u.to_string());
+        assert_eq!(parsed.as_uuid(), Some(u));
+        assert!(parsed.as_name().is_none());
+
+        let named = NameOrId::parse("web-01");
+        assert!(named.as_uuid().is_none());
+        assert_eq!(named.as_name(), Some("web-01"));
+    }
+
+    #[test]
+    fn name_or_id_round_trips_through_json_untagged() {
+        let u = Uuid::new_v4();
+        let id_json = serde_json::to_string(&NameOrId::Id(u)).unwrap();
+        // Untagged enum: a UUID round-trips as a bare string.
+        assert_eq!(id_json, format!("\"{u}\""));
+        let back: NameOrId = serde_json::from_str(&id_json).unwrap();
+        assert_eq!(back.as_uuid(), Some(u));
+
+        let name_json = serde_json::to_string(&NameOrId::Name("web-01".into())).unwrap();
+        assert_eq!(name_json, "\"web-01\"");
+        let back: NameOrId = serde_json::from_str(&name_json).unwrap();
+        // Note: a plain string that happens not to parse as UUID
+        // round-trips as a Name. A string that IS a valid UUID
+        // round-trips as Id - that's the untagged dispatch rule.
+        assert_eq!(back.as_name(), Some("web-01"));
+    }
+
+    #[test]
+    fn results_page_omits_next_page_when_none() {
+        let page = ResultsPage::single(vec![1u32, 2, 3]);
+        let json = serde_json::to_string(&page).unwrap();
+        assert!(!json.contains("next_page"), "next_page should be skipped when None: {json}");
+        assert!(json.contains("\"items\":[1,2,3]"));
+    }
+
+    #[test]
+    fn redirect_hint_serialises_v1_path_and_query_params() {
+        let mut params = std::collections::BTreeMap::new();
+        params.insert("tenant".to_string(), "acme".to_string());
+        params.insert("project".to_string(), "prod".to_string());
+        let hint = RedirectHint {
+            method: "GET".to_string(),
+            path: "/v1/instances".to_string(),
+            query_params: params,
+        };
+        let json = serde_json::to_string(&hint).unwrap();
+        assert!(json.contains("\"method\":\"GET\""));
+        assert!(json.contains("\"path\":\"/v1/instances\""));
+        assert!(json.contains("\"tenant\":\"acme\""));
+        assert!(json.contains("\"project\":\"prod\""));
+    }
+}
