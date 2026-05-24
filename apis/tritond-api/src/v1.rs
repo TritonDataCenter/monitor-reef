@@ -28,6 +28,19 @@ use uuid::Uuid;
 // types-module comment on the source enum).
 pub use tritond_store::Capability;
 
+/// Path parameters for `/v1/instances/{instance}` and its
+/// action sub-paths (`/start`, `/stop`, etc.).
+///
+/// AP-2c ships UUID-only path segments (matches the existing
+/// `tenant_id: Uuid` convention everywhere else); AP-3a swaps in a
+/// `NameOrId` newtype with a custom `Deserialize` that lands the
+/// name-or-uuid dispatch at the extractor edge. The handler then
+/// resolves names via the principal's scope per RFD 00007 D-Ap-3.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InstancePath {
+    pub instance_id: Uuid,
+}
+
 /// A resource selector that accepts either a UUID or a name.
 ///
 /// Path segments in the `/v1/` surface (per RFD 00007 D-Ap-3)

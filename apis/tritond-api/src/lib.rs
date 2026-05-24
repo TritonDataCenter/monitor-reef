@@ -3637,6 +3637,66 @@ pub trait TritondApi {
         path: Path<TenantProjectInstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
+    /// RFD 00007 `GET /v1/instances/{instance_id}`. Flat single-
+    /// instance read by UUID. The handler reads the instance row
+    /// from the store and checks the principal's tenant against
+    /// `Instance.tenant_id` for the cross-tenant-probe invariant
+    /// (404 on mismatch). Name resolution lands in AP-3a.
+    #[endpoint {
+        method = GET,
+        path = "/v1/instances/{instance_id}",
+        tags = ["instances"],
+    }]
+    async fn get_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/instances/{instance_id}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/instances/{instance_id}",
+        tags = ["instances"],
+    }]
+    async fn delete_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::InstancePath>,
+        query: Query<InstanceDeleteQuery>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// RFD 00007 `POST /v1/instances/{instance_id}/start`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/instances/{instance_id}/start",
+        tags = ["instances"],
+    }]
+    async fn start_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// RFD 00007 `POST /v1/instances/{instance_id}/stop`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/instances/{instance_id}/stop",
+        tags = ["instances"],
+    }]
+    async fn stop_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
+    /// RFD 00007 `POST /v1/instances/{instance_id}/restart`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/instances/{instance_id}/restart",
+        tags = ["instances"],
+    }]
+    async fn restart_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
+
     /// Delete an instance. Returns 409 if the instance is not in
     /// a deletable state (must be Stopped or Failed); pass
     /// `?force=true` to override and delete from any state.

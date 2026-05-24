@@ -791,6 +791,142 @@ pub(crate) async fn restart_project_instance(
     .await
 }
 
+// AP-2c: flat /v1/instances/{instance_id}[/{action}] handlers.
+// Each reads the instance row to recover (tenant_id, project_id),
+// then delegates to the shared inner machinery. The principal's
+// silo is checked inside the inner functions via
+// `authenticate_and_authorize_in_tenant`. Cross-tenant probes
+// surface as 404 because the inner check rejects with NotFound when
+// the principal's silo doesn't match the instance's tenant.
+
+pub(crate) async fn get_instance_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::InstancePath>,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::InstanceGet,
+        instance.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(instance))
+}
+
+pub(crate) async fn delete_instance_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::InstancePath>,
+    query: Query<InstanceDeleteQuery>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
+    // Read the instance first so we can authorise against its tenant
+    // before letting the delete saga run.
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    // Synthesise the legacy path shape and delegate. The wrapped
+    // Path<T> can't be constructed outside Dropshot's extractor, so
+    // we call the inner store / saga path directly via the
+    // pre-existing v2 handler logic. The simplest path: re-route
+    // through the v2 handler by passing the legacy path via an
+    // internal helper. Today the v2 handler is large; rather than
+    // duplicating its body, replicate the auth check + saga call
+    // inline.
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::InstanceDelete,
+        instance.tenant_id,
+    )
+    .await?;
+    let force = query.into_inner().force;
+    ctx.store
+        .delete_instance(instance_id, force)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseDeleted())
+}
+
+pub(crate) async fn start_instance_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::InstancePath>,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    lifecycle_saga_entry_uuid(
+        rqctx,
+        instance.tenant_id,
+        instance.project_id,
+        instance_id,
+        Action::InstanceStart,
+        crate::sagas::instance_lifecycle::LifecycleOp::Start,
+    )
+    .await
+}
+
+pub(crate) async fn stop_instance_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::InstancePath>,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    lifecycle_saga_entry_uuid(
+        rqctx,
+        instance.tenant_id,
+        instance.project_id,
+        instance_id,
+        Action::InstanceStop,
+        crate::sagas::instance_lifecycle::LifecycleOp::Stop,
+    )
+    .await
+}
+
+pub(crate) async fn restart_instance_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::InstancePath>,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
+    let instance = ctx
+        .store
+        .get_instance(instance_id)
+        .await
+        .map_err(store_error_to_http)?;
+    lifecycle_saga_entry_uuid(
+        rqctx,
+        instance.tenant_id,
+        instance.project_id,
+        instance_id,
+        Action::InstanceRestart,
+        crate::sagas::instance_lifecycle::LifecycleOp::Restart,
+    )
+    .await
+}
+
 /// Common saga-dispatch entrypoint shared by start / stop /
 /// restart. Resolves the instance, captures its current state for
 /// the undo, builds the saga, runs it, and maps the result back to
@@ -802,12 +938,28 @@ async fn lifecycle_saga_entry(
     action: Action,
     op: crate::sagas::instance_lifecycle::LifecycleOp,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    let ctx = rqctx.context();
     let TenantProjectInstancePath {
         tenant_id,
         project_id,
         instance_id,
     } = path.into_inner();
+    lifecycle_saga_entry_uuid(rqctx, tenant_id, project_id, instance_id, action, op).await
+}
+
+/// AP-2c: shared inner entry-point for both the v2 (path-scoped)
+/// and v1 (flat instance_id) lifecycle handlers. Takes the
+/// already-unpacked uuids so the flat /v1 endpoint can resolve the
+/// owning tenant + project from the Instance row before reaching
+/// the saga machinery.
+async fn lifecycle_saga_entry_uuid(
+    rqctx: RequestContext<ApiContext>,
+    tenant_id: Uuid,
+    project_id: Uuid,
+    instance_id: Uuid,
+    action: Action,
+    op: crate::sagas::instance_lifecycle::LifecycleOp,
+) -> Result<HttpResponseOk<Instance>, HttpError> {
+    let ctx = rqctx.context();
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx, &ctx.auth, &ctx.audit, &ctx.store, action, tenant_id,
     )

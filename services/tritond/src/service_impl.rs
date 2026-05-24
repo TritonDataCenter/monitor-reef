@@ -849,6 +849,42 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::list_instances_v1(rqctx, query).await
     }
 
+    async fn get_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        crate::handlers::instances::get_instance_v1(rqctx, path).await
+    }
+
+    async fn delete_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::InstancePath>,
+        query: Query<InstanceDeleteQuery>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::instances::delete_instance_v1(rqctx, path, query).await
+    }
+
+    async fn start_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        crate::handlers::instances::start_instance_v1(rqctx, path).await
+    }
+
+    async fn stop_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        crate::handlers::instances::stop_instance_v1(rqctx, path).await
+    }
+
+    async fn restart_instance_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::InstancePath>,
+    ) -> Result<HttpResponseOk<Instance>, HttpError> {
+        crate::handlers::instances::restart_instance_v1(rqctx, path).await
+    }
+
     async fn create_project_instance(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectPath>,
