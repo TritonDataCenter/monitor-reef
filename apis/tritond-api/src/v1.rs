@@ -48,6 +48,37 @@ pub struct DiskPath {
     pub disk_id: Uuid,
 }
 
+/// Path parameters for `/v1/nics/{nic_id}` (AP-2f).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NicPath {
+    pub nic_id: Uuid,
+}
+
+/// Query parameters for `GET /v1/nics?...`.
+///
+/// AP-2f wires the three indexed selectors landed in AP-1c: `subnet=`,
+/// `ip=`, and the existing `instance=` membership. Per RFD 00007 02 §1.2
+/// `mac=` is bounded-scan within a VPC and is omitted from the v1
+/// customer surface today (the operator surface
+/// `/v1/system/networking/nics?mac=` will accept it once it ships).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct NicQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to NICs attached to a single instance. Backed by
+    /// the existing `nic/in_instance/<instance>/<nic>` index.
+    #[serde(default)]
+    pub instance: Option<Uuid>,
+    /// Restrict to NICs in a single subnet. Backed by AP-1c's
+    /// `nic/in_subnet/<subnet>/<nic>` keyspace.
+    #[serde(default)]
+    pub subnet: Option<Uuid>,
+    /// Resolve the unique NIC owning a given IP. Backed by AP-1c's
+    /// `nic/by_ip/<ip>` keyspace; returns at most one row.
+    #[serde(default)]
+    pub ip: Option<std::net::IpAddr>,
+}
+
 /// Query parameters for `GET /v1/disks?tenant=&project=&instance=`.
 ///
 /// AP-2e ships the `instance=` reference selector, which drives the

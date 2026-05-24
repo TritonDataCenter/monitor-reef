@@ -1298,6 +1298,115 @@ pub(crate) async fn migrate_project_instance(
     }))
 }
 
+/// RFD 00007 AP-2f: `GET /v1/nics?tenant=&project=&instance=&subnet=&ip=`.
+/// Flat NIC list backed by the AP-1c secondary indexes. Dispatches
+/// on the selector set (priority: ip > subnet > instance) so each
+/// query is one index read.
+pub(crate) async fn list_nics_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::NicQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Nic>>, HttpError> {
+    use tritond_api::v1::{NicQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let NicQuery {
+        scope,
+        instance,
+        subnet,
+        ip,
+    } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    // Authentication: if the principal scoped to a tenant, check it.
+    // Otherwise the per-row tenant check below 404s on cross-tenant
+    // probes after the index narrows.
+    if let Some(tenant_id) = scope.tenant {
+        authenticate_and_authorize_in_tenant(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NicList,
+            tenant_id,
+        )
+        .await?;
+    } else {
+        authenticate_and_authorize(
+            &rqctx,
+            &ctx.auth,
+            &ctx.audit,
+            &ctx.store,
+            Action::NicList,
+        )
+        .await?;
+    }
+    let raw: Vec<Nic> = if let Some(ip_addr) = ip {
+        // ip is unique by invariant -> at most one NIC.
+        match ctx.store.find_nic_by_ip(ip_addr).await {
+            Ok(n) => vec![n],
+            Err(StoreError::NotFound) => Vec::new(),
+            Err(e) => return Err(store_error_to_http(e)),
+        }
+    } else if let Some(subnet_id) = subnet {
+        ctx.store
+            .list_nics_by_subnet(subnet_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else if let Some(instance_id) = instance {
+        ctx.store
+            .list_nics_for_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else {
+        return Err(HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/nics requires one of `ip=`, `subnet=`, or `instance=`"
+                .to_string(),
+        ));
+    };
+    // Filter the index result set against the remaining selectors.
+    let nics: Vec<Nic> = raw
+        .into_iter()
+        .filter(|n| {
+            scope.tenant.is_none_or(|t| n.tenant_id == t)
+                && scope.project.is_none_or(|p| n.project_id == p)
+                && instance.is_none_or(|i| n.instance_id == i)
+                && subnet.is_none_or(|s| n.subnet_id == s)
+        })
+        .collect();
+    Ok(HttpResponseOk(ResultsPage::single(nics)))
+}
+
+/// RFD 00007 AP-2f: `GET /v1/nics/{nic_id}`. Flat single-NIC read.
+pub(crate) async fn get_nic_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::NicPath>,
+) -> Result<HttpResponseOk<Nic>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::NicPath { nic_id } = path.into_inner();
+    let nic = ctx
+        .store
+        .get_nic(nic_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NicGet,
+        nic.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(nic))
+}
+
 pub(crate) async fn list_instance_nics(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectInstancePath>,

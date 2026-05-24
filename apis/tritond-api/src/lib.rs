@@ -3879,6 +3879,31 @@ pub trait TritondApi {
         query: Query<crate::v1::DiskQuery>,
     ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Disk>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/nics?tenant=&project=&instance=&subnet=&ip=`.
+    /// Backed by the AP-1c secondary indexes (subnet, ip,
+    /// instance-membership). Returns a single-row page when `ip=` is
+    /// set (IP -> NIC is unique by invariant).
+    #[endpoint {
+        method = GET,
+        path = "/v1/nics",
+        tags = ["nics"],
+    }]
+    async fn list_nics_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::NicQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Nic>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/nics/{nic_id}`. Flat single-NIC read.
+    #[endpoint {
+        method = GET,
+        path = "/v1/nics/{nic_id}",
+        tags = ["nics"],
+    }]
+    async fn get_nic_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::NicPath>,
+    ) -> Result<HttpResponseOk<Nic>, HttpError>;
+
     /// RFD 00007 `GET /v1/disks/{disk_id}`. Flat single-disk read.
     #[endpoint {
         method = GET,
