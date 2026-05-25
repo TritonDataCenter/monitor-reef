@@ -77,6 +77,49 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
+/// RFD 00007 AP-3a-9: `GET /v1/system/cns?state=&label=&rack=&role=`.
+/// Fleet CN inventory. Capability: `SystemRead`. Delegates to the
+/// same underlying `Store::list_cns(state)` the v2 handler uses;
+/// the label/rack/role selectors land in a future slice once those
+/// fields are queryable on the store side.
+pub(crate) async fn list_system_cns_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<CnListQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<CnView>>, HttpError> {
+    use tritond_api::v1::ResultsPage;
+    let ctx = rqctx.context();
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnList)
+            .await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+    let cns = ctx
+        .store
+        .list_cns(query.into_inner().state)
+        .await
+        .map_err(store_error_to_http)?;
+    let views: Vec<CnView> = cns.into_iter().map(CnView::from).collect();
+    Ok(HttpResponseOk(ResultsPage::single(views)))
+}
+
+/// RFD 00007 AP-3a-9: `GET /v1/system/cns/{cn_id}`. Single CN read.
+/// Capability: `SystemRead`.
+pub(crate) async fn get_system_cn_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::SystemCnPath>,
+) -> Result<HttpResponseOk<CnView>, HttpError> {
+    let ctx = rqctx.context();
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnGet)
+            .await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+    let cn = ctx
+        .store
+        .get_cn(path.into_inner().cn_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(CnView::from(cn)))
+}
+
 pub(crate) async fn list_cns(
     rqctx: RequestContext<ApiContext>,
     query: Query<CnListQuery>,

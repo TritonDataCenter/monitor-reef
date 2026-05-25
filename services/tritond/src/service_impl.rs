@@ -1026,6 +1026,20 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::list_system_instances_v1(rqctx, query).await
     }
 
+    async fn list_system_cns_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<CnListQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<CnView>>, HttpError> {
+        crate::handlers::cns::list_system_cns_v1(rqctx, query).await
+    }
+
+    async fn get_system_cn_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemCnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError> {
+        crate::handlers::cns::get_system_cn_v1(rqctx, path).await
+    }
+
     async fn get_system_utilization_silos_v1(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<Vec<Silo>>, HttpError> {

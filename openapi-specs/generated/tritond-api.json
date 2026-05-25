@@ -1518,6 +1518,82 @@
         }
       }
     },
+    "/v1/system/cns": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/cns?state=`. Fleet CN inventory.",
+        "description": "Capability: `SystemRead`.",
+        "operationId": "list_system_cns_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "$ref": "#/components/schemas/CnState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_CnView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/system/cns/{cn_id}": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/cns/{cn_id}`. Single CN read.",
+        "description": "Capability: `SystemRead`.",
+        "operationId": "get_system_cn_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cn_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CnView"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/system/cns/{cn_id}/instances": {
       "get": {
         "tags": [
@@ -16839,6 +16915,25 @@
           "route_table",
           "edge_cluster",
           "job"
+        ]
+      },
+      "ResultsPage_for_CnView": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CnView"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "ResultsPage_for_DhcpLease": {

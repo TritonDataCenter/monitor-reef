@@ -3844,6 +3844,30 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/system/cns?state=`. Fleet CN inventory.
+    /// Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/cns",
+        tags = ["system"],
+    }]
+    async fn list_system_cns_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<CnListQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<CnView>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/system/cns/{cn_id}`. Single CN read.
+    /// Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/cns/{cn_id}",
+        tags = ["system"],
+    }]
+    async fn get_system_cn_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemCnPath>,
+    ) -> Result<HttpResponseOk<CnView>, HttpError>;
+
     /// RFD 00007 `GET /v1/system/utilization/silos`. Per-silo
     /// capacity utilization (placeholder). The path is locked in the
     /// spec but the handler returns `501 UtilizationUnavailable`
