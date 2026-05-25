@@ -191,6 +191,20 @@ pub struct FloatingIpQuery {
     pub scope: ScopeSelectors,
 }
 
+/// Path parameters for `/v1/system/cns/{cn_id}/instances` - the
+/// fleet-admin per-CN inventory view (RFD 00007 §3 fixed-axis).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SystemCnPath {
+    pub cn_id: Uuid,
+}
+
+/// Path parameters for `/v1/system/images/{image_id}/instances` -
+/// the fleet-admin per-image usage view ("can I deprecate this?").
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SystemImagePath {
+    pub image_id: Uuid,
+}
+
 /// Image scope selector for `/v1/images?scope=...`. Per RFD 00007
 /// D-Ap-1 + Locked Decision #33 the five legacy image URL surfaces
 /// collapse into one path discriminated by this enum. AP-2h ships

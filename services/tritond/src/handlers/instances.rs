@@ -221,6 +221,59 @@ pub(crate) async fn list_system_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(filtered)))
 }
 
+/// RFD 00007 AP-3a-3: `GET /v1/system/cns/{cn_id}/instances`.
+/// Fixed-axis view: every instance currently placed on a single CN.
+/// The natural endpoint behind the admin UI's CN-detail "Hosted
+/// instances" tab. Backed by the existing
+/// `instance/in_host_cn/<cn>/` index (delegate to
+/// `Store::list_instances_by_cn`).
+///
+/// Capability: `SystemRead`.
+pub(crate) async fn list_system_cn_instances_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::SystemCnPath>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+    use tritond_api::v1::ResultsPage;
+    let ctx = rqctx.context();
+    let tritond_api::v1::SystemCnPath { cn_id } = path.into_inner();
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
+            .await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+    let instances = ctx
+        .store
+        .list_instances_by_cn(cn_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(instances)))
+}
+
+/// RFD 00007 AP-3a-3: `GET /v1/system/images/{image_id}/instances`.
+/// Fixed-axis "what's using this image?" view. The natural endpoint
+/// behind the admin UI's Image-detail "In use by" tab and the
+/// answer to the question that opened RFD 00007. Backed by the
+/// AP-1c `idx/image/<image>/<instance>` keyspace.
+///
+/// Capability: `SystemRead`.
+pub(crate) async fn list_system_image_instances_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::SystemImagePath>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+    use tritond_api::v1::ResultsPage;
+    let ctx = rqctx.context();
+    let tritond_api::v1::SystemImagePath { image_id } = path.into_inner();
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
+            .await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+    let instances = ctx
+        .store
+        .list_instances_by_image(image_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(instances)))
+}
+
 /// RFD 00007 `GET /v1/instances?tenant=&project=&image=&cn=&state=`.
 ///
 /// The flat customer-facing instance list. Dispatches on the

@@ -3844,6 +3844,31 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/system/cns/{cn_id}/instances`. Fixed-axis
+    /// "what is running on this CN?" view. Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/cns/{cn_id}/instances",
+        tags = ["system"],
+    }]
+    async fn list_system_cn_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemCnPath>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Instance>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/system/images/{image_id}/instances`.
+    /// Fixed-axis "what's using this image?" view (the answer to the
+    /// question that opened RFD 00007). Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/images/{image_id}/instances",
+        tags = ["system"],
+    }]
+    async fn list_system_image_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemImagePath>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Instance>>, HttpError>;
+
     /// RFD 00007 `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.
     ///
     /// Fleet-wide instance search - the answer to "which VMs are

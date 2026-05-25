@@ -1518,6 +1518,84 @@
         }
       }
     },
+    "/v1/system/cns/{cn_id}/instances": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/cns/{cn_id}/instances`. Fixed-axis",
+        "description": "\"what is running on this CN?\" view. Capability: `SystemRead`.",
+        "operationId": "list_system_cn_instances_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cn_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/system/images/{image_id}/instances": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/images/{image_id}/instances`.",
+        "description": "Fixed-axis \"what's using this image?\" view (the answer to the question that opened RFD 00007). Capability: `SystemRead`.",
+        "operationId": "list_system_image_instances_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/system/instances": {
       "get": {
         "tags": [

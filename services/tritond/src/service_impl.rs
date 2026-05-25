@@ -1025,6 +1025,20 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::list_system_instances_v1(rqctx, query).await
     }
 
+    async fn list_system_cn_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemCnPath>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+        crate::handlers::instances::list_system_cn_instances_v1(rqctx, path).await
+    }
+
+    async fn list_system_image_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemImagePath>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+        crate::handlers::instances::list_system_image_instances_v1(rqctx, path).await
+    }
+
     async fn get_instance_v1(
         rqctx: RequestContext<Self::Context>,
         path: Path<tritond_api::v1::InstancePath>,
