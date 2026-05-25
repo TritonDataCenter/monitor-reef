@@ -665,3 +665,73 @@ async fn v1_nic_indexes_by_ip_and_subnet() {
 
     test.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn v1_dhcp_lease_by_mac() {
+    // Validates the AP-1c `dhcp_lease/by_mac/<mac>` index through
+    // GET /v1/vpc-dhcp-leases/{mac}. Creating an instance auto-
+    // writes a DHCP lease (see MemStore.create_instance), so the
+    // existing fixture path is enough.
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_v1_fixture(&root).await;
+
+    let created = root
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
+        .body(NewInstance {
+            name: "cache".to_string(),
+            description: None,
+            image_id: fx.image_id,
+            primary_subnet_id: fx.subnet_id,
+            ssh_key_ids: vec![fx.ssh_key_id],
+            cpu: 1,
+            memory_bytes: 1024 * 1024 * 1024,
+            extra_nics: Vec::new(),
+            mac: None,
+        })
+        .send()
+        .await
+        .expect("POST /v1/instances")
+        .into_inner();
+
+    // Learn the auto-generated MAC from the primary NIC.
+    let nics = root
+        .list_nics_v1()
+        .instance(created.id)
+        .send()
+        .await
+        .expect("GET /v1/nics?instance=")
+        .into_inner();
+    assert_eq!(nics.items.len(), 1);
+    let mac = nics.items[0].mac.clone();
+
+    // Resolve the lease via /v1/vpc-dhcp-leases/{mac}.
+    let lease = root
+        .get_dhcp_lease_v1()
+        .mac(&mac)
+        .send()
+        .await
+        .expect("GET /v1/vpc-dhcp-leases/{mac} via the AP-1c index")
+        .into_inner();
+    assert_eq!(lease.instance_id, created.id);
+    assert_eq!(lease.mac, mac);
+    // The lease IP must equal the NIC's primary IPv4 - they're
+    // allocated atomically inside create_instance.
+    let nic_ip = nics.items[0]
+        .primary_ipv4
+        .expect("fixture subnet is IPv4");
+    assert_eq!(lease.ipv4, nic_ip);
+
+    // Unknown MAC returns 404 (lease-by-mac is unique-or-missing).
+    let err = root
+        .get_dhcp_lease_v1()
+        .mac("02:00:00:00:00:00")
+        .send()
+        .await
+        .expect_err("unknown MAC must 404");
+    assert_eq!(err.status().map(|s| s.as_u16()), Some(404));
+
+    test.close().await;
+}
