@@ -565,3 +565,103 @@ async fn v1_instance_create_then_image_index_lookup() {
 
     test.close().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn v1_nic_indexes_by_ip_and_subnet() {
+    // Validates two more AP-1c indexes through the /v1/system/
+    // surface: `nic/by_ip/<ip>` (the "who owns 10.x.x.x" path) and
+    // `nic/in_subnet/<subnet>/`. Creating an instance auto-creates
+    // a primary NIC; we look it up via /v1/nics?instance= to learn
+    // its IP, then verify both indexes return the same NIC row.
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_v1_fixture(&root).await;
+
+    let created = root
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
+        .body(NewInstance {
+            name: "db".to_string(),
+            description: None,
+            image_id: fx.image_id,
+            primary_subnet_id: fx.subnet_id,
+            ssh_key_ids: vec![fx.ssh_key_id],
+            cpu: 1,
+            memory_bytes: 1024 * 1024 * 1024,
+            extra_nics: Vec::new(),
+            mac: None,
+        })
+        .send()
+        .await
+        .expect("POST /v1/instances must succeed")
+        .into_inner();
+
+    // Read the auto-created primary NIC via the customer surface.
+    let nics_for_instance = root
+        .list_nics_v1()
+        .instance(created.id)
+        .send()
+        .await
+        .expect("GET /v1/nics?instance= must succeed")
+        .into_inner();
+    assert_eq!(
+        nics_for_instance.items.len(),
+        1,
+        "instance create auto-attaches one primary NIC"
+    );
+    let primary_nic = &nics_for_instance.items[0];
+    let primary_ip = primary_nic
+        .primary_ipv4
+        .expect("IPv4-only fixture subnet must have allocated an IPv4");
+
+    // 1) Index by IP - the AP-1c `nic/by_ip/<ip>` lookup.
+    let by_ip = root
+        .list_system_nics_v1()
+        .ip(std::net::IpAddr::V4(primary_ip))
+        .send()
+        .await
+        .expect("GET /v1/system/networking/nics?ip= must succeed")
+        .into_inner();
+    assert_eq!(
+        by_ip.items.len(),
+        1,
+        "ip index resolves to exactly one NIC"
+    );
+    assert_eq!(by_ip.items[0].id, primary_nic.id);
+    assert_eq!(by_ip.items[0].instance_id, created.id);
+
+    // 2) Index by subnet - the AP-1c `nic/in_subnet/<subnet>/`
+    //    range read. There's only one NIC in the subnet today, but
+    //    the assertion guards against the index being populated
+    //    under the wrong subnet key.
+    let by_subnet = root
+        .list_system_nics_v1()
+        .subnet(fx.subnet_id)
+        .send()
+        .await
+        .expect("GET /v1/system/networking/nics?subnet= must succeed")
+        .into_inner();
+    assert_eq!(
+        by_subnet.items.len(),
+        1,
+        "subnet index lists the one NIC in our subnet"
+    );
+    assert_eq!(by_subnet.items[0].id, primary_nic.id);
+
+    // 3) Unrelated IP returns empty page (not 404).
+    let unrelated = std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 0, 2, 99));
+    let by_unrelated_ip = root
+        .list_system_nics_v1()
+        .ip(unrelated)
+        .send()
+        .await
+        .expect("empty IP index returns empty page, not 404")
+        .into_inner();
+    assert!(
+        by_unrelated_ip.items.is_empty(),
+        "unrelated IP must not surface our NIC"
+    );
+
+    test.close().await;
+}
