@@ -3844,6 +3844,19 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/system/networking/nics?ip=&subnet=&instance=`.
+    /// Fleet-wide NIC search ("who owns 10.x.x.x?"). Capability:
+    /// `SystemRead`. Backed by the AP-1c IP and subnet indexes.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/networking/nics",
+        tags = ["system"],
+    }]
+    async fn list_system_nics_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::NicQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Nic>>, HttpError>;
+
     /// RFD 00007 `GET /v1/system/cns/{cn_id}/instances`. Fixed-axis
     /// "what is running on this CN?" view. Capability: `SystemRead`.
     #[endpoint {

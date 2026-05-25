@@ -221,6 +221,60 @@ pub(crate) async fn list_system_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(filtered)))
 }
 
+/// RFD 00007 AP-3a-4: `GET /v1/system/networking/nics?ip=&subnet=&instance=&mac=`.
+/// Fleet-wide NIC search. Operator's "who owns 10.x.x.x?" query.
+///
+/// Indexed dispatch (priority: ip > subnet > instance):
+///   ?ip=<addr>  -> Store::find_nic_by_ip (unique by invariant)
+///   ?subnet=    -> Store::list_nics_by_subnet (AP-1c index)
+///   ?instance=  -> Store::list_nics_for_instance (existing index)
+///
+/// Capability: `SystemRead`.
+pub(crate) async fn list_system_nics_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::NicQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Nic>>, HttpError> {
+    use tritond_api::v1::{NicQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::NicList)
+            .await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+    let NicQuery { scope, instance, subnet, ip } = query.into_inner();
+    let raw: Vec<Nic> = if let Some(ip_addr) = ip {
+        match ctx.store.find_nic_by_ip(ip_addr).await {
+            Ok(n) => vec![n],
+            Err(StoreError::NotFound) => Vec::new(),
+            Err(e) => return Err(store_error_to_http(e)),
+        }
+    } else if let Some(subnet_id) = subnet {
+        ctx.store
+            .list_nics_by_subnet(subnet_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else if let Some(instance_id) = instance {
+        ctx.store
+            .list_nics_for_instance(instance_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else {
+        return Err(HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/system/networking/nics requires `ip=`, `subnet=`, or `instance=`"
+                .to_string(),
+        ));
+    };
+    let nics: Vec<Nic> = raw
+        .into_iter()
+        .filter(|n| {
+            scope.tenant.is_none_or(|t| n.tenant_id == t)
+                && scope.project.is_none_or(|p| n.project_id == p)
+        })
+        .collect();
+    Ok(HttpResponseOk(ResultsPage::single(nics)))
+}
+
 /// RFD 00007 AP-3a-3: `GET /v1/system/cns/{cn_id}/instances`.
 /// Fixed-axis view: every instance currently placed on a single CN.
 /// The natural endpoint behind the admin UI's CN-detail "Hosted

@@ -1685,6 +1685,96 @@
         }
       }
     },
+    "/v1/system/networking/nics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/networking/nics?ip=&subnet=&instance=`.",
+        "description": "Fleet-wide NIC search (\"who owns 10.x.x.x?\"). Capability: `SystemRead`. Backed by the AP-1c IP and subnet indexes.",
+        "operationId": "list_system_nics_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instance",
+            "description": "Restrict to NICs attached to a single instance. Backed by the existing `nic/in_instance/<instance>/<nic>` index.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ip",
+            "description": "Resolve the unique NIC owning a given IP. Backed by AP-1c's `nic/by_ip/<ip>` keyspace; returns at most one row.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "ip"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subnet",
+            "description": "Restrict to NICs in a single subnet. Backed by AP-1c's `nic/in_subnet/<subnet>/<nic>` keyspace.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Nic"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/vpc-dhcp-leases": {
       "get": {
         "tags": [
