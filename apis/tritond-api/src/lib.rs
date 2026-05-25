@@ -3844,6 +3844,25 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.
+    ///
+    /// Fleet-wide instance search - the answer to "which VMs are
+    /// using image X?" in one HTTP call. Capability-gated:
+    /// requires `SystemRead`. Callers without it get 404 NotFound.
+    ///
+    /// Indexed dispatch: `?image=` -> `idx/image/...`, `?cn=` ->
+    /// `instance/in_host_cn/...`. Both narrow before per-row scope
+    /// + state filtering.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/instances",
+        tags = ["system"],
+    }]
+    async fn list_system_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::InstanceQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Instance>>, HttpError>;
+
     /// RFD 00007 `GET /v1/instances?tenant=&project=&image=&cn=&state=`.
     ///
     /// Flat customer-facing instance list with scope and reference

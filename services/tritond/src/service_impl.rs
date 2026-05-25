@@ -1018,6 +1018,13 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::list_instances_v1(rqctx, query).await
     }
 
+    async fn list_system_instances_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::InstanceQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+        crate::handlers::instances::list_system_instances_v1(rqctx, query).await
+    }
+
     async fn get_instance_v1(
         rqctx: RequestContext<Self::Context>,
         path: Path<tritond_api::v1::InstancePath>,

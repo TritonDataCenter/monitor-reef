@@ -1518,6 +1518,95 @@
         }
       }
     },
+    "/v1/system/instances": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.",
+        "description": "Fleet-wide instance search - the answer to \"which VMs are using image X?\" in one HTTP call. Capability-gated: requires `SystemRead`. Callers without it get 404 NotFound.\n\nIndexed dispatch: `?image=` -> `idx/image/...`, `?cn=` -> `instance/in_host_cn/...`. Both narrow before per-row scope + state filtering.",
+        "operationId": "list_system_instances_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cn",
+            "description": "Restrict to instances placed on a single compute node. Backed by `instance/in_host_cn/<cn>/<instance>` (existing pre-RFD index; AP-1c added the matching read method).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "image",
+            "description": "Restrict to instances whose `image_id` matches. Backed by `idx/image/<image>/<instance>` in FDB (AP-1c).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "description": "Restrict to instances in a given lifecycle state. Bounded-scan within the resolved scope (cap [`tritond_store::SCAN_CAP`]); over-cap returns `400 ScanLimitExceeded`.",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Instance"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/vpc-dhcp-leases": {
       "get": {
         "tags": [

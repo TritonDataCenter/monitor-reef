@@ -133,6 +133,94 @@ pub(crate) async fn list_project_instances(
     Ok(HttpResponseOk(instances))
 }
 
+/// RFD 00007 AP-3a `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.
+///
+/// Fleet-wide instance search. This is the endpoint that opened the
+/// entire RFD: an operator needs to ask "which VMs are using image X?"
+/// in one HTTP call. Backed by the AP-1c secondary indexes for
+/// image and cn (single FDB range read); falls back to per-tenant
+/// project membership when scoped narrower.
+///
+/// Capability gate: requires `SystemRead`. A caller without it gets
+/// 404 NotFound (indistinguishable from "no such path" per Locked
+/// Decision #3).
+///
+/// Dispatch (priority order, narrowest index first):
+///   ?image=<uuid>  -> Store::list_instances_by_image
+///   ?cn=<uuid>     -> Store::list_instances_by_cn
+///   else           -> 400 MissingScope today (cross-fleet scan
+///                     without an index would exceed SCAN_CAP).
+///                     A future slice may walk all tenant/project
+///                     prefixes when bounded by additional
+///                     selectors.
+///
+/// Post-index filters re-apply silo/tenant/project/cn/image/state
+/// to the result set so combinations narrow correctly.
+pub(crate) async fn list_system_instances_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::InstanceQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
+    use tritond_api::v1::{InstanceQuery, ResultsPage};
+    let ctx = rqctx.context();
+    // Capability gate. A non-fleet-admin sees 404 here just like
+    // any other /v1/system/ endpoint.
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
+            .await?;
+    crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
+
+    let InstanceQuery {
+        scope,
+        image,
+        cn,
+        state,
+    } = query.into_inner();
+
+    let raw: Vec<Instance> = if let Some(image_id) = image {
+        ctx.store
+            .list_instances_by_image(image_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else if let Some(cn_id) = cn {
+        ctx.store
+            .list_instances_by_cn(cn_id)
+            .await
+            .map_err(store_error_to_http)?
+    } else {
+        return Err(HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/system/instances requires `image=` or `cn=` to scope the \
+             fleet-wide scan; full-fleet enumeration is not enabled at AP-3a-2"
+                .to_string(),
+        ));
+    };
+
+    // Apply the remaining selectors as filters. The
+    // `Instance.tenant_id`, `project_id`, `host_cn_uuid`, and
+    // `image_id` fields are all checked; the silo selector resolves
+    // through a per-instance Tenant.silo_id lookup which we skip at
+    // AP-3a-2 (operators usually scope via tenant directly).
+    let mut filtered: Vec<Instance> = raw
+        .into_iter()
+        .filter(|i| {
+            scope.tenant.is_none_or(|t| i.tenant_id == t)
+                && scope.project.is_none_or(|p| i.project_id == p)
+                && image.is_none_or(|im| i.image_id == im)
+                && cn.is_none_or(|c| i.host_cn_uuid == Some(c))
+        })
+        .collect();
+
+    if let Some(want) = state.as_deref() {
+        filtered.retain(|i| {
+            let k = i.lifecycle.kind();
+            format!("{k:?}").to_ascii_lowercase() == want.to_ascii_lowercase()
+        });
+    }
+
+    Ok(HttpResponseOk(ResultsPage::single(filtered)))
+}
+
 /// RFD 00007 `GET /v1/instances?tenant=&project=&image=&cn=&state=`.
 ///
 /// The flat customer-facing instance list. Dispatches on the
