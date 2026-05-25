@@ -41,6 +41,10 @@ struct TestServer {
     bare_user_bearer: String,
     fleet_user_id: Uuid,
     bare_user_id: Uuid,
+    /// Direct store handle for fixture insertion that bypasses the
+    /// API (e.g. CN registration shortcut, lifecycle pokes). Kept
+    /// alongside the server-side handle inside ApiContext.
+    store: Arc<dyn Store>,
 }
 
 impl TestServer {
@@ -114,6 +118,7 @@ impl TestServer {
         let auth = Arc::new(AuthService::new(jwt_key).unwrap());
         let chain: Arc<dyn tritond_audit::Chain> = Arc::new(MemChain::new());
         let audit = Arc::new(AuditService::new(chain));
+        let store_for_tests = Arc::clone(&store);
         let context = ApiContext::new(store, auth, audit);
         let server = start_server_with_context("127.0.0.1:0", context)
             .await
@@ -125,6 +130,7 @@ impl TestServer {
             bare_user_bearer: bare_token,
             fleet_user_id: fleet_id,
             bare_user_id: bare_id,
+            store: store_for_tests,
         }
     }
 
@@ -732,6 +738,90 @@ async fn v1_dhcp_lease_by_mac() {
         .await
         .expect_err("unknown MAC must 404");
     assert_eq!(err.status().map(|s| s.as_u16()), Some(404));
+
+    test.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn v1_cn_host_index_via_set_instance_host_cn() {
+    // Validates the last AP-1c index: `instance/in_host_cn/<cn>`.
+    // We use `Store::set_instance_host_cn` directly (the test's
+    // privileged-back-door) instead of running the full CN
+    // registration + approval + placement chain - that path is
+    // already covered by cn_registration.rs. Here we just want
+    // to prove the *index* is wired into the /v1/system/cns/{cn}/
+    // instances handler.
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_v1_fixture(&root).await;
+
+    let created = root
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
+        .body(NewInstance {
+            name: "worker".to_string(),
+            description: None,
+            image_id: fx.image_id,
+            primary_subnet_id: fx.subnet_id,
+            ssh_key_ids: vec![fx.ssh_key_id],
+            cpu: 1,
+            memory_bytes: 1024 * 1024 * 1024,
+            extra_nics: Vec::new(),
+            mac: None,
+        })
+        .send()
+        .await
+        .expect("POST /v1/instances")
+        .into_inner();
+
+    // Pretend a placer chose this CN. Bypasses the registration
+    // chain via the privileged store handle.
+    let cn_uuid = Uuid::new_v4();
+    test.store
+        .set_instance_host_cn(created.id, Some(cn_uuid))
+        .await
+        .expect("set_instance_host_cn updates the index");
+
+    // /v1/system/instances?cn=<cn> - server-side reads the
+    // `instance/in_host_cn/<cn>/` index.
+    let by_cn = root
+        .list_system_instances_v1()
+        .cn(cn_uuid)
+        .send()
+        .await
+        .expect("GET /v1/system/instances?cn= must succeed under root")
+        .into_inner();
+    assert_eq!(by_cn.items.len(), 1, "CN index resolves to our instance");
+    assert_eq!(by_cn.items[0].id, created.id);
+
+    // Unrelated CN returns empty page (not 404).
+    let by_other_cn = root
+        .list_system_instances_v1()
+        .cn(Uuid::new_v4())
+        .send()
+        .await
+        .expect("empty CN index returns empty page")
+        .into_inner();
+    assert!(by_other_cn.items.is_empty());
+
+    // Clear placement (None) and re-query - the instance must
+    // disappear from the index.
+    test.store
+        .set_instance_host_cn(created.id, None)
+        .await
+        .expect("set_instance_host_cn(None) clears the index entry");
+    let by_cn_again = root
+        .list_system_instances_v1()
+        .cn(cn_uuid)
+        .send()
+        .await
+        .expect("clearing placement removes from index")
+        .into_inner();
+    assert!(
+        by_cn_again.items.is_empty(),
+        "clearing host_cn must remove instance from the index"
+    );
 
     test.close().await;
 }
