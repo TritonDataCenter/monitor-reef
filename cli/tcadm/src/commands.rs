@@ -5638,6 +5638,70 @@ pub async fn floating_ip_detach_v1(
     Ok(())
 }
 
+/// `tcadm system images-using <image_id>` -> the fixed-axis view at
+/// `/v1/system/images/{image}/instances`. Equivalent to
+/// `tcadm system instances --image=<image_id>` but reaches the
+/// dedicated endpoint, mirroring how an operator drills in from
+/// an image detail page.
+pub async fn system_images_using_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    image_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_system_image_instances_v1()
+        .image_id(image_id)
+        .send()
+        .await
+        .context("/v1/system/images/{image}/instances list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    println!("Instances using image {image_id} ({}):", page.items.len());
+    for inst in &page.items {
+        println!(
+            "  {}  {:<24}  {:?}  tenant={} project={}",
+            inst.id, inst.name, inst.lifecycle, inst.tenant_id, inst.project_id
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm system cn-instances <cn_id>` -> `/v1/system/cns/{cn}/instances`.
+pub async fn system_cn_instances_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    cn_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_system_cn_instances_v1()
+        .cn_id(cn_id)
+        .send()
+        .await
+        .context("/v1/system/cns/{cn}/instances list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    println!("Instances on CN {cn_id} ({}):", page.items.len());
+    for inst in &page.items {
+        println!(
+            "  {}  {:<24}  {:?}  image={}",
+            inst.id, inst.name, inst.lifecycle, inst.image_id
+        );
+    }
+    Ok(())
+}
+
 /// `tcadm system utilization` -> `/v1/system/utilization/silos`. Returns
 /// the locked 501 UtilizationUnavailable today; the surface is
 /// reserved for the future implementation.

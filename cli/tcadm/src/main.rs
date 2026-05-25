@@ -1931,6 +1931,21 @@ enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Fixed-axis "which VMs use this image?" view. Hits the
+    /// AP-3a-3 `/v1/system/images/{image}/instances` endpoint
+    /// directly; one FDB range read against `idx/image/<image>/`.
+    ImagesUsing {
+        image_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fixed-axis "what's on this CN?" view. Hits the AP-3a-3
+    /// `/v1/system/cns/{cn}/instances` endpoint.
+    CnInstances {
+        cn_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
     /// Fleet CN inventory.
     Cns {
         #[arg(long, value_enum)]
@@ -2240,6 +2255,12 @@ async fn main() -> Result<()> {
                     json,
                 )
                 .await
+            }
+            SystemCommand::ImagesUsing { image_id, json } => {
+                commands::system_images_using_v1(cli.endpoint, cli.api_key, image_id, json).await
+            }
+            SystemCommand::CnInstances { cn_id, json } => {
+                commands::system_cn_instances_v1(cli.endpoint, cli.api_key, cn_id, json).await
             }
             SystemCommand::Cns { state, json } => {
                 commands::system_cns_v1(
