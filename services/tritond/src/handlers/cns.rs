@@ -88,9 +88,7 @@ pub(crate) async fn list_system_cns_v1(
 ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<CnView>>, HttpError> {
     use tritond_api::v1::ResultsPage;
     let ctx = rqctx.context();
-    let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnList)
-            .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
     let cns = ctx
         .store
@@ -108,9 +106,7 @@ pub(crate) async fn get_system_cn_v1(
     path: Path<tritond_api::v1::SystemCnPath>,
 ) -> Result<HttpResponseOk<CnView>, HttpError> {
     let ctx = rqctx.context();
-    let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnGet)
-            .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
     let cn = ctx
         .store

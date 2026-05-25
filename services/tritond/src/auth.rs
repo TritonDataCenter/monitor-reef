@@ -1575,6 +1575,27 @@ where
     }
 }
 
+/// RFD 00007 AP-3a: authenticate the caller WITHOUT running Cedar.
+/// Used by the `/v1/system/` handlers which gate on
+/// [`require_capability`] instead of Cedar - the capability check
+/// is the operator-surface gate per RFD 00007 D-Ap-13. Returns the
+/// resolved [`Principal`] (which may be `Anonymous`); the caller
+/// must immediately follow with `require_capability` to reject
+/// anonymous / under-capabilitied callers with the standard
+/// cross-scope-deny 404 shape.
+pub async fn authenticate_only<C>(
+    rqctx: &RequestContext<C>,
+    auth: &AuthService,
+    store: &Arc<dyn Store>,
+) -> Result<Principal, HttpError>
+where
+    C: dropshot::ServerContext,
+{
+    let bearer = extract_bearer(rqctx);
+    let principal = auth.authenticate(store.as_ref(), bearer.as_deref()).await?;
+    Ok(principal)
+}
+
 /// RFD 00007 AP-3a: enforce a [`tritond_store::Capability`] against
 /// the operator principal. Per RFD 00007 D-Ap-13 the `/v1/system/`
 /// surface is gated by capabilities, not by `fleet_admin` alone.

@@ -55,14 +55,7 @@ pub(crate) async fn grant_user_capability_v1(
     // variants (that wave lands when the Cedar bundle is split per
     // capability in a later slice). The substantive check is
     // `require_capability` below.
-    let principal = authenticate_and_authorize(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-    )
-    .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, Capability::SystemOperate)?;
 
     let existing = ctx
@@ -105,14 +98,7 @@ pub(crate) async fn revoke_user_capability_v1(
         capability,
     } = path.into_inner();
 
-    let principal = authenticate_and_authorize(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-    )
-    .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, Capability::SystemOperate)?;
 
     let existing = ctx
@@ -158,14 +144,7 @@ pub(crate) async fn get_system_utilization_silos_v1(
     rqctx: RequestContext<ApiContext>,
 ) -> Result<HttpResponseOk<Vec<tritond_store::Silo>>, HttpError> {
     let ctx = rqctx.context();
-    let principal = authenticate_and_authorize(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-    )
-    .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, Capability::SystemRead)?;
     // The RFD says 501 Not Implemented but Dropshot's HttpError
     // helpers only expose the 4xx (`for_client_error`) and 5xx

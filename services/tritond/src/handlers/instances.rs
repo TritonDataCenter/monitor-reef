@@ -164,14 +164,7 @@ pub(crate) async fn list_system_instances_v1(
     let ctx = rqctx.context();
     // Capability gate. A non-fleet-admin sees 404 here just like
     // any other /v1/system/ endpoint.
-    let principal = authenticate_and_authorize(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-    )
-    .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
 
     let InstanceQuery {
@@ -241,9 +234,7 @@ pub(crate) async fn list_system_nics_v1(
 ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Nic>>, HttpError> {
     use tritond_api::v1::{NicQuery, ResultsPage};
     let ctx = rqctx.context();
-    let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::NicList)
-            .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
     let NicQuery {
         scope,
@@ -299,14 +290,7 @@ pub(crate) async fn list_system_cn_instances_v1(
     use tritond_api::v1::ResultsPage;
     let ctx = rqctx.context();
     let tritond_api::v1::SystemCnPath { cn_id } = path.into_inner();
-    let principal = authenticate_and_authorize(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-    )
-    .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
     let instances = ctx
         .store
@@ -330,14 +314,7 @@ pub(crate) async fn list_system_image_instances_v1(
     use tritond_api::v1::ResultsPage;
     let ctx = rqctx.context();
     let tritond_api::v1::SystemImagePath { image_id } = path.into_inner();
-    let principal = authenticate_and_authorize(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-    )
-    .await?;
+    let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, tritond_store::Capability::SystemRead)?;
     let instances = ctx
         .store
