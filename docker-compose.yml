@@ -61,8 +61,11 @@ services:
 
   tritond:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # Build context is the parent of monitor-reef so the
+      # `../../../manta-storage/...` and `../../../proteus/...`
+      # path-deps in services/tritond/Cargo.toml are reachable.
+      context: ..
+      dockerfile: monitor-reef/Dockerfile
     image: tritond:dev
     container_name: tritond
     platform: linux/amd64
