@@ -198,6 +198,18 @@ pub struct SystemCnPath {
     pub cn_id: Uuid,
 }
 
+/// Path parameters for `PUT/DELETE /v1/system/users/{user_id}/capabilities/{capability}`.
+/// The operator grants or revokes a single capability on a single
+/// user. Per RFD 00007 D-Ap-13, capability changes are themselves
+/// `SystemOperate` actions and lend an audit row tagged with the
+/// `Capability::Grant` / `Capability::Revoke` namespace (RFD 00007
+/// §3 audit-log).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SystemUserCapabilityPath {
+    pub user_id: Uuid,
+    pub capability: tritond_store::Capability,
+}
+
 /// Path parameters for `/v1/system/images/{image_id}/instances` -
 /// the fleet-admin per-image usage view ("can I deprecate this?").
 #[derive(Debug, Deserialize, JsonSchema)]

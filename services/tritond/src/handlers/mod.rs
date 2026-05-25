@@ -22,5 +22,6 @@ pub(crate) mod projects;
 pub(crate) mod silos;
 pub(crate) mod ssh_keys;
 pub(crate) mod storage_clusters;
+pub(crate) mod system_users;
 pub(crate) mod telemetry;
 pub(crate) mod tenants;

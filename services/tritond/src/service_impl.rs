@@ -50,7 +50,8 @@ use tritond_api::{
         NewStorageCluster, NewSubnet, NewTenant, NewVpc, Nic, PresignGetRequest, PresignPutRequest,
         PresignResponse, Project, ProvisioningJob, Quota, Route, RouteTable, SetPresignerRequest,
         Silo, SshKey, StorageAccessKey, StorageBucket, StorageClusterSummary, StorageClusterView,
-        StorageMembership, StorageNode, StorageObjectsPage, StorageUser, Subnet, Tenant, Vpc,
+        StorageMembership, StorageNode, StorageObjectsPage, StorageUser, Subnet, Tenant, UserView,
+        Vpc,
     },
 };
 use tritond_audit::Outcome as AuditOutcome;
@@ -1023,6 +1024,20 @@ impl TritondApi for TritondServiceImpl {
         query: Query<tritond_api::v1::InstanceQuery>,
     ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Instance>>, HttpError> {
         crate::handlers::instances::list_system_instances_v1(rqctx, query).await
+    }
+
+    async fn grant_user_capability_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemUserCapabilityPath>,
+    ) -> Result<HttpResponseOk<UserView>, HttpError> {
+        crate::handlers::system_users::grant_user_capability_v1(rqctx, path).await
+    }
+
+    async fn revoke_user_capability_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SystemUserCapabilityPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::system_users::revoke_user_capability_v1(rqctx, path).await
     }
 
     async fn list_system_nics_v1(

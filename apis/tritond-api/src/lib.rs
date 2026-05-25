@@ -3844,6 +3844,34 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `PUT /v1/system/users/{user_id}/capabilities/{capability}`.
+    /// Grant a capability to a user. Capability gate: `SystemOperate`.
+    /// Idempotent: granting an already-present capability is a no-op.
+    /// Returns the updated UserView on success.
+    #[endpoint {
+        method = PUT,
+        path = "/v1/system/users/{user_id}/capabilities/{capability}",
+        tags = ["system"],
+    }]
+    async fn grant_user_capability_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemUserCapabilityPath>,
+    ) -> Result<HttpResponseOk<crate::UserView>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/system/users/{user_id}/capabilities/{capability}`.
+    /// Revoke a capability from a user. Capability gate: `SystemOperate`.
+    /// Idempotent: revoking an absent capability is a no-op.
+    /// Refuses to revoke from root operators with 400.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/system/users/{user_id}/capabilities/{capability}",
+        tags = ["system"],
+    }]
+    async fn revoke_user_capability_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SystemUserCapabilityPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
     /// RFD 00007 `GET /v1/system/networking/nics?ip=&subnet=&instance=`.
     /// Fleet-wide NIC search ("who owns 10.x.x.x?"). Capability:
     /// `SystemRead`. Backed by the AP-1c IP and subnet indexes.
