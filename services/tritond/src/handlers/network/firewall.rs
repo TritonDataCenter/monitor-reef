@@ -151,7 +151,10 @@ pub(crate) async fn get_firewall_rule_v1(
         &ctx.auth,
         &ctx.audit,
         &ctx.store,
-        Action::FirewallRuleGet,
+        // FirewallRule has no dedicated `Get` Cedar action; the
+        // `List` action covers both list and per-id read for now.
+        // A future slice may add a finer-grained `FirewallRuleGet`.
+        Action::FirewallRuleList,
         rule.tenant_id,
     )
     .await?;

@@ -197,6 +197,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             fleet_admin: false,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,

@@ -279,6 +279,14 @@ pub enum Principal {
         /// fleet-admin actions via the root-allows-all rule, so
         /// for root operators this is typically also `true`.
         fleet_admin: bool,
+        /// Operator capabilities granted to this user. Per RFD
+        /// 00007 D-Ap-13 the `/v1/system/` operator surface is
+        /// gated by capabilities, not by `fleet_admin` alone.
+        /// `is_root` users bypass capability checks; for non-root
+        /// callers the auth layer's `require_capability` helper
+        /// checks `capabilities.contains(&required)` before
+        /// serving any `/v1/system/` endpoint.
+        capabilities: std::collections::BTreeSet<tritond_store::Capability>,
         /// Tenant the user belongs to. `None` for cluster-wide
         /// (root) operators. Source of truth for tenant
         /// membership; `silo_id` below is a cached derivation.
@@ -914,6 +922,7 @@ impl AuthService {
                         user_id: user.id,
                         is_root: user.is_root,
                         fleet_admin: user.fleet_admin,
+                        capabilities: user.capabilities.clone(),
                         tenant_id: user.tenant_id,
                         silo_id,
                         // JWT-authenticated principals carry the user's
@@ -1036,6 +1045,7 @@ impl AuthService {
             user_id: user.id,
             is_root: user.is_root,
             fleet_admin: user.fleet_admin,
+            capabilities: user.capabilities.clone(),
             tenant_id: user.tenant_id,
             silo_id: derived_silo_id,
             // OIDC-authenticated principals carry the user's full
@@ -1078,6 +1088,7 @@ impl AuthService {
                     user_id: user.id,
                     is_root: user.is_root,
                     fleet_admin: user.fleet_admin,
+                    capabilities: user.capabilities.clone(),
                     tenant_id: user.tenant_id,
                     silo_id,
                     // The API key's scope rides along on the principal so
@@ -1564,6 +1575,43 @@ where
     }
 }
 
+/// RFD 00007 AP-3a: enforce a [`tritond_store::Capability`] against
+/// the operator principal. Per RFD 00007 D-Ap-13 the `/v1/system/`
+/// surface is gated by capabilities, not by `fleet_admin` alone.
+///
+/// Rules:
+/// * `is_root` users carry every capability implicitly. They pass.
+/// * `Principal::Operator` users pass iff
+///   `capabilities.contains(&required)`.
+/// * Anonymous and non-matching principals get `404 NotFound` (the
+///   same shape as cross-scope deny per Locked Decision #3, so an
+///   attacker can't distinguish "no resource" from "no capability").
+///
+/// The 404 shape is intentional: every gate failure on `/v1/system/`
+/// looks identical from the outside, whether the path doesn't exist,
+/// the capability is missing, or the auth token is invalid.
+pub fn require_capability(
+    principal: &Principal,
+    capability: tritond_store::Capability,
+) -> Result<(), HttpError> {
+    if let Principal::Operator {
+        is_root: true, ..
+    } = principal
+    {
+        return Ok(());
+    }
+    if let Principal::Operator { capabilities, .. } = principal
+        && capabilities.contains(&capability)
+    {
+        return Ok(());
+    }
+    Err(HttpError::for_client_error(
+        Some("NotFound".to_string()),
+        ClientErrorStatusCode::NOT_FOUND,
+        "not found".to_string(),
+    ))
+}
+
 /// 401 helper — used by handlers that need an *authenticated*
 /// principal even if Cedar would let an anonymous request through
 /// (e.g. /v2/auth/api-keys must run as somebody).
@@ -1743,6 +1791,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: true,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1766,6 +1815,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             fleet_admin: false,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1785,6 +1835,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: true,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::ReadOnly),
@@ -1813,6 +1864,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1845,6 +1897,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             fleet_admin: false,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1916,6 +1969,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: true,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1938,6 +1992,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: false,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: None,
@@ -1965,6 +2020,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: true,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::ReadOnly),
@@ -1992,6 +2048,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             is_root: true,
             fleet_admin: true,
+            capabilities: Default::default(),
             tenant_id: None,
             silo_id: None,
             scope: Some(ApiKeyScope::AuditOnly),
