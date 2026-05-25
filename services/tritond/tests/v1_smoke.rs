@@ -19,11 +19,16 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use rsa::rand_core::OsRng;
+use ssh_key::{Algorithm, PrivateKey};
 use tritond::audit::AuditService;
 use tritond::auth::AuthService;
 use tritond::{ApiContext, start_server_with_context};
 use tritond_audit::MemChain;
 use tritond_auth::{JwtKey, RedactedString, hash_password, mint_access};
+use tritond_client::types::{
+    NewImage, NewInstance, NewProject, NewSilo, NewSshKey, NewSubnet, NewVpc,
+};
 use tritond_store::{Capability, MemStore, Store, User};
 use uuid::Uuid;
 
@@ -343,5 +348,220 @@ async fn capability_grant_on_root_refused() {
     // descriptive of the intent (root-revoke refusal lives in the
     // store-layer test).
     let _ = test.fleet_user_id;
+    test.close().await;
+}
+
+// ---------------------------------------------------------------
+// AP-3b-2: end-to-end create + image-index lookup via /v1/.
+//
+// This is the most substantial /v1/ test: it walks the full
+// instance-creation chain on the *new* flat surface and then
+// verifies the AP-1c FDB image index returns the right row from
+// /v1/system/instances?image=. The fixture chain (silo + project
+// + vpc + subnet + image + ssh-key) still goes through /v2/
+// because RFD 00007 §3.5 D-Ap-7 leaves the silo/tenant write
+// surface on /v2/ for now - only the read/list/lifecycle paths
+// on the resource families moved.
+// ---------------------------------------------------------------
+
+struct V1Fixture {
+    tenant_id: Uuid,
+    project_id: Uuid,
+    image_id: Uuid,
+    subnet_id: Uuid,
+    ssh_key_id: Uuid,
+}
+
+fn fresh_pubkey() -> String {
+    let priv_key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+    priv_key.public_key().to_openssh().unwrap()
+}
+
+async fn build_v1_fixture(root: &tritond_client::Client) -> V1Fixture {
+    let silo = root
+        .create_silo()
+        .body(NewSilo {
+            name: format!("silo-{}", Uuid::new_v4()),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let project = root
+        .create_tenant_project()
+        .tenant_id(silo.default_tenant_id)
+        .body(NewProject {
+            name: "p".to_string(),
+            description: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let vpc = root
+        .create_project_vpc()
+        .tenant_id(silo.default_tenant_id)
+        .project_id(project.id)
+        .body(NewVpc {
+            name: "v".to_string(),
+            description: None,
+            ipv4_block: Some("10.0.0.0/16".to_string()),
+            ipv6_block: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let subnet = root
+        .create_vpc_subnet()
+        .tenant_id(silo.default_tenant_id)
+        .project_id(project.id)
+        .vpc_id(vpc.id)
+        .body(NewSubnet {
+            name: "primary".to_string(),
+            description: None,
+            ipv4_block: Some("10.0.1.0/24".to_string()),
+            ipv6_block: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let image = root
+        .create_silo_image()
+        .silo_id(silo.id)
+        .body(NewImage {
+            name: "ubuntu-base".to_string(),
+            description: None,
+            os: "linux".to_string(),
+            version: "ubuntu-22.04".to_string(),
+            size_bytes: 1_000_000_000,
+            sha256: "0".repeat(64),
+            source_url: Some("mantafs://images/ubuntu".to_string()),
+            id: None,
+            compatibility: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    let ssh_key = root
+        .create_silo_ssh_key()
+        .silo_id(silo.id)
+        .body(NewSshKey {
+            name: "ci".to_string(),
+            description: None,
+            public_key: fresh_pubkey(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .into_inner();
+    V1Fixture {
+        tenant_id: silo.default_tenant_id,
+        project_id: project.id,
+        image_id: image.id,
+        subnet_id: subnet.id,
+        ssh_key_id: ssh_key.id,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn v1_instance_create_then_image_index_lookup() {
+    // The big one. Creates an instance via POST /v1/instances and
+    // verifies:
+    //   1. Customer-surface GET /v1/instances?tenant=&project=
+    //      returns the one instance.
+    //   2. GET /v1/instances/{id} returns the same instance.
+    //   3. GET /v1/system/instances?image=<image> returns the
+    //      same instance - proves the AP-1c FDB image index is
+    //      populated by /v1/ POST and reads correctly through
+    //      the system surface.
+    let test = TestServer::start().await;
+    let root = test.root_client();
+    let fx = build_v1_fixture(&root).await;
+
+    // 1) POST /v1/instances on the new flat surface (AP-2d).
+    let created = root
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
+        .body(NewInstance {
+            name: "web".to_string(),
+            description: None,
+            image_id: fx.image_id,
+            primary_subnet_id: fx.subnet_id,
+            ssh_key_ids: vec![fx.ssh_key_id],
+            cpu: 2,
+            memory_bytes: 2 * 1024 * 1024 * 1024,
+            extra_nics: Vec::new(),
+            mac: None,
+        })
+        .send()
+        .await
+        .expect("POST /v1/instances must succeed under root")
+        .into_inner();
+    assert_eq!(created.tenant_id, fx.tenant_id);
+    assert_eq!(created.project_id, fx.project_id);
+    assert_eq!(created.image_id, fx.image_id);
+
+    // 2) GET /v1/instances?tenant=&project= - customer surface
+    //    bounded by project-membership.
+    let page = root
+        .list_instances_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
+        .send()
+        .await
+        .expect("GET /v1/instances with project scope must succeed")
+        .into_inner();
+    assert_eq!(page.items.len(), 1, "exactly one instance in the project");
+    assert_eq!(page.items[0].id, created.id);
+
+    // 3) GET /v1/instances/{id} - single-item read.
+    let read = root
+        .get_instance_v1()
+        .instance_id(created.id)
+        .send()
+        .await
+        .expect("GET /v1/instances/{id} must succeed")
+        .into_inner();
+    assert_eq!(read.id, created.id);
+    assert_eq!(read.image_id, fx.image_id);
+
+    // 4) The headline assertion: AP-1c image index reachable via
+    //    /v1/system/instances?image=. Root carries SystemRead so
+    //    the capability gate passes; the handler hits the new
+    //    `Store::list_instances_by_image` path which reads the
+    //    `instance/in_image/<image>/` keyspace.
+    let by_image = root
+        .list_system_instances_v1()
+        .image(fx.image_id)
+        .send()
+        .await
+        .expect("GET /v1/system/instances?image= must succeed under root")
+        .into_inner();
+    assert_eq!(
+        by_image.items.len(),
+        1,
+        "image index must return the one instance using it"
+    );
+    assert_eq!(by_image.items[0].id, created.id);
+
+    // 5) A random other image returns empty - guards against the
+    //    index being populated under the wrong key.
+    let by_other_image = root
+        .list_system_instances_v1()
+        .image(Uuid::new_v4())
+        .send()
+        .await
+        .expect("empty index returns empty page, not 404")
+        .into_inner();
+    assert!(
+        by_other_image.items.is_empty(),
+        "unrelated image must not surface our instance"
+    );
+
     test.close().await;
 }
