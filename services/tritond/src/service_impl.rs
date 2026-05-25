@@ -1026,6 +1026,12 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::list_system_instances_v1(rqctx, query).await
     }
 
+    async fn get_system_utilization_silos_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Silo>>, HttpError> {
+        crate::handlers::system_users::get_system_utilization_silos_v1(rqctx).await
+    }
+
     async fn grant_user_capability_v1(
         rqctx: RequestContext<Self::Context>,
         path: Path<tritond_api::v1::SystemUserCapabilityPath>,

@@ -17,8 +17,17 @@
 //! `Operate`-class action - granting / revoking a capability is a
 //! privilege-change, not a config-write, so it rides
 //! `SystemOperate` rather than `SystemConfigWrite`.
+//!
+//! This file also hosts the placeholder for
+//! `/v1/system/utilization/silos` per RFD 00007 D-Ap-13 + the
+//! "resolved questions" entry on locked behaviour: an explicit
+//! `501 UtilizationUnavailable` until quota accounting catches
+//! up. Returning `[]` would falsely indicate "zero silos have
+//! utilization data"; the 501 makes "not implemented" explicit.
 
-use dropshot::{ClientErrorStatusCode, HttpError, HttpResponseDeleted, HttpResponseOk, Path, RequestContext};
+use dropshot::{
+    ClientErrorStatusCode, HttpError, HttpResponseDeleted, HttpResponseOk, Path, RequestContext,
+};
 use tritond_store::{Capability, Store, StoreError};
 
 use crate::auth::{Action, authenticate_and_authorize};
@@ -121,4 +130,34 @@ pub(crate) async fn revoke_user_capability_v1(
         .map_err(store_error_to_http)?;
     let _ = StoreError::NotFound; // suppress unused-import warning
     Ok(HttpResponseDeleted())
+}
+
+/// `GET /v1/system/utilization/silos`. Per RFD 00007 D-Ap-13's
+/// resolved-questions entry, the endpoint is locked in the spec
+/// but returns `501 UtilizationUnavailable` until quota accounting
+/// catches up. The 501 (not `[]`) is intentional: an empty array
+/// would falsely indicate "zero silos have utilization data" and
+/// clients depending on the endpoint would silently render empty
+/// dashboards instead of surfacing "not implemented" to the
+/// operator.
+///
+/// Capability: `SystemRead`. The capability check still runs so
+/// non-SystemRead callers get the same 404 they'd get on any other
+/// /v1/system/ endpoint; SystemRead callers get the 501 carrying
+/// the explicit unavailability message.
+pub(crate) async fn get_system_utilization_silos_v1(
+    rqctx: RequestContext<ApiContext>,
+) -> Result<HttpResponseOk<Vec<tritond_store::Silo>>, HttpError> {
+    let ctx = rqctx.context();
+    let principal =
+        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
+            .await?;
+    crate::auth::require_capability(&principal, Capability::SystemRead)?;
+    Err(HttpError::for_client_error(
+        Some("UtilizationUnavailable".to_string()),
+        ClientErrorStatusCode::from(http::StatusCode::NOT_IMPLEMENTED),
+        "per-silo utilization accounting is not yet implemented; \
+         the path is reserved per RFD 00007 D-Ap-13"
+            .to_string(),
+    ))
 }

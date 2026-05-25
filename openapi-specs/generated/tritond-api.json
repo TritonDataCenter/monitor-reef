@@ -1860,6 +1860,38 @@
         }
       }
     },
+    "/v1/system/utilization/silos": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "RFD 00007 `GET /v1/system/utilization/silos`. Per-silo",
+        "description": "capacity utilization (placeholder). The path is locked in the spec but the handler returns `501 UtilizationUnavailable` until quota accounting catches up - returning `[]` would falsely indicate \"zero silos have utilization data.\" Capability: `SystemRead`.",
+        "operationId": "get_system_utilization_silos_v1",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Silo",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Silo"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/vpc-dhcp-leases": {
       "get": {
         "tags": [

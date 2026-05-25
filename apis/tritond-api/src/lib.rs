@@ -3844,6 +3844,21 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
 
+    /// RFD 00007 `GET /v1/system/utilization/silos`. Per-silo
+    /// capacity utilization (placeholder). The path is locked in the
+    /// spec but the handler returns `501 UtilizationUnavailable`
+    /// until quota accounting catches up - returning `[]` would
+    /// falsely indicate "zero silos have utilization data."
+    /// Capability: `SystemRead`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/system/utilization/silos",
+        tags = ["system"],
+    }]
+    async fn get_system_utilization_silos_v1(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<Silo>>, HttpError>;
+
     /// RFD 00007 `PUT /v1/system/users/{user_id}/capabilities/{capability}`.
     /// Grant a capability to a user. Capability gate: `SystemOperate`.
     /// Idempotent: granting an already-present capability is a no-op.
