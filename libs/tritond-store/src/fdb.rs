@@ -1303,6 +1303,117 @@ impl Store for FdbStore {
         }
     }
 
+    async fn migrate_user_capabilities(&self) -> Result<usize, StoreError> {
+        use crate::Capability;
+        // One-shot scan + per-row rewrite. Idempotent: only rewrites
+        // when the persisted row has an empty capability set, so a
+        // second call is a no-op. Each rewrite is its own
+        // single-key transaction; not batched into a 5.0MB FDB
+        // transaction because the User keyspace is small and the
+        // migration runs once at bootstrap.
+        let (begin, end) = prefix_range(Self::user_prefix());
+        let users: Result<Vec<User>, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let begin = begin.clone();
+                let end = end.clone();
+                async move {
+                    let opt = RangeOption {
+                        begin: KeySelector::first_greater_or_equal(begin),
+                        end: KeySelector::first_greater_or_equal(end),
+                        ..RangeOption::default()
+                    };
+                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    let mut out = Vec::new();
+                    for kv in kvs.iter() {
+                        if let Ok(u) = serde_json::from_slice::<User>(kv.value()) {
+                            out.push(u);
+                        }
+                    }
+                    Ok(out)
+                }
+            })
+            .await;
+        let users = users.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+
+        let mut rewritten = 0usize;
+        for user in users {
+            if !user.capabilities.is_empty() {
+                continue;
+            }
+            let new_caps: std::collections::BTreeSet<Capability> = if user.is_root {
+                Capability::all().iter().copied().collect()
+            } else if user.fleet_admin {
+                let mut s = std::collections::BTreeSet::new();
+                s.insert(Capability::SystemRead);
+                s.insert(Capability::SystemOperate);
+                s
+            } else {
+                continue;
+            };
+            let mut updated = user.clone();
+            updated.capabilities = new_caps;
+            let by_id_key = Self::user_by_id_key(updated.id);
+            let value = serde_json::to_vec(&updated)
+                .map_err(|e| StoreError::Backend(format!("serialize user: {e}")))?;
+            let result: Result<(), FdbBindingError> = self
+                .db
+                .run(|tr, _| {
+                    let by_id_key = by_id_key.clone();
+                    let value = value.clone();
+                    async move {
+                        tr.set(&by_id_key, &value);
+                        Ok(())
+                    }
+                })
+                .await;
+            result.map_err(|e| StoreError::Backend(format!("FDB transaction: {e}")))?;
+            rewritten += 1;
+        }
+        Ok(rewritten)
+    }
+
+    async fn update_user_capabilities(
+        &self,
+        user_id: Uuid,
+        capabilities: std::collections::BTreeSet<crate::Capability>,
+    ) -> Result<User, StoreError> {
+        let by_id_key = Self::user_by_id_key(user_id);
+        enum Out {
+            Updated(Box<User>),
+            Vanished,
+        }
+        let outcome: Result<Out, FdbBindingError> = self
+            .db
+            .run(|tr, _| {
+                let by_id_key = by_id_key.clone();
+                let capabilities = capabilities.clone();
+                async move {
+                    let bytes = match tr.get(&by_id_key, false).await? {
+                        Some(b) => b,
+                        None => return Ok(Out::Vanished),
+                    };
+                    let mut user: User = match serde_json::from_slice(&bytes) {
+                        Ok(u) => u,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    user.capabilities = capabilities;
+                    let value = match serde_json::to_vec(&user) {
+                        Ok(v) => v,
+                        Err(_) => return Ok(Out::Vanished),
+                    };
+                    tr.set(&by_id_key, &value);
+                    Ok(Out::Updated(Box::new(user)))
+                }
+            })
+            .await;
+        match outcome {
+            Ok(Out::Updated(u)) => Ok(*u),
+            Ok(Out::Vanished) => Err(StoreError::NotFound),
+            Err(e) => Err(StoreError::Backend(format!("FDB transaction: {e}"))),
+        }
+    }
+
     async fn has_any_user(&self) -> Result<bool, StoreError> {
         let (begin, end) = prefix_range(Self::user_prefix());
         let result: Result<bool, FdbBindingError> = self

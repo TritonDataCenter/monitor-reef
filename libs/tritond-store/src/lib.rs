@@ -206,6 +206,37 @@ pub trait Store: Send + Sync + 'static {
     /// decide whether to mint the root operator at first run.
     async fn has_any_user(&self) -> Result<bool, StoreError>;
 
+    /// RFD 00007 AP-1c migration: walk every persisted [`User`] row
+    /// and populate `capabilities` for users whose set is empty.
+    ///
+    /// Backfill rules:
+    /// * `is_root == true`, empty capabilities -> `Capability::all()`.
+    /// * `fleet_admin == true`, empty capabilities ->
+    ///   `{SystemRead, SystemOperate}`.
+    /// * Otherwise no change (the operator grants additional
+    ///   capabilities explicitly per user via the future
+    ///   `tcadm system user grant` flow).
+    ///
+    /// Idempotent: subsequent runs are no-ops because populated
+    /// capability sets are not overwritten. Bootstrap calls this
+    /// once on every tritond start so the upgrade path from a
+    /// pre-AP-1 deployment is automatic.
+    ///
+    /// Returns the count of users whose row was rewritten.
+    async fn migrate_user_capabilities(&self) -> Result<usize, StoreError>;
+
+    /// Replace a user's `capabilities` set. Used by the
+    /// `tcadm system user grant` / `tcadm system user revoke` flow
+    /// (lands in AP-3c) and by the AP-1c migration above for the
+    /// internal walk. Returns the updated user.
+    ///
+    /// Returns [`StoreError::NotFound`] if the user does not exist.
+    async fn update_user_capabilities(
+        &self,
+        user_id: Uuid,
+        capabilities: std::collections::BTreeSet<Capability>,
+    ) -> Result<User, StoreError>;
+
     // ------------------------------------------------------------------
     // API keys
     // ------------------------------------------------------------------

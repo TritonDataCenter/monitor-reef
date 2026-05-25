@@ -43,6 +43,22 @@ pub async fn ensure(store: &dyn Store) -> Result<(JwtKey, IdentityHmacKey)> {
     let jwt_key = ensure_jwt_key(store).await?;
     let identity_hmac_key = ensure_identity_hmac_key(store).await?;
     ensure_root_user(store).await?;
+    // RFD 00007 AP-1c migration: backfill `User.capabilities` for
+    // existing rows that predate the field. Idempotent; runs on
+    // every tritond start so an upgrade path from a pre-RFD-00007
+    // deployment is automatic. Bootstrap-fresh deployments are
+    // no-ops here because `ensure_root_user` constructs root with
+    // the full capability set.
+    let rewritten = store
+        .migrate_user_capabilities()
+        .await
+        .context("migrate user capabilities")?;
+    if rewritten > 0 {
+        info!(
+            rewritten,
+            "backfilled User.capabilities for legacy rows (RFD 00007 AP-1c)"
+        );
+    }
     Ok((jwt_key, identity_hmac_key))
 }
 

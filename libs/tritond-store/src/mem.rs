@@ -538,6 +538,47 @@ impl Store for MemStore {
         Ok(!guard.users_by_id.is_empty())
     }
 
+    async fn migrate_user_capabilities(&self) -> Result<usize, StoreError> {
+        use crate::Capability;
+        let mut guard = self.inner.write().await;
+        let mut rewritten = 0usize;
+        for user in guard.users_by_id.values_mut() {
+            // Only backfill users whose capability set is empty -
+            // an operator may have explicitly cleared a user, and
+            // we must not undo that.
+            if !user.capabilities.is_empty() {
+                continue;
+            }
+            let new_caps: std::collections::BTreeSet<Capability> = if user.is_root {
+                Capability::all().iter().copied().collect()
+            } else if user.fleet_admin {
+                let mut s = std::collections::BTreeSet::new();
+                s.insert(Capability::SystemRead);
+                s.insert(Capability::SystemOperate);
+                s
+            } else {
+                continue;
+            };
+            user.capabilities = new_caps;
+            rewritten += 1;
+        }
+        Ok(rewritten)
+    }
+
+    async fn update_user_capabilities(
+        &self,
+        user_id: Uuid,
+        capabilities: std::collections::BTreeSet<crate::Capability>,
+    ) -> Result<User, StoreError> {
+        let mut guard = self.inner.write().await;
+        let user = guard
+            .users_by_id
+            .get_mut(&user_id)
+            .ok_or(StoreError::NotFound)?;
+        user.capabilities = capabilities;
+        Ok(user.clone())
+    }
+
     async fn create_api_key(&self, key: ApiKey) -> Result<ApiKey, StoreError> {
         let mut guard = self.inner.write().await;
         if guard.api_key_id_by_lookup_id.contains_key(&key.lookup_id) {
@@ -4666,6 +4707,148 @@ mod tests {
         assert!(back.capabilities.contains(&Capability::SystemOperate));
         assert!(back.capabilities.contains(&Capability::SystemConfigWrite));
         assert!(back.capabilities.contains(&Capability::StorageAdmin));
+    }
+
+    #[tokio::test]
+    async fn migrate_user_capabilities_backfills_per_role() {
+        // RFD 00007 AP-1c: upgrade-path migration. Pre-RFD User rows
+        // deserialise with an empty `capabilities` set (per the
+        // `serde(default)` carve-out). The migration walks every
+        // row once and populates `capabilities` per role:
+        //
+        //   is_root == true    -> Capability::all()
+        //   fleet_admin == true -> {SystemRead, SystemOperate}
+        //   otherwise          -> unchanged (empty)
+        let store = MemStore::new();
+
+        // Construct three users via the in-memory primary: root,
+        // fleet-admin, and tenant member. All with empty capability
+        // sets (the pre-RFD shape).
+        let root = User {
+            id: Uuid::new_v4(),
+            username: "root".to_string(),
+            password_hash: "$2y$dummy".to_string(),
+            is_root: true,
+            fleet_admin: true,
+            created_at: Utc::now(),
+            tenant_id: None,
+            federation: None,
+            capabilities: Default::default(),
+        };
+        let fleet = User {
+            id: Uuid::new_v4(),
+            username: "fleet-admin".to_string(),
+            password_hash: "$2y$dummy".to_string(),
+            is_root: false,
+            fleet_admin: true,
+            created_at: Utc::now(),
+            tenant_id: None,
+            federation: None,
+            capabilities: Default::default(),
+        };
+        let tenant_user = User {
+            id: Uuid::new_v4(),
+            username: "alice".to_string(),
+            password_hash: "$2y$dummy".to_string(),
+            is_root: false,
+            fleet_admin: false,
+            created_at: Utc::now(),
+            tenant_id: None,
+            federation: None,
+            capabilities: Default::default(),
+        };
+        let root_id = root.id;
+        let fleet_id = fleet.id;
+        let tenant_id = tenant_user.id;
+        store.create_user(root).await.unwrap();
+        store.create_user(fleet).await.unwrap();
+        store.create_user(tenant_user).await.unwrap();
+
+        // First migration pass writes three rows. Wait - only two
+        // rows actually need a write: root + fleet_admin. The tenant
+        // user stays empty, so it's a no-op per row.
+        let rewritten = store.migrate_user_capabilities().await.unwrap();
+        assert_eq!(rewritten, 2, "migration should rewrite root + fleet-admin only");
+
+        let root_after = store.get_user_by_id(root_id).await.unwrap();
+        assert_eq!(
+            root_after.capabilities.len(),
+            Capability::all().len(),
+            "root must carry every capability"
+        );
+        for cap in Capability::all() {
+            assert!(root_after.capabilities.contains(cap));
+        }
+
+        let fleet_after = store.get_user_by_id(fleet_id).await.unwrap();
+        assert_eq!(fleet_after.capabilities.len(), 2);
+        assert!(fleet_after.capabilities.contains(&Capability::SystemRead));
+        assert!(fleet_after.capabilities.contains(&Capability::SystemOperate));
+        assert!(!fleet_after.capabilities.contains(&Capability::SystemConfigWrite));
+        assert!(!fleet_after.capabilities.contains(&Capability::StorageAdmin));
+
+        let tenant_after = store.get_user_by_id(tenant_id).await.unwrap();
+        assert!(
+            tenant_after.capabilities.is_empty(),
+            "non-fleet-admin tenant users stay empty until an operator grants explicitly"
+        );
+
+        // Second call is idempotent (no rows have empty capabilities
+        // for backfill any more).
+        let second = store.migrate_user_capabilities().await.unwrap();
+        assert_eq!(second, 0, "second migration pass must be a no-op");
+    }
+
+    #[tokio::test]
+    async fn update_user_capabilities_round_trip() {
+        // RFD 00007 AP-1c: the operator-facing capability grant /
+        // revoke flow (lands in tcadm system user grant). The store
+        // method replaces the user's capability set wholesale; the
+        // handler is responsible for computing the new set (add or
+        // remove) before calling.
+        let store = MemStore::new();
+        let user = User {
+            id: Uuid::new_v4(),
+            username: "alice".to_string(),
+            password_hash: "$2y$dummy".to_string(),
+            is_root: false,
+            fleet_admin: false,
+            created_at: Utc::now(),
+            tenant_id: None,
+            federation: None,
+            capabilities: Default::default(),
+        };
+        let user_id = user.id;
+        store.create_user(user).await.unwrap();
+
+        // Grant SystemConfigWrite + StorageAdmin.
+        let mut caps = std::collections::BTreeSet::new();
+        caps.insert(Capability::SystemConfigWrite);
+        caps.insert(Capability::StorageAdmin);
+        let updated = store
+            .update_user_capabilities(user_id, caps.clone())
+            .await
+            .unwrap();
+        assert_eq!(updated.capabilities, caps);
+
+        // Confirm the row was persisted.
+        let fetched = store.get_user_by_id(user_id).await.unwrap();
+        assert_eq!(fetched.capabilities, caps);
+
+        // Revoke (set to empty).
+        store
+            .update_user_capabilities(user_id, Default::default())
+            .await
+            .unwrap();
+        let after = store.get_user_by_id(user_id).await.unwrap();
+        assert!(after.capabilities.is_empty());
+
+        // Non-existent user -> NotFound.
+        let err = store
+            .update_user_capabilities(Uuid::new_v4(), Default::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
     }
 
     fn user_fixture(name: &str) -> User {
