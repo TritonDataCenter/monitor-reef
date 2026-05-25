@@ -28,9 +28,8 @@
 use dropshot::{
     ClientErrorStatusCode, HttpError, HttpResponseDeleted, HttpResponseOk, Path, RequestContext,
 };
-use tritond_store::{Capability, Store, StoreError};
+use tritond_store::Capability;
 
-use crate::auth::{Action, authenticate_and_authorize};
 use crate::context::ApiContext;
 use crate::error::store_error_to_http;
 
@@ -49,12 +48,10 @@ pub(crate) async fn grant_user_capability_v1(
         capability,
     } = path.into_inner();
 
-    // Capability gate. `Action::InstanceList` is the closest
-    // existing Cedar action for "authenticated operator" - the
-    // SystemOperate-class actions don't yet have dedicated Cedar
-    // variants (that wave lands when the Cedar bundle is split per
-    // capability in a later slice). The substantive check is
-    // `require_capability` below.
+    // Authentication only - the capability gate is the operator
+    // surface's only authorization check. Cross-scope-deny shape
+    // (404 NotFound for missing capability) is preserved by
+    // `require_capability`.
     let principal = crate::auth::authenticate_only(&rqctx, &ctx.auth, &ctx.store).await?;
     crate::auth::require_capability(&principal, Capability::SystemOperate)?;
 
@@ -123,7 +120,6 @@ pub(crate) async fn revoke_user_capability_v1(
         .update_user_capabilities(user_id, caps)
         .await
         .map_err(store_error_to_http)?;
-    let _ = StoreError::NotFound; // suppress unused-import warning
     Ok(HttpResponseDeleted())
 }
 

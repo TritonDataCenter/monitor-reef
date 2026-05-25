@@ -250,7 +250,10 @@ async fn user_capability_grant_revoke_roundtrips() {
         .await
         .expect("grant must succeed")
         .into_inner();
-    assert!(view.capabilities.contains(&tritond_client::types::Capability::SystemConfigWrite));
+    assert!(
+        view.capabilities
+            .contains(&tritond_client::types::Capability::SystemConfigWrite)
+    );
 
     // Idempotent: granting again is a no-op.
     let view_again = client
@@ -281,8 +284,16 @@ async fn user_capability_grant_revoke_roundtrips() {
         .await
         .expect("re-grant SystemRead")
         .into_inner();
-    assert!(view_after.capabilities.contains(&tritond_client::types::Capability::SystemRead));
-    assert!(!view_after.capabilities.contains(&tritond_client::types::Capability::SystemConfigWrite));
+    assert!(
+        view_after
+            .capabilities
+            .contains(&tritond_client::types::Capability::SystemRead)
+    );
+    assert!(
+        !view_after
+            .capabilities
+            .contains(&tritond_client::types::Capability::SystemConfigWrite)
+    );
 
     test.close().await;
 }
