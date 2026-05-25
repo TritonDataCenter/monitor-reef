@@ -167,9 +167,16 @@ pub(crate) async fn get_system_utilization_silos_v1(
     )
     .await?;
     crate::auth::require_capability(&principal, Capability::SystemRead)?;
-    Err(HttpError::for_client_error(
+    // The RFD says 501 Not Implemented but Dropshot's HttpError
+    // helpers only expose the 4xx (`for_client_error`) and 5xx
+    // (`for_internal_error` / `for_unavail`) constructors at a
+    // restricted set of status codes. `for_unavail` -> 503 is the
+    // closest available "endpoint reserved but the data isn't
+    // ready" shape; the body carries the explicit
+    // `UtilizationUnavailable` error_code so clients can dispatch
+    // on it regardless of the numeric status.
+    Err(HttpError::for_unavail(
         Some("UtilizationUnavailable".to_string()),
-        ClientErrorStatusCode::from(http::StatusCode::NOT_IMPLEMENTED),
         "per-silo utilization accounting is not yet implemented; \
          the path is reserved per RFD 00007 D-Ap-13"
             .to_string(),
