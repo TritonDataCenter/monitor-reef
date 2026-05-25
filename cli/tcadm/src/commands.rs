@@ -5157,6 +5157,138 @@ pub async fn find_v1(
 // RFD 00007 AP-3c-4: more flat-verb commands.
 // ---------------------------------------------------------------------
 
+fn parse_image_scope(s: &str) -> Result<tritond_client::types::ImageScopeSelector> {
+    use tritond_client::types::ImageScopeSelector;
+    Ok(match s {
+        "public" | "Public" => ImageScopeSelector::Public,
+        "silo" | "Silo" => ImageScopeSelector::Silo,
+        "tenant" | "Tenant" => ImageScopeSelector::Tenant,
+        "project" | "Project" => ImageScopeSelector::Project,
+        "user" | "User" => ImageScopeSelector::User,
+        other => bail!(
+            "unknown scope {other:?}; expected one of: public, silo, tenant, project, user"
+        ),
+    })
+}
+
+pub async fn image_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    scope: String,
+    json_output: bool,
+) -> Result<()> {
+    let scope_sel = parse_image_scope(&scope)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_images_v1()
+        .scope(scope_sel)
+        .send()
+        .await
+        .context("/v1/images list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no images)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  {:<10}  OS", "ID", "NAME", "VERSION");
+    for img in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<10}  {}",
+            img.id, img.name, img.version, img.os
+        );
+    }
+    Ok(())
+}
+
+pub async fn image_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    image_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let img = client
+        .get_image_v1()
+        .image_id(image_id)
+        .send()
+        .await
+        .context("/v1/images/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&img)?);
+        return Ok(());
+    }
+    println!("Image {}", img.id);
+    println!("  name:    {}", img.name);
+    println!("  os:      {}", img.os);
+    println!("  version: {}", img.version);
+    println!("  size:    {} bytes", img.size_bytes);
+    println!("  sha256:  {}", img.sha256);
+    Ok(())
+}
+
+pub async fn ssh_key_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    scope: String,
+    json_output: bool,
+) -> Result<()> {
+    let scope_sel = parse_image_scope(&scope)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_ssh_keys_v1()
+        .scope(scope_sel)
+        .send()
+        .await
+        .context("/v1/ssh-keys list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no ssh keys)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  FINGERPRINT", "ID", "NAME");
+    for k in &page.items {
+        println!("{:<36}  {:<24}  {}", k.id, k.name, k.fingerprint);
+    }
+    Ok(())
+}
+
+pub async fn ssh_key_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    key_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let k = client
+        .get_ssh_key_v1()
+        .key_id(key_id)
+        .send()
+        .await
+        .context("/v1/ssh-keys/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&k)?);
+        return Ok(());
+    }
+    println!("SshKey {}", k.id);
+    println!("  name:        {}", k.name);
+    println!("  fingerprint: {}", k.fingerprint);
+    Ok(())
+}
+
 pub async fn disk_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,

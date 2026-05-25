@@ -134,6 +134,18 @@ enum Commands {
         #[command(subcommand)]
         command: FloatingIpCommand,
     },
+    /// RFD 00007 flat-verb tree for images. AP-2h ships the
+    /// `--scope=public` form; silo / tenant / project / user
+    /// dispatch lands when the AP-3a name-resolver arrives.
+    ImageV1 {
+        #[command(subcommand)]
+        command: ImageV1Command,
+    },
+    /// RFD 00007 flat-verb tree for SSH keys.
+    SshKeyV1 {
+        #[command(subcommand)]
+        command: SshKeyV1Command,
+    },
     /// RFD 00007 fleet-admin operator commands. Capability-gated;
     /// callers without the right `Capability` see 404 NotFound.
     System {
@@ -1824,6 +1836,40 @@ enum SubnetCommand {
 }
 
 #[derive(Subcommand)]
+enum ImageV1Command {
+    /// List images at a given scope. AP-2h: only --scope=public.
+    List {
+        #[arg(long, default_value = "public")]
+        scope: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single image by UUID.
+    Show {
+        image_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SshKeyV1Command {
+    /// List SSH keys at a given scope. AP-2h: only --scope=public.
+    List {
+        #[arg(long, default_value = "public")]
+        scope: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single SSH key by UUID.
+    Show {
+        key_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum FloatingIpCommand {
     /// List floating IPs in a project.
     List {
@@ -2241,6 +2287,22 @@ async fn main() -> Result<()> {
             }
             SubnetCommand::Show { subnet_id, json } => {
                 commands::subnet_show_v1(cli.endpoint, cli.api_key, subnet_id, json).await
+            }
+        },
+        Commands::ImageV1 { command } => match command {
+            ImageV1Command::List { scope, json } => {
+                commands::image_list_v1(cli.endpoint, cli.api_key, scope, json).await
+            }
+            ImageV1Command::Show { image_id, json } => {
+                commands::image_show_v1(cli.endpoint, cli.api_key, image_id, json).await
+            }
+        },
+        Commands::SshKeyV1 { command } => match command {
+            SshKeyV1Command::List { scope, json } => {
+                commands::ssh_key_list_v1(cli.endpoint, cli.api_key, scope, json).await
+            }
+            SshKeyV1Command::Show { key_id, json } => {
+                commands::ssh_key_show_v1(cli.endpoint, cli.api_key, key_id, json).await
             }
         },
         Commands::FloatingIp { command } => match command {
