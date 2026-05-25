@@ -101,6 +101,20 @@ enum Commands {
         #[command(subcommand)]
         command: CnCommand,
     },
+    /// RFD 00007 flat-verb tree for instances. Calls the new /v1/
+    /// surface; the legacy `tcadm tenant project instance list ...`
+    /// nested verbs stay around through AP-3e for backwards-compat
+    /// during the cutover.
+    Instance {
+        #[command(subcommand)]
+        command: InstanceCommand,
+    },
+    /// RFD 00007 fleet-admin operator commands. Capability-gated;
+    /// callers without the right `Capability` see 404 NotFound.
+    System {
+        #[command(subcommand)]
+        command: SystemCommand,
+    },
     /// Inspect legacy (non-tritond-managed) zones discovered by the
     /// classifier on registered CNs. Fleet-admin only.
     Legacy {
@@ -1653,6 +1667,97 @@ enum MetaCommand {
     },
 }
 
+/// RFD 00007 AP-3c-2: flat-verb instance commands. Calls the new
+/// `/v1/instances` and friends. Today this complements the legacy
+/// `tcadm tenant project instance list ...` nested verb; the
+/// legacy form deletes at AP-3e along with the v2 server paths.
+#[derive(Subcommand)]
+enum InstanceCommand {
+    /// List instances. Selectors:
+    ///   --image=<uuid>      indexed (AP-1c)
+    ///   --cn=<uuid>         indexed
+    ///   --tenant=<uuid> --project=<uuid>
+    ///                       bounded by project-membership index
+    ///   --state=<running|stopped|...>
+    ///                       narrows the result set client-side
+    /// One of (image, cn, tenant+project) is required.
+    List {
+        #[arg(long)]
+        tenant: Option<Uuid>,
+        #[arg(long)]
+        project: Option<Uuid>,
+        #[arg(long)]
+        image: Option<Uuid>,
+        #[arg(long)]
+        cn: Option<Uuid>,
+        #[arg(long)]
+        state: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single instance by UUID.
+    Show {
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// RFD 00007 AP-3c-2: fleet-admin operator commands. All under
+/// `/v1/system/`; capability-gated server-side. A caller without
+/// the right `Capability` sees the same 404 as a missing resource.
+#[derive(Subcommand)]
+enum SystemCommand {
+    /// Fleet-wide instance search. The answer to "which VMs use
+    /// image X?" and "what is on CN Y?". Capability: `SystemRead`.
+    Instances {
+        #[arg(long)]
+        image: Option<Uuid>,
+        #[arg(long)]
+        cn: Option<Uuid>,
+        #[arg(long)]
+        silo: Option<Uuid>,
+        #[arg(long)]
+        tenant: Option<Uuid>,
+        #[arg(long)]
+        project: Option<Uuid>,
+        #[arg(long)]
+        state: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fleet-wide NIC search ("who owns 10.x.x.x?").
+    Nics {
+        #[arg(long)]
+        ip: Option<std::net::IpAddr>,
+        #[arg(long)]
+        subnet: Option<Uuid>,
+        #[arg(long)]
+        instance: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fleet CN inventory.
+    Cns {
+        #[arg(long, value_enum)]
+        state: Option<CnStateArg>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Grant a capability to a user.
+    UserGrant {
+        user_id: Uuid,
+        /// Capability to grant: system-read, system-operate,
+        /// system-config-write, or storage-admin.
+        capability: String,
+    },
+    /// Revoke a capability from a user.
+    UserRevoke {
+        user_id: Uuid,
+        capability: String,
+    },
+}
+
 #[derive(Subcommand)]
 enum CnCommand {
     /// List registered compute nodes, optionally filtered by state.
@@ -1860,6 +1965,88 @@ async fn main() -> Result<()> {
             ApiKeyCommand::Delete { api_key_id } => {
                 commands::api_key_delete(cli.endpoint, cli.api_key, api_key_id).await
             }
+        },
+        Commands::Instance { command } => match command {
+            InstanceCommand::List {
+                tenant,
+                project,
+                image,
+                cn,
+                state,
+                json,
+            } => {
+                commands::instance_list_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    tenant,
+                    project,
+                    image,
+                    cn,
+                    state,
+                    json,
+                )
+                .await
+            }
+            InstanceCommand::Show { instance_id, json } => {
+                commands::instance_show_v1(cli.endpoint, cli.api_key, instance_id, json).await
+            }
+        },
+        Commands::System { command } => match command {
+            SystemCommand::Instances {
+                image,
+                cn,
+                silo,
+                tenant,
+                project,
+                state,
+                json,
+            } => {
+                commands::system_instances_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    image,
+                    cn,
+                    silo,
+                    tenant,
+                    project,
+                    state,
+                    json,
+                )
+                .await
+            }
+            SystemCommand::Nics {
+                ip,
+                subnet,
+                instance,
+                json,
+            } => {
+                commands::system_nics_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    ip,
+                    subnet,
+                    instance,
+                    json,
+                )
+                .await
+            }
+            SystemCommand::Cns { state, json } => {
+                commands::system_cns_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    state.map(Into::into),
+                    json,
+                )
+                .await
+            }
+            SystemCommand::UserGrant {
+                user_id,
+                capability,
+            } => commands::system_user_grant_v1(cli.endpoint, cli.api_key, user_id, capability).await,
+            SystemCommand::UserRevoke {
+                user_id,
+                capability,
+            } => commands::system_user_revoke_v1(cli.endpoint, cli.api_key, user_id, capability).await,
         },
         Commands::Cn { command } => match command {
             CnCommand::List { state, json } => {

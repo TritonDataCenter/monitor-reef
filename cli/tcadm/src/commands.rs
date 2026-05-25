@@ -4771,3 +4771,309 @@ pub async fn meta_realized(
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------
+// RFD 00007 AP-3c-2: flat-verb commands against the new /v1/ surface.
+// ---------------------------------------------------------------------
+
+/// `tcadm instance list [--image=&cn=&tenant=&project=&state=]`.
+pub async fn instance_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant: Option<Uuid>,
+    project: Option<Uuid>,
+    image: Option<Uuid>,
+    cn: Option<Uuid>,
+    state: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_instances_v1();
+    if let Some(t) = tenant {
+        req = req.tenant(t);
+    }
+    if let Some(p) = project {
+        req = req.project(p);
+    }
+    if let Some(i) = image {
+        req = req.image(i);
+    }
+    if let Some(c) = cn {
+        req = req.cn(c);
+    }
+    if let Some(s) = state {
+        req = req.state(s);
+    }
+    let page = req.send().await.context("/v1/instances list")?.into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no instances)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<10}  IMAGE",
+        "ID", "NAME", "LIFECYCLE"
+    );
+    for inst in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<10}  {}",
+            inst.id,
+            inst.name,
+            format!("{:?}", inst.lifecycle),
+            inst.image_id,
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm instance show <instance_id>`.
+pub async fn instance_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    instance_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let inst = client
+        .get_instance_v1()
+        .instance_id(instance_id)
+        .send()
+        .await
+        .context("/v1/instances/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&inst)?);
+        return Ok(());
+    }
+    print_instance(&inst);
+    Ok(())
+}
+
+/// `tcadm system instances [--image=&cn=...]` -> fleet-wide search.
+pub async fn system_instances_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    image: Option<Uuid>,
+    cn: Option<Uuid>,
+    silo: Option<Uuid>,
+    tenant: Option<Uuid>,
+    project: Option<Uuid>,
+    state: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_system_instances_v1();
+    if let Some(i) = image {
+        req = req.image(i);
+    }
+    if let Some(c) = cn {
+        req = req.cn(c);
+    }
+    if let Some(s) = silo {
+        req = req.silo(s);
+    }
+    if let Some(t) = tenant {
+        req = req.tenant(t);
+    }
+    if let Some(p) = project {
+        req = req.project(p);
+    }
+    if let Some(st) = state {
+        req = req.state(st);
+    }
+    let page = req
+        .send()
+        .await
+        .context("/v1/system/instances list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no instances)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<10}  {:<36}  TENANT/PROJECT",
+        "ID", "NAME", "LIFECYCLE", "IMAGE"
+    );
+    for inst in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<10}  {:<36}  {}/{}",
+            inst.id,
+            inst.name,
+            format!("{:?}", inst.lifecycle),
+            inst.image_id,
+            inst.tenant_id,
+            inst.project_id,
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm system nics [--ip=&subnet=&instance=]` -> fleet NIC search.
+pub async fn system_nics_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    ip: Option<std::net::IpAddr>,
+    subnet: Option<Uuid>,
+    instance: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_system_nics_v1();
+    if let Some(i) = ip {
+        req = req.ip(i);
+    }
+    if let Some(s) = subnet {
+        req = req.subnet(s);
+    }
+    if let Some(inst) = instance {
+        req = req.instance(inst);
+    }
+    let page = req
+        .send()
+        .await
+        .context("/v1/system/networking/nics list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no nics)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<17}  {:<15}  INSTANCE",
+        "NIC_ID", "NAME", "MAC", "IPV4"
+    );
+    for nic in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<17}  {:<15}  {}",
+            nic.id,
+            nic.name,
+            nic.mac,
+            nic.primary_ipv4
+                .map(|i| i.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            nic.instance_id,
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm system cns [--state=...]` -> fleet CN inventory via the
+/// `/v1/system/cns` operator endpoint. Capability: `SystemRead`.
+pub async fn system_cns_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    state: Option<tritond_client::types::CnState>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_system_cns_v1();
+    if let Some(s) = state {
+        req = req.state(s);
+    }
+    let page = req
+        .send()
+        .await
+        .context("/v1/system/cns list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no compute nodes)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<9}  ROLE",
+        "SERVER_UUID", "HOSTNAME", "STATE"
+    );
+    for cn in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<9}  {:?}",
+            cn.server_uuid, cn.hostname, cn.state, cn.role,
+        );
+    }
+    Ok(())
+}
+
+/// Parse a CLI capability string into the wire enum. Accepts both
+/// kebab-case (`system-read`) and the Rust variant name
+/// (`SystemRead`) so operators don't have to remember which.
+fn parse_capability(s: &str) -> Result<tritond_client::types::Capability> {
+    use tritond_client::types::Capability;
+    Ok(match s {
+        "system-read" | "SystemRead" => Capability::SystemRead,
+        "system-operate" | "SystemOperate" => Capability::SystemOperate,
+        "system-config-write" | "SystemConfigWrite" => Capability::SystemConfigWrite,
+        "storage-admin" | "StorageAdmin" => Capability::StorageAdmin,
+        other => bail!(
+            "unknown capability {other:?}; expected one of: system-read, \
+             system-operate, system-config-write, storage-admin"
+        ),
+    })
+}
+
+/// `tcadm system user-grant <user_id> <capability>`.
+pub async fn system_user_grant_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user_id: Uuid,
+    capability: String,
+) -> Result<()> {
+    let cap = parse_capability(&capability)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let view = client
+        .grant_user_capability_v1()
+        .user_id(user_id)
+        .capability(cap)
+        .send()
+        .await
+        .context("/v1/system/users/{user}/capabilities/{cap} grant")?
+        .into_inner();
+    println!(
+        "Granted {capability} to {user_id}. User now carries {} capabilit{}.",
+        view.capabilities.len(),
+        if view.capabilities.len() == 1 { "y" } else { "ies" },
+    );
+    for c in &view.capabilities {
+        println!("  - {c:?}");
+    }
+    Ok(())
+}
+
+/// `tcadm system user-revoke <user_id> <capability>`.
+pub async fn system_user_revoke_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    user_id: Uuid,
+    capability: String,
+) -> Result<()> {
+    let cap = parse_capability(&capability)?;
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .revoke_user_capability_v1()
+        .user_id(user_id)
+        .capability(cap)
+        .send()
+        .await
+        .context("/v1/system/users/{user}/capabilities/{cap} revoke")?;
+    println!("Revoked {capability} from {user_id}.");
+    Ok(())
+}
