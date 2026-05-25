@@ -115,6 +115,29 @@ enum Commands {
         #[command(subcommand)]
         command: SystemCommand,
     },
+    /// RFD 00007 `tcadm find` - client-side composition over the
+    /// typed /v1/system/* list endpoints. The single positional
+    /// argument is parsed in priority order:
+    ///   1. UUID  -> hit every kind by id (image-uses, cn-instances,
+    ///              raw instance lookup)
+    ///   2. IP    -> /v1/system/networking/nics?ip=
+    ///   3. MAC   -> (future, requires --kind=)
+    ///   4. Name  -> requires --kind=
+    ///
+    /// Per RFD 00007 §3.5 D-Ap-10. Capability: SystemRead.
+    Find {
+        /// Freeform input: a UUID, an IP address, or a name. If
+        /// ambiguous (e.g. a hex string that could be uuid or name),
+        /// UUID and IP are tried first.
+        what: String,
+        /// Disambiguate when the freeform input is a name or when
+        /// you want to limit the search to one kind. Accepted:
+        /// instance, image, cn, ip, nic.
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Inspect legacy (non-tritond-managed) zones discovered by the
     /// classifier on registered CNs. Fleet-admin only.
     Legacy {
@@ -2048,6 +2071,9 @@ async fn main() -> Result<()> {
                 capability,
             } => commands::system_user_revoke_v1(cli.endpoint, cli.api_key, user_id, capability).await,
         },
+        Commands::Find { what, kind, json } => {
+            commands::find_v1(cli.endpoint, cli.api_key, what, kind, json).await
+        }
         Commands::Cn { command } => match command {
             CnCommand::List { state, json } => {
                 commands::cn_list(cli.endpoint, cli.api_key, state.map(Into::into), json).await

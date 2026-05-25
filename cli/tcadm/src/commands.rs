@@ -5057,6 +5057,102 @@ pub async fn system_user_grant_v1(
     Ok(())
 }
 
+/// `tcadm find <what>` - client-side composition over the typed
+/// /v1/system/* list endpoints. Parses `what` in priority order
+/// (UUID > IP > MAC > name) and fires one or more system queries
+/// in parallel, then renders the union.
+///
+/// This is the operator's headline "find anything" verb per RFD
+/// 00007 §3.5 + D-Ap-10. Per D-Ap-10 the server-side
+/// `/v1/system/find` endpoint is intentionally not shipped; this
+/// CLI composition is the substitute.
+pub async fn find_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    what: String,
+    kind_hint: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+
+    #[derive(serde::Serialize, Default)]
+    struct FindResult {
+        instances: Vec<tritond_client::types::Instance>,
+        nics: Vec<tritond_client::types::Nic>,
+    }
+    let mut out = FindResult::default();
+
+    // Priority dispatch: UUID, then IP, then explicit --kind=.
+    // MAC parsing comes when /v1/system/networking/nics gains a
+    // mac= selector (today's surface only accepts ip=).
+    if let Ok(uuid) = Uuid::parse_str(&what) {
+        // A UUID could be an instance id, image id, cn id, nic id,
+        // etc. Try the common operator queries in parallel.
+        let inst_by_image = client.list_system_instances_v1().image(uuid).send();
+        let inst_by_cn = client.list_system_instances_v1().cn(uuid).send();
+        let (by_image, by_cn) = tokio::join!(inst_by_image, inst_by_cn);
+        if let Ok(r) = by_image {
+            out.instances.extend(r.into_inner().items);
+        }
+        if let Ok(r) = by_cn {
+            out.instances.extend(r.into_inner().items);
+        }
+        // Also try a direct instance lookup in case the UUID is
+        // itself an instance id.
+        if let Ok(inst) = client.get_instance_v1().instance_id(uuid).send().await {
+            out.instances.push(inst.into_inner());
+        }
+        // Dedupe by id (an instance hit via image AND cn would
+        // appear twice).
+        let mut seen = std::collections::HashSet::new();
+        out.instances.retain(|i| seen.insert(i.id));
+    } else if let Ok(ip) = what.parse::<std::net::IpAddr>() {
+        let r = client
+            .list_system_nics_v1()
+            .ip(ip)
+            .send()
+            .await
+            .context("/v1/system/networking/nics?ip=")?;
+        out.nics.extend(r.into_inner().items);
+    } else {
+        let _ = kind_hint;
+        bail!(
+            "freeform input {what:?} did not parse as UUID or IP; \
+             name-based search requires `--kind=` and lands in a future slice"
+        );
+    }
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+    println!("== Instances ({}) ==", out.instances.len());
+    for inst in &out.instances {
+        println!(
+            "  {}  {:<24}  {:?}  image={}",
+            inst.id,
+            inst.name,
+            inst.lifecycle,
+            inst.image_id,
+        );
+    }
+    println!("== NICs ({}) ==", out.nics.len());
+    for nic in &out.nics {
+        println!(
+            "  {}  {:<24}  {:<17}  {:<15}  instance={}",
+            nic.id,
+            nic.name,
+            nic.mac,
+            nic.primary_ipv4
+                .map(|i| i.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            nic.instance_id,
+        );
+    }
+    Ok(())
+}
+
 /// `tcadm system user-revoke <user_id> <capability>`.
 pub async fn system_user_revoke_v1(
     endpoint_override: Option<String>,
