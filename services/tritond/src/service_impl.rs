@@ -380,6 +380,62 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::delete_vpc_subnet(rqctx, path).await
     }
 
+    async fn list_firewall_rules_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::FirewallRuleQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<FirewallRule>>, HttpError> {
+        crate::handlers::network::firewall::list_firewall_rules_v1(rqctx, query).await
+    }
+
+    async fn get_firewall_rule_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::FirewallRulePath>,
+    ) -> Result<HttpResponseOk<FirewallRule>, HttpError> {
+        crate::handlers::network::firewall::get_firewall_rule_v1(rqctx, path).await
+    }
+
+    async fn list_nat_gateways_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::NatGatewayQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<NatGateway>>, HttpError> {
+        crate::handlers::network::nat::list_nat_gateways_v1(rqctx, query).await
+    }
+
+    async fn get_nat_gateway_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::NatGatewayPath>,
+    ) -> Result<HttpResponseOk<NatGateway>, HttpError> {
+        crate::handlers::network::nat::get_nat_gateway_v1(rqctx, path).await
+    }
+
+    async fn list_route_tables_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::RouteTableQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<RouteTable>>, HttpError> {
+        crate::handlers::network::routes::list_route_tables_v1(rqctx, query).await
+    }
+
+    async fn get_route_table_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::RouteTablePath>,
+    ) -> Result<HttpResponseOk<RouteTable>, HttpError> {
+        crate::handlers::network::routes::get_route_table_v1(rqctx, path).await
+    }
+
+    async fn list_routes_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::RouteQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Route>>, HttpError> {
+        crate::handlers::network::routes::list_routes_v1(rqctx, query).await
+    }
+
+    async fn get_route_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::RoutePath>,
+    ) -> Result<HttpResponseOk<Route>, HttpError> {
+        crate::handlers::network::routes::get_route_v1(rqctx, path).await
+    }
+
     async fn list_floating_ips_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::FloatingIpQuery>,

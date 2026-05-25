@@ -92,6 +92,70 @@ pub struct FloatingIpPath {
     pub floating_ip_id: Uuid,
 }
 
+/// Path parameters for `/v1/firewall-rules/{firewall_rule_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct FirewallRulePath {
+    pub firewall_rule_id: Uuid,
+}
+
+/// Path parameters for `/v1/nat-gateways/{nat_gateway_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NatGatewayPath {
+    pub nat_gateway_id: Uuid,
+}
+
+/// Path parameters for `/v1/route-tables/{route_table_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RouteTablePath {
+    pub route_table_id: Uuid,
+}
+
+/// Path parameters for `/v1/routes/{route_id}`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RoutePath {
+    pub route_id: Uuid,
+}
+
+/// Query parameters for `GET /v1/firewall-rules?vpc=<uuid>`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct FirewallRuleQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to firewall rules attached to this VPC. Required.
+    #[serde(default)]
+    pub vpc: Option<Uuid>,
+}
+
+/// Query parameters for `GET /v1/nat-gateways?vpc=<uuid>`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct NatGatewayQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to NAT gateways in this VPC. Required.
+    #[serde(default)]
+    pub vpc: Option<Uuid>,
+}
+
+/// Query parameters for `GET /v1/route-tables?vpc=<uuid>`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct RouteTableQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to route tables in this VPC. Required.
+    #[serde(default)]
+    pub vpc: Option<Uuid>,
+}
+
+/// Query parameters for `GET /v1/routes?route_table=<uuid>`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct RouteQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to routes in this route table. Required.
+    #[serde(default)]
+    pub route_table: Option<Uuid>,
+}
+
 /// Query parameters for `GET /v1/floating-ips?tenant=&project=`.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct FloatingIpQuery {

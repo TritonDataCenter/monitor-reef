@@ -77,6 +77,159 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
+/// RFD 00007 AP-2j: `GET /v1/route-tables?vpc=<uuid>`. Flat list.
+pub(crate) async fn list_route_tables_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::RouteTableQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<RouteTable>>, HttpError> {
+    use tritond_api::v1::{ResultsPage, RouteTableQuery};
+    let ctx = rqctx.context();
+    let RouteTableQuery { scope, vpc } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let vpc_id = vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/route-tables requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+    let vpc_row = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if let Some(t) = scope.tenant
+        && vpc_row.tenant_id != t
+    {
+        return Err(not_found());
+    }
+    if let Some(p) = scope.project
+        && vpc_row.project_id != p
+    {
+        return Err(not_found());
+    }
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::RouteTableList,
+        vpc_row.tenant_id,
+    )
+    .await?;
+    let tables = ctx
+        .store
+        .list_route_tables_in_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(tables)))
+}
+
+/// RFD 00007 AP-2j: `GET /v1/route-tables/{route_table_id}`.
+pub(crate) async fn get_route_table_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::RouteTablePath>,
+) -> Result<HttpResponseOk<RouteTable>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::RouteTablePath { route_table_id } = path.into_inner();
+    let rt = ctx
+        .store
+        .get_route_table(route_table_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::RouteTableGet,
+        rt.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(rt))
+}
+
+/// RFD 00007 AP-2j: `GET /v1/routes?route_table=<uuid>`. Flat list.
+pub(crate) async fn list_routes_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::RouteQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Route>>, HttpError> {
+    use tritond_api::v1::{ResultsPage, RouteQuery};
+    let ctx = rqctx.context();
+    let RouteQuery { scope, route_table } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let route_table_id = route_table.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/routes requires `?route_table=<uuid>`".to_string(),
+        )
+    })?;
+    let rt = ctx
+        .store
+        .get_route_table(route_table_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if let Some(t) = scope.tenant
+        && rt.tenant_id != t
+    {
+        return Err(not_found());
+    }
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::RouteList,
+        rt.tenant_id,
+    )
+    .await?;
+    let routes = ctx
+        .store
+        .list_routes_in_table(route_table_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(routes)))
+}
+
+/// RFD 00007 AP-2j: `GET /v1/routes/{route_id}`.
+pub(crate) async fn get_route_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::RoutePath>,
+) -> Result<HttpResponseOk<Route>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::RoutePath { route_id } = path.into_inner();
+    let route = ctx
+        .store
+        .get_route(route_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::RouteGet,
+        route.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(route))
+}
+
 pub(crate) async fn list_vpc_route_tables(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,

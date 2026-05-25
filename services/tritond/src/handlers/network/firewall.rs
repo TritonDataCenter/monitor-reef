@@ -77,6 +77,87 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
+/// RFD 00007 AP-2j: `GET /v1/firewall-rules?vpc=<uuid>`. Flat list
+/// scoped to a VPC; the handler reads the VPC to recover the
+/// owning tenant for auth.
+pub(crate) async fn list_firewall_rules_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::FirewallRuleQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<FirewallRule>>, HttpError> {
+    use tritond_api::v1::{FirewallRuleQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let FirewallRuleQuery { scope, vpc } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let vpc_id = vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/firewall-rules requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+    let vpc_row = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if let Some(t) = scope.tenant
+        && vpc_row.tenant_id != t
+    {
+        return Err(not_found());
+    }
+    if let Some(p) = scope.project
+        && vpc_row.project_id != p
+    {
+        return Err(not_found());
+    }
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FirewallRuleList,
+        vpc_row.tenant_id,
+    )
+    .await?;
+    let rules = ctx
+        .store
+        .list_firewall_rules_in_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(rules)))
+}
+
+/// RFD 00007 AP-2j: `GET /v1/firewall-rules/{firewall_rule_id}`.
+pub(crate) async fn get_firewall_rule_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::FirewallRulePath>,
+) -> Result<HttpResponseOk<FirewallRule>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::FirewallRulePath { firewall_rule_id } = path.into_inner();
+    let rule = ctx
+        .store
+        .get_firewall_rule(firewall_rule_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FirewallRuleGet,
+        rule.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(rule))
+}
+
 pub(crate) async fn list_vpc_firewall_rules(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,

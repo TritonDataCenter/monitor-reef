@@ -77,6 +77,85 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
+/// RFD 00007 AP-2j: `GET /v1/nat-gateways?vpc=<uuid>`. Flat list.
+pub(crate) async fn list_nat_gateways_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::NatGatewayQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<NatGateway>>, HttpError> {
+    use tritond_api::v1::{NatGatewayQuery, ResultsPage};
+    let ctx = rqctx.context();
+    let NatGatewayQuery { scope, vpc } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let vpc_id = vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/nat-gateways requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+    let vpc_row = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if let Some(t) = scope.tenant
+        && vpc_row.tenant_id != t
+    {
+        return Err(not_found());
+    }
+    if let Some(p) = scope.project
+        && vpc_row.project_id != p
+    {
+        return Err(not_found());
+    }
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayList,
+        vpc_row.tenant_id,
+    )
+    .await?;
+    let nats = ctx
+        .store
+        .list_nat_gateways_in_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(nats)))
+}
+
+/// RFD 00007 AP-2j: `GET /v1/nat-gateways/{nat_gateway_id}`.
+pub(crate) async fn get_nat_gateway_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::NatGatewayPath>,
+) -> Result<HttpResponseOk<NatGateway>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::NatGatewayPath { nat_gateway_id } = path.into_inner();
+    let nat = ctx
+        .store
+        .get_nat_gateway(nat_gateway_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayGet,
+        nat.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(nat))
+}
+
 pub(crate) async fn list_vpc_nat_gateways(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,

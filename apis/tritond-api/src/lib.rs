@@ -2860,6 +2860,94 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// RFD 00007 `GET /v1/firewall-rules?vpc=<uuid>`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/firewall-rules",
+        tags = ["firewall-rules"],
+    }]
+    async fn list_firewall_rules_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::FirewallRuleQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<FirewallRule>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/firewall-rules/{firewall_rule_id}`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/firewall-rules/{firewall_rule_id}",
+        tags = ["firewall-rules"],
+    }]
+    async fn get_firewall_rule_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::FirewallRulePath>,
+    ) -> Result<HttpResponseOk<FirewallRule>, HttpError>;
+
+    /// RFD 00007 `GET /v1/nat-gateways?vpc=<uuid>`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/nat-gateways",
+        tags = ["nat-gateways"],
+    }]
+    async fn list_nat_gateways_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::NatGatewayQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<NatGateway>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/nat-gateways/{nat_gateway_id}`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/nat-gateways/{nat_gateway_id}",
+        tags = ["nat-gateways"],
+    }]
+    async fn get_nat_gateway_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::NatGatewayPath>,
+    ) -> Result<HttpResponseOk<NatGateway>, HttpError>;
+
+    /// RFD 00007 `GET /v1/route-tables?vpc=<uuid>`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/route-tables",
+        tags = ["route-tables"],
+    }]
+    async fn list_route_tables_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::RouteTableQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<RouteTable>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/route-tables/{route_table_id}`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/route-tables/{route_table_id}",
+        tags = ["route-tables"],
+    }]
+    async fn get_route_table_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::RouteTablePath>,
+    ) -> Result<HttpResponseOk<RouteTable>, HttpError>;
+
+    /// RFD 00007 `GET /v1/routes?route_table=<uuid>`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/routes",
+        tags = ["routes"],
+    }]
+    async fn list_routes_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::RouteQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Route>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/routes/{route_id}`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/routes/{route_id}",
+        tags = ["routes"],
+    }]
+    async fn get_route_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::RoutePath>,
+    ) -> Result<HttpResponseOk<Route>, HttpError>;
+
     /// RFD 00007 `GET /v1/floating-ips?tenant=&project=`. Flat FIP list.
     #[endpoint {
         method = GET,

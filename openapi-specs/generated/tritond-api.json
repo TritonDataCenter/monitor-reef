@@ -114,6 +114,113 @@
         }
       }
     },
+    "/v1/firewall-rules": {
+      "get": {
+        "tags": [
+          "firewall-rules"
+        ],
+        "summary": "RFD 00007 `GET /v1/firewall-rules?vpc=<uuid>`.",
+        "operationId": "list_firewall_rules_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vpc",
+            "description": "Restrict to firewall rules attached to this VPC. Required.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_FirewallRule"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/firewall-rules/{firewall_rule_id}": {
+      "get": {
+        "tags": [
+          "firewall-rules"
+        ],
+        "summary": "RFD 00007 `GET /v1/firewall-rules/{firewall_rule_id}`.",
+        "operationId": "get_firewall_rule_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "firewall_rule_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirewallRule"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/floating-ips": {
       "get": {
         "tags": [
@@ -750,6 +857,113 @@
         }
       }
     },
+    "/v1/nat-gateways": {
+      "get": {
+        "tags": [
+          "nat-gateways"
+        ],
+        "summary": "RFD 00007 `GET /v1/nat-gateways?vpc=<uuid>`.",
+        "operationId": "list_nat_gateways_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vpc",
+            "description": "Restrict to NAT gateways in this VPC. Required.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_NatGateway"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/nat-gateways/{nat_gateway_id}": {
+      "get": {
+        "tags": [
+          "nat-gateways"
+        ],
+        "summary": "RFD 00007 `GET /v1/nat-gateways/{nat_gateway_id}`.",
+        "operationId": "get_nat_gateway_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "nat_gateway_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NatGateway"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/nics": {
       "get": {
         "tags": [
@@ -865,6 +1079,220 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Nic"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/route-tables": {
+      "get": {
+        "tags": [
+          "route-tables"
+        ],
+        "summary": "RFD 00007 `GET /v1/route-tables?vpc=<uuid>`.",
+        "operationId": "list_route_tables_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vpc",
+            "description": "Restrict to route tables in this VPC. Required.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_RouteTable"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/route-tables/{route_table_id}": {
+      "get": {
+        "tags": [
+          "route-tables"
+        ],
+        "summary": "RFD 00007 `GET /v1/route-tables/{route_table_id}`.",
+        "operationId": "get_route_table_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_table_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteTable"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/routes": {
+      "get": {
+        "tags": [
+          "routes"
+        ],
+        "summary": "RFD 00007 `GET /v1/routes?route_table=<uuid>`.",
+        "operationId": "list_routes_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "route_table",
+            "description": "Restrict to routes in this route table. Required.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsPage_for_Route"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/v1/routes/{route_id}": {
+      "get": {
+        "tags": [
+          "routes"
+        ],
+        "summary": "RFD 00007 `GET /v1/routes/{route_id}`.",
+        "operationId": "get_route_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Route"
                 }
               }
             }
@@ -15810,6 +16238,25 @@
           "items"
         ]
       },
+      "ResultsPage_for_FirewallRule": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FirewallRule"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
       "ResultsPage_for_FloatingIp": {
         "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
         "type": "object",
@@ -15867,6 +16314,25 @@
           "items"
         ]
       },
+      "ResultsPage_for_NatGateway": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NatGateway"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
       "ResultsPage_for_Nic": {
         "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
         "type": "object",
@@ -15875,6 +16341,44 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Nic"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ResultsPage_for_Route": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Route"
+            }
+          },
+          "next_page": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ResultsPage_for_RouteTable": {
+        "description": "Paginated wire envelope for `/v1/` list endpoints. Mirrors Oxide's `ResultsPage<T>` (per RFD 00007 D-Ap-5) so a Progenitor regen sees the same shape it's already used to across the Oxide API.\n\n`items` is the rows for this page; `next_page` is an opaque cursor the caller passes back as `?page_token=...` to fetch the next page, or `None` when the result set is exhausted.",
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTable"
             }
           },
           "next_page": {
