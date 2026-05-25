@@ -1938,6 +1938,23 @@ enum SystemCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Fetch per-silo utilization. Today returns 501
+    /// UtilizationUnavailable per RFD 00007 D-Ap-13 - the path
+    /// is locked but quota accounting hasn't landed yet.
+    Utilization {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find a DHCP lease by MAC across every VPC. Uses the AP-1c
+    /// `dhcp_lease/by_mac/<mac>` index. Capability: SystemRead
+    /// (the lookup itself goes through /v1/vpc-dhcp-leases/{mac}
+    /// which is customer-surface but recovers the owning tenant
+    /// for auth).
+    DhcpLeaseShow {
+        mac: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Grant a capability to a user.
     UserGrant {
         user_id: Uuid,
@@ -2232,6 +2249,12 @@ async fn main() -> Result<()> {
                     json,
                 )
                 .await
+            }
+            SystemCommand::Utilization { json } => {
+                commands::system_utilization_v1(cli.endpoint, cli.api_key, json).await
+            }
+            SystemCommand::DhcpLeaseShow { mac, json } => {
+                commands::dhcp_lease_show_v1(cli.endpoint, cli.api_key, mac, json).await
             }
             SystemCommand::UserGrant {
                 user_id,

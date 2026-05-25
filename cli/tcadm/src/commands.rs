@@ -5638,6 +5638,68 @@ pub async fn floating_ip_detach_v1(
     Ok(())
 }
 
+/// `tcadm system utilization` -> `/v1/system/utilization/silos`. Returns
+/// the locked 501 UtilizationUnavailable today; the surface is
+/// reserved for the future implementation.
+pub async fn system_utilization_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    match client.get_system_utilization_silos_v1().send().await {
+        Ok(r) => {
+            let silos = r.into_inner();
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&silos)?);
+            } else {
+                println!("Utilization (silos: {}):", silos.len());
+                for s in &silos {
+                    println!("  {}  {}", s.id, s.name);
+                }
+            }
+        }
+        Err(e) => {
+            // Show the operator the 501 message verbatim so they
+            // see the "not implemented yet" body the server returns.
+            println!("{e}");
+        }
+    }
+    Ok(())
+}
+
+/// `tcadm system dhcp-lease-show <mac>` -> bare-MAC lease lookup
+/// across every VPC via the AP-1c MAC index. Auth recovers the
+/// owning tenant from the lease row.
+pub async fn dhcp_lease_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    mac: String,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let lease = client
+        .get_dhcp_lease_v1()
+        .mac(mac)
+        .send()
+        .await
+        .context("/v1/vpc-dhcp-leases/{mac} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&lease)?);
+        return Ok(());
+    }
+    println!("DhcpLease {}", lease.mac);
+    println!("  vpc:        {}", lease.vpc_id);
+    println!("  ipv4:       {}", lease.ipv4);
+    println!("  instance:   {}", lease.instance_id);
+    println!("  nic:        {}", lease.nic_id);
+    println!("  created_at: {}", lease.created_at);
+    Ok(())
+}
+
 /// `tcadm system user-revoke <user_id> <capability>`.
 pub async fn system_user_revoke_v1(
     endpoint_override: Option<String>,
