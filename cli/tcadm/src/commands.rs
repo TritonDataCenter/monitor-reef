@@ -4814,10 +4814,7 @@ pub async fn instance_list_v1(
         println!("(no instances)");
         return Ok(());
     }
-    println!(
-        "{:<36}  {:<24}  {:<10}  IMAGE",
-        "ID", "NAME", "LIFECYCLE"
-    );
+    println!("{:<36}  {:<24}  {:<10}  IMAGE", "ID", "NAME", "LIFECYCLE");
     for inst in &page.items {
         println!(
             "{:<36}  {:<24}  {:<10}  {}",
@@ -5049,7 +5046,11 @@ pub async fn system_user_grant_v1(
     println!(
         "Granted {capability} to {user_id}. User now carries {} capabilit{}.",
         view.capabilities.len(),
-        if view.capabilities.len() == 1 { "y" } else { "ies" },
+        if view.capabilities.len() == 1 {
+            "y"
+        } else {
+            "ies"
+        },
     );
     for c in &view.capabilities {
         println!("  - {c:?}");
@@ -5131,10 +5132,7 @@ pub async fn find_v1(
     for inst in &out.instances {
         println!(
             "  {}  {:<24}  {:?}  image={}",
-            inst.id,
-            inst.name,
-            inst.lifecycle,
-            inst.image_id,
+            inst.id, inst.name, inst.lifecycle, inst.image_id,
         );
     }
     println!("== NICs ({}) ==", out.nics.len());
@@ -5165,9 +5163,9 @@ fn parse_image_scope(s: &str) -> Result<tritond_client::types::ImageScopeSelecto
         "tenant" | "Tenant" => ImageScopeSelector::Tenant,
         "project" | "Project" => ImageScopeSelector::Project,
         "user" | "User" => ImageScopeSelector::User,
-        other => bail!(
-            "unknown scope {other:?}; expected one of: public, silo, tenant, project, user"
-        ),
+        other => {
+            bail!("unknown scope {other:?}; expected one of: public, silo, tenant, project, user")
+        }
     })
 }
 
@@ -5782,5 +5780,319 @@ pub async fn system_user_revoke_v1(
         .await
         .context("/v1/system/users/{user}/capabilities/{cap} revoke")?;
     println!("Revoked {capability} from {user_id}.");
+    Ok(())
+}
+
+// ----- AP-3c-8: firewall-rule / nat-gateway / route-table / route flat verbs -----
+//
+// Selectors mirror the /v1/ trait surface: each list endpoint accepts
+// silo/tenant/project/vpc as optional scope-narrowing query params, and the
+// server enforces the scope-selectors invariant (at least one must be present;
+// see RFD 00007 §3.1 "scope is mandatory at customer-surface listing").
+
+/// `tcadm firewall-rule list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+pub async fn firewall_rule_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Option<Uuid>,
+    project: Option<Uuid>,
+    tenant: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_firewall_rules_v1();
+    if let Some(v) = vpc {
+        req = req.vpc(v);
+    }
+    if let Some(p) = project {
+        req = req.project(p);
+    }
+    if let Some(t) = tenant {
+        req = req.tenant(t);
+    }
+    let page = req
+        .send()
+        .await
+        .context("/v1/firewall-rules list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no firewall rules)");
+        return Ok(());
+    }
+    println!(
+        "{:<36}  {:<24}  {:<8}  {:<6}  PRIO  DEST",
+        "ID", "NAME", "DIR", "ACTION"
+    );
+    for r in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<8?}  {:<6?}  {:>4}  {}",
+            r.id,
+            r.name,
+            r.direction,
+            r.action,
+            r.priority,
+            r.destination_cidr.as_deref().unwrap_or("any"),
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm firewall-rule show <id>`.
+pub async fn firewall_rule_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    firewall_rule_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let r = client
+        .get_firewall_rule_v1()
+        .firewall_rule_id(firewall_rule_id)
+        .send()
+        .await
+        .context("/v1/firewall-rules/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        return Ok(());
+    }
+    println!("FirewallRule {}", r.id);
+    println!("  name:        {}", r.name);
+    println!("  description: {}", r.description);
+    println!("  vpc:         {}", r.vpc_id);
+    println!("  project:     {}", r.project_id);
+    println!("  direction:   {:?}", r.direction);
+    println!("  action:      {:?}", r.action);
+    println!("  priority:    {}", r.priority);
+    println!("  protocol:    {:?}", r.protocol);
+    println!(
+        "  source:      {}",
+        r.source_cidr.as_deref().unwrap_or("any")
+    );
+    println!(
+        "  destination: {}",
+        r.destination_cidr.as_deref().unwrap_or("any")
+    );
+    Ok(())
+}
+
+/// `tcadm nat-gateway list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+pub async fn nat_gateway_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Option<Uuid>,
+    project: Option<Uuid>,
+    tenant: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_nat_gateways_v1();
+    if let Some(v) = vpc {
+        req = req.vpc(v);
+    }
+    if let Some(p) = project {
+        req = req.project(p);
+    }
+    if let Some(t) = tenant {
+        req = req.tenant(t);
+    }
+    let page = req
+        .send()
+        .await
+        .context("/v1/nat-gateways list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no nat gateways)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  PUBLIC_ADDR", "ID", "NAME");
+    for g in &page.items {
+        println!("{:<36}  {:<24}  {}", g.id, g.name, g.public_address);
+    }
+    Ok(())
+}
+
+/// `tcadm nat-gateway show <id>`.
+pub async fn nat_gateway_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    nat_gateway_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let g = client
+        .get_nat_gateway_v1()
+        .nat_gateway_id(nat_gateway_id)
+        .send()
+        .await
+        .context("/v1/nat-gateways/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&g)?);
+        return Ok(());
+    }
+    println!("NatGateway {}", g.id);
+    println!("  name:           {}", g.name);
+    println!("  vpc:            {}", g.vpc_id);
+    println!("  project:        {}", g.project_id);
+    println!("  public_address: {}", g.public_address);
+    println!("  family:         {:?}", g.family);
+    println!("  desired_gen:    {}", g.desired_generation);
+    Ok(())
+}
+
+/// `tcadm route-table list --vpc=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+pub async fn route_table_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Option<Uuid>,
+    project: Option<Uuid>,
+    tenant: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_route_tables_v1();
+    if let Some(v) = vpc {
+        req = req.vpc(v);
+    }
+    if let Some(p) = project {
+        req = req.project(p);
+    }
+    if let Some(t) = tenant {
+        req = req.tenant(t);
+    }
+    let page = req
+        .send()
+        .await
+        .context("/v1/route-tables list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no route tables)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  MAIN", "ID", "NAME");
+    for rt in &page.items {
+        println!(
+            "{:<36}  {:<24}  {}",
+            rt.id,
+            rt.name,
+            if rt.is_main { "yes" } else { "no" }
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm route-table show <id>`.
+pub async fn route_table_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    route_table_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let rt = client
+        .get_route_table_v1()
+        .route_table_id(route_table_id)
+        .send()
+        .await
+        .context("/v1/route-tables/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&rt)?);
+        return Ok(());
+    }
+    println!("RouteTable {}", rt.id);
+    println!("  name:    {}", rt.name);
+    println!("  vpc:     {}", rt.vpc_id);
+    println!("  project: {}", rt.project_id);
+    println!("  is_main: {}", rt.is_main);
+    Ok(())
+}
+
+/// `tcadm route list --route-table=<uuid> [--project=<uuid>] [--tenant=<uuid>]`.
+pub async fn route_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    route_table: Option<Uuid>,
+    project: Option<Uuid>,
+    tenant: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_routes_v1();
+    if let Some(rt) = route_table {
+        req = req.route_table(rt);
+    }
+    if let Some(p) = project {
+        req = req.project(p);
+    }
+    if let Some(t) = tenant {
+        req = req.tenant(t);
+    }
+    let page = req.send().await.context("/v1/routes list")?.into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no routes)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  {:<18}  TARGET", "ID", "NAME", "DEST");
+    for r in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<18}  {:?}",
+            r.id, r.name, r.destination, r.target
+        );
+    }
+    Ok(())
+}
+
+/// `tcadm route show <id>`.
+pub async fn route_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    route_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let r = client
+        .get_route_v1()
+        .route_id(route_id)
+        .send()
+        .await
+        .context("/v1/routes/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        return Ok(());
+    }
+    println!("Route {}", r.id);
+    println!("  name:        {}", r.name);
+    println!("  description: {}", r.description);
+    println!("  vpc:         {}", r.vpc_id);
+    println!("  route_table: {}", r.route_table_id);
+    println!("  destination: {}", r.destination);
+    println!("  target:      {:?}", r.target);
     Ok(())
 }

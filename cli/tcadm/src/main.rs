@@ -134,6 +134,26 @@ enum Commands {
         #[command(subcommand)]
         command: FloatingIpCommand,
     },
+    /// RFD 00007 flat-verb tree for firewall rules.
+    FirewallRule {
+        #[command(subcommand)]
+        command: FirewallRuleCommand,
+    },
+    /// RFD 00007 flat-verb tree for NAT gateways.
+    NatGateway {
+        #[command(subcommand)]
+        command: NatGatewayCommand,
+    },
+    /// RFD 00007 flat-verb tree for route tables.
+    RouteTable {
+        #[command(subcommand)]
+        command: RouteTableCommand,
+    },
+    /// RFD 00007 flat-verb tree for routes.
+    Route {
+        #[command(subcommand)]
+        command: RouteCommand,
+    },
     /// RFD 00007 flat-verb tree for images. AP-2h ships the
     /// `--scope=public` form; silo / tenant / project / user
     /// dispatch lands when the AP-3a name-resolver arrives.
@@ -1892,8 +1912,94 @@ enum FloatingIpCommand {
         nic: Uuid,
     },
     /// Detach a floating IP from its current NIC.
-    Detach {
-        floating_ip_id: Uuid,
+    Detach { floating_ip_id: Uuid },
+}
+
+/// RFD 00007 AP-3c-8: flat-verb wrappers around the v1 firewall /
+/// nat / route trait surface. List selectors are optional: the
+/// server enforces "at least one scope" itself and 400s if none are
+/// provided.
+#[derive(Subcommand)]
+enum FirewallRuleCommand {
+    /// List firewall rules. Provide one of --vpc, --project, --tenant.
+    List {
+        #[arg(long)]
+        vpc: Option<Uuid>,
+        #[arg(long)]
+        project: Option<Uuid>,
+        #[arg(long)]
+        tenant: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single firewall rule by UUID.
+    Show {
+        firewall_rule_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum NatGatewayCommand {
+    /// List NAT gateways. Provide one of --vpc, --project, --tenant.
+    List {
+        #[arg(long)]
+        vpc: Option<Uuid>,
+        #[arg(long)]
+        project: Option<Uuid>,
+        #[arg(long)]
+        tenant: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single NAT gateway by UUID.
+    Show {
+        nat_gateway_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RouteTableCommand {
+    /// List route tables. Provide one of --vpc, --project, --tenant.
+    List {
+        #[arg(long)]
+        vpc: Option<Uuid>,
+        #[arg(long)]
+        project: Option<Uuid>,
+        #[arg(long)]
+        tenant: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single route table by UUID.
+    Show {
+        route_table_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RouteCommand {
+    /// List routes. Provide one of --route-table, --project, --tenant.
+    List {
+        #[arg(long = "route-table")]
+        route_table: Option<Uuid>,
+        #[arg(long)]
+        project: Option<Uuid>,
+        #[arg(long)]
+        tenant: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read a single route by UUID.
+    Show {
+        route_id: Uuid,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1978,10 +2084,7 @@ enum SystemCommand {
         capability: String,
     },
     /// Revoke a capability from a user.
-    UserRevoke {
-        user_id: Uuid,
-        capability: String,
-    },
+    UserRevoke { user_id: Uuid, capability: String },
 }
 
 #[derive(Subcommand)]
@@ -2246,15 +2349,8 @@ async fn main() -> Result<()> {
                 instance,
                 json,
             } => {
-                commands::system_nics_v1(
-                    cli.endpoint,
-                    cli.api_key,
-                    ip,
-                    subnet,
-                    instance,
-                    json,
-                )
-                .await
+                commands::system_nics_v1(cli.endpoint, cli.api_key, ip, subnet, instance, json)
+                    .await
             }
             SystemCommand::ImagesUsing { image_id, json } => {
                 commands::system_images_using_v1(cli.endpoint, cli.api_key, image_id, json).await
@@ -2263,13 +2359,8 @@ async fn main() -> Result<()> {
                 commands::system_cn_instances_v1(cli.endpoint, cli.api_key, cn_id, json).await
             }
             SystemCommand::Cns { state, json } => {
-                commands::system_cns_v1(
-                    cli.endpoint,
-                    cli.api_key,
-                    state.map(Into::into),
-                    json,
-                )
-                .await
+                commands::system_cns_v1(cli.endpoint, cli.api_key, state.map(Into::into), json)
+                    .await
             }
             SystemCommand::Utilization { json } => {
                 commands::system_utilization_v1(cli.endpoint, cli.api_key, json).await
@@ -2280,11 +2371,16 @@ async fn main() -> Result<()> {
             SystemCommand::UserGrant {
                 user_id,
                 capability,
-            } => commands::system_user_grant_v1(cli.endpoint, cli.api_key, user_id, capability).await,
+            } => {
+                commands::system_user_grant_v1(cli.endpoint, cli.api_key, user_id, capability).await
+            }
             SystemCommand::UserRevoke {
                 user_id,
                 capability,
-            } => commands::system_user_revoke_v1(cli.endpoint, cli.api_key, user_id, capability).await,
+            } => {
+                commands::system_user_revoke_v1(cli.endpoint, cli.api_key, user_id, capability)
+                    .await
+            }
         },
         Commands::Disk { command } => match command {
             DiskCommand::List { instance, json } => {
@@ -2300,17 +2396,7 @@ async fn main() -> Result<()> {
                 subnet,
                 instance,
                 json,
-            } => {
-                commands::nic_list_v1(
-                    cli.endpoint,
-                    cli.api_key,
-                    ip,
-                    subnet,
-                    instance,
-                    json,
-                )
-                .await
-            }
+            } => commands::nic_list_v1(cli.endpoint, cli.api_key, ip, subnet, instance, json).await,
             NicCommand::Show { nic_id, json } => {
                 commands::nic_show_v1(cli.endpoint, cli.api_key, nic_id, json).await
             }
@@ -2354,17 +2440,105 @@ async fn main() -> Result<()> {
                 tenant,
                 project,
                 json,
-            } => commands::floating_ip_list_v1(cli.endpoint, cli.api_key, tenant, project, json).await,
+            } => {
+                commands::floating_ip_list_v1(cli.endpoint, cli.api_key, tenant, project, json)
+                    .await
+            }
             FloatingIpCommand::Show {
                 floating_ip_id,
                 json,
-            } => commands::floating_ip_show_v1(cli.endpoint, cli.api_key, floating_ip_id, json).await,
+            } => {
+                commands::floating_ip_show_v1(cli.endpoint, cli.api_key, floating_ip_id, json).await
+            }
             FloatingIpCommand::Attach {
                 floating_ip_id,
                 nic,
-            } => commands::floating_ip_attach_v1(cli.endpoint, cli.api_key, floating_ip_id, nic).await,
+            } => {
+                commands::floating_ip_attach_v1(cli.endpoint, cli.api_key, floating_ip_id, nic)
+                    .await
+            }
             FloatingIpCommand::Detach { floating_ip_id } => {
                 commands::floating_ip_detach_v1(cli.endpoint, cli.api_key, floating_ip_id).await
+            }
+        },
+        Commands::FirewallRule { command } => match command {
+            FirewallRuleCommand::List {
+                vpc,
+                project,
+                tenant,
+                json,
+            } => {
+                commands::firewall_rule_list_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    vpc,
+                    project,
+                    tenant,
+                    json,
+                )
+                .await
+            }
+            FirewallRuleCommand::Show {
+                firewall_rule_id,
+                json,
+            } => {
+                commands::firewall_rule_show_v1(cli.endpoint, cli.api_key, firewall_rule_id, json)
+                    .await
+            }
+        },
+        Commands::NatGateway { command } => match command {
+            NatGatewayCommand::List {
+                vpc,
+                project,
+                tenant,
+                json,
+            } => {
+                commands::nat_gateway_list_v1(cli.endpoint, cli.api_key, vpc, project, tenant, json)
+                    .await
+            }
+            NatGatewayCommand::Show {
+                nat_gateway_id,
+                json,
+            } => {
+                commands::nat_gateway_show_v1(cli.endpoint, cli.api_key, nat_gateway_id, json).await
+            }
+        },
+        Commands::RouteTable { command } => match command {
+            RouteTableCommand::List {
+                vpc,
+                project,
+                tenant,
+                json,
+            } => {
+                commands::route_table_list_v1(cli.endpoint, cli.api_key, vpc, project, tenant, json)
+                    .await
+            }
+            RouteTableCommand::Show {
+                route_table_id,
+                json,
+            } => {
+                commands::route_table_show_v1(cli.endpoint, cli.api_key, route_table_id, json).await
+            }
+        },
+        Commands::Route { command } => match command {
+            RouteCommand::List {
+                route_table,
+                project,
+                tenant,
+                json,
+            } => {
+                commands::route_list_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    route_table,
+                    project,
+                    tenant,
+                    json,
+                )
+                .await
+            }
+            RouteCommand::Show { route_id, json } => {
+                commands::route_show_v1(cli.endpoint, cli.api_key, route_id, json).await
             }
         },
         Commands::Find { what, kind, json } => {
