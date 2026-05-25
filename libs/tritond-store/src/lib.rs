@@ -935,10 +935,7 @@ pub trait Store: Send + Sync + 'static {
     /// Drives `/v1/system/images/{image}/instances` and the
     /// `?image=` selector on `/v1/instances` /
     /// `/v1/system/instances`.
-    async fn list_instances_by_image(
-        &self,
-        image_id: Uuid,
-    ) -> Result<Vec<Instance>, StoreError>;
+    async fn list_instances_by_image(&self, image_id: Uuid) -> Result<Vec<Instance>, StoreError>;
 
     /// RFD 00007 AP-1b: list every instance currently placed on
     /// `cn_uuid`. Backed by the `idx/host_cn/<cn>/<instance>` index;
@@ -950,10 +947,7 @@ pub trait Store: Send + Sync + 'static {
     /// (uses the secondary index rather than a full scan) but
     /// equivalent in semantics; the older method may be deprecated
     /// in a follow-up.
-    async fn list_instances_by_cn(
-        &self,
-        cn_uuid: Uuid,
-    ) -> Result<Vec<Instance>, StoreError>;
+    async fn list_instances_by_cn(&self, cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError>;
 
     /// RFD 00007 AP-1b: list every NIC attached to `subnet_id`.
     /// Backed by the `idx/subnet/<subnet>/<nic>` index.

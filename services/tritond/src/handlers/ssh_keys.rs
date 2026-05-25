@@ -521,7 +521,10 @@ pub(crate) async fn list_ssh_keys_v1(
 ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<SshKey>>, HttpError> {
     use tritond_api::v1::{ImageScopeSelector, ResultsPage, SshKeyQuery};
     let ctx = rqctx.context();
-    let SshKeyQuery { scope, selectors: _ } = query.into_inner();
+    let SshKeyQuery {
+        scope,
+        selectors: _,
+    } = query.into_inner();
     match scope {
         ImageScopeSelector::Public => {
             authenticate_and_authorize(
@@ -542,8 +545,7 @@ pub(crate) async fn list_ssh_keys_v1(
         _ => Err(HttpError::for_client_error(
             Some("ScopeNotImplemented".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "AP-2h ships scope=public only; other scopes land in AP-3a"
-                .to_string(),
+            "AP-2h ships scope=public only; other scopes land in AP-3a".to_string(),
         )),
     }
 }

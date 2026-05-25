@@ -123,8 +123,7 @@ pub(crate) async fn list_dhcp_leases_v1(
         return Err(HttpError::for_client_error(
             Some("ScopeNotAccepted".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "the `silo` selector is only accepted on /v1/system/ endpoints"
-                .to_string(),
+            "the `silo` selector is only accepted on /v1/system/ endpoints".to_string(),
         ));
     }
     let vpc_id = vpc.ok_or_else(|| {
@@ -200,8 +199,7 @@ pub(crate) async fn list_dhcp_reservations_v1(
         return Err(HttpError::for_client_error(
             Some("ScopeNotAccepted".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "the `silo` selector is only accepted on /v1/system/ endpoints"
-                .to_string(),
+            "the `silo` selector is only accepted on /v1/system/ endpoints".to_string(),
         ));
     }
     let vpc_id = vpc.ok_or_else(|| {

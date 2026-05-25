@@ -4719,18 +4719,12 @@ impl Store for FdbStore {
                     // RFD 00007 AP-1c: image -> instance membership
                     // index. Image_id is fixed on the instance row;
                     // delete_instance clears the matching key.
-                    tr.set(
-                        &Self::instance_in_image_key(req.image_id, instance_id),
-                        b"",
-                    );
+                    tr.set(&Self::instance_in_image_key(req.image_id, instance_id), b"");
                     tr.set(&nic_by_id_key, &nic_value);
                     tr.set(&nic_in_instance_key, b"");
                     // RFD 00007 AP-1c: subnet -> nic membership and
                     // ip -> nic unique indexes for the primary NIC.
-                    tr.set(
-                        &Self::nic_in_subnet_key(subnet.id, nic_id),
-                        b"",
-                    );
+                    tr.set(&Self::nic_in_subnet_key(subnet.id, nic_id), b"");
                     tr.set(&disk_by_id_key, &disk_value);
                     tr.set(&disk_in_instance_key, b"");
                     if let Some(ip) = primary_ipv4 {
@@ -4872,10 +4866,7 @@ impl Store for FdbStore {
                         tr.set(&plan.nic_in_instance_key, b"");
                         // RFD 00007 AP-1c: subnet/IP indexes for the
                         // extra NIC, same as the primary above.
-                        tr.set(
-                            &Self::nic_in_subnet_key(extra_subnet.id, plan.nic_id),
-                            b"",
-                        );
+                        tr.set(&Self::nic_in_subnet_key(extra_subnet.id, plan.nic_id), b"");
                         if let Some(ip) = extra_v4 {
                             let alloc_key = Self::nic_ip_alloc_v4_key(extra_subnet.id, ip);
                             tr.set(&alloc_key, b"");
@@ -5084,10 +5075,7 @@ impl Store for FdbStore {
     // RFD 00007 AP-1c: index-backed readers. Each method performs a
     // single FDB range read against the secondary index, parses the
     // uuid suffix(es), then point-reads the matching primary rows.
-    async fn list_instances_by_image(
-        &self,
-        image_id: Uuid,
-    ) -> Result<Vec<Instance>, StoreError> {
+    async fn list_instances_by_image(&self, image_id: Uuid) -> Result<Vec<Instance>, StoreError> {
         let prefix = Self::instance_in_image_prefix(image_id);
         let (begin, end) = prefix_range(&prefix);
         let prefix_len = prefix.len();
@@ -5131,10 +5119,7 @@ impl Store for FdbStore {
         Ok(out)
     }
 
-    async fn list_instances_by_cn(
-        &self,
-        cn_uuid: Uuid,
-    ) -> Result<Vec<Instance>, StoreError> {
+    async fn list_instances_by_cn(&self, cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
         // Existing `instance/in_host_cn/<cn>/<inst>` index already
         // covers this; delegate.
         self.list_instances_for_cn(cn_uuid).await

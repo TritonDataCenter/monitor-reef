@@ -1554,7 +1554,7 @@ async fn sweeper_reaps_stale_inprogress_job() {
             .unwrap(),
         is_root: true,
         fleet_admin: false,
-            capabilities: Default::default(),
+        capabilities: Default::default(),
         created_at: Utc::now(),
         tenant_id: None,
         federation: None,

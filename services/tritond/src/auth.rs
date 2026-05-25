@@ -1594,10 +1594,7 @@ pub fn require_capability(
     principal: &Principal,
     capability: tritond_store::Capability,
 ) -> Result<(), HttpError> {
-    if let Principal::Operator {
-        is_root: true, ..
-    } = principal
-    {
+    if let Principal::Operator { is_root: true, .. } = principal {
         return Ok(());
     }
     if let Principal::Operator { capabilities, .. } = principal

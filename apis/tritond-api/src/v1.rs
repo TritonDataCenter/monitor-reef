@@ -523,7 +523,10 @@ mod tests {
     fn results_page_omits_next_page_when_none() {
         let page = ResultsPage::single(vec![1u32, 2, 3]);
         let json = serde_json::to_string(&page).unwrap();
-        assert!(!json.contains("next_page"), "next_page should be skipped when None: {json}");
+        assert!(
+            !json.contains("next_page"),
+            "next_page should be skipped when None: {json}"
+        );
         assert!(json.contains("\"items\":[1,2,3]"));
     }
 

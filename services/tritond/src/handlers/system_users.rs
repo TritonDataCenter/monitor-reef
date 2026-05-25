@@ -55,9 +55,14 @@ pub(crate) async fn grant_user_capability_v1(
     // variants (that wave lands when the Cedar bundle is split per
     // capability in a later slice). The substantive check is
     // `require_capability` below.
-    let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
-            .await?;
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::InstanceList,
+    )
+    .await?;
     crate::auth::require_capability(&principal, Capability::SystemOperate)?;
 
     let existing = ctx
@@ -100,9 +105,14 @@ pub(crate) async fn revoke_user_capability_v1(
         capability,
     } = path.into_inner();
 
-    let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
-            .await?;
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::InstanceList,
+    )
+    .await?;
     crate::auth::require_capability(&principal, Capability::SystemOperate)?;
 
     let existing = ctx
@@ -114,8 +124,7 @@ pub(crate) async fn revoke_user_capability_v1(
         return Err(HttpError::for_client_error(
             Some("RootIsRoot".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "root operators implicitly carry every capability; revoking is meaningless"
-                .to_string(),
+            "root operators implicitly carry every capability; revoking is meaningless".to_string(),
         ));
     }
     let mut caps = existing.capabilities.clone();
@@ -149,9 +158,14 @@ pub(crate) async fn get_system_utilization_silos_v1(
     rqctx: RequestContext<ApiContext>,
 ) -> Result<HttpResponseOk<Vec<tritond_store::Silo>>, HttpError> {
     let ctx = rqctx.context();
-    let principal =
-        authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::InstanceList)
-            .await?;
+    let principal = authenticate_and_authorize(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::InstanceList,
+    )
+    .await?;
     crate::auth::require_capability(&principal, Capability::SystemRead)?;
     Err(HttpError::for_client_error(
         Some("UtilizationUnavailable".to_string()),

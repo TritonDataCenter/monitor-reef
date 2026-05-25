@@ -212,24 +212,21 @@ pub(crate) async fn list_vpcs_v1(
         return Err(HttpError::for_client_error(
             Some("ScopeNotAccepted".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "the `silo` selector is only accepted on /v1/system/ endpoints"
-                .to_string(),
+            "the `silo` selector is only accepted on /v1/system/ endpoints".to_string(),
         ));
     }
     let tenant_id = scope.tenant.ok_or_else(|| {
         HttpError::for_client_error(
             Some("MissingScope".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "GET /v1/vpcs requires `?tenant=<uuid>&project=<uuid>` selectors"
-                .to_string(),
+            "GET /v1/vpcs requires `?tenant=<uuid>&project=<uuid>` selectors".to_string(),
         )
     })?;
     let project_id = scope.project.ok_or_else(|| {
         HttpError::for_client_error(
             Some("MissingScope".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            "GET /v1/vpcs requires `?tenant=<uuid>&project=<uuid>` selectors"
-                .to_string(),
+            "GET /v1/vpcs requires `?tenant=<uuid>&project=<uuid>` selectors".to_string(),
         )
     })?;
     authenticate_and_authorize_in_tenant(

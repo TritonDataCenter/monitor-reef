@@ -2626,10 +2626,7 @@ impl Store for MemStore {
     // RFD 00007 AP-1b: index-backed lookups. MemStore reads the
     // in-memory index map directly; FdbStore performs a single
     // range read against the equivalent `idx/...` keyspace.
-    async fn list_instances_by_image(
-        &self,
-        image_id: Uuid,
-    ) -> Result<Vec<Instance>, StoreError> {
+    async fn list_instances_by_image(&self, image_id: Uuid) -> Result<Vec<Instance>, StoreError> {
         let guard = self.inner.read().await;
         let Some(set) = guard.instance_ids_by_image.get(&image_id) else {
             return Ok(Vec::new());
@@ -2640,10 +2637,7 @@ impl Store for MemStore {
             .collect())
     }
 
-    async fn list_instances_by_cn(
-        &self,
-        cn_uuid: Uuid,
-    ) -> Result<Vec<Instance>, StoreError> {
+    async fn list_instances_by_cn(&self, cn_uuid: Uuid) -> Result<Vec<Instance>, StoreError> {
         let guard = self.inner.read().await;
         let Some(set) = guard.instance_ids_by_host_cn.get(&cn_uuid) else {
             return Ok(Vec::new());
@@ -2667,7 +2661,11 @@ impl Store for MemStore {
 
     async fn find_nic_by_ip(&self, ip: IpAddr) -> Result<Nic, StoreError> {
         let guard = self.inner.read().await;
-        let nic_id = guard.nic_id_by_ip.get(&ip).copied().ok_or(StoreError::NotFound)?;
+        let nic_id = guard
+            .nic_id_by_ip
+            .get(&ip)
+            .copied()
+            .ok_or(StoreError::NotFound)?;
         guard
             .nics_by_id
             .get(&nic_id)
@@ -4682,7 +4680,10 @@ mod tests {
             "federation": null
         }"#;
         let u: User = serde_json::from_str(legacy_json).unwrap();
-        assert!(u.capabilities.is_empty(), "missing field should default to empty set");
+        assert!(
+            u.capabilities.is_empty(),
+            "missing field should default to empty set"
+        );
 
         // Reverse direction: an `is_root` user constructed with
         // `Capability::all()` round-trips through JSON correctly with
@@ -4699,8 +4700,14 @@ mod tests {
             capabilities: Capability::all().iter().copied().collect(),
         };
         let json = serde_json::to_string(&root).unwrap();
-        assert!(json.contains("system-read"), "wire form is kebab-case: {json}");
-        assert!(json.contains("storage-admin"), "wire form is kebab-case: {json}");
+        assert!(
+            json.contains("system-read"),
+            "wire form is kebab-case: {json}"
+        );
+        assert!(
+            json.contains("storage-admin"),
+            "wire form is kebab-case: {json}"
+        );
         let back: User = serde_json::from_str(&json).unwrap();
         assert_eq!(back.capabilities.len(), Capability::all().len());
         assert!(back.capabilities.contains(&Capability::SystemRead));
@@ -4768,7 +4775,10 @@ mod tests {
         // rows actually need a write: root + fleet_admin. The tenant
         // user stays empty, so it's a no-op per row.
         let rewritten = store.migrate_user_capabilities().await.unwrap();
-        assert_eq!(rewritten, 2, "migration should rewrite root + fleet-admin only");
+        assert_eq!(
+            rewritten, 2,
+            "migration should rewrite root + fleet-admin only"
+        );
 
         let root_after = store.get_user_by_id(root_id).await.unwrap();
         assert_eq!(
@@ -4783,8 +4793,16 @@ mod tests {
         let fleet_after = store.get_user_by_id(fleet_id).await.unwrap();
         assert_eq!(fleet_after.capabilities.len(), 2);
         assert!(fleet_after.capabilities.contains(&Capability::SystemRead));
-        assert!(fleet_after.capabilities.contains(&Capability::SystemOperate));
-        assert!(!fleet_after.capabilities.contains(&Capability::SystemConfigWrite));
+        assert!(
+            fleet_after
+                .capabilities
+                .contains(&Capability::SystemOperate)
+        );
+        assert!(
+            !fleet_after
+                .capabilities
+                .contains(&Capability::SystemConfigWrite)
+        );
         assert!(!fleet_after.capabilities.contains(&Capability::StorageAdmin));
 
         let tenant_after = store.get_user_by_id(tenant_id).await.unwrap();
@@ -7304,7 +7322,11 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            store.list_instances_by_cn(cn_uuid).await.unwrap().is_empty(),
+            store
+                .list_instances_by_cn(cn_uuid)
+                .await
+                .unwrap()
+                .is_empty(),
             "old CN entry must drop on migration"
         );
         let on_new = store.list_instances_by_cn(cn_new).await.unwrap();

@@ -676,7 +676,10 @@ pub(crate) async fn list_images_v1(
 ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<Image>>, HttpError> {
     use tritond_api::v1::{ImageQuery, ImageScopeSelector, ResultsPage};
     let ctx = rqctx.context();
-    let ImageQuery { scope, selectors: _ } = query.into_inner();
+    let ImageQuery {
+        scope,
+        selectors: _,
+    } = query.into_inner();
     match scope {
         ImageScopeSelector::Public => {
             authenticate_and_authorize(
