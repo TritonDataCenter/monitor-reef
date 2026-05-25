@@ -2860,6 +2860,53 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
+    /// RFD 00007 `GET /v1/vpc-dhcp-pools/{vpc_id}`. Flat single
+    /// per-VPC DHCP-pool read. 404s when no pool is set.
+    #[endpoint {
+        method = GET,
+        path = "/v1/vpc-dhcp-pools/{vpc_id}",
+        tags = ["dhcp"],
+    }]
+    async fn get_vpc_dhcp_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::VpcDhcpPoolPath>,
+    ) -> Result<HttpResponseOk<DhcpPool>, HttpError>;
+
+    /// RFD 00007 `GET /v1/vpc-dhcp-leases?vpc=<uuid>`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/vpc-dhcp-leases",
+        tags = ["dhcp"],
+    }]
+    async fn list_dhcp_leases_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::VpcDhcpQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<DhcpLease>>, HttpError>;
+
+    /// RFD 00007 `GET /v1/vpc-dhcp-leases/{mac}`. Bare-MAC lookup
+    /// (MAC is unique by invariant; backed by the AP-1c
+    /// `dhcp_lease/by_mac/` index).
+    #[endpoint {
+        method = GET,
+        path = "/v1/vpc-dhcp-leases/{mac}",
+        tags = ["dhcp"],
+    }]
+    async fn get_dhcp_lease_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::DhcpMacPath>,
+    ) -> Result<HttpResponseOk<DhcpLease>, HttpError>;
+
+    /// RFD 00007 `GET /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+    #[endpoint {
+        method = GET,
+        path = "/v1/vpc-dhcp-reservations",
+        tags = ["dhcp"],
+    }]
+    async fn list_dhcp_reservations_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::VpcDhcpQuery>,
+    ) -> Result<HttpResponseOk<crate::v1::ResultsPage<DhcpReservation>>, HttpError>;
+
     /// RFD 00007 `GET /v1/firewall-rules?vpc=<uuid>`.
     #[endpoint {
         method = GET,

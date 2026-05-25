@@ -77,6 +77,162 @@ use crate::VERSION;
 /// Concrete implementor of [`TritondApi`].
 use crate::context::ApiContext;
 
+/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-pools/{vpc_id}`. Flat single
+/// per-VPC DHCP-pool read. Returns 404 if no pool is set rather
+/// than 200 with `null`; the singleton-per-X PUT/GET/DELETE shape
+/// from Locked Decision #20 is preserved.
+pub(crate) async fn get_vpc_dhcp_pool_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::VpcDhcpPoolPath>,
+) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::VpcDhcpPoolPath { vpc_id } = path.into_inner();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpPoolGet,
+        vpc.tenant_id,
+    )
+    .await?;
+    let pool = ctx
+        .store
+        .get_dhcp_pool(vpc_id)
+        .await
+        .map_err(store_error_to_http)?
+        .ok_or_else(not_found)?;
+    Ok(HttpResponseOk(pool))
+}
+
+/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-leases?vpc=<uuid>`. Flat list
+/// scoped to a VPC.
+pub(crate) async fn list_dhcp_leases_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::VpcDhcpQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<DhcpLease>>, HttpError> {
+    use tritond_api::v1::{ResultsPage, VpcDhcpQuery};
+    let ctx = rqctx.context();
+    let VpcDhcpQuery { scope, vpc } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let vpc_id = vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/vpc-dhcp-leases requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+    let vpc_row = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpLeaseList,
+        vpc_row.tenant_id,
+    )
+    .await?;
+    let leases = ctx
+        .store
+        .list_dhcp_leases(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(leases)))
+}
+
+/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-leases/{mac}`. Bare-MAC
+/// lookup using the AP-1c `dhcp_lease/by_mac/` index - cross-VPC by
+/// design (MAC is unique by invariant).
+pub(crate) async fn get_dhcp_lease_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::DhcpMacPath>,
+) -> Result<HttpResponseOk<DhcpLease>, HttpError> {
+    let ctx = rqctx.context();
+    let mac = path.into_inner().mac;
+    let lease = ctx
+        .store
+        .find_dhcp_lease_by_mac(&mac)
+        .await
+        .map_err(store_error_to_http)?;
+    // Recover the owning VPC -> project -> tenant for auth.
+    let vpc = ctx
+        .store
+        .get_vpc(lease.vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpLeaseGet,
+        vpc.tenant_id,
+    )
+    .await?;
+    Ok(HttpResponseOk(lease))
+}
+
+/// RFD 00007 AP-2k: `GET /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+pub(crate) async fn list_dhcp_reservations_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::VpcDhcpQuery>,
+) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<DhcpReservation>>, HttpError> {
+    use tritond_api::v1::{ResultsPage, VpcDhcpQuery};
+    let ctx = rqctx.context();
+    let VpcDhcpQuery { scope, vpc } = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is only accepted on /v1/system/ endpoints"
+                .to_string(),
+        ));
+    }
+    let vpc_id = vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "GET /v1/vpc-dhcp-reservations requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+    let vpc_row = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpReservationList,
+        vpc_row.tenant_id,
+    )
+    .await?;
+    let reservations = ctx
+        .store
+        .list_dhcp_reservations(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(ResultsPage::single(reservations)))
+}
+
 pub(crate) async fn get_vpc_dhcp_pool(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,

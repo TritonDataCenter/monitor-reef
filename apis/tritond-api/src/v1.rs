@@ -92,6 +92,34 @@ pub struct FloatingIpPath {
     pub floating_ip_id: Uuid,
 }
 
+/// Path parameters for the per-VPC DHCP pool singleton at
+/// `/v1/vpc-dhcp-pools/{vpc_id}`. The VPC id is the natural key
+/// (one pool per VPC).
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VpcDhcpPoolPath {
+    pub vpc_id: Uuid,
+}
+
+/// Path parameters for `/v1/vpc-dhcp-leases/{mac}` and
+/// `/v1/vpc-dhcp-reservations/{mac}`. MAC is the natural key for
+/// both types; the bare-MAC lookup resolves cross-VPC via the AP-1c
+/// `dhcp_lease/by_mac/` index.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DhcpMacPath {
+    pub mac: String,
+}
+
+/// Query parameters for `GET /v1/vpc-dhcp-leases?vpc=<uuid>` and
+/// `GET /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct VpcDhcpQuery {
+    #[serde(flatten)]
+    pub scope: ScopeSelectors,
+    /// Restrict to a single VPC. Required at AP-2k.
+    #[serde(default)]
+    pub vpc: Option<Uuid>,
+}
+
 /// Path parameters for `/v1/firewall-rules/{firewall_rule_id}`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FirewallRulePath {

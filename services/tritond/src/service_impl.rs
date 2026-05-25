@@ -380,6 +380,34 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::delete_vpc_subnet(rqctx, path).await
     }
 
+    async fn get_vpc_dhcp_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::VpcDhcpPoolPath>,
+    ) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
+        crate::handlers::network::dhcp::get_vpc_dhcp_pool_v1(rqctx, path).await
+    }
+
+    async fn list_dhcp_leases_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::VpcDhcpQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<DhcpLease>>, HttpError> {
+        crate::handlers::network::dhcp::list_dhcp_leases_v1(rqctx, query).await
+    }
+
+    async fn get_dhcp_lease_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::DhcpMacPath>,
+    ) -> Result<HttpResponseOk<DhcpLease>, HttpError> {
+        crate::handlers::network::dhcp::get_dhcp_lease_v1(rqctx, path).await
+    }
+
+    async fn list_dhcp_reservations_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::VpcDhcpQuery>,
+    ) -> Result<HttpResponseOk<tritond_api::v1::ResultsPage<DhcpReservation>>, HttpError> {
+        crate::handlers::network::dhcp::list_dhcp_reservations_v1(rqctx, query).await
+    }
+
     async fn list_firewall_rules_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::FirewallRuleQuery>,
