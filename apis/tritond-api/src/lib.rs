@@ -3856,7 +3856,7 @@ pub trait TritondApi {
     async fn grant_user_capability_v1(
         rqctx: RequestContext<Self::Context>,
         path: Path<crate::v1::SystemUserCapabilityPath>,
-    ) -> Result<HttpResponseOk<crate::UserView>, HttpError>;
+    ) -> Result<HttpResponseOk<crate::types::UserView>, HttpError>;
 
     /// RFD 00007 `DELETE /v1/system/users/{user_id}/capabilities/{capability}`.
     /// Revoke a capability from a user. Capability gate: `SystemOperate`.
