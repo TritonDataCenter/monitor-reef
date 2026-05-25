@@ -5153,6 +5153,359 @@ pub async fn find_v1(
     Ok(())
 }
 
+// ---------------------------------------------------------------------
+// RFD 00007 AP-3c-4: more flat-verb commands.
+// ---------------------------------------------------------------------
+
+pub async fn disk_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    instance: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_disks_v1()
+        .instance(instance)
+        .send()
+        .await
+        .context("/v1/disks list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no disks)");
+        return Ok(());
+    }
+    println!("{:<36}  KIND  SIZE_BYTES", "ID");
+    for d in &page.items {
+        println!("{:<36}  {:?}  {}", d.id, d.kind, d.size_bytes);
+    }
+    Ok(())
+}
+
+pub async fn disk_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    disk_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let d = client
+        .get_disk_v1()
+        .disk_id(disk_id)
+        .send()
+        .await
+        .context("/v1/disks/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&d)?);
+        return Ok(());
+    }
+    println!("Disk {}", d.id);
+    println!("  kind:       {:?}", d.kind);
+    println!("  size_bytes: {}", d.size_bytes);
+    println!("  instance:   {}", d.instance_id);
+    Ok(())
+}
+
+pub async fn nic_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    ip: Option<std::net::IpAddr>,
+    subnet: Option<Uuid>,
+    instance: Option<Uuid>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let mut req = client.list_nics_v1();
+    if let Some(i) = ip {
+        req = req.ip(i);
+    }
+    if let Some(s) = subnet {
+        req = req.subnet(s);
+    }
+    if let Some(inst) = instance {
+        req = req.instance(inst);
+    }
+    let page = req.send().await.context("/v1/nics list")?.into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no nics)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  {:<17}  IP", "ID", "NAME", "MAC");
+    for n in &page.items {
+        println!(
+            "{:<36}  {:<24}  {:<17}  {}",
+            n.id,
+            n.name,
+            n.mac,
+            n.primary_ipv4
+                .map(|i| i.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+        );
+    }
+    Ok(())
+}
+
+pub async fn nic_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    nic_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let n = client
+        .get_nic_v1()
+        .nic_id(nic_id)
+        .send()
+        .await
+        .context("/v1/nics/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&n)?);
+        return Ok(());
+    }
+    println!("Nic {}", n.id);
+    println!("  name:     {}", n.name);
+    println!("  mac:      {}", n.mac);
+    println!("  ipv4:     {:?}", n.primary_ipv4);
+    println!("  ipv6:     {:?}", n.primary_ipv6);
+    println!("  instance: {}", n.instance_id);
+    println!("  subnet:   {}", n.subnet_id);
+    Ok(())
+}
+
+pub async fn vpc_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant: Uuid,
+    project: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_vpcs_v1()
+        .tenant(tenant)
+        .project(project)
+        .send()
+        .await
+        .context("/v1/vpcs list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no vpcs)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}  VNI", "ID", "NAME");
+    for v in &page.items {
+        println!("{:<36}  {:<24}  {}", v.id, v.name, v.vni);
+    }
+    Ok(())
+}
+
+pub async fn vpc_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let v = client
+        .get_vpc_v1()
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("/v1/vpcs/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&v)?);
+        return Ok(());
+    }
+    println!("Vpc {}", v.id);
+    println!("  name:    {}", v.name);
+    println!("  vni:     {}", v.vni);
+    println!("  tenant:  {}", v.tenant_id);
+    println!("  project: {}", v.project_id);
+    Ok(())
+}
+
+pub async fn subnet_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_subnets_v1()
+        .vpc(vpc)
+        .send()
+        .await
+        .context("/v1/subnets list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no subnets)");
+        return Ok(());
+    }
+    println!("{:<36}  {:<24}", "ID", "NAME");
+    for s in &page.items {
+        println!("{:<36}  {:<24}", s.id, s.name);
+    }
+    Ok(())
+}
+
+pub async fn subnet_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    subnet_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let s = client
+        .get_subnet_v1()
+        .subnet_id(subnet_id)
+        .send()
+        .await
+        .context("/v1/subnets/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&s)?);
+        return Ok(());
+    }
+    println!("Subnet {}", s.id);
+    println!("  name:   {}", s.name);
+    println!("  vpc:    {}", s.vpc_id);
+    Ok(())
+}
+
+pub async fn floating_ip_list_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant: Uuid,
+    project: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let page = client
+        .list_floating_ips_v1()
+        .tenant(tenant)
+        .project(project)
+        .send()
+        .await
+        .context("/v1/floating-ips list")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&page)?);
+        return Ok(());
+    }
+    if page.items.is_empty() {
+        println!("(no floating-ips)");
+        return Ok(());
+    }
+    println!("{:<36}  ADDRESS   ATTACHED_TO", "ID");
+    for f in &page.items {
+        println!(
+            "{:<36}  {}  {}",
+            f.id,
+            f.address,
+            f.attached_to
+                .as_ref()
+                .map(|a| format!("nic={}", a.nic_id))
+                .unwrap_or_else(|| "-".to_string()),
+        );
+    }
+    Ok(())
+}
+
+pub async fn floating_ip_show_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    floating_ip_id: Uuid,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let f = client
+        .get_floating_ip_v1()
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("/v1/floating-ips/{id} get")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&f)?);
+        return Ok(());
+    }
+    println!("FloatingIp {}", f.id);
+    println!("  address:     {}", f.address);
+    println!("  attached_to: {:?}", f.attached_to);
+    Ok(())
+}
+
+pub async fn floating_ip_attach_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    floating_ip_id: Uuid,
+    nic_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let f = client
+        .attach_floating_ip_v1()
+        .floating_ip_id(floating_ip_id)
+        .body(tritond_client::types::AttachFloatingIpRequest { nic_id })
+        .send()
+        .await
+        .context("/v1/floating-ips/{id}/attach")?
+        .into_inner();
+    println!(
+        "Floating IP {} attached to NIC {} (address {}).",
+        f.id, nic_id, f.address
+    );
+    Ok(())
+}
+
+pub async fn floating_ip_detach_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    floating_ip_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let f = client
+        .detach_floating_ip_v1()
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("/v1/floating-ips/{id}/detach")?
+        .into_inner();
+    println!("Floating IP {} detached (address {}).", f.id, f.address);
+    Ok(())
+}
+
 /// `tcadm system user-revoke <user_id> <capability>`.
 pub async fn system_user_revoke_v1(
     endpoint_override: Option<String>,

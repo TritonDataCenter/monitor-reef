@@ -109,6 +109,31 @@ enum Commands {
         #[command(subcommand)]
         command: InstanceCommand,
     },
+    /// RFD 00007 flat-verb tree for disks.
+    Disk {
+        #[command(subcommand)]
+        command: DiskCommand,
+    },
+    /// RFD 00007 flat-verb tree for NICs.
+    Nic {
+        #[command(subcommand)]
+        command: NicCommand,
+    },
+    /// RFD 00007 flat-verb tree for VPCs.
+    Vpc {
+        #[command(subcommand)]
+        command: VpcCommand,
+    },
+    /// RFD 00007 flat-verb tree for subnets.
+    Subnet {
+        #[command(subcommand)]
+        command: SubnetCommand,
+    },
+    /// RFD 00007 flat-verb tree for floating IPs.
+    FloatingIp {
+        #[command(subcommand)]
+        command: FloatingIpCommand,
+    },
     /// RFD 00007 fleet-admin operator commands. Capability-gated;
     /// callers without the right `Capability` see 404 NotFound.
     System {
@@ -1726,6 +1751,106 @@ enum InstanceCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum DiskCommand {
+    /// List disks. Requires --instance (the AP-2e customer surface
+    /// is scoped to one instance until cross-project disk searches
+    /// land).
+    List {
+        #[arg(long)]
+        instance: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        disk_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum NicCommand {
+    /// List NICs. Requires one of --ip, --subnet, or --instance.
+    List {
+        #[arg(long)]
+        ip: Option<std::net::IpAddr>,
+        #[arg(long)]
+        subnet: Option<Uuid>,
+        #[arg(long)]
+        instance: Option<Uuid>,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        nic_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum VpcCommand {
+    /// List VPCs in a project.
+    List {
+        #[arg(long)]
+        tenant: Uuid,
+        #[arg(long)]
+        project: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        vpc_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SubnetCommand {
+    /// List subnets in a VPC.
+    List {
+        #[arg(long)]
+        vpc: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        subnet_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum FloatingIpCommand {
+    /// List floating IPs in a project.
+    List {
+        #[arg(long)]
+        tenant: Uuid,
+        #[arg(long)]
+        project: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    Show {
+        floating_ip_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Attach a floating IP to a NIC.
+    Attach {
+        floating_ip_id: Uuid,
+        #[arg(long)]
+        nic: Uuid,
+    },
+    /// Detach a floating IP from its current NIC.
+    Detach {
+        floating_ip_id: Uuid,
+    },
+}
+
 /// RFD 00007 AP-3c-2: fleet-admin operator commands. All under
 /// `/v1/system/`; capability-gated server-side. A caller without
 /// the right `Capability` sees the same 404 as a missing resource.
@@ -2070,6 +2195,71 @@ async fn main() -> Result<()> {
                 user_id,
                 capability,
             } => commands::system_user_revoke_v1(cli.endpoint, cli.api_key, user_id, capability).await,
+        },
+        Commands::Disk { command } => match command {
+            DiskCommand::List { instance, json } => {
+                commands::disk_list_v1(cli.endpoint, cli.api_key, instance, json).await
+            }
+            DiskCommand::Show { disk_id, json } => {
+                commands::disk_show_v1(cli.endpoint, cli.api_key, disk_id, json).await
+            }
+        },
+        Commands::Nic { command } => match command {
+            NicCommand::List {
+                ip,
+                subnet,
+                instance,
+                json,
+            } => {
+                commands::nic_list_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    ip,
+                    subnet,
+                    instance,
+                    json,
+                )
+                .await
+            }
+            NicCommand::Show { nic_id, json } => {
+                commands::nic_show_v1(cli.endpoint, cli.api_key, nic_id, json).await
+            }
+        },
+        Commands::Vpc { command } => match command {
+            VpcCommand::List {
+                tenant,
+                project,
+                json,
+            } => commands::vpc_list_v1(cli.endpoint, cli.api_key, tenant, project, json).await,
+            VpcCommand::Show { vpc_id, json } => {
+                commands::vpc_show_v1(cli.endpoint, cli.api_key, vpc_id, json).await
+            }
+        },
+        Commands::Subnet { command } => match command {
+            SubnetCommand::List { vpc, json } => {
+                commands::subnet_list_v1(cli.endpoint, cli.api_key, vpc, json).await
+            }
+            SubnetCommand::Show { subnet_id, json } => {
+                commands::subnet_show_v1(cli.endpoint, cli.api_key, subnet_id, json).await
+            }
+        },
+        Commands::FloatingIp { command } => match command {
+            FloatingIpCommand::List {
+                tenant,
+                project,
+                json,
+            } => commands::floating_ip_list_v1(cli.endpoint, cli.api_key, tenant, project, json).await,
+            FloatingIpCommand::Show {
+                floating_ip_id,
+                json,
+            } => commands::floating_ip_show_v1(cli.endpoint, cli.api_key, floating_ip_id, json).await,
+            FloatingIpCommand::Attach {
+                floating_ip_id,
+                nic,
+            } => commands::floating_ip_attach_v1(cli.endpoint, cli.api_key, floating_ip_id, nic).await,
+            FloatingIpCommand::Detach { floating_ip_id } => {
+                commands::floating_ip_detach_v1(cli.endpoint, cli.api_key, floating_ip_id).await
+            }
         },
         Commands::Find { what, kind, json } => {
             commands::find_v1(cli.endpoint, cli.api_key, what, kind, json).await
