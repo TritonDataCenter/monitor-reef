@@ -164,6 +164,7 @@ impl TestServer {
                 .unwrap(),
             is_root: true,
             fleet_admin: false,
+            capabilities: Default::default(),
             created_at: Utc::now(),
             tenant_id: None,
             federation: None,
