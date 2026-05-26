@@ -3107,6 +3107,35 @@ pub trait TritondApi {
         path: Path<crate::v1::VpcPath>,
     ) -> Result<HttpResponseOk<Vpc>, HttpError>;
 
+    /// RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC
+    /// under the named project. `silo=` is rejected at the customer
+    /// surface; tenant + project are both required selectors. Body
+    /// is the same `NewVpc` shape the /v2/ create handler accepted.
+    #[endpoint {
+        method = POST,
+        path = "/v1/vpcs",
+        tags = ["vpcs"],
+    }]
+    async fn create_vpc_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::ScopeSelectors>,
+        body: TypedBody<NewVpc>,
+    ) -> Result<HttpResponseCreated<Vpc>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces
+    /// the same dependency gate as the legacy /v2/ delete: subnets,
+    /// firewall rules, NAT gateways, and route tables anchored on
+    /// the VPC must be deleted first.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/vpcs/{vpc_id}",
+        tags = ["vpcs"],
+    }]
+    async fn delete_vpc_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::VpcPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
     /// RFD 00007 `GET /v1/subnets?vpc=<uuid>`. Flat subnet list.
     #[endpoint {
         method = GET,

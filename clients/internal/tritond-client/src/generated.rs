@@ -30516,9 +30516,19 @@ impl Client {
         builder::ListVpcsV1::new(self)
     }
 
+    #[doc = "RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC\n\nunder the named project. `silo=` is rejected at the customer surface; tenant + project are both required selectors. Body is the same `NewVpc` shape the /v2/ create handler accepted.\n\nSends a `POST` request to `/v1/vpcs`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `body`\n```ignore\nlet response = client.create_vpc_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_vpc_v1(&self) -> builder::CreateVpcV1<'_> {
+        builder::CreateVpcV1::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/vpcs/{vpc_id}`. Flat single-VPC read\n\nSends a `GET` request to `/v1/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.get_vpc_v1()\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
     pub fn get_vpc_v1(&self) -> builder::GetVpcV1<'_> {
         builder::GetVpcV1::new(self)
+    }
+
+    #[doc = "RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces\n\nthe same dependency gate as the legacy /v2/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.\n\nSends a `DELETE` request to `/v1/vpcs/{vpc_id}`\n\n```ignore\nlet response = client.delete_vpc_v1()\n    .vpc_id(vpc_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_vpc_v1(&self) -> builder::DeleteVpcV1<'_> {
+        builder::DeleteVpcV1::new(self)
     }
 
     #[doc = "List CNs with their managed-vs-legacy zone counts. Fleet-admin\n\nonly. Supports the operator workflow of \"show me which CNs still have legacy zones I haven't adopted yet\".\n\nSends a `GET` request to `/v2/admin/legacy/cns`\n\n```ignore\nlet response = client.list_legacy_cns()\n    .send()\n    .await;\n```"]
@@ -35513,6 +35523,135 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::create_vpc_v1`]\n\n[`Client::create_vpc_v1`]: super::Client::create_vpc_v1"]
+    #[derive(Debug, Clone)]
+    pub struct CreateVpcV1<'a> {
+        client: &'a super::Client,
+        project: Result<Option<::uuid::Uuid>, String>,
+        silo: Result<Option<::uuid::Uuid>, String>,
+        tenant: Result<Option<::uuid::Uuid>, String>,
+        body: Result<types::builder::NewVpc, String>,
+    }
+
+    impl<'a> CreateVpcV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                project: Ok(None),
+                silo: Ok(None),
+                tenant: Ok(None),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn project<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project failed".to_string());
+            self
+        }
+
+        pub fn silo<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo failed".to_string());
+            self
+        }
+
+        pub fn tenant<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewVpc>,
+            <V as std::convert::TryInto<types::NewVpc>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewVpc` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewVpc) -> types::builder::NewVpc,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/vpcs`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Vpc>, Error<types::Error>> {
+            let Self {
+                client,
+                project,
+                silo,
+                tenant,
+                body,
+            } = self;
+            let project = project.map_err(Error::InvalidRequest)?;
+            let silo = silo.map_err(Error::InvalidRequest)?;
+            let tenant = tenant.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewVpc::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/vpcs", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .query(&progenitor_client::QueryParam::new("project", &project))
+                .query(&progenitor_client::QueryParam::new("silo", &silo))
+                .query(&progenitor_client::QueryParam::new("tenant", &tenant))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_vpc_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::get_vpc_v1`]\n\n[`Client::get_vpc_v1`]: super::Client::get_vpc_v1"]
     #[derive(Debug, Clone)]
     pub struct GetVpcV1<'a> {
@@ -35571,6 +35710,75 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_vpc_v1`]\n\n[`Client::delete_vpc_v1`]: super::Client::delete_vpc_v1"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteVpcV1<'a> {
+        client: &'a super::Client,
+        vpc_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteVpcV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                vpc_id: Err("vpc_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn vpc_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/vpcs/{vpc_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, vpc_id } = self;
+            let vpc_id = vpc_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/vpcs/{}",
+                client.baseurl,
+                encode_path(&vpc_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_vpc_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

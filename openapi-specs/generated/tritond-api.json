@@ -2240,6 +2240,74 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "RFD 00007 `POST /v1/vpcs?tenant=&project=`. Create a VPC",
+        "description": "under the named project. `silo=` is rejected at the customer surface; tenant + project are both required selectors. Body is the same `NewVpc` shape the /v2/ create handler accepted.",
+        "operationId": "create_vpc_v1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "project",
+            "description": "Restrict to a single project.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "silo",
+            "description": "Restrict to a single silo (fleet-admin only).",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant",
+            "description": "Restrict to a single tenant.",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewVpc"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vpc"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/v1/vpcs/{vpc_id}": {
@@ -2270,6 +2338,36 @@
                 }
               }
             }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vpcs"
+        ],
+        "summary": "RFD 00007 `DELETE /v1/vpcs/{vpc_id}`. The handler enforces",
+        "description": "the same dependency gate as the legacy /v2/ delete: subnets, firewall rules, NAT gateways, and route tables anchored on the VPC must be deleted first.",
+        "operationId": "delete_vpc_v1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vpc_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

@@ -536,6 +536,21 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::vpc::get_vpc_v1(rqctx, path).await
     }
 
+    async fn create_vpc_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::ScopeSelectors>,
+        body: TypedBody<NewVpc>,
+    ) -> Result<HttpResponseCreated<Vpc>, HttpError> {
+        crate::handlers::network::vpc::create_vpc_v1(rqctx, query, body).await
+    }
+
+    async fn delete_vpc_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::VpcPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::vpc::delete_vpc_v1(rqctx, path).await
+    }
+
     async fn list_subnets_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::SubnetQuery>,

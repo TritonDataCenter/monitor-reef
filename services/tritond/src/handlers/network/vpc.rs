@@ -278,6 +278,178 @@ pub(crate) async fn get_vpc_v1(
     Ok(HttpResponseOk(vpc))
 }
 
+/// RFD 00007 AP-3a-10: `POST /v1/vpcs?tenant=&project=`. Same
+/// behaviour as the legacy `create_project_vpc`, but takes the
+/// scope from query selectors. `silo=` is rejected at the customer
+/// surface; both `tenant=` and `project=` are required.
+pub(crate) async fn create_vpc_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::ScopeSelectors>,
+    body: TypedBody<NewVpc>,
+) -> Result<HttpResponseCreated<Vpc>, HttpError> {
+    let scope = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            dropshot::ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is not accepted on the customer surface; \
+             /v1/vpcs always creates inside the principal's silo"
+                .to_string(),
+        ));
+    }
+    let tenant_id = scope.tenant.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            dropshot::ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/vpcs requires `?tenant=<uuid>&project=<uuid>`".to_string(),
+        )
+    })?;
+    let project_id = scope.project.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            dropshot::ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/vpcs requires `?tenant=<uuid>&project=<uuid>`".to_string(),
+        )
+    })?;
+
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::VpcCreate,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+
+    // At least one IP family is required (matches OPTE's IpCfg
+    // enum: Ipv4, Ipv6, or DualStack — never neither).
+    if req.ipv4_block.is_none() && req.ipv6_block.is_none() {
+        let outcome = AuditOutcome::ClientError {
+            code: 400,
+            message: "vpc must specify ipv4_block, ipv6_block, or both".to_string(),
+        };
+        ctx.audit
+            .record_mutation(
+                &principal,
+                Action::VpcCreate,
+                request_id,
+                None,
+                outcome,
+                serde_json::json!({ "tenant_id": tenant_id, "project_id": project_id }),
+            )
+            .await;
+        return Err(HttpError::for_bad_request(
+            Some("BadRequest".to_string()),
+            "vpc must specify ipv4_block, ipv6_block, or both".to_string(),
+        ));
+    }
+
+    match ctx.store.create_vpc(tenant_id, project_id, req).await {
+        Ok(vpc) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::VpcCreate,
+                    request_id,
+                    Some(format!("Vpc::\"{}\"", vpc.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Vpc::\"{}\"", vpc.id)),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "name": vpc.name,
+                        "vni": vpc.vni,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(vpc))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::VpcCreate,
+                    request_id,
+                    None,
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+/// RFD 00007 AP-3a-10: `DELETE /v1/vpcs/{vpc_id}`. Resolves the
+/// owning tenant from the VPC row (no path-level defence-in-depth
+/// because /v1/ singletons are by id only); the store enforces
+/// the dependency gate (subnets, firewall rules, NAT gateways,
+/// route tables) and returns 409 Conflict if anything still
+/// references the VPC.
+pub(crate) async fn delete_vpc_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::VpcPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::VpcPath { vpc_id } = path.into_inner();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::VpcDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    match ctx.store.delete_vpc(vpc_id).await {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::VpcDelete,
+                    request_id,
+                    Some(format!("Vpc::\"{vpc_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Vpc::\"{vpc_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::VpcDelete,
+                    request_id,
+                    Some(format!("Vpc::\"{vpc_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
 pub(crate) async fn get_project_vpc(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,

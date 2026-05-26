@@ -1757,11 +1757,36 @@ enum VpcCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Read a single VPC by UUID.
     Show {
         vpc_id: Uuid,
         #[arg(long)]
         json: bool,
     },
+    /// Create a new VPC under a project. Posts to
+    /// `/v1/vpcs?tenant=&project=` (AP-3a-10).
+    Create {
+        #[arg(long)]
+        tenant: Uuid,
+        #[arg(long)]
+        project: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// IPv4 CIDR block (one of ipv4-block / ipv6-block required).
+        #[arg(long = "ipv4-block")]
+        ipv4_block: Option<String>,
+        /// IPv6 CIDR block.
+        #[arg(long = "ipv6-block")]
+        ipv6_block: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a VPC. The server enforces the dependency gate
+    /// (subnets, firewall rules, NAT gateways, route tables must
+    /// be empty); 409 Conflict if anything still references it.
+    Delete { vpc_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -2395,6 +2420,31 @@ async fn main() -> Result<()> {
             } => commands::vpc_list_v1(cli.endpoint, cli.api_key, tenant, project, json).await,
             VpcCommand::Show { vpc_id, json } => {
                 commands::vpc_show_v1(cli.endpoint, cli.api_key, vpc_id, json).await
+            }
+            VpcCommand::Create {
+                tenant,
+                project,
+                name,
+                description,
+                ipv4_block,
+                ipv6_block,
+                json,
+            } => {
+                commands::vpc_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    tenant,
+                    project,
+                    name,
+                    description,
+                    ipv4_block,
+                    ipv6_block,
+                    json,
+                )
+                .await
+            }
+            VpcCommand::Delete { vpc_id } => {
+                commands::vpc_delete_v1(cli.endpoint, cli.api_key, vpc_id).await
             }
         },
         Commands::Subnet { command } => match command {

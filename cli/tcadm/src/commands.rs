@@ -5216,6 +5216,67 @@ pub async fn vpc_show_v1(
     Ok(())
 }
 
+/// `tcadm vpc create --tenant=&--project=&--name=&--ipv4-block=...`.
+/// AP-3c-11: flat-verb VPC create, replaces the legacy
+/// `tcadm tenant project vpc create` form.
+#[allow(clippy::too_many_arguments)]
+pub async fn vpc_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant: Uuid,
+    project: Uuid,
+    name: String,
+    description: String,
+    ipv4_block: Option<String>,
+    ipv6_block: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let v = client
+        .create_vpc_v1()
+        .tenant(tenant)
+        .project(project)
+        .body(tritond_client::types::NewVpc {
+            name,
+            description: Some(description),
+            ipv4_block,
+            ipv6_block,
+        })
+        .send()
+        .await
+        .context("/v1/vpcs create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&v)?);
+        return Ok(());
+    }
+    println!("Vpc {}", v.id);
+    println!("  name:    {}", v.name);
+    println!("  vni:     {}", v.vni);
+    println!("  tenant:  {}", v.tenant_id);
+    println!("  project: {}", v.project_id);
+    Ok(())
+}
+
+/// `tcadm vpc delete <vpc_id>`.
+pub async fn vpc_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_vpc_v1()
+        .vpc_id(vpc_id)
+        .send()
+        .await
+        .context("/v1/vpcs/{id} delete")?;
+    println!("Vpc {vpc_id} deleted.");
+    Ok(())
+}
+
 pub async fn subnet_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,
