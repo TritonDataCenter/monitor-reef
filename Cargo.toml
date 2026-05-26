@@ -224,7 +224,7 @@ uuid = { version = "1", features = ["v4", "v5", "serde"] }
 webpki-roots = "1"
 
 # Kubernetes client (native API access, replacing kubectl shell-outs)
-kube = { version = "0.98", default-features = false, features = ["client", "config", "rustls-tls"] }
+kube = { version = "0.98", default-features = false, features = ["client", "config", "rustls-tls", "webpki-roots"] }
 k8s-openapi = { version = "0.24", features = ["v1_32"] }
 
 #
