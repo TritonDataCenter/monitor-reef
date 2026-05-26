@@ -2995,6 +2995,154 @@ pub trait TritondApi {
         path: Path<crate::v1::RoutePath>,
     ) -> Result<HttpResponseOk<Route>, HttpError>;
 
+    // --- RFD 00007 AP-3a-13: VPC-family write endpoints ---
+    // firewall-rules / nat-gateways / route-tables / routes /
+    // vpc-dhcp-pools / vpc-dhcp-reservations writes. Each follows
+    // the same shape: POST on the flat collection with the parent
+    // id in a query selector, DELETE on the flat singleton by id.
+
+    /// RFD 00007 `POST /v1/firewall-rules?vpc=<uuid>`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/firewall-rules",
+        tags = ["firewall-rules"],
+    }]
+    async fn create_firewall_rule_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::FirewallRuleQuery>,
+        body: TypedBody<NewFirewallRule>,
+    ) -> Result<HttpResponseCreated<FirewallRule>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/firewall-rules/{firewall_rule_id}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/firewall-rules/{firewall_rule_id}",
+        tags = ["firewall-rules"],
+    }]
+    async fn delete_firewall_rule_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::FirewallRulePath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// RFD 00007 `POST /v1/nat-gateways?vpc=<uuid>`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/nat-gateways",
+        tags = ["nat-gateways"],
+    }]
+    async fn create_nat_gateway_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::NatGatewayQuery>,
+        body: TypedBody<NewNatGateway>,
+    ) -> Result<HttpResponseCreated<NatGateway>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/nat-gateways/{nat_gateway_id}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/nat-gateways/{nat_gateway_id}",
+        tags = ["nat-gateways"],
+    }]
+    async fn delete_nat_gateway_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::NatGatewayPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// RFD 00007 `POST /v1/route-tables?vpc=<uuid>`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/route-tables",
+        tags = ["route-tables"],
+    }]
+    async fn create_route_table_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::RouteTableQuery>,
+        body: TypedBody<NewRouteTable>,
+    ) -> Result<HttpResponseCreated<RouteTable>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/route-tables/{route_table_id}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/route-tables/{route_table_id}",
+        tags = ["route-tables"],
+    }]
+    async fn delete_route_table_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::RouteTablePath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// RFD 00007 `POST /v1/routes?route_table=<uuid>`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/routes",
+        tags = ["routes"],
+    }]
+    async fn create_route_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::RouteQuery>,
+        body: TypedBody<NewRoute>,
+    ) -> Result<HttpResponseCreated<Route>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/routes/{route_id}`.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/routes/{route_id}",
+        tags = ["routes"],
+    }]
+    async fn delete_route_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::RoutePath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// RFD 00007 `PUT /v1/vpc-dhcp-pools/{vpc_id}`. Upserts the
+    /// per-VPC DHCP pool configuration.
+    #[endpoint {
+        method = PUT,
+        path = "/v1/vpc-dhcp-pools/{vpc_id}",
+        tags = ["dhcp"],
+    }]
+    async fn put_vpc_dhcp_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::VpcDhcpPoolPath>,
+        body: TypedBody<NewDhcpPool>,
+    ) -> Result<HttpResponseOk<DhcpPool>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/vpc-dhcp-pools/{vpc_id}`. Clears the
+    /// per-VPC DHCP pool back to "use defaults".
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/vpc-dhcp-pools/{vpc_id}",
+        tags = ["dhcp"],
+    }]
+    async fn clear_vpc_dhcp_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::VpcDhcpPoolPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
+    /// RFD 00007 `POST /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/vpc-dhcp-reservations",
+        tags = ["dhcp"],
+    }]
+    async fn create_vpc_dhcp_reservation_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::VpcDhcpQuery>,
+        body: TypedBody<NewDhcpReservation>,
+    ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
+    /// VPC + MAC is the composite key the store uses; the trait
+    /// preserves it so delete doesn't need a fleet-wide MAC scan.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/vpc-dhcp-reservations/{vpc_id}/{mac}",
+        tags = ["dhcp"],
+    }]
+    async fn delete_vpc_dhcp_reservation_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::DhcpReservationPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
     /// RFD 00007 `GET /v1/floating-ips?tenant=&project=`. Flat FIP list.
     #[endpoint {
         method = GET,
@@ -3016,6 +3164,34 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<crate::v1::FloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
+
+    /// RFD 00007 `POST /v1/floating-ips?tenant=&project=`. Allocate
+    /// a new floating IP from the fleet pool into the named project.
+    /// Body matches the legacy `NewFloatingIp` shape; `silo=` is
+    /// rejected on the customer surface.
+    #[endpoint {
+        method = POST,
+        path = "/v1/floating-ips",
+        tags = ["floating-ips"],
+    }]
+    async fn create_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::ScopeSelectors>,
+        body: TypedBody<NewFloatingIp>,
+    ) -> Result<HttpResponseCreated<FloatingIp>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/floating-ips/{floating_ip_id}`. The
+    /// floating IP must be detached (attached_to == None) for the
+    /// store to release it; 409 Conflict otherwise.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/floating-ips/{floating_ip_id}",
+        tags = ["floating-ips"],
+    }]
+    async fn delete_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::FloatingIpPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// RFD 00007 `POST /v1/floating-ips/{floating_ip_id}/attach`.
     #[endpoint {

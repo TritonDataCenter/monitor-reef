@@ -338,9 +338,9 @@ async fn nat_gateway_shares_public_pool_with_floating_ips() {
     let (tenant_id, project_id, vpc_id) = make_project_vpc(&root, "pool").await;
 
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+        .create_floating_ip_v1()
+        .tenant(tenant_id)
+        .project(project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,

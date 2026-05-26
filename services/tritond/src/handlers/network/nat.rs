@@ -155,53 +155,32 @@ pub(crate) async fn get_nat_gateway_v1(
     Ok(HttpResponseOk(nat))
 }
 
-pub(crate) async fn list_vpc_nat_gateways(
+/// RFD 00007 AP-3a-13: `POST /v1/nat-gateways?vpc=<uuid>`.
+/// Same `nat_gateway_create` saga as the legacy v2 path; the
+/// tenant+project are resolved from the parent VPC.
+pub(crate) async fn create_nat_gateway_v1(
     rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-) -> Result<HttpResponseOk<Vec<NatGateway>>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::NatGatewayList,
-        tenant_id,
-    )
-    .await?;
+    query: Query<tritond_api::v1::NatGatewayQuery>,
+    body: TypedBody<NewNatGateway>,
+) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
+    let q = query.into_inner();
+    let vpc_id = q.vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            dropshot::ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/nat-gateways requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
 
+    let ctx = rqctx.context();
     let vpc = ctx
         .store
         .get_vpc(vpc_id)
         .await
         .map_err(store_error_to_http)?;
-    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
-        return Err(not_found());
-    }
-    let nat_gateways = ctx
-        .store
-        .list_nat_gateways_in_vpc(vpc_id)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(nat_gateways))
-}
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
 
-pub(crate) async fn create_vpc_nat_gateway(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-    body: TypedBody<NewNatGateway>,
-) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
@@ -259,8 +238,6 @@ pub(crate) async fn create_vpc_nat_gateway(
                         "project_id": project_id,
                         "vpc_id": vpc_id,
                         "name": nat_gateway.name,
-                        "public_address": nat_gateway.public_address.to_string(),
-                        "desired_generation": nat_gateway.desired_generation,
                         "operation_id": saga_id.0.to_string(),
                     }),
                 )
@@ -280,6 +257,138 @@ pub(crate) async fn create_vpc_nat_gateway(
             .await
         }
     }
+}
+
+/// RFD 00007 AP-3a-13: `DELETE /v1/nat-gateways/{nat_gateway_id}`.
+pub(crate) async fn delete_nat_gateway_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::NatGatewayPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::NatGatewayPath { nat_gateway_id } = path.into_inner();
+    let nat_gateway = ctx
+        .store
+        .get_nat_gateway(nat_gateway_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = nat_gateway.tenant_id;
+    let project_id = nat_gateway.project_id;
+    let vpc_id = nat_gateway.vpc_id;
+
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    let saga_params = crate::sagas::nat_gateway::NatGatewayDeleteParams {
+        tenant_id,
+        project_id,
+        vpc_id,
+        nat_gateway_id,
+    };
+    let saga_dag = crate::sagas::nat_gateway::build_delete_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("nat-gateway-delete saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::nat_gateway::build_delete_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::nat_gateway::SAGA_NAME_DELETE,
+            crate::sagas::nat_gateway::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("nat-gateway-delete saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(_) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::NatGatewayDelete,
+                    request_id,
+                    Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                        "operation_id": saga_id.0.to_string(),
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(err) => {
+            map_nat_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::NatGatewayDelete,
+                request_id,
+                Some(format!("NatGateway::\"{nat_gateway_id}\"")),
+                saga_id,
+                &err,
+            )
+            .await
+        }
+    }
+}
+
+pub(crate) async fn list_vpc_nat_gateways(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcPath>,
+) -> Result<HttpResponseOk<Vec<NatGateway>>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+    } = path.into_inner();
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::NatGatewayList,
+        tenant_id,
+    )
+    .await?;
+
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+        return Err(not_found());
+    }
+    let nat_gateways = ctx
+        .store
+        .list_nat_gateways_in_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(nat_gateways))
+}
+
+/// RFD 00007 AP-3e: moved to `POST /v1/nat-gateways?vpc=<uuid>`.
+pub(crate) async fn create_vpc_nat_gateway(
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcPath>,
+    _body: TypedBody<NewNatGateway>,
+) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
+    Err(crate::error::gone("POST /v1/nat-gateways?vpc=<uuid>"))
 }
 
 /// Map a NAT-saga failure back to an HTTP error using the same
@@ -371,95 +480,12 @@ pub(crate) async fn get_vpc_nat_gateway(
     Ok(HttpResponseOk(nat_gateway))
 }
 
+/// RFD 00007 AP-3e: moved to `DELETE /v1/nat-gateways/{nat_gateway_id}`.
 pub(crate) async fn delete_vpc_nat_gateway(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcNatGatewayPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcNatGatewayPath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcNatGatewayPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-        nat_gateway_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::NatGatewayDelete,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-
-    let nat_gateway = ctx
-        .store
-        .get_nat_gateway(nat_gateway_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if nat_gateway.tenant_id != tenant_id
-        || nat_gateway.project_id != project_id
-        || nat_gateway.vpc_id != vpc_id
-    {
-        return Err(not_found());
-    }
-    let saga_params = crate::sagas::nat_gateway::NatGatewayDeleteParams {
-        tenant_id,
-        project_id,
-        vpc_id,
-        nat_gateway_id,
-    };
-    let saga_dag = crate::sagas::nat_gateway::build_delete_dag(&saga_params).map_err(|e| {
-        HttpError::for_internal_error(format!("nat-gateway-delete saga dag build: {e}"))
-    })?;
-    let saga_refs = crate::sagas::nat_gateway::build_delete_references(&saga_params);
-    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
-    let steno_result = ctx
-        .saga
-        .saga_execute(
-            saga_id,
-            crate::sagas::nat_gateway::SAGA_NAME_DELETE,
-            crate::sagas::nat_gateway::SAGA_VERSION,
-            saga_dag,
-            &saga_refs,
-        )
-        .await
-        .map_err(|e| {
-            HttpError::for_internal_error(format!("nat-gateway-delete saga executor: {e}"))
-        })?;
-    match steno_result.kind {
-        Ok(_) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::NatGatewayDelete,
-                    request_id,
-                    Some(format!("NatGateway::\"{nat_gateway_id}\"")),
-                    AuditOutcome::Success {
-                        resource: Some(format!("NatGateway::\"{nat_gateway_id}\"")),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                        "vpc_id": vpc_id,
-                        "operation_id": saga_id.0.to_string(),
-                    }),
-                )
-                .await;
-            Ok(HttpResponseDeleted())
-        }
-        Err(err) => {
-            map_nat_saga_err(
-                &ctx.audit,
-                &principal,
-                Action::NatGatewayDelete,
-                request_id,
-                Some(format!("NatGateway::\"{nat_gateway_id}\"")),
-                saga_id,
-                &err,
-            )
-            .await
-        }
-    }
+    Err(crate::error::gone(
+        "DELETE /v1/nat-gateways/{nat_gateway_id}",
+    ))
 }

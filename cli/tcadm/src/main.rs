@@ -1871,11 +1871,32 @@ enum FloatingIpCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Read a single floating IP by UUID.
     Show {
         floating_ip_id: Uuid,
         #[arg(long)]
         json: bool,
     },
+    /// Allocate a new floating IP into a project. POSTs to
+    /// `/v1/floating-ips?tenant=&project=` (AP-3a-12).
+    Create {
+        #[arg(long)]
+        tenant: Uuid,
+        #[arg(long)]
+        project: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Address family to allocate from: ipv4 or ipv6.
+        #[arg(long, default_value = "ipv4")]
+        family: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a floating IP. The IP must already be detached;
+    /// server returns 409 Conflict if anything is still attached.
+    Delete { floating_ip_id: Uuid },
     /// Attach a floating IP to a NIC.
     Attach {
         floating_ip_id: Uuid,
@@ -2529,6 +2550,29 @@ async fn main() -> Result<()> {
                 json,
             } => {
                 commands::floating_ip_show_v1(cli.endpoint, cli.api_key, floating_ip_id, json).await
+            }
+            FloatingIpCommand::Create {
+                tenant,
+                project,
+                name,
+                description,
+                family,
+                json,
+            } => {
+                commands::floating_ip_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    tenant,
+                    project,
+                    name,
+                    description,
+                    family,
+                    json,
+                )
+                .await
+            }
+            FloatingIpCommand::Delete { floating_ip_id } => {
+                commands::floating_ip_delete_v1(cli.endpoint, cli.api_key, floating_ip_id).await
             }
             FloatingIpCommand::Attach {
                 floating_ip_id,

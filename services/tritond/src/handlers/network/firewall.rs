@@ -160,6 +160,145 @@ pub(crate) async fn get_firewall_rule_v1(
     Ok(HttpResponseOk(rule))
 }
 
+/// RFD 00007 AP-3a-13: `POST /v1/firewall-rules?vpc=<uuid>`.
+pub(crate) async fn create_firewall_rule_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::FirewallRuleQuery>,
+    body: TypedBody<NewFirewallRule>,
+) -> Result<HttpResponseCreated<FirewallRule>, HttpError> {
+    let q = query.into_inner();
+    let vpc_id = q.vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            dropshot::ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/firewall-rules requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+
+    let ctx = rqctx.context();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FirewallRuleCreate,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+
+    match ctx
+        .store
+        .create_firewall_rule(tenant_id, project_id, vpc_id, req)
+        .await
+    {
+        Ok(rule) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FirewallRuleCreate,
+                    request_id,
+                    Some(format!("FirewallRule::\"{}\"", rule.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("FirewallRule::\"{}\"", rule.id)),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                        "name": rule.name,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(rule))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FirewallRuleCreate,
+                    request_id,
+                    None,
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+/// RFD 00007 AP-3a-13: `DELETE /v1/firewall-rules/{firewall_rule_id}`.
+pub(crate) async fn delete_firewall_rule_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::FirewallRulePath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::FirewallRulePath { firewall_rule_id } = path.into_inner();
+    let rule = ctx
+        .store
+        .get_firewall_rule(firewall_rule_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = rule.tenant_id;
+    let project_id = rule.project_id;
+    let vpc_id = rule.vpc_id;
+
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FirewallRuleDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    match ctx.store.delete_firewall_rule(firewall_rule_id).await {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FirewallRuleDelete,
+                    request_id,
+                    Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FirewallRuleDelete,
+                    request_id,
+                    Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
 pub(crate) async fn list_vpc_firewall_rules(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,
@@ -196,136 +335,21 @@ pub(crate) async fn list_vpc_firewall_rules(
     Ok(HttpResponseOk(rules))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/firewall-rules?vpc=<uuid>`.
 pub(crate) async fn create_vpc_firewall_rule(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-    body: TypedBody<NewFirewallRule>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcPath>,
+    _body: TypedBody<NewFirewallRule>,
 ) -> Result<HttpResponseCreated<FirewallRule>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::FirewallRuleCreate,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-    let req = body.into_inner();
-
-    match ctx
-        .store
-        .create_firewall_rule(tenant_id, project_id, vpc_id, req)
-        .await
-    {
-        Ok(rule) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FirewallRuleCreate,
-                    request_id,
-                    Some(format!("FirewallRule::\"{}\"", rule.id)),
-                    AuditOutcome::Success {
-                        resource: Some(format!("FirewallRule::\"{}\"", rule.id)),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                        "vpc_id": vpc_id,
-                        "name": rule.name,
-                        "priority": rule.priority,
-                        "direction": rule.direction,
-                        "action": rule.action,
-                        "protocol": rule.protocol,
-                    }),
-                )
-                .await;
-            Ok(HttpResponseCreated(rule))
-        }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FirewallRuleCreate,
-                    request_id,
-                    None,
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
-        }
-    }
+    Err(crate::error::gone("POST /v1/firewall-rules?vpc=<uuid>"))
 }
 
+/// RFD 00007 AP-3e: moved to `DELETE /v1/firewall-rules/{firewall_rule_id}`.
 pub(crate) async fn delete_vpc_firewall_rule(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcFirewallRulePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcFirewallRulePath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcFirewallRulePath {
-        tenant_id,
-        project_id,
-        vpc_id,
-        firewall_rule_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::FirewallRuleDelete,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-
-    let rule = ctx
-        .store
-        .get_firewall_rule(firewall_rule_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if rule.tenant_id != tenant_id || rule.project_id != project_id || rule.vpc_id != vpc_id {
-        return Err(not_found());
-    }
-    match ctx.store.delete_firewall_rule(firewall_rule_id).await {
-        Ok(()) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FirewallRuleDelete,
-                    request_id,
-                    Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
-                    AuditOutcome::Success {
-                        resource: Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                        "vpc_id": vpc_id,
-                    }),
-                )
-                .await;
-            Ok(HttpResponseDeleted())
-        }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FirewallRuleDelete,
-                    request_id,
-                    Some(format!("FirewallRule::\"{firewall_rule_id}\"")),
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
-        }
-    }
+    Err(crate::error::gone(
+        "DELETE /v1/firewall-rules/{firewall_rule_id}",
+    ))
 }

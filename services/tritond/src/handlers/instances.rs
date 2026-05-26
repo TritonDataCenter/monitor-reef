@@ -1649,91 +1649,13 @@ pub(crate) async fn list_project_floating_ips(
     Ok(HttpResponseOk(fips))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/floating-ips?tenant=&project=`.
 pub(crate) async fn create_project_floating_ip(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectPath>,
-    body: TypedBody<NewFloatingIp>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectPath>,
+    _body: TypedBody<NewFloatingIp>,
 ) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectPath {
-        tenant_id,
-        project_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::FloatingIpCreate,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-    let req = body.into_inner();
-
-    let saga_params = crate::sagas::floating_ip::FloatingIpAllocateParams {
-        tenant_id,
-        project_id,
-        request: req,
-    };
-    let saga_dag = crate::sagas::floating_ip::build_allocate_dag(&saga_params).map_err(|e| {
-        HttpError::for_internal_error(format!("floating-ip-allocate saga dag build: {e}"))
-    })?;
-    let saga_refs = crate::sagas::floating_ip::build_allocate_references(&saga_params);
-    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
-    let steno_result = ctx
-        .saga
-        .saga_execute(
-            saga_id,
-            crate::sagas::floating_ip::SAGA_NAME_ALLOCATE,
-            crate::sagas::floating_ip::SAGA_VERSION,
-            saga_dag,
-            &saga_refs,
-        )
-        .await
-        .map_err(|e| {
-            HttpError::for_internal_error(format!("floating-ip-allocate saga executor: {e}"))
-        })?;
-    match steno_result.kind {
-        Ok(ok) => {
-            let fip: FloatingIp = ok.lookup_node_output("fip").map_err(|e| {
-                HttpError::for_internal_error(format!(
-                    "floating-ip-allocate saga finished but output missing: {e}"
-                ))
-            })?;
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FloatingIpCreate,
-                    request_id,
-                    Some(format!("FloatingIp::\"{}\"", fip.id)),
-                    AuditOutcome::Success {
-                        resource: Some(format!("FloatingIp::\"{}\"", fip.id)),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                        "name": fip.name,
-                        "address": fip.address.to_string(),
-                        "operation_id": saga_id.0.to_string(),
-                    }),
-                )
-                .await;
-            Ok(HttpResponseCreated(fip))
-        }
-        Err(err) => {
-            map_fip_saga_err(
-                &ctx.audit,
-                &principal,
-                Action::FloatingIpCreate,
-                request_id,
-                None,
-                saga_id,
-                &err,
-            )
-            .await
-        }
-    }
+    Err(crate::error::gone("POST /v1/floating-ips?tenant=&project="))
 }
 
 /// Shared error-mapping for FIP saga failures. Re-derives the
@@ -1872,6 +1794,178 @@ pub(crate) async fn get_floating_ip_v1(
     Ok(HttpResponseOk(fip))
 }
 
+/// RFD 00007 AP-3a-12: `POST /v1/floating-ips?tenant=&project=`.
+/// Drives the same allocate-saga the legacy v2 handler used.
+pub(crate) async fn create_floating_ip_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::ScopeSelectors>,
+    body: TypedBody<NewFloatingIp>,
+) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
+    let scope = query.into_inner();
+    if scope.silo.is_some() {
+        return Err(HttpError::for_client_error(
+            Some("ScopeNotAccepted".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "the `silo` selector is not accepted on the customer surface; \
+             /v1/floating-ips always allocates inside the principal's silo"
+                .to_string(),
+        ));
+    }
+    let tenant_id = scope.tenant.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/floating-ips requires `?tenant=<uuid>&project=<uuid>`".to_string(),
+        )
+    })?;
+    let project_id = scope.project.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/floating-ips requires `?tenant=<uuid>&project=<uuid>`".to_string(),
+        )
+    })?;
+
+    let ctx = rqctx.context();
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FloatingIpCreate,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+    let req = body.into_inner();
+
+    let saga_params = crate::sagas::floating_ip::FloatingIpAllocateParams {
+        tenant_id,
+        project_id,
+        request: req,
+    };
+    let saga_dag = crate::sagas::floating_ip::build_allocate_dag(&saga_params).map_err(|e| {
+        HttpError::for_internal_error(format!("floating-ip-allocate saga dag build: {e}"))
+    })?;
+    let saga_refs = crate::sagas::floating_ip::build_allocate_references(&saga_params);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let steno_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::floating_ip::SAGA_NAME_ALLOCATE,
+            crate::sagas::floating_ip::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await
+        .map_err(|e| {
+            HttpError::for_internal_error(format!("floating-ip-allocate saga executor: {e}"))
+        })?;
+    match steno_result.kind {
+        Ok(ok) => {
+            let fip: FloatingIp = ok.lookup_node_output("fip").map_err(|e| {
+                HttpError::for_internal_error(format!(
+                    "floating-ip-allocate saga finished but output missing: {e}"
+                ))
+            })?;
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FloatingIpCreate,
+                    request_id,
+                    Some(format!("FloatingIp::\"{}\"", fip.id)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("FloatingIp::\"{}\"", fip.id)),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "name": fip.name,
+                        "address": fip.address.to_string(),
+                        "operation_id": saga_id.0.to_string(),
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(fip))
+        }
+        Err(err) => {
+            map_fip_saga_err(
+                &ctx.audit,
+                &principal,
+                Action::FloatingIpCreate,
+                request_id,
+                None,
+                saga_id,
+                &err,
+            )
+            .await
+        }
+    }
+}
+
+/// RFD 00007 AP-3a-12: `DELETE /v1/floating-ips/{floating_ip_id}`.
+/// Tenant resolved from the row; store enforces the detach-first gate.
+pub(crate) async fn delete_floating_ip_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::FloatingIpPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::FloatingIpPath { floating_ip_id } = path.into_inner();
+    let fip = ctx
+        .store
+        .get_floating_ip(floating_ip_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = fip.tenant_id;
+    let project_id = fip.project_id;
+
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::FloatingIpDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    match ctx.store.delete_floating_ip(floating_ip_id).await {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FloatingIpDelete,
+                    request_id,
+                    Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::FloatingIpDelete,
+                    request_id,
+                    Some(format!("FloatingIp::\"{floating_ip_id}\"")),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
 /// RFD 00007 AP-2i: `POST /v1/floating-ips/{floating_ip_id}/attach`.
 /// Body is the same `AttachFloatingIpRequest` as v2.
 pub(crate) async fn attach_floating_ip_v1(
@@ -1963,70 +2057,14 @@ pub(crate) async fn get_project_floating_ip(
     Ok(HttpResponseOk(fip))
 }
 
+/// RFD 00007 AP-3e: moved to `DELETE /v1/floating-ips/{id}`.
 pub(crate) async fn delete_project_floating_ip(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectFloatingIpPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectFloatingIpPath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectFloatingIpPath {
-        tenant_id,
-        project_id,
-        floating_ip_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::FloatingIpDelete,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-
-    // Defence-in-depth: confirm the FloatingIp lives under
-    // path's silo+project before invoking delete.
-    let fip = ctx
-        .store
-        .get_floating_ip(floating_ip_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if fip.tenant_id != tenant_id || fip.project_id != project_id {
-        return Err(not_found());
-    }
-    match ctx.store.delete_floating_ip(floating_ip_id).await {
-        Ok(()) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FloatingIpDelete,
-                    request_id,
-                    Some(format!("FloatingIp::\"{floating_ip_id}\"")),
-                    AuditOutcome::Success {
-                        resource: Some(format!("FloatingIp::\"{floating_ip_id}\"")),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                    }),
-                )
-                .await;
-            Ok(HttpResponseDeleted())
-        }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::FloatingIpDelete,
-                    request_id,
-                    Some(format!("FloatingIp::\"{floating_ip_id}\"")),
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
-        }
-    }
+    Err(crate::error::gone(
+        "DELETE /v1/floating-ips/{floating_ip_id}",
+    ))
 }
 
 pub(crate) async fn attach_project_floating_ip(

@@ -100,12 +100,20 @@ pub struct VpcDhcpPoolPath {
     pub vpc_id: Uuid,
 }
 
-/// Path parameters for `/v1/vpc-dhcp-leases/{mac}` and
-/// `/v1/vpc-dhcp-reservations/{mac}`. MAC is the natural key for
-/// both types; the bare-MAC lookup resolves cross-VPC via the AP-1c
-/// `dhcp_lease/by_mac/` index.
+/// Path parameters for `/v1/vpc-dhcp-leases/{mac}`. MAC is the
+/// natural key for leases; the bare-MAC lookup resolves cross-VPC
+/// via the AP-1c `dhcp_lease/by_mac/` index.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DhcpMacPath {
+    pub mac: String,
+}
+
+/// Path parameters for `/v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
+/// Reservations are stored per-VPC; the composite key avoids a
+/// fleet-wide MAC scan on delete.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DhcpReservationPath {
+    pub vpc_id: Uuid,
     pub mac: String,
 }
 

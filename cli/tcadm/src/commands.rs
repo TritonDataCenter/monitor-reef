@@ -5453,6 +5453,67 @@ pub async fn floating_ip_show_v1(
     Ok(())
 }
 
+/// `tcadm floating-ip create --tenant= --project= --name= [--family=ipv4|ipv6]`.
+/// AP-3c-13: flat-verb FIP allocate.
+#[allow(clippy::too_many_arguments)]
+pub async fn floating_ip_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant: Uuid,
+    project: Uuid,
+    name: String,
+    description: String,
+    family: String,
+    json_output: bool,
+) -> Result<()> {
+    let family = match family.as_str() {
+        "ipv4" => tritond_client::types::AddressFamily::Ipv4,
+        "ipv6" => tritond_client::types::AddressFamily::Ipv6,
+        other => anyhow::bail!("unknown family {other}; expected ipv4 or ipv6"),
+    };
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let f = client
+        .create_floating_ip_v1()
+        .tenant(tenant)
+        .project(project)
+        .body(tritond_client::types::NewFloatingIp {
+            name,
+            description: Some(description),
+            family,
+        })
+        .send()
+        .await
+        .context("/v1/floating-ips create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&f)?);
+        return Ok(());
+    }
+    println!("FloatingIp {}", f.id);
+    println!("  name:    {}", f.name);
+    println!("  address: {}", f.address);
+    Ok(())
+}
+
+/// `tcadm floating-ip delete <floating_ip_id>`.
+pub async fn floating_ip_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    floating_ip_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_floating_ip_v1()
+        .floating_ip_id(floating_ip_id)
+        .send()
+        .await
+        .context("/v1/floating-ips/{id} delete")?;
+    println!("Floating IP {floating_ip_id} deleted.");
+    Ok(())
+}
+
 pub async fn floating_ip_attach_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,

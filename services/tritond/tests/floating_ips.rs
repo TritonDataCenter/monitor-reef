@@ -280,9 +280,9 @@ async fn allocate_v4_from_test_net_3_pool() {
     let fx = build_fixture(&root).await;
 
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
@@ -310,9 +310,9 @@ async fn allocate_v6_from_documentation_pool() {
     let fx = build_fixture(&root).await;
 
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(NewFloatingIp {
             name: "v6".to_string(),
             description: None,
@@ -372,9 +372,9 @@ async fn attach_replaces_existing_attachment_atomically() {
         .items[0]
         .clone();
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
@@ -446,9 +446,9 @@ async fn delete_while_attached_returns_409() {
         .items[0]
         .clone();
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
@@ -468,9 +468,7 @@ async fn delete_while_attached_returns_409() {
         .unwrap();
 
     let err = root
-        .delete_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .delete_floating_ip_v1()
         .floating_ip_id(fip.id)
         .send()
         .await
@@ -485,9 +483,7 @@ async fn delete_while_attached_returns_409() {
         .send()
         .await
         .unwrap();
-    root.delete_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+    root.delete_floating_ip_v1()
         .floating_ip_id(fip.id)
         .send()
         .await
@@ -520,9 +516,9 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         .items[0]
         .clone();
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
@@ -619,9 +615,9 @@ async fn cross_project_attach_target_returns_404() {
         .clone();
     // FloatingIp under project A.
     let fip_a = root
-        .create_project_floating_ip()
-        .tenant_id(fx_a.tenant_id)
-        .project_id(fx_a.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx_a.tenant_id)
+        .project(fx_a.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,
@@ -655,9 +651,9 @@ async fn detach_is_idempotent() {
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     let fip = root
-        .create_project_floating_ip()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_floating_ip_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(NewFloatingIp {
             name: "public".to_string(),
             description: None,

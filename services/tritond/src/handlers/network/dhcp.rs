@@ -231,45 +231,21 @@ pub(crate) async fn list_dhcp_reservations_v1(
     Ok(HttpResponseOk(ResultsPage::single(reservations)))
 }
 
-pub(crate) async fn get_vpc_dhcp_pool(
+/// RFD 00007 AP-3a-13: `PUT /v1/vpc-dhcp-pools/{vpc_id}`.
+pub(crate) async fn put_vpc_dhcp_pool_v1(
     rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-) -> Result<HttpResponseOk<Option<DhcpPool>>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::DhcpPoolGet,
-        tenant_id,
-    )
-    .await?;
-    check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
-    let pool = ctx
-        .store
-        .get_dhcp_pool(vpc_id)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(pool))
-}
-
-pub(crate) async fn set_vpc_dhcp_pool(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
+    path: Path<tritond_api::v1::VpcDhcpPoolPath>,
     body: TypedBody<NewDhcpPool>,
 ) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
     let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
+    let tritond_api::v1::VpcDhcpPoolPath { vpc_id } = path.into_inner();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
@@ -280,7 +256,6 @@ pub(crate) async fn set_vpc_dhcp_pool(
     )
     .await?;
     let request_id = parse_request_id(&rqctx);
-    check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
     match ctx.store.set_dhcp_pool(vpc_id, body.into_inner()).await {
         Ok(pool) => {
             ctx.audit
@@ -296,7 +271,6 @@ pub(crate) async fn set_vpc_dhcp_pool(
                         "tenant_id": tenant_id,
                         "project_id": project_id,
                         "vpc_id": vpc_id,
-                        "lease_seconds_default": pool.lease_seconds_default,
                     }),
                 )
                 .await;
@@ -318,16 +292,19 @@ pub(crate) async fn set_vpc_dhcp_pool(
     }
 }
 
-pub(crate) async fn clear_vpc_dhcp_pool(
+/// RFD 00007 AP-3a-13: `DELETE /v1/vpc-dhcp-pools/{vpc_id}`.
+pub(crate) async fn clear_vpc_dhcp_pool_v1(
     rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
+    path: Path<tritond_api::v1::VpcDhcpPoolPath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
     let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
+    let tritond_api::v1::VpcDhcpPoolPath { vpc_id } = path.into_inner();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = vpc.tenant_id;
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
@@ -338,7 +315,6 @@ pub(crate) async fn clear_vpc_dhcp_pool(
     )
     .await?;
     let request_id = parse_request_id(&rqctx);
-    check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
     match ctx.store.clear_dhcp_pool(vpc_id).await {
         Ok(()) => {
             ctx.audit
@@ -371,6 +347,191 @@ pub(crate) async fn clear_vpc_dhcp_pool(
     }
 }
 
+/// RFD 00007 AP-3a-13: `POST /v1/vpc-dhcp-reservations?vpc=<uuid>`.
+pub(crate) async fn create_vpc_dhcp_reservation_v1(
+    rqctx: RequestContext<ApiContext>,
+    query: Query<tritond_api::v1::VpcDhcpQuery>,
+    body: TypedBody<NewDhcpReservation>,
+) -> Result<HttpResponseCreated<DhcpReservation>, HttpError> {
+    let q = query.into_inner();
+    let vpc_id = q.vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/vpc-dhcp-reservations requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
+
+    let ctx = rqctx.context();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
+
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpReservationCreate,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    match ctx
+        .store
+        .create_dhcp_reservation(vpc_id, body.into_inner())
+        .await
+    {
+        Ok(r) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::DhcpReservationCreate,
+                    request_id,
+                    Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, r.mac)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, r.mac)),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                        "mac": r.mac,
+                        "ipv4": r.ipv4.to_string(),
+                    }),
+                )
+                .await;
+            Ok(HttpResponseCreated(r))
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::DhcpReservationCreate,
+                    request_id,
+                    None,
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+/// RFD 00007 AP-3a-13: `DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
+pub(crate) async fn delete_vpc_dhcp_reservation_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::DhcpReservationPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::DhcpReservationPath { vpc_id, mac } = path.into_inner();
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
+
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpReservationDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    match ctx.store.delete_dhcp_reservation(vpc_id, &mac).await {
+        Ok(()) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::DhcpReservationDelete,
+                    request_id,
+                    Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
+                    AuditOutcome::Success {
+                        resource: Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "vpc_id": vpc_id,
+                        "mac": mac,
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::DhcpReservationDelete,
+                    request_id,
+                    Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
+                    store_error_to_audit_outcome(&e),
+                    serde_json::Value::Null,
+                )
+                .await;
+            Err(store_error_to_http(e))
+        }
+    }
+}
+
+pub(crate) async fn get_vpc_dhcp_pool(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcPath>,
+) -> Result<HttpResponseOk<Option<DhcpPool>>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+    } = path.into_inner();
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::DhcpPoolGet,
+        tenant_id,
+    )
+    .await?;
+    check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
+    let pool = ctx
+        .store
+        .get_dhcp_pool(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(pool))
+}
+
+/// RFD 00007 AP-3e: moved to `PUT /v1/vpc-dhcp-pools/{vpc_id}`.
+pub(crate) async fn set_vpc_dhcp_pool(
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcPath>,
+    _body: TypedBody<NewDhcpPool>,
+) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
+    Err(crate::error::gone("PUT /v1/vpc-dhcp-pools/{vpc_id}"))
+}
+
+/// RFD 00007 AP-3e: moved to `DELETE /v1/vpc-dhcp-pools/{vpc_id}`.
+pub(crate) async fn clear_vpc_dhcp_pool(
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    Err(crate::error::gone("DELETE /v1/vpc-dhcp-pools/{vpc_id}"))
+}
+
 pub(crate) async fn list_vpc_dhcp_reservations(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,
@@ -399,63 +560,15 @@ pub(crate) async fn list_vpc_dhcp_reservations(
     Ok(HttpResponseOk(rs))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/vpc-dhcp-reservations?vpc=<uuid>`.
 pub(crate) async fn create_vpc_dhcp_reservation(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-    body: TypedBody<NewDhcpReservation>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcPath>,
+    _body: TypedBody<NewDhcpReservation>,
 ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::DhcpReservationCreate,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-    check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
-    let req = body.into_inner();
-    match ctx.store.create_dhcp_reservation(vpc_id, req).await {
-        Ok(r) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::DhcpReservationCreate,
-                    request_id,
-                    Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, r.mac)),
-                    AuditOutcome::Success {
-                        resource: Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, r.mac)),
-                    },
-                    serde_json::json!({
-                        "vpc_id": vpc_id,
-                        "mac": r.mac,
-                        "ipv4": r.ipv4.to_string(),
-                    }),
-                )
-                .await;
-            Ok(HttpResponseCreated(r))
-        }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::DhcpReservationCreate,
-                    request_id,
-                    None,
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
-        }
-    }
+    Err(crate::error::gone(
+        "POST /v1/vpc-dhcp-reservations?vpc=<uuid>",
+    ))
 }
 
 pub(crate) async fn get_vpc_dhcp_reservation(
@@ -487,58 +600,14 @@ pub(crate) async fn get_vpc_dhcp_reservation(
     Ok(HttpResponseOk(r))
 }
 
+/// RFD 00007 AP-3e: moved to `DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
 pub(crate) async fn delete_vpc_dhcp_reservation(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcDhcpMacPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcDhcpMacPath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcDhcpMacPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-        mac,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::DhcpReservationDelete,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-    check_vpc_parentage(ctx.store.as_ref(), vpc_id, tenant_id, project_id).await?;
-    match ctx.store.delete_dhcp_reservation(vpc_id, &mac).await {
-        Ok(()) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::DhcpReservationDelete,
-                    request_id,
-                    Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
-                    AuditOutcome::Success {
-                        resource: Some(format!("DhcpReservation::\"{}/{}\"", vpc_id, mac)),
-                    },
-                    serde_json::json!({"vpc_id": vpc_id, "mac": mac}),
-                )
-                .await;
-            Ok(HttpResponseDeleted())
-        }
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::DhcpReservationDelete,
-                    request_id,
-                    None,
-                    store_error_to_audit_outcome(&e),
-                    serde_json::Value::Null,
-                )
-                .await;
-            Err(store_error_to_http(e))
-        }
-    }
+    Err(crate::error::gone(
+        "DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}",
+    ))
 }
 
 pub(crate) async fn list_vpc_dhcp_leases(

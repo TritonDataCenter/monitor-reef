@@ -465,6 +465,96 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::routes::get_route_v1(rqctx, path).await
     }
 
+    async fn create_firewall_rule_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::FirewallRuleQuery>,
+        body: TypedBody<NewFirewallRule>,
+    ) -> Result<HttpResponseCreated<FirewallRule>, HttpError> {
+        crate::handlers::network::firewall::create_firewall_rule_v1(rqctx, query, body).await
+    }
+
+    async fn delete_firewall_rule_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::FirewallRulePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::firewall::delete_firewall_rule_v1(rqctx, path).await
+    }
+
+    async fn create_nat_gateway_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::NatGatewayQuery>,
+        body: TypedBody<NewNatGateway>,
+    ) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
+        crate::handlers::network::nat::create_nat_gateway_v1(rqctx, query, body).await
+    }
+
+    async fn delete_nat_gateway_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::NatGatewayPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::nat::delete_nat_gateway_v1(rqctx, path).await
+    }
+
+    async fn create_route_table_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::RouteTableQuery>,
+        body: TypedBody<NewRouteTable>,
+    ) -> Result<HttpResponseCreated<RouteTable>, HttpError> {
+        crate::handlers::network::routes::create_route_table_v1(rqctx, query, body).await
+    }
+
+    async fn delete_route_table_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::RouteTablePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::routes::delete_route_table_v1(rqctx, path).await
+    }
+
+    async fn create_route_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::RouteQuery>,
+        body: TypedBody<NewRoute>,
+    ) -> Result<HttpResponseCreated<Route>, HttpError> {
+        crate::handlers::network::routes::create_route_v1(rqctx, query, body).await
+    }
+
+    async fn delete_route_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::RoutePath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::routes::delete_route_v1(rqctx, path).await
+    }
+
+    async fn put_vpc_dhcp_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::VpcDhcpPoolPath>,
+        body: TypedBody<NewDhcpPool>,
+    ) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
+        crate::handlers::network::dhcp::put_vpc_dhcp_pool_v1(rqctx, path, body).await
+    }
+
+    async fn clear_vpc_dhcp_pool_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::VpcDhcpPoolPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::dhcp::clear_vpc_dhcp_pool_v1(rqctx, path).await
+    }
+
+    async fn create_vpc_dhcp_reservation_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::VpcDhcpQuery>,
+        body: TypedBody<NewDhcpReservation>,
+    ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError> {
+        crate::handlers::network::dhcp::create_vpc_dhcp_reservation_v1(rqctx, query, body).await
+    }
+
+    async fn delete_vpc_dhcp_reservation_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::DhcpReservationPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::dhcp::delete_vpc_dhcp_reservation_v1(rqctx, path).await
+    }
+
     async fn list_floating_ips_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::FloatingIpQuery>,
@@ -477,6 +567,21 @@ impl TritondApi for TritondServiceImpl {
         path: Path<tritond_api::v1::FloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
         crate::handlers::instances::get_floating_ip_v1(rqctx, path).await
+    }
+
+    async fn create_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::ScopeSelectors>,
+        body: TypedBody<NewFloatingIp>,
+    ) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
+        crate::handlers::instances::create_floating_ip_v1(rqctx, query, body).await
+    }
+
+    async fn delete_floating_ip_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::FloatingIpPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::instances::delete_floating_ip_v1(rqctx, path).await
     }
 
     async fn attach_floating_ip_v1(
