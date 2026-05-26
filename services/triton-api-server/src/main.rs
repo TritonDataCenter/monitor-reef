@@ -908,7 +908,7 @@ impl TritonApi for TritonApiImpl {
             .map_err(|e| {
                 HttpError::for_unavail(
                     Some("RelayError".to_string()),
-                    format!("could not connect to cluster via relay: {e}"),
+                    format!("could not connect to cluster via relay: {e:#}"),
                 )
             })?;
 
@@ -962,7 +962,7 @@ impl TritonApi for TritonApiImpl {
             .map_err(|e| {
                 HttpError::for_unavail(
                     Some("RelayError".to_string()),
-                    format!("could not connect to cluster via relay: {e}"),
+                    format!("could not connect to cluster via relay: {e:#}"),
                 )
             })?;
 
