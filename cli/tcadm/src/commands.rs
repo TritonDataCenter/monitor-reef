@@ -4851,6 +4851,117 @@ pub async fn instance_show_v1(
     Ok(())
 }
 
+/// `tcadm instance create --tenant=&--project=&--name=&--image-id=...`.
+/// AP-3c-9: full flat-verb instance create, replacing the legacy
+/// `tcadm tenant project instance create` nested form.
+#[allow(clippy::too_many_arguments)]
+pub async fn instance_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    tenant: Uuid,
+    project: Uuid,
+    name: String,
+    description: String,
+    image_id: Uuid,
+    primary_subnet_id: Uuid,
+    ssh_key_ids: Vec<Uuid>,
+    cpu: u32,
+    memory_bytes: u64,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let inst = client
+        .create_instance_v1()
+        .tenant(tenant)
+        .project(project)
+        .body(tritond_client::types::NewInstance {
+            name,
+            description: Some(description),
+            image_id,
+            primary_subnet_id,
+            ssh_key_ids,
+            cpu,
+            memory_bytes,
+            // Multi-NIC is not yet surfaced on the CLI; build the
+            // JSON body directly via curl if you need extra NICs.
+            extra_nics: Vec::new(),
+            mac: None,
+        })
+        .send()
+        .await
+        .context("/v1/instances create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&inst)?);
+        return Ok(());
+    }
+    print_instance(&inst);
+    Ok(())
+}
+
+/// `tcadm instance delete <instance_id> [--force]`.
+pub async fn instance_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    instance_id: Uuid,
+    force: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_instance_v1()
+        .instance_id(instance_id)
+        .force(force)
+        .send()
+        .await
+        .context("/v1/instances/{id} delete")?;
+    println!("Instance {instance_id} deleted.");
+    Ok(())
+}
+
+/// `tcadm instance {start,stop,restart} <instance_id>`.
+pub async fn instance_lifecycle_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    instance_id: Uuid,
+    action: &str,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let inst = match action {
+        "start" => client
+            .start_instance_v1()
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("/v1/instances/{id}/start")?
+            .into_inner(),
+        "stop" => client
+            .stop_instance_v1()
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("/v1/instances/{id}/stop")?
+            .into_inner(),
+        "restart" => client
+            .restart_instance_v1()
+            .instance_id(instance_id)
+            .send()
+            .await
+            .context("/v1/instances/{id}/restart")?
+            .into_inner(),
+        other => anyhow::bail!("unknown lifecycle action: {other}"),
+    };
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&inst)?);
+        return Ok(());
+    }
+    print_instance(&inst);
+    Ok(())
+}
+
 /// `tcadm system instances [--image=&cn=...]` -> fleet-wide search.
 pub async fn system_instances_v1(
     endpoint_override: Option<String>,

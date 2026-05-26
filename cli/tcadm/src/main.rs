@@ -1781,6 +1781,60 @@ enum InstanceCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Create a new instance under a project. Posts to
+    /// `/v1/instances?tenant=&project=` (AP-2d).
+    #[command(name = "create")]
+    Create {
+        #[arg(long)]
+        tenant: Uuid,
+        #[arg(long)]
+        project: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long)]
+        image_id: Uuid,
+        #[arg(long)]
+        primary_subnet_id: Uuid,
+        /// Repeatable: SSH keys to inject at first boot.
+        #[arg(long = "ssh-key-id")]
+        ssh_key_ids: Vec<Uuid>,
+        #[arg(long)]
+        cpu: u32,
+        #[arg(long)]
+        memory_bytes: u64,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete an instance (must be Stopped or Failed).
+    /// `DELETE /v1/instances/{id}`.
+    Delete {
+        instance_id: Uuid,
+        /// Force-delete a non-terminal instance (operator escape
+        /// hatch; the server enforces the same Stopped/Failed gate
+        /// without this flag).
+        #[arg(long)]
+        force: bool,
+    },
+    /// Start a Stopped instance. `POST /v1/instances/{id}/start`.
+    Start {
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Stop a Running instance. `POST /v1/instances/{id}/stop`.
+    Stop {
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Restart a Running instance. `POST /v1/instances/{id}/restart`.
+    Restart {
+        instance_id: Uuid,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2318,6 +2372,67 @@ async fn main() -> Result<()> {
             }
             InstanceCommand::Show { instance_id, json } => {
                 commands::instance_show_v1(cli.endpoint, cli.api_key, instance_id, json).await
+            }
+            InstanceCommand::Create {
+                tenant,
+                project,
+                name,
+                description,
+                image_id,
+                primary_subnet_id,
+                ssh_key_ids,
+                cpu,
+                memory_bytes,
+                json,
+            } => {
+                commands::instance_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    tenant,
+                    project,
+                    name,
+                    description,
+                    image_id,
+                    primary_subnet_id,
+                    ssh_key_ids,
+                    cpu,
+                    memory_bytes,
+                    json,
+                )
+                .await
+            }
+            InstanceCommand::Delete { instance_id, force } => {
+                commands::instance_delete_v1(cli.endpoint, cli.api_key, instance_id, force).await
+            }
+            InstanceCommand::Start { instance_id, json } => {
+                commands::instance_lifecycle_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    instance_id,
+                    "start",
+                    json,
+                )
+                .await
+            }
+            InstanceCommand::Stop { instance_id, json } => {
+                commands::instance_lifecycle_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    instance_id,
+                    "stop",
+                    json,
+                )
+                .await
+            }
+            InstanceCommand::Restart { instance_id, json } => {
+                commands::instance_lifecycle_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    instance_id,
+                    "restart",
+                    json,
+                )
+                .await
             }
         },
         Commands::System { command } => match command {
