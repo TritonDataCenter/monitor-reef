@@ -642,7 +642,8 @@ impl TritonApi for TritonApiImpl {
     ) -> Result<HttpResponseDeleted, HttpError> {
         let caller = resolve_caller(&rqctx).await?;
         let id = path.into_inner().cluster;
-        let store = &rqctx.context().cluster_store;
+        let ctx = rqctx.context();
+        let store = &ctx.cluster_store;
         let record = store
             .get(id)
             .await
@@ -651,11 +652,54 @@ impl TritonApi for TritonApiImpl {
         if record.account_id != caller.account_id {
             return Err(cluster_not_found(id));
         }
+
+        // Delete all node VMs from Triton before removing the record so they
+        // are not left orphaned. Requires cloudapi to be configured; if it is
+        // not, we still allow the delete when no nodes have been provisioned.
+        if !record.nodes.is_empty() {
+            let cloudapi = ctx.cloudapi.clone().ok_or_else(|| {
+                HttpError::for_unavail(
+                    Some("NoCloudAPI".to_string()),
+                    "cloudapi not configured; cannot delete cluster VMs".to_string(),
+                )
+            })?;
+            let provision_account = record.account_id.to_string();
+            for node in record.nodes.values() {
+                match cloudapi
+                    .inner()
+                    .delete_machine()
+                    .account(&provision_account)
+                    .machine(node.instance_id)
+                    .send()
+                    .await
+                {
+                    Ok(_) => {
+                        tracing::info!(
+                            cluster = %id,
+                            instance = %node.instance_id,
+                            "deleted cluster VM"
+                        );
+                    }
+                    Err(e) if e.status().map(|s| s.as_u16()) == Some(404) => {
+                        tracing::info!(
+                            cluster = %id,
+                            instance = %node.instance_id,
+                            "cluster VM already gone, skipping"
+                        );
+                    }
+                    Err(e) => {
+                        return Err(HttpError::for_internal_error(format!(
+                            "delete VM {}: {e:#}",
+                            node.instance_id
+                        )));
+                    }
+                }
+            }
+        }
+
         let removed = store.delete(id).await.map_err(store_error_to_http)?;
         if !removed {
             // Race: someone else deleted between get and delete.
-            // Treat as already gone — the client's view (the cluster
-            // is gone) is correct either way.
             return Err(cluster_not_found(id));
         }
         Ok(HttpResponseDeleted())
