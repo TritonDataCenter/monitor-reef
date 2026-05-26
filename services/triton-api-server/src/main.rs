@@ -24,10 +24,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use triton_api::{
     AddNodesRequest, AddWorkersRequest, BootstrapClusterRequest, ChallengeMethod, Cluster,
-    ClusterList, ClusterPath, ClusterState, CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse,
-    LoginChallenge, LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse,
-    NodeBootstrapRole, NodeBootstrapSpec, PingResponse, RefreshRequest, RefreshResponse,
-    SessionResponse, TritonApi, UpgradeClusterRequest, UserInfo,
+    ClusterList, ClusterPath, ClusterState, CreateClusterRequest, InstallLbRequest, Jwk, JwkSet,
+    KubeconfigResponse, LbStatus, LoginChallenge, LoginOutcome, LoginRequest, LoginResponse,
+    LoginVerifyRequest, LogoutResponse, NodeBootstrapRole, NodeBootstrapSpec, PingResponse,
+    RefreshRequest, RefreshResponse, SessionResponse, TritonApi, UpgradeClusterRequest, UserInfo,
 };
 use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
@@ -47,6 +47,8 @@ mod talos_config;
 
 mod relay;
 use relay::RelayState;
+mod kube_relay;
+mod lb;
 
 /// Default request body size limit: 10 MiB.
 const DEFAULT_MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
@@ -209,6 +211,20 @@ async fn load_config() -> Result<ApiServerConfig> {
     Ok(config)
 }
 
+/// Operator credentials material needed by the lb install handler to populate
+/// the `triton-credentials` Secret inside the cluster.
+struct OperatorCreds {
+    /// CloudAPI base URL (e.g. `https://cloudapi.example.com`).
+    cloudapi_url: String,
+    /// Key fingerprint in MD5 colon-hex format (e.g. `aa:bb:cc:...`).
+    /// Used as `TRITON_KEY_ID` in the controller Secret.
+    key_id: String,
+    /// Raw PEM content of the operator private key.
+    key_pem: String,
+    /// Whether to skip TLS verification when connecting to CloudAPI.
+    insecure: bool,
+}
+
 struct ApiContext {
     jwt: Option<Arc<JwtService>>,
     ldap: Option<Arc<LdapService>>,
@@ -227,6 +243,9 @@ struct ApiContext {
     /// no `[cloudapi]` section is in the config; bootstrap endpoint returns
     /// 503 in that case.
     cloudapi: Option<Arc<TypedClient>>,
+    /// Operator credential material for lb controller installation.
+    /// Requires `[cloudapi]` section with `key_fingerprint` set.
+    operator_creds: Option<Arc<OperatorCreds>>,
     /// Dev bypass: unauthenticated requests are treated as this account UUID.
     /// Never set in production.
     dev_account_uuid: Option<Uuid>,
@@ -569,6 +588,7 @@ impl TritonApi for TritonApiImpl {
             talos_key_pem: None,
             talos_version: None,
             created_at: chrono::Utc::now(),
+            lb_installed: false,
         };
         rqctx
             .context()
@@ -809,6 +829,175 @@ impl TritonApi for TritonApiImpl {
         });
 
         Ok(HttpResponseAccepted(cluster_view))
+    }
+
+    async fn k8s_cluster_lb_install(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<InstallLbRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let ctx = rqctx.context();
+        let id = path.into_inner().cluster;
+        let store = Arc::clone(&ctx.cluster_store);
+
+        let record = store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        if record.state != ClusterState::Running {
+            return Err(HttpError::for_client_error(
+                Some("InvalidState".to_string()),
+                ClientErrorStatusCode::CONFLICT,
+                format!("cluster {id} must be in `running` state to install lb"),
+            ));
+        }
+        let cloudapi = ctx.cloudapi.clone().ok_or_else(|| {
+            HttpError::for_unavail(
+                Some("ServiceUnavailable".to_string()),
+                "CloudAPI operator client is not configured on this server".to_string(),
+            )
+        })?;
+        let operator_creds = ctx.operator_creds.clone().ok_or_else(|| {
+            HttpError::for_unavail(
+                Some("ServiceUnavailable".to_string()),
+                "cloudapi.key_fingerprint must be set in server config to use lb install"
+                    .to_string(),
+            )
+        })?;
+
+        let req = body.into_inner();
+        let relay = Arc::clone(&ctx.relay);
+        let cluster_view = Cluster::from(&record);
+        tokio::spawn(async move {
+            if let Err(e) =
+                run_lb_install(store, relay, cloudapi, operator_creds, record, req).await
+            {
+                tracing::error!(cluster = %id, error = ?e, "lb-install failed");
+            }
+        });
+
+        Ok(HttpResponseAccepted(cluster_view))
+    }
+
+    async fn k8s_cluster_lb_status(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<LbStatus>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let ctx = rqctx.context();
+        let id = path.into_inner().cluster;
+
+        let record = ctx
+            .cluster_store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+
+        let relay = Arc::clone(&ctx.relay);
+        let k8s = kube_relay::kube_client_for_cluster(&relay, &record)
+            .await
+            .map_err(|e| {
+                HttpError::for_unavail(
+                    Some("RelayError".to_string()),
+                    format!("could not connect to cluster via relay: {e}"),
+                )
+            })?;
+
+        let status = match lb::get_lb_deployment(&k8s)
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("k8s query failed: {e}")))?
+        {
+            None => LbStatus {
+                installed: false,
+                ready: false,
+                replicas: None,
+                available_replicas: None,
+            },
+            Some(dep) => {
+                let replicas = dep.spec.as_ref().and_then(|s| s.replicas);
+                let available_replicas = dep.status.as_ref().and_then(|s| s.available_replicas);
+                let ready = available_replicas.unwrap_or(0) >= replicas.unwrap_or(1);
+                LbStatus {
+                    installed: true,
+                    ready,
+                    replicas,
+                    available_replicas,
+                }
+            }
+        };
+
+        Ok(HttpResponseOk(status))
+    }
+
+    async fn k8s_cluster_lb_remove(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let ctx = rqctx.context();
+        let id = path.into_inner().cluster;
+
+        let mut record = ctx
+            .cluster_store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+
+        let relay = Arc::clone(&ctx.relay);
+        let k8s = kube_relay::kube_client_for_cluster(&relay, &record)
+            .await
+            .map_err(|e| {
+                HttpError::for_unavail(
+                    Some("RelayError".to_string()),
+                    format!("could not connect to cluster via relay: {e}"),
+                )
+            })?;
+
+        lb::delete_namespaced::<lb::K8sDeployment>(&k8s, "triton-lb-controller", "kube-system")
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("delete Deployment: {e}")))?;
+        lb::delete_namespaced::<lb::K8sConfigMap>(
+            &k8s,
+            "triton-lb-controller-config",
+            "kube-system",
+        )
+        .await
+        .map_err(|e| HttpError::for_internal_error(format!("delete ConfigMap: {e}")))?;
+        lb::delete_namespaced::<lb::K8sSecret>(&k8s, "triton-credentials", "kube-system")
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("delete Secret: {e}")))?;
+        lb::delete_cluster_scoped::<lb::K8sClusterRoleBinding>(&k8s, "triton-lb-controller")
+            .await
+            .map_err(|e| {
+                HttpError::for_internal_error(format!("delete ClusterRoleBinding: {e}"))
+            })?;
+        lb::delete_cluster_scoped::<lb::K8sClusterRole>(&k8s, "triton-lb-controller")
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("delete ClusterRole: {e}")))?;
+        lb::delete_namespaced::<lb::K8sServiceAccount>(&k8s, "triton-lb-controller", "kube-system")
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("delete ServiceAccount: {e}")))?;
+
+        record.lb_installed = false;
+        ctx.cluster_store
+            .update(&record)
+            .await
+            .map_err(store_error_to_http)?;
+
+        Ok(HttpResponseDeleted())
     }
 
     async fn k8s_cluster_bootstrap(
@@ -1613,6 +1802,151 @@ async fn run_add_workers(
     Ok(())
 }
 
+const LB_RBAC_YAML: &str = include_str!("lb/rbac.yaml");
+const LB_DEPLOYMENT_YAML_TEMPLATE: &str = include_str!("lb/deployment.yaml");
+const LB_IMAGE_NAME: &str = "cloud-load-balancer";
+
+async fn run_lb_install(
+    store: Arc<dyn ClusterStore>,
+    relay: Arc<RelayState>,
+    cloudapi: Arc<TypedClient>,
+    operator_creds: Arc<OperatorCreds>,
+    mut record: ClusterRecord,
+    req: InstallLbRequest,
+) -> anyhow::Result<()> {
+    let cluster_id = record.id;
+    let provision_account = record.account_id.to_string();
+
+    let fabric_network_id = record
+        .fabric_network_id
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no fabric_network_id"))?;
+
+    tracing::info!(cluster = %cluster_id, "lb-install: discovering CloudAPI configuration");
+
+    let public_network_id = lb::discover_public_network(&cloudapi, &provision_account).await?;
+    let external_cns_suffix = match req.external_cns_suffix {
+        Some(s) => s,
+        None => {
+            lb::discover_external_cns_suffix(&cloudapi, &provision_account, public_network_id)
+                .await?
+        }
+    };
+    let cns_suffix =
+        lb::discover_internal_cns_root(&cloudapi, &provision_account, fabric_network_id).await?;
+    let datacenter = lb::discover_datacenter(&cloudapi, &provision_account).await?;
+
+    // Derive fabric network name from record for worker_cns_name construction.
+    // CloudAPI fabric network name is needed; fall back to the UUID if unavailable.
+    let fabric_network_name = {
+        let net = cloudapi
+            .inner()
+            .get_network()
+            .account(&provision_account)
+            .network(fabric_network_id.to_string())
+            .send()
+            .await
+            .context("get fabric network name")?
+            .into_inner();
+        net.name
+    };
+
+    // Format: {fabric-name}.worker.svc.{account}.{datacenter}.{cns-root}
+    let worker_cns_name = format!(
+        "{}.worker.svc.{}.{}.{}",
+        fabric_network_name, provision_account, datacenter, cns_suffix
+    );
+
+    let lb_image_id = match req.image.as_deref() {
+        Some(img) => lb::resolve_image_uuid(&cloudapi, &provision_account, img).await?,
+        None => lb::find_newest_image_by_name(&cloudapi, &provision_account, LB_IMAGE_NAME).await?,
+    };
+    let lb_package_id =
+        lb::resolve_package_uuid(&cloudapi, &provision_account, &req.package).await?;
+
+    tracing::info!(
+        cluster = %cluster_id,
+        public_network = %public_network_id,
+        external_cns_suffix = %external_cns_suffix,
+        cns_suffix = %cns_suffix,
+        datacenter = %datacenter,
+        worker_cns_name = %worker_cns_name,
+        lb_image = %lb_image_id,
+        lb_package = %lb_package_id,
+        "lb-install: discovery complete"
+    );
+
+    // Build ConfigMap data
+    let mut configmap_data = std::collections::BTreeMap::new();
+    configmap_data.insert(
+        "triton-url".to_string(),
+        operator_creds.cloudapi_url.clone(),
+    );
+    configmap_data.insert("triton-account".to_string(), provision_account.clone());
+    configmap_data.insert(
+        "triton-insecure".to_string(),
+        operator_creds.insecure.to_string(),
+    );
+    configmap_data.insert("datacenter".to_string(), datacenter);
+    configmap_data.insert("cns-suffix".to_string(), cns_suffix);
+    configmap_data.insert("external-cns-suffix".to_string(), external_cns_suffix);
+    configmap_data.insert("default-package".to_string(), lb_package_id.to_string());
+    configmap_data.insert("default-image".to_string(), lb_image_id.to_string());
+    configmap_data.insert("public-network".to_string(), public_network_id.to_string());
+    configmap_data.insert("fabric-network".to_string(), fabric_network_id.to_string());
+    configmap_data.insert("worker-cns-name".to_string(), worker_cns_name);
+    configmap_data.insert("cluster-name".to_string(), record.name.clone());
+    configmap_data.insert("cluster-uuid".to_string(), cluster_id.to_string());
+    configmap_data.insert("requeue-after-seconds".to_string(), "30".to_string());
+
+    // Secret data: operator credentials for the controller to use at runtime.
+    let mut secret_data = std::collections::BTreeMap::new();
+    secret_data.insert("key-id".to_string(), operator_creds.key_id.clone());
+    secret_data.insert("private-key".to_string(), operator_creds.key_pem.clone());
+
+    tracing::info!(cluster = %cluster_id, "lb-install: applying k8s resources via relay");
+
+    let k8s = kube_relay::kube_client_for_cluster(&relay, &record)
+        .await
+        .context("connect kube client via relay")?;
+
+    lb::apply_yaml_manifest(&k8s, LB_RBAC_YAML)
+        .await
+        .context("apply RBAC manifests")?;
+
+    lb::upsert_secret(&k8s, "triton-credentials", "kube-system", secret_data)
+        .await
+        .context("create/update triton-credentials Secret")?;
+
+    lb::upsert_configmap(
+        &k8s,
+        "triton-lb-controller-config",
+        "kube-system",
+        configmap_data,
+    )
+    .await
+    .context("create/update triton-lb-controller-config ConfigMap")?;
+
+    let deployment_yaml =
+        LB_DEPLOYMENT_YAML_TEMPLATE.replace("{{CONTROLLER_IMAGE}}", &req.controller_image);
+    lb::apply_yaml_manifest(&k8s, &deployment_yaml)
+        .await
+        .context("apply controller Deployment")?;
+
+    tracing::info!(cluster = %cluster_id, "lb-install: waiting for Deployment rollout (180s)");
+    lb::wait_for_deployment_ready(&k8s, std::time::Duration::from_secs(180))
+        .await
+        .context("wait for lb controller Deployment")?;
+
+    record.lb_installed = true;
+    store
+        .update(&record)
+        .await
+        .with_context(|| format!("persist lb_installed for cluster {cluster_id}"))?;
+
+    tracing::info!(cluster = %cluster_id, "lb-install: complete");
+    Ok(())
+}
+
 /// Authenticated caller identity for protected `/v1/k8s/*` endpoints.
 struct CallerIdentity {
     /// UUID of the principal owning resources for this request. For
@@ -2152,6 +2486,35 @@ async fn build_cloudapi_client(
     Ok(Some(Arc::new(client)))
 }
 
+/// Load operator credential material for lb install.
+///
+/// Returns `None` when no cloudapi config is present or when
+/// `key_fingerprint` is not set (lb install will return 503 in that case).
+async fn build_operator_creds(
+    cfg: Option<&CloudApiConfigFile>,
+) -> Result<Option<Arc<OperatorCreds>>> {
+    let Some(cfg) = cfg else {
+        return Ok(None);
+    };
+    let Some(ref fp) = cfg.key_fingerprint else {
+        return Ok(None);
+    };
+    let key_pem = tokio::fs::read_to_string(&cfg.key_file)
+        .await
+        .with_context(|| {
+            format!(
+                "read operator key file {} for lb credentials",
+                cfg.key_file.display()
+            )
+        })?;
+    Ok(Some(Arc::new(OperatorCreds {
+        cloudapi_url: cfg.url.to_string(),
+        key_id: fp.clone(),
+        key_pem,
+        insecure: cfg.insecure,
+    })))
+}
+
 async fn build_mahi_service(cfg: &MahiConfigFile) -> Result<MahiService> {
     // Use triton-tls's client builder so the service survives on zones
     // whose native CA store is empty (reqwest's default builder panics
@@ -2265,6 +2628,13 @@ async fn main() -> Result<()> {
         warn!("no [cloudapi] section in config; bootstrap endpoint will return 503");
     }
 
+    let operator_creds = build_operator_creds(config.cloudapi.as_ref()).await?;
+    if operator_creds.is_none() {
+        if config.cloudapi.is_some() {
+            warn!("cloudapi.key_fingerprint not set; lb install endpoint will return 503");
+        }
+    }
+
     if config.dev_account_uuid.is_some() {
         warn!(
             "dev_account_uuid is set; unauthenticated requests will bypass auth — do not use in production"
@@ -2281,6 +2651,7 @@ async fn main() -> Result<()> {
         cluster_store,
         relay: Arc::new(relay::RelayState::new()),
         cloudapi,
+        operator_creds,
         dev_account_uuid: config.dev_account_uuid,
         shutdown: shutdown.clone(),
     };

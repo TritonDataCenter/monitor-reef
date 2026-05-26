@@ -1275,6 +1275,13 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"lb_installed\": {"]
+    #[doc = "      \"description\": \"Whether the Triton LB controller is installed in this cluster. `None` on older records that pre-date this field.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Customer-supplied display name.\","]
     #[doc = "      \"type\": \"string\""]
@@ -1328,6 +1335,9 @@ pub mod types {
         #[doc = "Target Kubernetes version (e.g. `1.30.3`). `None` until bootstrap begins selecting images."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub kubernetes_version: ::std::option::Option<::std::string::String>,
+        #[doc = "Whether the Triton LB controller is installed in this cluster. `None` on older records that pre-date this field."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub lb_installed: ::std::option::Option<bool>,
         #[doc = "Customer-supplied display name."]
         pub name: ::std::string::String,
         #[doc = "Lifecycle state of the cluster record."]
@@ -4528,6 +4538,78 @@ pub mod types {
         }
     }
 
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/lb`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/lb`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"controller_image\": {"]
+    #[doc = "      \"description\": \"Controller container image.\","]
+    #[doc = "      \"default\": \"travispaul/triton-lb-controller:latest\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"external_cns_suffix\": {"]
+    #[doc = "      \"description\": \"Override external CNS suffix (auto-discovered from public network if absent).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"image\": {"]
+    #[doc = "      \"description\": \"Image name or UUID for LB VMs. Defaults to the newest image named `\\\"cloud-load-balancer\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"package\": {"]
+    #[doc = "      \"description\": \"Triton package for LoadBalancer VMs.\","]
+    #[doc = "      \"default\": \"sample-1G\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct InstallLbRequest {
+        #[doc = "Controller container image."]
+        #[serde(default = "defaults::install_lb_request_controller_image")]
+        pub controller_image: ::std::string::String,
+        #[doc = "Override external CNS suffix (auto-discovered from public network if absent)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub external_cns_suffix: ::std::option::Option<::std::string::String>,
+        #[doc = "Image name or UUID for LB VMs. Defaults to the newest image named `\"cloud-load-balancer\"`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub image: ::std::option::Option<::std::string::String>,
+        #[doc = "Triton package for LoadBalancer VMs."]
+        #[serde(default = "defaults::install_lb_request_package")]
+        pub package: ::std::string::String,
+    }
+
+    impl ::std::default::Default for InstallLbRequest {
+        fn default() -> Self {
+            Self {
+                controller_image: defaults::install_lb_request_controller_image(),
+                external_cns_suffix: Default::default(),
+                image: Default::default(),
+                package: defaults::install_lb_request_package(),
+            }
+        }
+    }
+
+    impl InstallLbRequest {
+        pub fn builder() -> builder::InstallLbRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "A single JWK entry."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -4660,6 +4742,69 @@ pub mod types {
 
     impl KubeconfigResponse {
         pub fn builder() -> builder::KubeconfigResponse {
+            Default::default()
+        }
+    }
+
+    #[doc = "LB controller status returned by `GET /v1/k8s/clusters/{cluster}/lb`."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"LB controller status returned by `GET /v1/k8s/clusters/{cluster}/lb`.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"installed\","]
+    #[doc = "    \"ready\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"available_replicas\": {"]
+    #[doc = "      \"description\": \"Currently available replicas.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    },"]
+    #[doc = "    \"installed\": {"]
+    #[doc = "      \"description\": \"Whether the controller Deployment exists in the cluster.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"ready\": {"]
+    #[doc = "      \"description\": \"Whether at least one replica is available.\","]
+    #[doc = "      \"type\": \"boolean\""]
+    #[doc = "    },"]
+    #[doc = "    \"replicas\": {"]
+    #[doc = "      \"description\": \"Desired replica count from the Deployment spec.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"int32\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct LbStatus {
+        #[doc = "Currently available replicas."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub available_replicas: ::std::option::Option<i32>,
+        #[doc = "Whether the controller Deployment exists in the cluster."]
+        pub installed: bool,
+        #[doc = "Whether at least one replica is available."]
+        pub ready: bool,
+        #[doc = "Desired replica count from the Deployment spec."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub replicas: ::std::option::Option<i32>,
+    }
+
+    impl LbStatus {
+        pub fn builder() -> builder::LbStatus {
             Default::default()
         }
     }
@@ -11855,6 +12000,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            lb_installed: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::ClusterState, ::std::string::String>,
             talos_version: ::std::result::Result<
@@ -11877,6 +12023,7 @@ pub mod types {
                     fabric_network_id: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
                     kubernetes_version: Ok(Default::default()),
+                    lb_installed: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     state: Err("no value supplied for state".to_string()),
                     talos_version: Ok(Default::default()),
@@ -11966,6 +12113,16 @@ pub mod types {
                 });
                 self
             }
+            pub fn lb_installed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.lb_installed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for lb_installed: {e}"));
+                self
+            }
             pub fn name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -12022,6 +12179,7 @@ pub mod types {
                     fabric_network_id: value.fabric_network_id?,
                     id: value.id?,
                     kubernetes_version: value.kubernetes_version?,
+                    lb_installed: value.lb_installed?,
                     name: value.name?,
                     state: value.state?,
                     talos_version: value.talos_version?,
@@ -12041,6 +12199,7 @@ pub mod types {
                     fabric_network_id: Ok(value.fabric_network_id),
                     id: Ok(value.id),
                     kubernetes_version: Ok(value.kubernetes_version),
+                    lb_installed: Ok(value.lb_installed),
                     name: Ok(value.name),
                     state: Ok(value.state),
                     talos_version: Ok(value.talos_version),
@@ -15067,6 +15226,99 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct InstallLbRequest {
+            controller_image: ::std::result::Result<::std::string::String, ::std::string::String>,
+            external_cns_suffix: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            image: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            package: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for InstallLbRequest {
+            fn default() -> Self {
+                Self {
+                    controller_image: Ok(super::defaults::install_lb_request_controller_image()),
+                    external_cns_suffix: Ok(Default::default()),
+                    image: Ok(Default::default()),
+                    package: Ok(super::defaults::install_lb_request_package()),
+                }
+            }
+        }
+
+        impl InstallLbRequest {
+            pub fn controller_image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.controller_image = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for controller_image: {e}")
+                });
+                self
+            }
+            pub fn external_cns_suffix<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.external_cns_suffix = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for external_cns_suffix: {e}")
+                });
+                self
+            }
+            pub fn image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.image = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for image: {e}"));
+                self
+            }
+            pub fn package<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.package = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for package: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<InstallLbRequest> for super::InstallLbRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: InstallLbRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    controller_image: value.controller_image?,
+                    external_cns_suffix: value.external_cns_suffix?,
+                    image: value.image?,
+                    package: value.package?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::InstallLbRequest> for InstallLbRequest {
+            fn from(value: super::InstallLbRequest) -> Self {
+                Self {
+                    controller_image: Ok(value.controller_image),
+                    external_cns_suffix: Ok(value.external_cns_suffix),
+                    image: Ok(value.image),
+                    package: Ok(value.package),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Jwk {
             alg: ::std::result::Result<::std::string::String, ::std::string::String>,
             crv: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -15277,6 +15529,94 @@ pub mod types {
             fn from(value: super::KubeconfigResponse) -> Self {
                 Self {
                     kubeconfig: Ok(value.kubeconfig),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct LbStatus {
+            available_replicas:
+                ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+            installed: ::std::result::Result<bool, ::std::string::String>,
+            ready: ::std::result::Result<bool, ::std::string::String>,
+            replicas: ::std::result::Result<::std::option::Option<i32>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for LbStatus {
+            fn default() -> Self {
+                Self {
+                    available_replicas: Ok(Default::default()),
+                    installed: Err("no value supplied for installed".to_string()),
+                    ready: Err("no value supplied for ready".to_string()),
+                    replicas: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl LbStatus {
+            pub fn available_replicas<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.available_replicas = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for available_replicas: {e}")
+                });
+                self
+            }
+            pub fn installed<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.installed = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for installed: {e}"));
+                self
+            }
+            pub fn ready<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<bool>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ready = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ready: {e}"));
+                self
+            }
+            pub fn replicas<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<i32>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.replicas = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for replicas: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<LbStatus> for super::LbStatus {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: LbStatus,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    available_replicas: value.available_replicas?,
+                    installed: value.installed?,
+                    ready: value.ready?,
+                    replicas: value.replicas?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::LbStatus> for LbStatus {
+            fn from(value: super::LbStatus) -> Self {
+                Self {
+                    available_replicas: Ok(value.available_replicas),
+                    installed: Ok(value.installed),
+                    ready: Ok(value.ready),
+                    replicas: Ok(value.replicas),
                 }
             }
         }
@@ -20962,6 +21302,14 @@ pub mod types {
             }
         }
 
+        pub(super) fn install_lb_request_controller_image() -> ::std::string::String {
+            "travispaul/triton-lb-controller:latest".to_string()
+        }
+
+        pub(super) fn install_lb_request_package() -> ::std::string::String {
+            "sample-1G".to_string()
+        }
+
         pub(super) fn replace_role_tags_request_role_tag() -> cloudapi_api::RoleTags {
             ::serde_json::from_str::<cloudapi_api::RoleTags>("[]").unwrap()
         }
@@ -21105,6 +21453,21 @@ impl Client {
     #[doc = "Retrieve the kubeconfig for a running cluster\n\nReturns 404 if the cluster does not exist, is owned by a different account, or has not yet completed bootstrap (kubeconfig not yet available — the cluster is still `provisioning`).\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `GET` request to `/v1/k8s/clusters/{cluster}/kubeconfig`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_cluster_kubeconfig()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
     pub fn k8s_cluster_kubeconfig(&self) -> builder::K8sClusterKubeconfig<'_> {
         builder::K8sClusterKubeconfig::new(self)
+    }
+
+    #[doc = "Return LB controller status from the cluster\n\nConnects to the cluster via relay and reads the `triton-lb-controller` Deployment in `kube-system`.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `GET` request to `/v1/k8s/clusters/{cluster}/lb`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_cluster_lb_status()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_lb_status(&self) -> builder::K8sClusterLbStatus<'_> {
+        builder::K8sClusterLbStatus::new(self)
+    }
+
+    #[doc = "Install the Triton LB controller into a cluster\n\nDiscovers CloudAPI configuration server-side, applies RBAC, a `triton-credentials` Secret, a `triton-lb-controller-config` ConfigMap, and the controller Deployment to the cluster via the relay tunnel. Polls until the Deployment is available (180 s timeout).\n\nReturns 202 Accepted immediately. Poll `GET .../lb` to check readiness.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters/{cluster}/lb`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n- `body`\n```ignore\nlet response = client.k8s_cluster_lb_install()\n    .cluster(cluster)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_lb_install(&self) -> builder::K8sClusterLbInstall<'_> {
+        builder::K8sClusterLbInstall::new(self)
+    }
+
+    #[doc = "Remove the LB controller from a cluster\n\nDeletes the Deployment, ConfigMap, Secret, ClusterRoleBinding, ClusterRole, and ServiceAccount from `kube-system`.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `DELETE` request to `/v1/k8s/clusters/{cluster}/lb`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n```ignore\nlet response = client.k8s_cluster_lb_remove()\n    .cluster(cluster)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_lb_remove(&self) -> builder::K8sClusterLbRemove<'_> {
+        builder::K8sClusterLbRemove::new(self)
     }
 
     #[doc = "Add nodes to a running cluster\n\nEach node must already have the relay agent active. The server applies the supplied Talos machine config in maintenance mode and triggers a reboot; the node then joins the existing cluster automatically. Control-plane joiner configs and worker configs are both accepted — role assignment is determined by the config content, not enforced server-side.\n\nReturns 202 Accepted immediately. The node inventory in the cluster record is updated once configs have been applied.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters/{cluster}/nodes`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n- `body`\n```ignore\nlet response = client.k8s_cluster_nodes_add()\n    .cluster(cluster)\n    .body(body)\n    .send()\n    .await;\n```"]
@@ -23030,6 +23393,257 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_lb_status`]\n\n[`Client::k8s_cluster_lb_status`]: super::Client::k8s_cluster_lb_status"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterLbStatus<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> K8sClusterLbStatus<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `GET` request to `/v1/k8s/clusters/{cluster}/lb`"]
+        pub async fn send(self) -> Result<ResponseValue<types::LbStatus>, Error<types::Error>> {
+            let Self { client, cluster } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/lb",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .get(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_lb_status",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_lb_install`]\n\n[`Client::k8s_cluster_lb_install`]: super::Client::k8s_cluster_lb_install"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterLbInstall<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::InstallLbRequest, String>,
+    }
+
+    impl<'a> K8sClusterLbInstall<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::InstallLbRequest>,
+            <V as std::convert::TryInto<types::InstallLbRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `InstallLbRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::InstallLbRequest,
+                ) -> types::builder::InstallLbRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/k8s/clusters/{cluster}/lb`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self {
+                client,
+                cluster,
+                body,
+            } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::InstallLbRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/lb",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_lb_install",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_lb_remove`]\n\n[`Client::k8s_cluster_lb_remove`]: super::Client::k8s_cluster_lb_remove"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterLbRemove<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> K8sClusterLbRemove<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/k8s/clusters/{cluster}/lb`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, cluster } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/lb",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_lb_remove",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

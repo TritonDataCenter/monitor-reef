@@ -58,6 +58,8 @@ triton-tls = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 yamux = { workspace = true }
+kube = { workspace = true }
+k8s-openapi = { workspace = true }
 
 [build-dependencies]
 build-data = { workspace = true }

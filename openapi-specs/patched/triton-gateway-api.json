@@ -491,6 +491,11 @@
             "nullable": true,
             "type": "string"
           },
+          "lb_installed": {
+            "description": "Whether the Triton LB controller is installed in this cluster. `None` on older records that pre-date this field.",
+            "nullable": true,
+            "type": "boolean"
+          },
           "name": {
             "description": "Customer-supplied display name.",
             "type": "string"
@@ -1789,6 +1794,32 @@
         "title": "ImportImageRequest",
         "type": "object"
       },
+      "InstallLbRequest": {
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/lb`.",
+        "properties": {
+          "controller_image": {
+            "default": "travispaul/triton-lb-controller:latest",
+            "description": "Controller container image.",
+            "type": "string"
+          },
+          "external_cns_suffix": {
+            "description": "Override external CNS suffix (auto-discovered from public network if absent).",
+            "nullable": true,
+            "type": "string"
+          },
+          "image": {
+            "description": "Image name or UUID for LB VMs. Defaults to the newest image named `\"cloud-load-balancer\"`.",
+            "nullable": true,
+            "type": "string"
+          },
+          "package": {
+            "default": "sample-1G",
+            "description": "Triton package for LoadBalancer VMs.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Jwk": {
         "description": "A single JWK entry.",
         "properties": {
@@ -1852,6 +1883,36 @@
         },
         "required": [
           "kubeconfig"
+        ],
+        "type": "object"
+      },
+      "LbStatus": {
+        "description": "LB controller status returned by `GET /v1/k8s/clusters/{cluster}/lb`.",
+        "properties": {
+          "available_replicas": {
+            "description": "Currently available replicas.",
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "installed": {
+            "description": "Whether the controller Deployment exists in the cluster.",
+            "type": "boolean"
+          },
+          "ready": {
+            "description": "Whether at least one replica is available.",
+            "type": "boolean"
+          },
+          "replicas": {
+            "description": "Desired replica count from the Deployment spec.",
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "installed",
+          "ready"
         ],
         "type": "object"
       },
@@ -4761,6 +4822,125 @@
           }
         },
         "summary": "Retrieve the kubeconfig for a running cluster.",
+        "tags": [
+          "k8s"
+        ]
+      }
+    },
+    "/v1/k8s/clusters/{cluster}/lb": {
+      "delete": {
+        "description": "Deletes the Deployment, ConfigMap, Secret, ClusterRoleBinding, ClusterRole, and ServiceAccount from `kube-system`.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_lb_remove",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Remove the LB controller from a cluster.",
+        "tags": [
+          "k8s"
+        ]
+      },
+      "get": {
+        "description": "Connects to the cluster via relay and reads the `triton-lb-controller` Deployment in `kube-system`.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_lb_status",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LbStatus"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Return LB controller status from the cluster.",
+        "tags": [
+          "k8s"
+        ]
+      },
+      "post": {
+        "description": "Discovers CloudAPI configuration server-side, applies RBAC, a `triton-credentials` Secret, a `triton-lb-controller-config` ConfigMap, and the controller Deployment to the cluster via the relay tunnel. Polls until the Deployment is available (180 s timeout).\n\nReturns 202 Accepted immediately. Poll `GET .../lb` to check readiness.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_lb_install",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallLbRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            },
+            "description": "successfully enqueued operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Install the Triton LB controller into a cluster.",
         "tags": [
           "k8s"
         ]

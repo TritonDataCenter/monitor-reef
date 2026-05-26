@@ -103,6 +103,9 @@ pub struct ClusterRecord {
     /// Set by the upgrade endpoint; `None` until the first upgrade completes.
     pub talos_version: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Whether the Triton LB controller has been installed into the cluster.
+    #[serde(default)]
+    pub lb_installed: bool,
 }
 
 impl From<&ClusterRecord> for Cluster {
@@ -133,6 +136,7 @@ impl From<&ClusterRecord> for Cluster {
             control_plane_count,
             worker_count,
             created_at: r.created_at,
+            lb_installed: Some(r.lb_installed),
         }
     }
 }
@@ -349,6 +353,7 @@ mod tests {
             talos_key_pem: None,
             talos_version: None,
             created_at: Utc::now(),
+            lb_installed: false,
         }
     }
 

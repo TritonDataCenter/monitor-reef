@@ -319,6 +319,59 @@ pub trait TritonApi {
         body: TypedBody<BootstrapClusterRequest>,
     ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
 
+    /// Install the Triton LB controller into a cluster.
+    ///
+    /// Discovers CloudAPI configuration server-side, applies RBAC, a
+    /// `triton-credentials` Secret, a `triton-lb-controller-config` ConfigMap,
+    /// and the controller Deployment to the cluster via the relay tunnel. Polls
+    /// until the Deployment is available (180 s timeout).
+    ///
+    /// Returns 202 Accepted immediately. Poll `GET .../lb` to check readiness.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = POST,
+        path = "/v1/k8s/clusters/{cluster}/lb",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_lb_install(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<InstallLbRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
+
+    /// Return LB controller status from the cluster.
+    ///
+    /// Connects to the cluster via relay and reads the `triton-lb-controller`
+    /// Deployment in `kube-system`.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = GET,
+        path = "/v1/k8s/clusters/{cluster}/lb",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_lb_status(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseOk<LbStatus>, HttpError>;
+
+    /// Remove the LB controller from a cluster.
+    ///
+    /// Deletes the Deployment, ConfigMap, Secret, ClusterRoleBinding,
+    /// ClusterRole, and ServiceAccount from `kube-system`.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/k8s/clusters/{cluster}/lb",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_lb_remove(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
     /// Register a relay agent tunnel.
     ///
     /// Called by the gateway-zone agent. The connection is upgraded to

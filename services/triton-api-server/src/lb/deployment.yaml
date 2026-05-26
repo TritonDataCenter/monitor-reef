@@ -1,0 +1,150 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# Deployment for the Triton LoadBalancer controller.
+# Embedded into the triton-api-server binary at compile time.
+#
+# Placeholder values (surrounded by double braces) are replaced at runtime:
+#   {{CONTROLLER_IMAGE}} - Container image for the controller
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triton-lb-controller
+  namespace: kube-system
+  labels:
+    app: triton-lb-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: triton-lb-controller
+  template:
+    metadata:
+      labels:
+        app: triton-lb-controller
+    spec:
+      serviceAccountName: triton-lb-controller
+      containers:
+        - name: controller
+          image: "{{CONTROLLER_IMAGE}}"
+          imagePullPolicy: Always
+          args:
+            - --leader-elect=false
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=:8080
+          env:
+            - name: TRITON_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: triton-url
+            - name: TRITON_ACCOUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: triton-account
+            - name: TRITON_INSECURE
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: triton-insecure
+            - name: TRITON_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: triton-credentials
+                  key: key-id
+            - name: TRITON_DATACENTER
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: datacenter
+            - name: TRITON_CNS_SUFFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: cns-suffix
+            - name: EXTERNAL_CNS_SUFFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: external-cns-suffix
+            - name: DEFAULT_PACKAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: default-package
+            - name: DEFAULT_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: default-image
+            - name: PUBLIC_NETWORK
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: public-network
+            - name: FABRIC_NETWORK
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: fabric-network
+            - name: WORKER_CNS_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: worker-cns-name
+            - name: CLUSTER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: cluster-name
+            - name: REQUEUE_AFTER_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: requeue-after-seconds
+            - name: CLUSTER_UUID
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: cluster-uuid
+          volumeMounts:
+            - name: triton-key
+              mountPath: /etc/triton
+              readOnly: true
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: triton-key
+          secret:
+            secretName: triton-credentials
+            items:
+              - key: private-key
+                path: private-key

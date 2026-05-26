@@ -64,6 +64,10 @@ pub struct Cluster {
 
     /// When the record was created.
     pub created_at: DateTime<Utc>,
+
+    /// Whether the Triton LB controller is installed in this cluster.
+    /// `None` on older records that pre-date this field.
+    pub lb_installed: Option<bool>,
 }
 
 /// Lifecycle state of a [`Cluster`] record.
@@ -236,4 +240,44 @@ pub struct AddWorkersRequest {
 pub struct KubeconfigResponse {
     /// Kubeconfig YAML.
     pub kubeconfig: String,
+}
+
+/// Body of `POST /v1/k8s/clusters/{cluster}/lb`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InstallLbRequest {
+    /// Triton package for LoadBalancer VMs.
+    #[serde(default = "default_lb_package")]
+    pub package: String,
+
+    /// Image name or UUID for LB VMs. Defaults to the newest image named
+    /// `"cloud-load-balancer"`.
+    pub image: Option<String>,
+
+    /// Override external CNS suffix (auto-discovered from public network if absent).
+    pub external_cns_suffix: Option<String>,
+
+    /// Controller container image.
+    #[serde(default = "default_controller_image")]
+    pub controller_image: String,
+}
+
+fn default_lb_package() -> String {
+    "sample-1G".to_string()
+}
+
+fn default_controller_image() -> String {
+    "travispaul/triton-lb-controller:latest".to_string()
+}
+
+/// LB controller status returned by `GET /v1/k8s/clusters/{cluster}/lb`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LbStatus {
+    /// Whether the controller Deployment exists in the cluster.
+    pub installed: bool,
+    /// Whether at least one replica is available.
+    pub ready: bool,
+    /// Desired replica count from the Deployment spec.
+    pub replicas: Option<i32>,
+    /// Currently available replicas.
+    pub available_replicas: Option<i32>,
 }

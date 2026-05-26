@@ -17,6 +17,7 @@ pub mod create;
 pub mod delete;
 pub mod get;
 pub mod kubeconfig;
+pub mod lb;
 pub mod list;
 pub mod relay_bridge;
 pub mod upgrade;
@@ -51,6 +52,11 @@ pub enum K8sCommand {
         #[command(subcommand)]
         command: worker::WorkerCommand,
     },
+    /// Manage the Triton LB controller
+    Lb {
+        #[command(subcommand)]
+        command: lb::LbCommand,
+    },
 }
 
 impl K8sCommand {
@@ -66,6 +72,7 @@ impl K8sCommand {
             Self::Upgrade(args) => upgrade::run(args, client, json).await,
             Self::RelayBridge(_) => unreachable!("relay-bridge is handled before K8sCommand::run"),
             Self::Worker { command } => command.run(client, json).await,
+            Self::Lb { command } => command.run(client, json).await,
         }
     }
 }
