@@ -227,8 +227,6 @@ struct ApiContext {
     /// no `[cloudapi]` section is in the config; bootstrap endpoint returns
     /// 503 in that case.
     cloudapi: Option<Arc<TypedClient>>,
-    /// CloudAPI account login for the operator client (e.g. `"admin"`).
-    cloudapi_account: Option<String>,
     /// Dev bypass: unauthenticated requests are treated as this account UUID.
     /// Never set in production.
     dev_account_uuid: Option<Uuid>,
@@ -809,13 +807,6 @@ impl TritonApi for TritonApiImpl {
                 "CloudAPI operator client is not configured on this tritonapi instance".to_string(),
             )
         })?;
-        let cloudapi_account = ctx.cloudapi_account.clone().ok_or_else(|| {
-            HttpError::for_unavail(
-                Some("ServiceUnavailable".to_string()),
-                "CloudAPI account is not configured on this tritonapi instance".to_string(),
-            )
-        })?;
-
         record.state = ClusterState::Provisioning;
         store.update(&record).await.map_err(store_error_to_http)?;
 
@@ -823,16 +814,8 @@ impl TritonApi for TritonApiImpl {
         let store_for_error = Arc::clone(&store);
         let cluster_view = Cluster::from(&record);
         tokio::spawn(async move {
-            if let Err(e) = run_bootstrap(
-                store,
-                relay,
-                cloudapi,
-                cloudapi_account,
-                fabric_network_id,
-                record,
-                req,
-            )
-            .await
+            if let Err(e) =
+                run_bootstrap(store, relay, cloudapi, fabric_network_id, record, req).await
             {
                 tracing::error!(cluster = %id, error = ?e, "bootstrap failed");
                 if let Ok(Some(mut failed_record)) = store_for_error.get(id).await {
@@ -1072,12 +1055,13 @@ async fn run_bootstrap(
     store: Arc<dyn ClusterStore>,
     relay: Arc<RelayState>,
     cloudapi: Arc<TypedClient>,
-    cloudapi_account: String,
     fabric_network_id: Uuid,
     mut record: ClusterRecord,
     req: BootstrapClusterRequest,
 ) -> anyhow::Result<()> {
     let cluster_id = record.id;
+    // VMs are provisioned under the cluster owner's account, not the operator account.
+    let provision_account = record.account_id.to_string();
     let talos_version = req
         .talos_version
         .as_deref()
@@ -1088,7 +1072,7 @@ async fn run_bootstrap(
         .unwrap_or(talos_config::DEFAULT_INSTALL_DISK);
 
     // Phase 0: resolve image and provision VMs.
-    let image_uuid = resolve_image_uuid(&cloudapi, &cloudapi_account, &req.image).await?;
+    let image_uuid = resolve_image_uuid(&cloudapi, &provision_account, &req.image).await?;
     tracing::info!(cluster = %cluster_id, image = %image_uuid, "resolved image UUID");
 
     let mut provisioned: Vec<ProvisionedNode> = Vec::new();
@@ -1098,7 +1082,7 @@ async fn run_bootstrap(
         let name = format!("{id_prefix}-cp-{i}");
         let fabric_ip = provision_vm(
             &cloudapi,
-            &cloudapi_account,
+            &provision_account,
             &name,
             image_uuid,
             &req.package,
@@ -1117,7 +1101,7 @@ async fn run_bootstrap(
         let name = format!("{id_prefix}-w-{i}");
         let fabric_ip = provision_vm(
             &cloudapi,
-            &cloudapi_account,
+            &provision_account,
             &name,
             image_uuid,
             &req.package,
@@ -2131,7 +2115,6 @@ async fn main() -> Result<()> {
         cluster_store,
         relay: Arc::new(relay::RelayState::new()),
         cloudapi,
-        cloudapi_account: config.cloudapi.as_ref().map(|c| c.account.clone()),
         dev_account_uuid: config.dev_account_uuid,
         shutdown: shutdown.clone(),
     };
