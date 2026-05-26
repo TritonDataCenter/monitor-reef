@@ -557,6 +557,56 @@
         }
       }
     },
+    "/v1/k8s/clusters/{cluster}/workers": {
+      "post": {
+        "tags": [
+          "k8s"
+        ],
+        "summary": "Provision and join new worker nodes to a running cluster.",
+        "description": "The server provisions `count` VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_workers_add",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cluster",
+            "description": "Server-assigned cluster UUID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWorkersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/v1/k8s/relay": {
       "get": {
         "tags": [
@@ -642,6 +692,26 @@
         },
         "required": [
           "nodes"
+        ]
+      },
+      "AddWorkersRequest": {
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/workers`.\n\nThe server provisions `count` new VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately; nodes join the cluster after they reboot into full Talos mode.",
+        "type": "object",
+        "properties": {
+          "count": {
+            "description": "Number of worker nodes to provision and join.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "package": {
+            "description": "Triton package name or UUID for the new worker VMs.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "package"
         ]
       },
       "BootstrapClusterRequest": {

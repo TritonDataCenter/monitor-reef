@@ -23,9 +23,9 @@ use tokio_util::compat::FuturesAsyncReadCompatExt as _;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use triton_api::{
-    AddNodesRequest, BootstrapClusterRequest, ChallengeMethod, Cluster, ClusterList, ClusterPath,
-    ClusterState, CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse, LoginChallenge,
-    LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse,
+    AddNodesRequest, AddWorkersRequest, BootstrapClusterRequest, ChallengeMethod, Cluster,
+    ClusterList, ClusterPath, ClusterState, CreateClusterRequest, Jwk, JwkSet, KubeconfigResponse,
+    LoginChallenge, LoginOutcome, LoginRequest, LoginResponse, LoginVerifyRequest, LogoutResponse,
     NodeBootstrapRole, NodeBootstrapSpec, PingResponse, RefreshRequest, RefreshResponse,
     SessionResponse, TritonApi, UpgradeClusterRequest, UserInfo,
 };
@@ -759,6 +759,58 @@ impl TritonApi for TritonApiImpl {
         Ok(HttpResponseAccepted(cluster_view))
     }
 
+    async fn k8s_cluster_workers_add(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<AddWorkersRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError> {
+        let caller = resolve_caller(&rqctx).await?;
+        let ctx = rqctx.context();
+        let id = path.into_inner().cluster;
+        let store = Arc::clone(&ctx.cluster_store);
+        let record = store
+            .get(id)
+            .await
+            .map_err(store_error_to_http)?
+            .ok_or_else(|| cluster_not_found(id))?;
+        if record.account_id != caller.account_id {
+            return Err(cluster_not_found(id));
+        }
+        if record.state != ClusterState::Running {
+            return Err(HttpError::for_client_error(
+                Some("InvalidState".to_string()),
+                ClientErrorStatusCode::CONFLICT,
+                format!("cluster {id} must be in `running` state to add workers"),
+            ));
+        }
+
+        let cloudapi = ctx.cloudapi.clone().ok_or_else(|| {
+            HttpError::for_unavail(
+                Some("ServiceUnavailable".to_string()),
+                "CloudAPI operator client is not configured on this tritonapi instance".to_string(),
+            )
+        })?;
+
+        let req = body.into_inner();
+        if req.count == 0 {
+            return Err(HttpError::for_client_error(
+                Some("InvalidInput".to_string()),
+                ClientErrorStatusCode::BAD_REQUEST,
+                "count must be at least 1".to_string(),
+            ));
+        }
+
+        let relay = Arc::clone(&ctx.relay);
+        let cluster_view = Cluster::from(&record);
+        tokio::spawn(async move {
+            if let Err(e) = run_add_workers(store, relay, cloudapi, record, req).await {
+                tracing::error!(cluster = %id, error = ?e, "add-workers failed");
+            }
+        });
+
+        Ok(HttpResponseAccepted(cluster_view))
+    }
+
     async fn k8s_cluster_bootstrap(
         rqctx: RequestContext<Self::Context>,
         path: Path<ClusterPath>,
@@ -1443,6 +1495,120 @@ async fn run_add_nodes(
         cluster = %cluster_id,
         count = nodes.len(),
         "node configs applied; nodes will join cluster after reboot"
+    );
+    Ok(())
+}
+
+async fn run_add_workers(
+    store: Arc<dyn ClusterStore>,
+    relay: Arc<RelayState>,
+    cloudapi: Arc<TypedClient>,
+    mut record: ClusterRecord,
+    req: AddWorkersRequest,
+) -> anyhow::Result<()> {
+    let cluster_id = record.id;
+    let provision_account = record.account_id.to_string();
+
+    let fabric_network_id = record
+        .fabric_network_id
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no fabric_network_id"))?;
+
+    let image_id = record
+        .control_plane_config
+        .as_ref()
+        .map(|c| c.image_id)
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no stored image ID"))?;
+
+    let endpoint_ip = record
+        .nodes
+        .values()
+        .find(|n| n.role == NodeRole::Control)
+        .map(|n| n.fabric_ip.clone())
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no control-plane node"))?;
+
+    let secrets_yaml = record
+        .secrets_yaml
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("cluster {cluster_id} has no stored secrets bundle"))?;
+    let secrets: talos_config::SecretsBundle =
+        serde_yaml::from_str(secrets_yaml).context("deserialize secrets bundle")?;
+
+    let configs = talos_config::generate_machine_configs(
+        &secrets,
+        &record.name,
+        &endpoint_ip,
+        talos_config::DEFAULT_INSTALL_DISK,
+        talos_config::DEFAULT_TALOS_VERSION,
+    )
+    .context("generate worker machine configs")?;
+
+    let id_prefix = &cluster_id.to_string()[..8];
+    let existing_worker_count = record
+        .nodes
+        .values()
+        .filter(|n| n.role == NodeRole::Worker)
+        .count();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    for i in 0..req.count as usize {
+        let name = format!("{id_prefix}-w-{}", existing_worker_count + i);
+        let fabric_ip = provision_vm(
+            &cloudapi,
+            &provision_account,
+            &name,
+            image_id,
+            &req.package,
+            fabric_network_id,
+        )
+        .await
+        .with_context(|| format!("provision worker node {name}"))?;
+        tracing::info!(cluster = %cluster_id, node = %name, ip = %fabric_ip, "worker VM ready");
+
+        let target = format!("{fabric_ip}:50000");
+        let mut client = loop {
+            match talos::TalosClient::connect_maintenance(Arc::clone(&relay), &target).await {
+                Ok(c) => break c,
+                Err(e) if std::time::Instant::now() < deadline => {
+                    tracing::warn!(
+                        cluster = %cluster_id,
+                        target = %target,
+                        error = %e,
+                        "Talos maintenance API not ready, retrying in 15s"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| format!("maintenance connect to {target}"));
+                }
+            }
+        };
+        client
+            .apply_configuration(configs.worker_yaml.as_bytes().to_vec(), true)
+            .await
+            .with_context(|| format!("apply worker config to {target}"))?;
+        tracing::info!(cluster = %cluster_id, target = %target, "applied worker machine config");
+
+        let node_id = Uuid::new_v4();
+        record.nodes.insert(
+            node_id.to_string(),
+            NodeInfo {
+                instance_id: node_id,
+                primary_ip: fabric_ip.clone(),
+                fabric_ip,
+                role: NodeRole::Worker,
+            },
+        );
+    }
+
+    store
+        .update(&record)
+        .await
+        .with_context(|| format!("persist new workers for cluster {cluster_id}"))?;
+
+    tracing::info!(
+        cluster = %cluster_id,
+        count = req.count,
+        "worker configs applied; nodes will join cluster after reboot"
     );
     Ok(())
 }

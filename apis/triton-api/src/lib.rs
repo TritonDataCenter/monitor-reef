@@ -256,6 +256,24 @@ pub trait TritonApi {
         body: TypedBody<AddNodesRequest>,
     ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
 
+    /// Provision and join new worker nodes to a running cluster.
+    ///
+    /// The server provisions `count` VMs on the cluster's fabric network,
+    /// applies the Talos worker config to each in maintenance mode, and
+    /// registers them in the cluster record. Returns 202 immediately.
+    ///
+    /// Accepts Bearer JWT or HTTP Signature authentication.
+    #[endpoint {
+        method = POST,
+        path = "/v1/k8s/clusters/{cluster}/workers",
+        tags = ["k8s"],
+    }]
+    async fn k8s_cluster_workers_add(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ClusterPath>,
+        body: TypedBody<AddWorkersRequest>,
+    ) -> Result<HttpResponseAccepted<Cluster>, HttpError>;
+
     /// Trigger a rolling Talos OS upgrade across all cluster nodes.
     ///
     /// The cluster must be in `running` state. Control-plane nodes are

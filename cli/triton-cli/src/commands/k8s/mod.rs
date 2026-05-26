@@ -20,6 +20,7 @@ pub mod kubeconfig;
 pub mod list;
 pub mod relay_bridge;
 pub mod upgrade;
+pub mod worker;
 
 #[derive(Subcommand, Clone)]
 pub enum K8sCommand {
@@ -45,6 +46,11 @@ pub enum K8sCommand {
     /// Start a local relay bridge for kubectl access to a cluster
     #[command(name = "relay-bridge")]
     RelayBridge(relay_bridge::RelayBridgeArgs),
+    /// Manage worker nodes
+    Worker {
+        #[command(subcommand)]
+        command: worker::WorkerCommand,
+    },
 }
 
 impl K8sCommand {
@@ -59,6 +65,7 @@ impl K8sCommand {
             Self::AddNodes(args) => add_nodes::run(args, client, json).await,
             Self::Upgrade(args) => upgrade::run(args, client, json).await,
             Self::RelayBridge(_) => unreachable!("relay-bridge is handled before K8sCommand::run"),
+            Self::Worker { command } => command.run(client, json).await,
         }
     }
 }

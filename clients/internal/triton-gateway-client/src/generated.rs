@@ -661,6 +661,49 @@ pub mod types {
         }
     }
 
+    #[doc = "Body of `POST /v1/k8s/clusters/{cluster}/workers`.\n\nThe server provisions `count` new VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately; nodes join the cluster after they reboot into full Talos mode."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Body of `POST /v1/k8s/clusters/{cluster}/workers`.\\n\\nThe server provisions `count` new VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately; nodes join the cluster after they reboot into full Talos mode.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"count\","]
+    #[doc = "    \"package\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"count\": {"]
+    #[doc = "      \"description\": \"Number of worker nodes to provision and join.\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint32\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
+    #[doc = "    \"package\": {"]
+    #[doc = "      \"description\": \"Triton package name or UUID for the new worker VMs.\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AddWorkersRequest {
+        #[doc = "Number of worker nodes to provision and join."]
+        pub count: u32,
+        #[doc = "Triton package name or UUID for the new worker VMs."]
+        pub package: ::std::string::String,
+    }
+
+    impl AddWorkersRequest {
+        pub fn builder() -> builder::AddWorkersRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Audit entry for a machine"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -11450,6 +11493,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct AddWorkersRequest {
+            count: ::std::result::Result<u32, ::std::string::String>,
+            package: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for AddWorkersRequest {
+            fn default() -> Self {
+                Self {
+                    count: Err("no value supplied for count".to_string()),
+                    package: Err("no value supplied for package".to_string()),
+                }
+            }
+        }
+
+        impl AddWorkersRequest {
+            pub fn count<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u32>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.count = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for count: {e}"));
+                self
+            }
+            pub fn package<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.package = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for package: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AddWorkersRequest> for super::AddWorkersRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AddWorkersRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    count: value.count?,
+                    package: value.package?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AddWorkersRequest> for AddWorkersRequest {
+            fn from(value: super::AddWorkersRequest) -> Self {
+                Self {
+                    count: Ok(value.count),
+                    package: Ok(value.package),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct AuditEntry {
             action: ::std::result::Result<::std::string::String, ::std::string::String>,
             caller: ::std::result::Result<
@@ -21015,6 +21117,11 @@ impl Client {
         builder::K8sClusterUpgrade::new(self)
     }
 
+    #[doc = "Provision and join new worker nodes to a running cluster\n\nThe server provisions `count` VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately.\n\nAccepts Bearer JWT or HTTP Signature authentication.\n\nSends a `POST` request to `/v1/k8s/clusters/{cluster}/workers`\n\nArguments:\n- `cluster`: Server-assigned cluster UUID.\n- `body`\n```ignore\nlet response = client.k8s_cluster_workers_add()\n    .cluster(cluster)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn k8s_cluster_workers_add(&self) -> builder::K8sClusterWorkersAdd<'_> {
+        builder::K8sClusterWorkersAdd::new(self)
+    }
+
     #[doc = "Register a relay agent tunnel\n\nCalled by the gateway-zone agent. The connection is upgraded to WebSocket and then to a yamux session (server = agent, client = API server). The API server opens yamux streams when bridge clients request connections; the agent dials the target on the fabric network and bridges bytes.\n\nNo authentication in the POC — this is intentional.\n\nSends a `GET` request to `/v1/k8s/relay`\n\n```ignore\nlet response = client.k8s_relay_register()\n    .send()\n    .await;\n```"]
     pub fn k8s_relay_register(&self) -> builder::K8sRelayRegister<'_> {
         builder::K8sRelayRegister::new(self)
@@ -23122,6 +23229,111 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "k8s_cluster_upgrade",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                202u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::k8s_cluster_workers_add`]\n\n[`Client::k8s_cluster_workers_add`]: super::Client::k8s_cluster_workers_add"]
+    #[derive(Debug, Clone)]
+    pub struct K8sClusterWorkersAdd<'a> {
+        client: &'a super::Client,
+        cluster: Result<::uuid::Uuid, String>,
+        body: Result<types::builder::AddWorkersRequest, String>,
+    }
+
+    impl<'a> K8sClusterWorkersAdd<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                cluster: Err("cluster was not initialized".to_string()),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn cluster<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.cluster = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for cluster failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::AddWorkersRequest>,
+            <V as std::convert::TryInto<types::AddWorkersRequest>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `AddWorkersRequest` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(
+                    types::builder::AddWorkersRequest,
+                ) -> types::builder::AddWorkersRequest,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/k8s/clusters/{cluster}/workers`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Cluster>, Error<types::Error>> {
+            let Self {
+                client,
+                cluster,
+                body,
+            } = self;
+            let cluster = cluster.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::AddWorkersRequest::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/k8s/clusters/{}/workers",
+                client.baseurl,
+                encode_path(&cluster.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "k8s_cluster_workers_add",
             };
             match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
                 Ok(_) => (),

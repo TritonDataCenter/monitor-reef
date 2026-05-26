@@ -280,6 +280,26 @@
         ],
         "type": "object"
       },
+      "AddWorkersRequest": {
+        "description": "Body of `POST /v1/k8s/clusters/{cluster}/workers`.\n\nThe server provisions `count` new VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately; nodes join the cluster after they reboot into full Talos mode.",
+        "properties": {
+          "count": {
+            "description": "Number of worker nodes to provision and join.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "package": {
+            "description": "Triton package name or UUID for the new worker VMs.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "package"
+        ],
+        "type": "object"
+      },
       "AffinityRules": {
         "description": "Affinity rule strings (used by CreateMachineRequest and MigrateRequest).\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.",
         "items": {
@@ -4841,6 +4861,56 @@
           }
         },
         "summary": "Trigger a rolling Talos OS upgrade across all cluster nodes.",
+        "tags": [
+          "k8s"
+        ]
+      }
+    },
+    "/v1/k8s/clusters/{cluster}/workers": {
+      "post": {
+        "description": "The server provisions `count` VMs on the cluster's fabric network, applies the Talos worker config to each in maintenance mode, and registers them in the cluster record. Returns 202 immediately.\n\nAccepts Bearer JWT or HTTP Signature authentication.",
+        "operationId": "k8s_cluster_workers_add",
+        "parameters": [
+          {
+            "description": "Server-assigned cluster UUID.",
+            "in": "path",
+            "name": "cluster",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWorkersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            },
+            "description": "successfully enqueued operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Provision and join new worker nodes to a running cluster.",
         "tags": [
           "k8s"
         ]

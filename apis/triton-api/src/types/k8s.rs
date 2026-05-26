@@ -213,6 +213,20 @@ pub struct AddNodesRequest {
     pub nodes: Vec<NodeBootstrapSpec>,
 }
 
+/// Body of `POST /v1/k8s/clusters/{cluster}/workers`.
+///
+/// The server provisions `count` new VMs on the cluster's fabric network,
+/// applies the Talos worker config to each in maintenance mode, and
+/// registers them in the cluster record. Returns 202 immediately; nodes
+/// join the cluster after they reboot into full Talos mode.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AddWorkersRequest {
+    /// Number of worker nodes to provision and join.
+    pub count: u32,
+    /// Triton package name or UUID for the new worker VMs.
+    pub package: String,
+}
+
 /// Response body for `GET /v1/k8s/clusters/{cluster}/kubeconfig`.
 ///
 /// The `kubeconfig` field is a complete YAML kubeconfig document. Callers
