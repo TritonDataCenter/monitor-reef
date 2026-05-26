@@ -116,15 +116,6 @@ pub(crate) async fn list_project_vpcs(
     Ok(HttpResponseOk(vpcs))
 }
 
-/// RFD 00007 AP-3e: moved to `POST /v1/vpcs?tenant=&project=`.
-pub(crate) async fn create_project_vpc(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectPath>,
-    _body: TypedBody<NewVpc>,
-) -> Result<HttpResponseCreated<Vpc>, HttpError> {
-    Err(crate::error::gone("POST /v1/vpcs?tenant=&project="))
-}
-
 /// RFD 00007 AP-2g: `GET /v1/vpcs?tenant=&project=`. Flat VPC list
 /// scoped to a tenant + project. Both selectors required at AP-2g.
 pub(crate) async fn list_vpcs_v1(
@@ -408,12 +399,4 @@ pub(crate) async fn get_project_vpc(
         return Err(not_found());
     }
     Ok(HttpResponseOk(vpc))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/vpcs/{vpc_id}`.
-pub(crate) async fn delete_project_vpc(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone("DELETE /v1/vpcs/{vpc_id}"))
 }

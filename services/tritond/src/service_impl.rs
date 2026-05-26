@@ -330,26 +330,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::vpc::list_project_vpcs(rqctx, path).await
     }
 
-    async fn create_project_vpc(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-        body: TypedBody<NewVpc>,
-    ) -> Result<HttpResponseCreated<Vpc>, HttpError> {
-        crate::handlers::network::vpc::create_project_vpc(rqctx, path, body).await
-    }
-
     async fn get_project_vpc(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vpc>, HttpError> {
         crate::handlers::network::vpc::get_project_vpc(rqctx, path).await
-    }
-
-    async fn delete_project_vpc(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::vpc::delete_project_vpc(rqctx, path).await
     }
 
     async fn list_vpc_subnets(
@@ -359,26 +344,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::list_vpc_subnets(rqctx, path).await
     }
 
-    async fn create_vpc_subnet(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewSubnet>,
-    ) -> Result<HttpResponseCreated<Subnet>, HttpError> {
-        crate::handlers::network::subnet::create_vpc_subnet(rqctx, path, body).await
-    }
-
     async fn get_vpc_subnet(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseOk<Subnet>, HttpError> {
         crate::handlers::network::subnet::get_vpc_subnet(rqctx, path).await
-    }
-
-    async fn delete_vpc_subnet(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcSubnetPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::subnet::delete_vpc_subnet(rqctx, path).await
     }
 
     async fn get_vpc_dhcp_pool_v1(
@@ -692,26 +662,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::routes::list_vpc_route_tables(rqctx, path).await
     }
 
-    async fn create_vpc_route_table(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewRouteTable>,
-    ) -> Result<HttpResponseCreated<RouteTable>, HttpError> {
-        crate::handlers::network::routes::create_vpc_route_table(rqctx, path, body).await
-    }
-
     async fn get_vpc_route_table(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcRouteTablePath>,
     ) -> Result<HttpResponseOk<RouteTable>, HttpError> {
         crate::handlers::network::routes::get_vpc_route_table(rqctx, path).await
-    }
-
-    async fn delete_vpc_route_table(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcRouteTablePath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::routes::delete_vpc_route_table(rqctx, path).await
     }
 
     async fn list_vpc_route_table_routes(
@@ -721,26 +676,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::routes::list_vpc_route_table_routes(rqctx, path).await
     }
 
-    async fn create_vpc_route_table_route(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcRouteTablePath>,
-        body: TypedBody<NewRoute>,
-    ) -> Result<HttpResponseCreated<Route>, HttpError> {
-        crate::handlers::network::routes::create_vpc_route_table_route(rqctx, path, body).await
-    }
-
     async fn get_vpc_route_table_route(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcRouteTableRoutePath>,
     ) -> Result<HttpResponseOk<Route>, HttpError> {
         crate::handlers::network::routes::get_vpc_route_table_route(rqctx, path).await
-    }
-
-    async fn delete_vpc_route_table_route(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcRouteTableRoutePath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::routes::delete_vpc_route_table_route(rqctx, path).await
     }
 
     // ---- Firewall rules (Slice 1: per-VPC flat rule list) ----------
@@ -752,21 +692,6 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::firewall::list_vpc_firewall_rules(rqctx, path).await
     }
 
-    async fn create_vpc_firewall_rule(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewFirewallRule>,
-    ) -> Result<HttpResponseCreated<FirewallRule>, HttpError> {
-        crate::handlers::network::firewall::create_vpc_firewall_rule(rqctx, path, body).await
-    }
-
-    async fn delete_vpc_firewall_rule(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcFirewallRulePath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::firewall::delete_vpc_firewall_rule(rqctx, path).await
-    }
-
     // ---- DHCP / IPAM (γ.1 + γ.4) -----------------------------------
 
     async fn get_vpc_dhcp_pool(
@@ -776,21 +701,6 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::dhcp::get_vpc_dhcp_pool(rqctx, path).await
     }
 
-    async fn set_vpc_dhcp_pool(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewDhcpPool>,
-    ) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
-        crate::handlers::network::dhcp::set_vpc_dhcp_pool(rqctx, path, body).await
-    }
-
-    async fn clear_vpc_dhcp_pool(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::dhcp::clear_vpc_dhcp_pool(rqctx, path).await
-    }
-
     async fn list_vpc_dhcp_reservations(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcPath>,
@@ -798,26 +708,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::dhcp::list_vpc_dhcp_reservations(rqctx, path).await
     }
 
-    async fn create_vpc_dhcp_reservation(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewDhcpReservation>,
-    ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError> {
-        crate::handlers::network::dhcp::create_vpc_dhcp_reservation(rqctx, path, body).await
-    }
-
     async fn get_vpc_dhcp_reservation(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcDhcpMacPath>,
     ) -> Result<HttpResponseOk<DhcpReservation>, HttpError> {
         crate::handlers::network::dhcp::get_vpc_dhcp_reservation(rqctx, path).await
-    }
-
-    async fn delete_vpc_dhcp_reservation(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcDhcpMacPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::dhcp::delete_vpc_dhcp_reservation(rqctx, path).await
     }
 
     async fn list_vpc_dhcp_leases(
@@ -848,26 +743,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::nat::list_vpc_nat_gateways(rqctx, path).await
     }
 
-    async fn create_vpc_nat_gateway(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewNatGateway>,
-    ) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
-        crate::handlers::network::nat::create_vpc_nat_gateway(rqctx, path, body).await
-    }
-
     async fn get_vpc_nat_gateway(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcNatGatewayPath>,
     ) -> Result<HttpResponseOk<NatGateway>, HttpError> {
         crate::handlers::network::nat::get_vpc_nat_gateway(rqctx, path).await
-    }
-
-    async fn delete_vpc_nat_gateway(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcNatGatewayPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::network::nat::delete_vpc_nat_gateway(rqctx, path).await
     }
 
     async fn list_public_ssh_keys(
@@ -1140,13 +1020,6 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::projects::delete_project_quota(rqctx, path).await
     }
 
-    async fn list_project_instances(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-    ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError> {
-        crate::handlers::instances::list_project_instances(rqctx, path).await
-    }
-
     async fn list_instances_v1(
         rqctx: RequestContext<Self::Context>,
         query: Query<tritond_api::v1::InstanceQuery>,
@@ -1260,50 +1133,6 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::restart_instance_v1(rqctx, path).await
     }
 
-    async fn create_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-        body: TypedBody<NewInstance>,
-    ) -> Result<HttpResponseCreated<Instance>, HttpError> {
-        crate::handlers::instances::create_project_instance(rqctx, path, body).await
-    }
-
-    async fn get_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError> {
-        crate::handlers::instances::get_project_instance(rqctx, path).await
-    }
-
-    async fn delete_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-        query: Query<InstanceDeleteQuery>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::instances::delete_project_instance(rqctx, path, query).await
-    }
-
-    async fn start_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError> {
-        crate::handlers::instances::start_project_instance(rqctx, path).await
-    }
-
-    async fn stop_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError> {
-        crate::handlers::instances::stop_project_instance(rqctx, path).await
-    }
-
-    async fn restart_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError> {
-        crate::handlers::instances::restart_project_instance(rqctx, path).await
-    }
-
     async fn migrate_project_instance(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectInstancePath>,
@@ -1329,34 +1158,6 @@ impl TritondApi for TritondServiceImpl {
         upgraded: dropshot::WebsocketConnection,
     ) -> dropshot::WebsocketChannelResult {
         crate::console::legacy_vm_console(rqctx, path, query, upgraded).await
-    }
-
-    async fn list_instance_nics(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError> {
-        crate::handlers::instances::list_instance_nics(rqctx, path).await
-    }
-
-    async fn get_instance_nic(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstanceNicPath>,
-    ) -> Result<HttpResponseOk<Nic>, HttpError> {
-        crate::handlers::instances::get_instance_nic(rqctx, path).await
-    }
-
-    async fn list_instance_disks(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError> {
-        crate::handlers::instances::list_instance_disks(rqctx, path).await
-    }
-
-    async fn get_instance_disk(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstanceDiskPath>,
-    ) -> Result<HttpResponseOk<Disk>, HttpError> {
-        crate::handlers::instances::get_instance_disk(rqctx, path).await
     }
 
     async fn list_disks_v1(
@@ -1394,26 +1195,11 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::instances::list_project_floating_ips(rqctx, path).await
     }
 
-    async fn create_project_floating_ip(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-        body: TypedBody<NewFloatingIp>,
-    ) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
-        crate::handlers::instances::create_project_floating_ip(rqctx, path, body).await
-    }
-
     async fn get_project_floating_ip(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError> {
         crate::handlers::instances::get_project_floating_ip(rqctx, path).await
-    }
-
-    async fn delete_project_floating_ip(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectFloatingIpPath>,
-    ) -> Result<HttpResponseDeleted, HttpError> {
-        crate::handlers::instances::delete_project_floating_ip(rqctx, path).await
     }
 
     async fn attach_project_floating_ip(
@@ -1474,20 +1260,6 @@ impl TritondApi for TritondServiceImpl {
         query: Query<RegisterStatusQuery>,
     ) -> Result<HttpResponseOk<RegisterStatusResponse>, HttpError> {
         crate::handlers::agents::agent_register_status(rqctx, query).await
-    }
-
-    async fn list_cns(
-        rqctx: RequestContext<Self::Context>,
-        query: Query<CnListQuery>,
-    ) -> Result<HttpResponseOk<Vec<CnView>>, HttpError> {
-        crate::handlers::cns::list_cns(rqctx, query).await
-    }
-
-    async fn get_cn(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<CnPath>,
-    ) -> Result<HttpResponseOk<CnView>, HttpError> {
-        crate::handlers::cns::get_cn(rqctx, path).await
     }
 
     async fn approve_cn(

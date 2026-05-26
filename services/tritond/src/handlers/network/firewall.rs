@@ -334,22 +334,3 @@ pub(crate) async fn list_vpc_firewall_rules(
         .map_err(store_error_to_http)?;
     Ok(HttpResponseOk(rules))
 }
-
-/// RFD 00007 AP-3e: moved to `POST /v1/firewall-rules?vpc=<uuid>`.
-pub(crate) async fn create_vpc_firewall_rule(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-    _body: TypedBody<NewFirewallRule>,
-) -> Result<HttpResponseCreated<FirewallRule>, HttpError> {
-    Err(crate::error::gone("POST /v1/firewall-rules?vpc=<uuid>"))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/firewall-rules/{firewall_rule_id}`.
-pub(crate) async fn delete_vpc_firewall_rule(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcFirewallRulePath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone(
-        "DELETE /v1/firewall-rules/{firewall_rule_id}",
-    ))
-}

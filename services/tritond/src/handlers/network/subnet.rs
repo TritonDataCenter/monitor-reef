@@ -356,15 +356,6 @@ pub(crate) async fn list_vpc_subnets(
     Ok(HttpResponseOk(subnets))
 }
 
-/// RFD 00007 AP-3e: moved to `POST /v1/subnets?vpc=<uuid>`.
-pub(crate) async fn create_vpc_subnet(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-    _body: TypedBody<NewSubnet>,
-) -> Result<HttpResponseCreated<Subnet>, HttpError> {
-    Err(crate::error::gone("POST /v1/subnets?vpc=<uuid>"))
-}
-
 pub(crate) async fn get_vpc_subnet(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcSubnetPath>,
@@ -395,12 +386,4 @@ pub(crate) async fn get_vpc_subnet(
         return Err(not_found());
     }
     Ok(HttpResponseOk(subnet))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/subnets/{subnet_id}`.
-pub(crate) async fn delete_vpc_subnet(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcSubnetPath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone("DELETE /v1/subnets/{subnet_id}"))
 }

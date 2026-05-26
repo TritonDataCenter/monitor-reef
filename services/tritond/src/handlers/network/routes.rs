@@ -569,15 +569,6 @@ pub(crate) async fn list_vpc_route_tables(
     Ok(HttpResponseOk(route_tables))
 }
 
-/// RFD 00007 AP-3e: moved to `POST /v1/route-tables?vpc=<uuid>`.
-pub(crate) async fn create_vpc_route_table(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-    _body: TypedBody<NewRouteTable>,
-) -> Result<HttpResponseCreated<RouteTable>, HttpError> {
-    Err(crate::error::gone("POST /v1/route-tables?vpc=<uuid>"))
-}
-
 pub(crate) async fn get_vpc_route_table(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcRouteTablePath>,
@@ -610,16 +601,6 @@ pub(crate) async fn get_vpc_route_table(
         return Err(not_found());
     }
     Ok(HttpResponseOk(route_table))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/route-tables/{route_table_id}`.
-pub(crate) async fn delete_vpc_route_table(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcRouteTablePath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone(
-        "DELETE /v1/route-tables/{route_table_id}",
-    ))
 }
 
 pub(crate) async fn list_vpc_route_table_routes(
@@ -662,15 +643,6 @@ pub(crate) async fn list_vpc_route_table_routes(
     Ok(HttpResponseOk(routes))
 }
 
-/// RFD 00007 AP-3e: moved to `POST /v1/routes?route_table=<uuid>`.
-pub(crate) async fn create_vpc_route_table_route(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcRouteTablePath>,
-    _body: TypedBody<NewRoute>,
-) -> Result<HttpResponseCreated<Route>, HttpError> {
-    Err(crate::error::gone("POST /v1/routes?route_table=<uuid>"))
-}
-
 pub(crate) async fn get_vpc_route_table_route(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcRouteTableRoutePath>,
@@ -705,12 +677,4 @@ pub(crate) async fn get_vpc_route_table_route(
         return Err(not_found());
     }
     Ok(HttpResponseOk(route))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/routes/{route_id}`.
-pub(crate) async fn delete_vpc_route_table_route(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcRouteTableRoutePath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone("DELETE /v1/routes/{route_id}"))
 }

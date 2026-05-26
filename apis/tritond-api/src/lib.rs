@@ -2420,29 +2420,6 @@ pub trait TritondApi {
         query: Query<RegisterStatusQuery>,
     ) -> Result<HttpResponseOk<RegisterStatusResponse>, HttpError>;
 
-    /// List compute nodes, optionally filtered by state. Operator
-    /// surface (root + future fleet-scoped operator role).
-    #[endpoint {
-        method = GET,
-        path = "/v2/cns",
-        tags = ["cns"],
-    }]
-    async fn list_cns(
-        rqctx: RequestContext<Self::Context>,
-        query: Query<CnListQuery>,
-    ) -> Result<HttpResponseOk<Vec<CnView>>, HttpError>;
-
-    /// Read a single compute-node record by `server_uuid`.
-    #[endpoint {
-        method = GET,
-        path = "/v2/cns/{server_uuid}",
-        tags = ["cns"],
-    }]
-    async fn get_cn(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<CnPath>,
-    ) -> Result<HttpResponseOk<CnView>, HttpError>;
-
     /// Approve a Pending compute node by claim code. Mints the
     /// per-CN API key inside the same transaction that flips
     /// state; the plaintext is delivered to the agent via its
@@ -2764,22 +2741,6 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<Vpc>>, HttpError>;
 
-    /// Create a VPC in a project. Returns 400 if neither `ipv4_block`
-    /// nor `ipv6_block` is provided. Returns 409 if a VPC with the
-    /// same name already exists in the project. The server assigns
-    /// `id`, `vni` (random in `[4096, 2^24)`, unique rack-wide), and
-    /// `created_at`.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs",
-        tags = ["vpcs"],
-    }]
-    async fn create_project_vpc(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-        body: TypedBody<NewVpc>,
-    ) -> Result<HttpResponseCreated<Vpc>, HttpError>;
-
     /// Read a single VPC. Returns 404 when the VPC does not exist or
     /// belongs to a different tenant or project (cross-tenant probes
     /// do not learn that the resource exists).
@@ -2793,20 +2754,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vpc>, HttpError>;
 
-    /// Delete a VPC. Returns 404 when the VPC does not exist or
-    /// belongs to a different tenant or project. Returns 409 if the
-    /// VPC still has subnets attached — operators must clear subnets
-    /// before deleting the parent VPC (Phase 0 has no cascade).
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}",
-        tags = ["vpcs"],
-    }]
-    async fn delete_project_vpc(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
-
     /// List the subnets inside a VPC. Returns 404 when the tenant,
     /// project, or VPC does not exist (or is in the wrong parent).
     #[endpoint {
@@ -2819,23 +2766,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError>;
 
-    /// Create a subnet in a VPC. Returns 400 if neither
-    /// `ipv4_block` nor `ipv6_block` is provided. Returns 409 if a
-    /// subnet with the same name already exists in the VPC, if a
-    /// CIDR is not contained in the parent VPC's matching-family
-    /// CIDR, or if a CIDR overlaps an existing subnet's CIDR. The
-    /// server assigns `id` and `created_at`.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets",
-        tags = ["subnets"],
-    }]
-    async fn create_vpc_subnet(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewSubnet>,
-    ) -> Result<HttpResponseCreated<Subnet>, HttpError>;
-
     /// Read a single subnet. Returns 404 when the subnet does not
     /// exist or belongs to a different tenant, project, or VPC.
     #[endpoint {
@@ -2847,18 +2777,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcSubnetPath>,
     ) -> Result<HttpResponseOk<Subnet>, HttpError>;
-
-    /// Delete a subnet. Returns 404 when the subnet does not exist
-    /// or belongs to a different tenant, project, or VPC.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/subnets/{subnet_id}",
-        tags = ["subnets"],
-    }]
-    async fn delete_vpc_subnet(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcSubnetPath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// RFD 00007 `GET /v1/vpc-dhcp-pools/{vpc_id}`. Flat single
     /// per-VPC DHCP-pool read. 404s when no pool is set.
@@ -3373,19 +3291,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<RouteTable>>, HttpError>;
 
-    /// Create a non-main route table in a VPC. Returns 409 if the
-    /// name is already in use within the VPC.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables",
-        tags = ["route-tables"],
-    }]
-    async fn create_vpc_route_table(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewRouteTable>,
-    ) -> Result<HttpResponseCreated<RouteTable>, HttpError>;
-
     /// Read a single route table.
     #[endpoint {
         method = GET,
@@ -3396,18 +3301,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcRouteTablePath>,
     ) -> Result<HttpResponseOk<RouteTable>, HttpError>;
-
-    /// Delete a non-main route table. Returns 409 while subnets or
-    /// routes still reference the table.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}",
-        tags = ["route-tables"],
-    }]
-    async fn delete_vpc_route_table(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcRouteTablePath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List routes inside a route table.
     #[endpoint {
@@ -3420,19 +3313,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcRouteTablePath>,
     ) -> Result<HttpResponseOk<Vec<Route>>, HttpError>;
 
-    /// Create a route in a route table. Returns 409 if the
-    /// destination is already in use in the table.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes",
-        tags = ["routes"],
-    }]
-    async fn create_vpc_route_table_route(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcRouteTablePath>,
-        body: TypedBody<NewRoute>,
-    ) -> Result<HttpResponseCreated<Route>, HttpError>;
-
     /// Read a single route.
     #[endpoint {
         method = GET,
@@ -3443,17 +3323,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcRouteTableRoutePath>,
     ) -> Result<HttpResponseOk<Route>, HttpError>;
-
-    /// Delete a route.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/route-tables/{route_table_id}/routes/{route_id}",
-        tags = ["routes"],
-    }]
-    async fn delete_vpc_route_table_route(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcRouteTableRoutePath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     // -- Firewall rules (Slice 1: per-VPC flat rule list) -------------
 
@@ -3468,31 +3337,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<FirewallRule>>, HttpError>;
-
-    /// Create a firewall rule scoped to a VPC. Slice 1: every NIC in
-    /// the VPC inherits every rule (no security-group attachment
-    /// yet). The server assigns `id` and `created_at`.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules",
-        tags = ["firewall-rules"],
-    }]
-    async fn create_vpc_firewall_rule(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewFirewallRule>,
-    ) -> Result<HttpResponseCreated<FirewallRule>, HttpError>;
-
-    /// Delete a firewall rule by id.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/firewall-rules/{firewall_rule_id}",
-        tags = ["firewall-rules"],
-    }]
-    async fn delete_vpc_firewall_rule(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcFirewallRulePath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     // -- DHCP / IPAM (γ.1 + γ.4: per-VPC pool, reservations, leases)
 
@@ -3509,29 +3353,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Option<DhcpPool>>, HttpError>;
 
-    /// Create or replace the per-VPC DHCP pool config.
-    #[endpoint {
-        method = PUT,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
-        tags = ["dhcp"],
-    }]
-    async fn set_vpc_dhcp_pool(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewDhcpPool>,
-    ) -> Result<HttpResponseOk<DhcpPool>, HttpError>;
-
-    /// Remove the per-VPC DHCP pool config (revert to defaults).
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/pool",
-        tags = ["dhcp"],
-    }]
-    async fn clear_vpc_dhcp_pool(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
-
     /// List DHCP reservations (operator-pinned MAC→IP mappings) in a VPC.
     #[endpoint {
         method = GET,
@@ -3543,19 +3364,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<DhcpReservation>>, HttpError>;
 
-    /// Create a DHCP reservation pinning a MAC to a specific IPv4.
-    /// Returns 409 if the MAC is already reserved with a different IP.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations",
-        tags = ["dhcp"],
-    }]
-    async fn create_vpc_dhcp_reservation(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewDhcpReservation>,
-    ) -> Result<HttpResponseCreated<DhcpReservation>, HttpError>;
-
     /// Look up a reservation by MAC.
     #[endpoint {
         method = GET,
@@ -3566,17 +3374,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcDhcpMacPath>,
     ) -> Result<HttpResponseOk<DhcpReservation>, HttpError>;
-
-    /// Remove a reservation by MAC.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/dhcp/reservations/{mac}",
-        tags = ["dhcp"],
-    }]
-    async fn delete_vpc_dhcp_reservation(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcDhcpMacPath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List active DHCP leases for a VPC. Each entry was written when
     /// tritond pre-assigned an IP to a NIC at instance create.
@@ -3626,20 +3423,6 @@ pub trait TritondApi {
         path: Path<TenantProjectVpcPath>,
     ) -> Result<HttpResponseOk<Vec<NatGateway>>, HttpError>;
 
-    /// Create a NAT gateway in a VPC. Returns 409 if the name is
-    /// already in use within the VPC. The returned record includes
-    /// the reserved public source address.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways",
-        tags = ["nat-gateways"],
-    }]
-    async fn create_vpc_nat_gateway(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcPath>,
-        body: TypedBody<NewNatGateway>,
-    ) -> Result<HttpResponseCreated<NatGateway>, HttpError>;
-
     /// Read a single NAT gateway.
     #[endpoint {
         method = GET,
@@ -3650,17 +3433,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcNatGatewayPath>,
     ) -> Result<HttpResponseOk<NatGateway>, HttpError>;
-
-    /// Delete a NAT gateway and release its public address.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/vpcs/{vpc_id}/nat-gateways/{nat_gateway_id}",
-        tags = ["nat-gateways"],
-    }]
-    async fn delete_vpc_nat_gateway(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectVpcNatGatewayPath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// List Public SSH keys. Anonymous-accessible — Public means
     /// public, so unauthenticated probes get the catalog.
@@ -4066,17 +3838,6 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseDeleted, HttpError>;
 
-    /// List instances in a project.
-    #[endpoint {
-        method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances",
-        tags = ["instances"],
-    }]
-    async fn list_project_instances(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-    ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError>;
-
     /// RFD 00007 `GET /v1/system/cns?state=`. Fleet CN inventory.
     /// Capability: `SystemRead`.
     #[endpoint {
@@ -4226,43 +3987,6 @@ pub trait TritondApi {
         query: Query<crate::v1::InstanceQuery>,
     ) -> Result<HttpResponseOk<crate::v1::ResultsPage<Instance>>, HttpError>;
 
-    /// Create an instance in a project.
-    ///
-    /// Returns 400 if `cpu == 0` or `memory_bytes == 0`. Returns 404
-    /// if any referenced resource (image, subnet, ssh-keys) does
-    /// not exist or lives outside this tenant/project (or, for
-    /// image/ssh-key which remain silo-scoped in E-3, outside the
-    /// tenant's silo). Returns 409 if the instance name is already
-    /// taken in the project.
-    ///
-    /// Phase 0 ships synchronous lifecycle: the create handler
-    /// transitions the new instance through Pending → Running
-    /// before responding. A future slice introduces an async
-    /// provisioning queue + stub executor; the API surface stays
-    /// the same but tests will observe Pending-then-Running
-    /// transitions instead of an instant Running.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances",
-        tags = ["instances"],
-    }]
-    async fn create_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-        body: TypedBody<NewInstance>,
-    ) -> Result<HttpResponseCreated<Instance>, HttpError>;
-
-    /// Read a single instance.
-    #[endpoint {
-        method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}",
-        tags = ["instances"],
-    }]
-    async fn get_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError>;
-
     /// RFD 00007 `GET /v1/instances/{instance_id}`. Flat single-
     /// instance read by UUID. The handler reads the instance row
     /// from the store and checks the principal's tenant against
@@ -4344,60 +4068,6 @@ pub trait TritondApi {
         path: Path<crate::v1::InstancePath>,
     ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
-    /// Delete an instance. Returns 409 if the instance is not in
-    /// a deletable state (must be Stopped or Failed); pass
-    /// `?force=true` to override and delete from any state.
-    /// Returns 404 if the instance does not exist or belongs to
-    /// a different tenant or project. The tritond record is cleared
-    /// synchronously; the agent vmadm-deletes the SmartOS zone
-    /// asynchronously via a `JobKind::Delete` job.
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}",
-        tags = ["instances"],
-    }]
-    async fn delete_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-        query: Query<InstanceDeleteQuery>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
-
-    /// Start a stopped instance. Returns 409 if the instance is
-    /// not in `Stopped` state.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/start",
-        tags = ["instances"],
-    }]
-    async fn start_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError>;
-
-    /// Stop a running instance. Returns 409 if the instance is
-    /// not in `Running` state.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/stop",
-        tags = ["instances"],
-    }]
-    async fn stop_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError>;
-
-    /// Restart a running instance. Returns 409 if the instance is
-    /// not in `Running` state.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/restart",
-        tags = ["instances"],
-    }]
-    async fn restart_project_instance(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Instance>, HttpError>;
-
     /// Start a live migration of a running instance (LM-5).
     ///
     /// The body's `action` dispatches between begin / estimate /
@@ -4441,56 +4111,6 @@ pub trait TritondApi {
         query: Query<ConsoleQuery>,
         upgraded: WebsocketConnection,
     ) -> WebsocketChannelResult;
-
-    /// List the NICs attached to an instance. Phase 0 produces
-    /// exactly one (the auto-created `"primary"`); a future slice
-    /// adds NIC attach/detach.
-    #[endpoint {
-        method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics",
-        tags = ["nics"],
-    }]
-    async fn list_instance_nics(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError>;
-
-    /// Read a single NIC. Returns 404 if the NIC does not exist or
-    /// belongs to a different tenant, project, or instance.
-    #[endpoint {
-        method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/nics/{nic_id}",
-        tags = ["nics"],
-    }]
-    async fn get_instance_nic(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstanceNicPath>,
-    ) -> Result<HttpResponseOk<Nic>, HttpError>;
-
-    /// List the Disks attached to an instance. Phase 0 produces
-    /// exactly one (the auto-created `"boot"`); future multi-disk
-    /// attach lands as a follow-on slice.
-    #[endpoint {
-        method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks",
-        tags = ["disks"],
-    }]
-    async fn list_instance_disks(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstancePath>,
-    ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError>;
-
-    /// Read a single Disk. Returns 404 if the Disk does not exist
-    /// or belongs to a different tenant, project, or instance.
-    #[endpoint {
-        method = GET,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/instances/{instance_id}/disks/{disk_id}",
-        tags = ["disks"],
-    }]
-    async fn get_instance_disk(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectInstanceDiskPath>,
-    ) -> Result<HttpResponseOk<Disk>, HttpError>;
 
     /// RFD 00007 `GET /v1/disks?tenant=&project=&instance=`. Flat
     /// disk list. AP-2e requires `?instance=<uuid>`; cross-project
@@ -4552,22 +4172,6 @@ pub trait TritondApi {
         path: Path<TenantProjectPath>,
     ) -> Result<HttpResponseOk<Vec<FloatingIp>>, HttpError>;
 
-    /// Allocate a FloatingIp from the requested family's pool.
-    /// Returns 409 if the name is already in use within the
-    /// project. Returns 404 if the project does not exist or
-    /// belongs to a different tenant. The returned FloatingIp
-    /// starts unattached.
-    #[endpoint {
-        method = POST,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips",
-        tags = ["floating-ips"],
-    }]
-    async fn create_project_floating_ip(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectPath>,
-        body: TypedBody<NewFloatingIp>,
-    ) -> Result<HttpResponseCreated<FloatingIp>, HttpError>;
-
     /// Read a single FloatingIp. Returns 404 if the FloatingIp
     /// does not exist or belongs to a different tenant or project.
     #[endpoint {
@@ -4579,19 +4183,6 @@ pub trait TritondApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectFloatingIpPath>,
     ) -> Result<HttpResponseOk<FloatingIp>, HttpError>;
-
-    /// Release a FloatingIp back to its pool. Returns 409 if the
-    /// FloatingIp is currently attached (operator must detach
-    /// first).
-    #[endpoint {
-        method = DELETE,
-        path = "/v2/tenants/{tenant_id}/projects/{project_id}/floating-ips/{floating_ip_id}",
-        tags = ["floating-ips"],
-    }]
-    async fn delete_project_floating_ip(
-        rqctx: RequestContext<Self::Context>,
-        path: Path<TenantProjectFloatingIpPath>,
-    ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// Atomically attach a FloatingIp to a NIC, replacing any
     /// existing attachment. The target NIC must live in the same

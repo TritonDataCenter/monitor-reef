@@ -515,23 +515,6 @@ pub(crate) async fn get_vpc_dhcp_pool(
     Ok(HttpResponseOk(pool))
 }
 
-/// RFD 00007 AP-3e: moved to `PUT /v1/vpc-dhcp-pools/{vpc_id}`.
-pub(crate) async fn set_vpc_dhcp_pool(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-    _body: TypedBody<NewDhcpPool>,
-) -> Result<HttpResponseOk<DhcpPool>, HttpError> {
-    Err(crate::error::gone("PUT /v1/vpc-dhcp-pools/{vpc_id}"))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/vpc-dhcp-pools/{vpc_id}`.
-pub(crate) async fn clear_vpc_dhcp_pool(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone("DELETE /v1/vpc-dhcp-pools/{vpc_id}"))
-}
-
 pub(crate) async fn list_vpc_dhcp_reservations(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcPath>,
@@ -558,17 +541,6 @@ pub(crate) async fn list_vpc_dhcp_reservations(
         .await
         .map_err(store_error_to_http)?;
     Ok(HttpResponseOk(rs))
-}
-
-/// RFD 00007 AP-3e: moved to `POST /v1/vpc-dhcp-reservations?vpc=<uuid>`.
-pub(crate) async fn create_vpc_dhcp_reservation(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-    _body: TypedBody<NewDhcpReservation>,
-) -> Result<HttpResponseCreated<DhcpReservation>, HttpError> {
-    Err(crate::error::gone(
-        "POST /v1/vpc-dhcp-reservations?vpc=<uuid>",
-    ))
 }
 
 pub(crate) async fn get_vpc_dhcp_reservation(
@@ -598,16 +570,6 @@ pub(crate) async fn get_vpc_dhcp_reservation(
         .await
         .map_err(store_error_to_http)?;
     Ok(HttpResponseOk(r))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}`.
-pub(crate) async fn delete_vpc_dhcp_reservation(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcDhcpMacPath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone(
-        "DELETE /v1/vpc-dhcp-reservations/{vpc_id}/{mac}",
-    ))
 }
 
 pub(crate) async fn list_vpc_dhcp_leases(

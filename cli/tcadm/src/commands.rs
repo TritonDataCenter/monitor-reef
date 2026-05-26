@@ -5467,8 +5467,8 @@ pub async fn floating_ip_create_v1(
     json_output: bool,
 ) -> Result<()> {
     let family = match family.as_str() {
-        "ipv4" => tritond_client::types::AddressFamily::Ipv4,
-        "ipv6" => tritond_client::types::AddressFamily::Ipv6,
+        "ipv4" | "v4" => tritond_client::types::AddressFamily::V4,
+        "ipv6" | "v6" => tritond_client::types::AddressFamily::V6,
         other => anyhow::bail!("unknown family {other}; expected ipv4 or ipv6"),
     };
     let session = Session::resolve(endpoint_override, api_key_override).await?;

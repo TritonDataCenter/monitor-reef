@@ -97,16 +97,6 @@ fn idempotency_key_from_headers(rqctx: &RequestContext<ApiContext>) -> Option<St
     Some(s.to_string())
 }
 
-/// RFD 00007 AP-3e: this endpoint moved to `GET /v1/instances?
-/// tenant=&project=`. The legacy nested URL returns 410 Gone with
-/// an inline migration hint. AP-8 removes the stub entirely.
-pub(crate) async fn list_project_instances(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectPath>,
-) -> Result<HttpResponseOk<Vec<Instance>>, HttpError> {
-    Err(crate::error::gone("GET /v1/instances?tenant=&project="))
-}
-
 /// RFD 00007 AP-3a `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.
 ///
 /// Fleet-wide instance search. This is the endpoint that opened the
@@ -451,15 +441,6 @@ pub(crate) async fn list_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(filtered)))
 }
 
-/// RFD 00007 AP-3e: moved to `POST /v1/instances?tenant=&project=`.
-pub(crate) async fn create_project_instance(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectPath>,
-    _body: TypedBody<NewInstance>,
-) -> Result<HttpResponseCreated<Instance>, HttpError> {
-    Err(crate::error::gone("POST /v1/instances?tenant=&project="))
-}
-
 /// RFD 00007 AP-2d: `POST /v1/instances?tenant=&project=` body
 /// handler. Unpacks the query selectors, requires both `tenant=` and
 /// `project=` (the customer surface always requires a project scope
@@ -760,49 +741,6 @@ async fn create_instance_inner(
         )
         .await;
     Ok(HttpResponseCreated(instance))
-}
-
-/// RFD 00007 AP-3e: moved to `GET /v1/instances/{instance_id}`.
-pub(crate) async fn get_project_instance(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-) -> Result<HttpResponseOk<Instance>, HttpError> {
-    Err(crate::error::gone("GET /v1/instances/{instance_id}"))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/instances/{instance_id}`.
-pub(crate) async fn delete_project_instance(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-    _query: Query<InstanceDeleteQuery>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone("DELETE /v1/instances/{instance_id}"))
-}
-
-/// RFD 00007 AP-3e: moved to `POST /v1/instances/{instance_id}/start`.
-pub(crate) async fn start_project_instance(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-) -> Result<HttpResponseOk<Instance>, HttpError> {
-    Err(crate::error::gone("POST /v1/instances/{instance_id}/start"))
-}
-
-/// RFD 00007 AP-3e: moved to `POST /v1/instances/{instance_id}/stop`.
-pub(crate) async fn stop_project_instance(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-) -> Result<HttpResponseOk<Instance>, HttpError> {
-    Err(crate::error::gone("POST /v1/instances/{instance_id}/stop"))
-}
-
-/// RFD 00007 AP-3e: moved to `POST /v1/instances/{instance_id}/restart`.
-pub(crate) async fn restart_project_instance(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-) -> Result<HttpResponseOk<Instance>, HttpError> {
-    Err(crate::error::gone(
-        "POST /v1/instances/{instance_id}/restart",
-    ))
 }
 
 // AP-2c: flat /v1/instances/{instance_id}[/{action}] handlers.
@@ -1493,22 +1431,6 @@ pub(crate) async fn get_nic_v1(
     Ok(HttpResponseOk(nic))
 }
 
-/// RFD 00007 AP-3e: moved to `GET /v1/nics?instance=<instance_id>`.
-pub(crate) async fn list_instance_nics(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-) -> Result<HttpResponseOk<Vec<Nic>>, HttpError> {
-    Err(crate::error::gone("GET /v1/nics?instance=<instance_id>"))
-}
-
-/// RFD 00007 AP-3e: moved to `GET /v1/nics/{nic_id}`.
-pub(crate) async fn get_instance_nic(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstanceNicPath>,
-) -> Result<HttpResponseOk<Nic>, HttpError> {
-    Err(crate::error::gone("GET /v1/nics/{nic_id}"))
-}
-
 /// RFD 00007 AP-2e: `GET /v1/disks?tenant=&project=&instance=`.
 /// Flat disk list. Requires `?instance=<uuid>` for now; a future
 /// slice expands to cross-project disk searches once the customer
@@ -1598,22 +1520,6 @@ pub(crate) async fn get_disk_v1(
     Ok(HttpResponseOk(disk))
 }
 
-/// RFD 00007 AP-3e: moved to `GET /v1/disks?instance=<instance_id>`.
-pub(crate) async fn list_instance_disks(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstancePath>,
-) -> Result<HttpResponseOk<Vec<Disk>>, HttpError> {
-    Err(crate::error::gone("GET /v1/disks?instance=<instance_id>"))
-}
-
-/// RFD 00007 AP-3e: moved to `GET /v1/disks/{disk_id}`.
-pub(crate) async fn get_instance_disk(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectInstanceDiskPath>,
-) -> Result<HttpResponseOk<Disk>, HttpError> {
-    Err(crate::error::gone("GET /v1/disks/{disk_id}"))
-}
-
 pub(crate) async fn list_project_floating_ips(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectPath>,
@@ -1647,15 +1553,6 @@ pub(crate) async fn list_project_floating_ips(
         .await
         .map_err(store_error_to_http)?;
     Ok(HttpResponseOk(fips))
-}
-
-/// RFD 00007 AP-3e: moved to `POST /v1/floating-ips?tenant=&project=`.
-pub(crate) async fn create_project_floating_ip(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectPath>,
-    _body: TypedBody<NewFloatingIp>,
-) -> Result<HttpResponseCreated<FloatingIp>, HttpError> {
-    Err(crate::error::gone("POST /v1/floating-ips?tenant=&project="))
 }
 
 /// Shared error-mapping for FIP saga failures. Re-derives the
@@ -2055,16 +1952,6 @@ pub(crate) async fn get_project_floating_ip(
         return Err(not_found());
     }
     Ok(HttpResponseOk(fip))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/floating-ips/{id}`.
-pub(crate) async fn delete_project_floating_ip(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectFloatingIpPath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone(
-        "DELETE /v1/floating-ips/{floating_ip_id}",
-    ))
 }
 
 pub(crate) async fn attach_project_floating_ip(

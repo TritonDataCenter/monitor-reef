@@ -116,24 +116,6 @@ pub(crate) async fn get_system_cn_v1(
     Ok(HttpResponseOk(CnView::from(cn)))
 }
 
-/// RFD 00007 AP-3e: moved to `GET /v1/system/cns`. Capability-gated
-/// at the new path with `SystemRead`; the legacy `/v2/cns` returned
-/// the same list to any authenticated caller.
-pub(crate) async fn list_cns(
-    _rqctx: RequestContext<ApiContext>,
-    _query: Query<CnListQuery>,
-) -> Result<HttpResponseOk<Vec<CnView>>, HttpError> {
-    Err(crate::error::gone("GET /v1/system/cns"))
-}
-
-/// RFD 00007 AP-3e: moved to `GET /v1/system/cns/{cn_id}`.
-pub(crate) async fn get_cn(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<CnPath>,
-) -> Result<HttpResponseOk<CnView>, HttpError> {
-    Err(crate::error::gone("GET /v1/system/cns/{cn_id}"))
-}
-
 pub(crate) async fn approve_cn(
     rqctx: RequestContext<ApiContext>,
     body: TypedBody<ApproveCnRequest>,

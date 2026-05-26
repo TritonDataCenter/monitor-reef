@@ -382,15 +382,6 @@ pub(crate) async fn list_vpc_nat_gateways(
     Ok(HttpResponseOk(nat_gateways))
 }
 
-/// RFD 00007 AP-3e: moved to `POST /v1/nat-gateways?vpc=<uuid>`.
-pub(crate) async fn create_vpc_nat_gateway(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcPath>,
-    _body: TypedBody<NewNatGateway>,
-) -> Result<HttpResponseCreated<NatGateway>, HttpError> {
-    Err(crate::error::gone("POST /v1/nat-gateways?vpc=<uuid>"))
-}
-
 /// Map a NAT-saga failure back to an HTTP error using the same
 /// kind-string convention shared across the saga catalog.
 async fn map_nat_saga_err<T>(
@@ -478,14 +469,4 @@ pub(crate) async fn get_vpc_nat_gateway(
         return Err(not_found());
     }
     Ok(HttpResponseOk(nat_gateway))
-}
-
-/// RFD 00007 AP-3e: moved to `DELETE /v1/nat-gateways/{nat_gateway_id}`.
-pub(crate) async fn delete_vpc_nat_gateway(
-    _rqctx: RequestContext<ApiContext>,
-    _path: Path<TenantProjectVpcNatGatewayPath>,
-) -> Result<HttpResponseDeleted, HttpError> {
-    Err(crate::error::gone(
-        "DELETE /v1/nat-gateways/{nat_gateway_id}",
-    ))
 }
