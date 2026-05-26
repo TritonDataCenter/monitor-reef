@@ -97,40 +97,14 @@ fn idempotency_key_from_headers(rqctx: &RequestContext<ApiContext>) -> Option<St
     Some(s.to_string())
 }
 
+/// RFD 00007 AP-3e: this endpoint moved to `GET /v1/instances?
+/// tenant=&project=`. The legacy nested URL returns 410 Gone with
+/// an inline migration hint. AP-8 removes the stub entirely.
 pub(crate) async fn list_project_instances(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectPath>,
 ) -> Result<HttpResponseOk<Vec<Instance>>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectPath {
-        tenant_id,
-        project_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceList,
-        tenant_id,
-    )
-    .await?;
-    // Project must exist + be in this silo (matches the
-    // list_project_vpcs / list_vpc_subnets pattern).
-    let project = ctx
-        .store
-        .get_project(project_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if project.tenant_id != tenant_id {
-        return Err(not_found());
-    }
-    let instances = ctx
-        .store
-        .list_instances_in_project(project_id)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(instances))
+    Err(crate::error::gone("GET /v1/instances?tenant=&project="))
 }
 
 /// RFD 00007 AP-3a `GET /v1/system/instances?image=&cn=&silo=&tenant=&project=&state=`.
@@ -477,16 +451,13 @@ pub(crate) async fn list_instances_v1(
     Ok(HttpResponseOk(ResultsPage::single(filtered)))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/instances?tenant=&project=`.
 pub(crate) async fn create_project_instance(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectPath>,
-    body: TypedBody<NewInstance>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectPath>,
+    _body: TypedBody<NewInstance>,
 ) -> Result<HttpResponseCreated<Instance>, HttpError> {
-    let TenantProjectPath {
-        tenant_id,
-        project_id,
-    } = path.into_inner();
-    create_instance_inner(rqctx, tenant_id, project_id, body.into_inner()).await
+    Err(crate::error::gone("POST /v1/instances?tenant=&project="))
 }
 
 /// RFD 00007 AP-2d: `POST /v1/instances?tenant=&project=` body
@@ -791,244 +762,47 @@ async fn create_instance_inner(
     Ok(HttpResponseCreated(instance))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/instances/{instance_id}`.
 pub(crate) async fn get_project_instance(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectInstancePath {
-        tenant_id,
-        project_id,
-        instance_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceGet,
-        tenant_id,
-    )
-    .await?;
-    let instance = ctx
-        .store
-        .get_instance(instance_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if instance.tenant_id != tenant_id || instance.project_id != project_id {
-        return Err(not_found());
-    }
-    Ok(HttpResponseOk(instance))
+    Err(crate::error::gone("GET /v1/instances/{instance_id}"))
 }
 
+/// RFD 00007 AP-3e: moved to `DELETE /v1/instances/{instance_id}`.
 pub(crate) async fn delete_project_instance(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
-    query: Query<InstanceDeleteQuery>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
+    _query: Query<InstanceDeleteQuery>,
 ) -> Result<HttpResponseDeleted, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectInstancePath {
-        tenant_id,
-        project_id,
-        instance_id,
-    } = path.into_inner();
-    let _force = query.into_inner().force;
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::InstanceDelete,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-
-    let instance = ctx
-        .store
-        .get_instance(instance_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if instance.tenant_id != tenant_id || instance.project_id != project_id {
-        return Err(not_found());
-    }
-    let target_cn_uuid = instance.host_cn_uuid;
-
-    // v2p invalidation push (PROTEUS_PLAN §11.7.1 item 8). Lives
-    // here (not in the saga action body) because the global
-    // `peer_invalidations` ring isn't reachable from a
-    // SagaContext yet. Done before the saga so the
-    // release_record action can drop the NIC rows safely.
-    if let Ok(nics) = ctx.store.list_nics_for_instance(instance_id).await {
-        for nic in nics {
-            let Ok(vpc) = ctx.store.get_vpc(nic.vpc_id).await else {
-                continue;
-            };
-            if let Some(v4) = nic.primary_ipv4 {
-                ctx.peer_invalidations.push(vpc.vni, v4.to_string());
-            }
-            if let Some(v6) = nic.primary_ipv6 {
-                ctx.peer_invalidations.push(vpc.vni, v6.to_string());
-            }
-        }
-    }
-
-    // RFD 00004 SG-3: instance-delete saga. Detaches FIPs,
-    // enqueues a Delete job, awaits the agent's terminal status,
-    // then releases the record. Unwinds via the detach undo if
-    // anything fails before the record is released; lands Stuck
-    // if release_record fails after the agent acked Delete.
-    let saga_params = crate::sagas::instance_delete::InstanceDeleteParams {
-        tenant_id,
-        project_id,
-        instance_id,
-        target_cn_uuid,
-        await_delete_terminal: ctx.saga_wait_for_agent,
-    };
-    let saga_dag = match crate::sagas::instance_delete::build_dag(&saga_params) {
-        Ok(d) => d,
-        Err(e) => {
-            return Err(HttpError::for_internal_error(format!(
-                "instance-delete saga dag build: {e}"
-            )));
-        }
-    };
-    let saga_refs = crate::sagas::instance_delete::build_references(&saga_params, target_cn_uuid);
-    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
-    let saga_result = ctx
-        .saga
-        .saga_execute(
-            saga_id,
-            crate::sagas::instance_delete::SAGA_NAME,
-            crate::sagas::instance_delete::SAGA_VERSION,
-            saga_dag,
-            &saga_refs,
-        )
-        .await;
-    let steno_result = match saga_result {
-        Ok(r) => r,
-        Err(e) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::InstanceDelete,
-                    request_id,
-                    Some(format!("Instance::\"{instance_id}\"")),
-                    tritond_audit::Outcome::ServerError {
-                        message: format!("saga executor error: {e}"),
-                    },
-                    serde_json::Value::Null,
-                )
-                .await;
-            return Err(HttpError::for_internal_error(format!(
-                "instance-delete saga executor error: {e}"
-            )));
-        }
-    };
-    match steno_result.kind {
-        Ok(_) => {
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::InstanceDelete,
-                    request_id,
-                    Some(format!("Instance::\"{instance_id}\"")),
-                    AuditOutcome::Success {
-                        resource: Some(format!("Instance::\"{instance_id}\"")),
-                    },
-                    serde_json::json!({
-                        "tenant_id": tenant_id,
-                        "project_id": project_id,
-                        "operation_id": saga_id.0.to_string(),
-                    }),
-                )
-                .await;
-            Ok(HttpResponseDeleted())
-        }
-        Err(err) => {
-            let kind_msg: Option<(&'static str, String)> = match &err.error_source {
-                tritond_saga::ActionError::ActionFailed { source_error } => {
-                    let kind = crate::sagas::instance_delete::decode_store_error_kind(source_error);
-                    let msg = source_error
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    kind.map(|k| (k, msg))
-                }
-                _ => None,
-            };
-            let http_err = match kind_msg.as_ref().map(|(k, _)| *k) {
-                Some("not_found") => not_found(),
-                Some("conflict") => HttpError::for_client_error(
-                    Some("Conflict".to_string()),
-                    ClientErrorStatusCode::CONFLICT,
-                    kind_msg
-                        .as_ref()
-                        .map(|(_, m)| m.clone())
-                        .unwrap_or_default(),
-                ),
-                _ => HttpError::for_internal_error(format!(
-                    "instance-delete saga failed at {:?}: {:?}",
-                    err.error_node_name, err.error_source
-                )),
-            };
-            ctx.audit
-                .record_mutation(
-                    &principal,
-                    Action::InstanceDelete,
-                    request_id,
-                    Some(format!("Instance::\"{instance_id}\"")),
-                    tritond_audit::Outcome::ServerError {
-                        message: format!("{:?}", err.error_source),
-                    },
-                    serde_json::json!({
-                        "operation_id": saga_id.0.to_string(),
-                    }),
-                )
-                .await;
-            Err(http_err)
-        }
-    }
+    Err(crate::error::gone("DELETE /v1/instances/{instance_id}"))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/instances/{instance_id}/start`.
 pub(crate) async fn start_project_instance(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    lifecycle_saga_entry(
-        rqctx,
-        path,
-        Action::InstanceStart,
-        crate::sagas::instance_lifecycle::LifecycleOp::Start,
-    )
-    .await
+    Err(crate::error::gone("POST /v1/instances/{instance_id}/start"))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/instances/{instance_id}/stop`.
 pub(crate) async fn stop_project_instance(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    lifecycle_saga_entry(
-        rqctx,
-        path,
-        Action::InstanceStop,
-        crate::sagas::instance_lifecycle::LifecycleOp::Stop,
-    )
-    .await
+    Err(crate::error::gone("POST /v1/instances/{instance_id}/stop"))
 }
 
+/// RFD 00007 AP-3e: moved to `POST /v1/instances/{instance_id}/restart`.
 pub(crate) async fn restart_project_instance(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Instance>, HttpError> {
-    lifecycle_saga_entry(
-        rqctx,
-        path,
-        Action::InstanceRestart,
-        crate::sagas::instance_lifecycle::LifecycleOp::Restart,
-    )
-    .await
+    Err(crate::error::gone(
+        "POST /v1/instances/{instance_id}/restart",
+    ))
 }
 
 // AP-2c: flat /v1/instances/{instance_id}[/{action}] handlers.
@@ -1587,73 +1361,20 @@ pub(crate) async fn get_nic_v1(
     Ok(HttpResponseOk(nic))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/nics?instance=<instance_id>`.
 pub(crate) async fn list_instance_nics(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectInstancePath {
-        tenant_id,
-        project_id,
-        instance_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::NicList,
-        tenant_id,
-    )
-    .await?;
-    // Defence-in-depth: instance must live in path's silo+project.
-    let instance = ctx
-        .store
-        .get_instance(instance_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if instance.tenant_id != tenant_id || instance.project_id != project_id {
-        return Err(not_found());
-    }
-    let nics = ctx
-        .store
-        .list_nics_for_instance(instance_id)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(nics))
+    Err(crate::error::gone("GET /v1/nics?instance=<instance_id>"))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/nics/{nic_id}`.
 pub(crate) async fn get_instance_nic(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstanceNicPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstanceNicPath>,
 ) -> Result<HttpResponseOk<Nic>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectInstanceNicPath {
-        tenant_id,
-        project_id,
-        instance_id,
-        nic_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::NicGet,
-        tenant_id,
-    )
-    .await?;
-    let nic = ctx
-        .store
-        .get_nic(nic_id)
-        .await
-        .map_err(store_error_to_http)?;
-    // Defence-in-depth: NIC must live under all three path levels.
-    if nic.tenant_id != tenant_id || nic.project_id != project_id || nic.instance_id != instance_id
-    {
-        return Err(not_found());
-    }
-    Ok(HttpResponseOk(nic))
+    Err(crate::error::gone("GET /v1/nics/{nic_id}"))
 }
 
 /// RFD 00007 AP-2e: `GET /v1/disks?tenant=&project=&instance=`.
@@ -1745,75 +1466,20 @@ pub(crate) async fn get_disk_v1(
     Ok(HttpResponseOk(disk))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/disks?instance=<instance_id>`.
 pub(crate) async fn list_instance_disks(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstancePath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstancePath>,
 ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectInstancePath {
-        tenant_id,
-        project_id,
-        instance_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::DiskList,
-        tenant_id,
-    )
-    .await?;
-    // Defence-in-depth: instance must live in path silo+project.
-    let instance = ctx
-        .store
-        .get_instance(instance_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if instance.tenant_id != tenant_id || instance.project_id != project_id {
-        return Err(not_found());
-    }
-    let disks = ctx
-        .store
-        .list_disks_for_instance(instance_id)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(disks))
+    Err(crate::error::gone("GET /v1/disks?instance=<instance_id>"))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/disks/{disk_id}`.
 pub(crate) async fn get_instance_disk(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectInstanceDiskPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectInstanceDiskPath>,
 ) -> Result<HttpResponseOk<Disk>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectInstanceDiskPath {
-        tenant_id,
-        project_id,
-        instance_id,
-        disk_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::DiskGet,
-        tenant_id,
-    )
-    .await?;
-    let disk = ctx
-        .store
-        .get_disk(disk_id)
-        .await
-        .map_err(store_error_to_http)?;
-    // Defence-in-depth on all three parent ids.
-    if disk.tenant_id != tenant_id
-        || disk.project_id != project_id
-        || disk.instance_id != instance_id
-    {
-        return Err(not_found());
-    }
-    Ok(HttpResponseOk(disk))
+    Err(crate::error::gone("GET /v1/disks/{disk_id}"))
 }
 
 pub(crate) async fn list_project_floating_ips(

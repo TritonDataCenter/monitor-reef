@@ -116,32 +116,22 @@ pub(crate) async fn get_system_cn_v1(
     Ok(HttpResponseOk(CnView::from(cn)))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/system/cns`. Capability-gated
+/// at the new path with `SystemRead`; the legacy `/v2/cns` returned
+/// the same list to any authenticated caller.
 pub(crate) async fn list_cns(
-    rqctx: RequestContext<ApiContext>,
-    query: Query<CnListQuery>,
+    _rqctx: RequestContext<ApiContext>,
+    _query: Query<CnListQuery>,
 ) -> Result<HttpResponseOk<Vec<CnView>>, HttpError> {
-    let ctx = rqctx.context();
-    authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnList).await?;
-    let cns = ctx
-        .store
-        .list_cns(query.into_inner().state)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(cns.into_iter().map(CnView::from).collect()))
+    Err(crate::error::gone("GET /v1/system/cns"))
 }
 
+/// RFD 00007 AP-3e: moved to `GET /v1/system/cns/{cn_id}`.
 pub(crate) async fn get_cn(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<CnPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<CnPath>,
 ) -> Result<HttpResponseOk<CnView>, HttpError> {
-    let ctx = rqctx.context();
-    authenticate_and_authorize(&rqctx, &ctx.auth, &ctx.audit, &ctx.store, Action::CnGet).await?;
-    let cn = ctx
-        .store
-        .get_cn(path.into_inner().server_uuid)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(CnView::from(cn)))
+    Err(crate::error::gone("GET /v1/system/cns/{cn_id}"))
 }
 
 pub(crate) async fn approve_cn(

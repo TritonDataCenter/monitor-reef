@@ -153,6 +153,21 @@ pub(crate) fn not_found() -> HttpError {
     )
 }
 
+/// RFD 00007 AP-3e: 410 Gone for legacy `/v2/` paths whose
+/// functionality has fully moved to the `/v1/` flat surface.
+/// The message points callers at the replacement so a 410 from
+/// `curl`/`tcadm` carries the migration hint inline.
+pub(crate) fn gone(replacement: &str) -> HttpError {
+    HttpError::for_client_error(
+        Some("Gone".to_string()),
+        ClientErrorStatusCode::GONE,
+        format!(
+            "this endpoint has moved per RFD 00007; use `{replacement}` instead. \
+             /v2/ stubs will be removed at AP-8."
+        ),
+    )
+}
+
 pub(crate) fn bad_request(message: impl Into<String>) -> HttpError {
     HttpError::for_bad_request(Some("BadRequest".to_string()), message.into())
 }
