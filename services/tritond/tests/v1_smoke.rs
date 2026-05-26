@@ -406,9 +406,9 @@ async fn build_v1_fixture(root: &tritond_client::Client) -> V1Fixture {
         .unwrap()
         .into_inner();
     let vpc = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(project.id)
         .body(NewVpc {
             name: "v".to_string(),
             description: None,

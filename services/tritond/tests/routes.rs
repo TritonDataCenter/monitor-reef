@@ -146,9 +146,9 @@ async fn make_project_vpc(
         .unwrap()
         .into_inner();
     let vpc = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(project.id)
         .body(NewVpc {
             name: vpc_name.to_string(),
             description: None,
@@ -299,9 +299,9 @@ async fn nat_target_in_different_vpc_returns_400() {
     let (tenant_id, project_id, vpc_a, route_table_a) =
         make_project_vpc(&root, "cross-target", "a", "10.0.0.0/16").await;
     let vpc_b = root
-        .create_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+        .create_vpc_v1()
+        .tenant(tenant_id)
+        .project(project_id)
         .body(NewVpc {
             name: "b".to_string(),
             description: None,

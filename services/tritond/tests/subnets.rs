@@ -261,9 +261,9 @@ async fn make_silo_project_vpc(root: &tritond_client::Client) -> (Uuid, Uuid, Uu
         .unwrap()
         .into_inner();
     let vpc = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(project.id)
         .body(NewVpc {
             name: "vpc1".to_string(),
             description: None,
@@ -435,9 +435,9 @@ async fn ipv4_subnet_in_ipv6_only_vpc_returns_409() {
         .unwrap()
         .into_inner();
     let vpc = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(project.id)
         .body(NewVpc {
             name: "v6only".to_string(),
             description: None,
@@ -525,9 +525,9 @@ async fn cross_vpc_subnet_get_returns_404() {
     let root = test.root_client();
     let (tenant_id, project_id, vpc_a) = make_silo_project_vpc(&root).await;
     let vpc_b = root
-        .create_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+        .create_vpc_v1()
+        .tenant(tenant_id)
+        .project(project_id)
         .body(NewVpc {
             name: "vpc2".to_string(),
             description: None,
@@ -591,9 +591,7 @@ async fn delete_vpc_with_subnets_returns_409() {
         .into_inner();
 
     let err = root
-        .delete_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+        .delete_vpc_v1()
         .vpc_id(vpc_id)
         .send()
         .await
@@ -609,9 +607,7 @@ async fn delete_vpc_with_subnets_returns_409() {
         .send()
         .await
         .unwrap();
-    root.delete_project_vpc()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+    root.delete_vpc_v1()
         .vpc_id(vpc_id)
         .send()
         .await
@@ -660,9 +656,9 @@ async fn federated_user_cross_silo_subnet_create_returns_404() {
         .unwrap()
         .into_inner();
     let beta_vpc = root
-        .create_project_vpc()
-        .tenant_id(silo_beta.default_tenant_id)
-        .project_id(beta_proj.id)
+        .create_vpc_v1()
+        .tenant(silo_beta.default_tenant_id)
+        .project(beta_proj.id)
         .body(NewVpc {
             name: "betav".to_string(),
             description: None,

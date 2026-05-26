@@ -642,9 +642,9 @@ async fn instance_create_with_visible_ssh_key_succeeds() {
         .into_inner()
         .id;
     let vpc = root
-        .create_project_vpc()
-        .tenant_id(tenant)
-        .project_id(project)
+        .create_vpc_v1()
+        .tenant(tenant)
+        .project(project)
         .body(NewVpc {
             name: "v".to_string(),
             description: None,
@@ -732,9 +732,9 @@ async fn instance_create_with_invisible_ssh_key_returns_404() {
         .into_inner()
         .id;
     let vpc = root
-        .create_project_vpc()
-        .tenant_id(tenant_a)
-        .project_id(project_a)
+        .create_vpc_v1()
+        .tenant(tenant_a)
+        .project(project_a)
         .body(NewVpc {
             name: "v".to_string(),
             description: None,
