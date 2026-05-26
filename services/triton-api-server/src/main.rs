@@ -1214,6 +1214,7 @@ async fn handle_bridge_stream(
 }
 
 struct ProvisionedNode {
+    instance_id: Uuid,
     fabric_ip: String,
     role: NodeRole,
 }
@@ -1255,7 +1256,7 @@ async fn provision_vm(
     image_uuid: Uuid,
     package: &str,
     fabric_network_id: Uuid,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(Uuid, String)> {
     use cloudapi_client::types::{CreateMachineRequest, MachineState, NetworkObject};
 
     let body = CreateMachineRequest {
@@ -1331,9 +1332,11 @@ async fn provision_vm(
         .with_context(|| format!("get machine {machine_id} for IP"))?
         .into_inner();
 
-    m.primary_ip
+    let fabric_ip = m
+        .primary_ip
         .or_else(|| m.ips.into_iter().next())
-        .ok_or_else(|| anyhow::anyhow!("machine {machine_id} has no IP address after running"))
+        .ok_or_else(|| anyhow::anyhow!("machine {machine_id} has no IP address after running"))?;
+    Ok((machine_id, fabric_ip))
 }
 
 async fn run_bootstrap(
@@ -1365,7 +1368,7 @@ async fn run_bootstrap(
 
     for i in 0..req.control_plane_count {
         let name = format!("{id_prefix}-cp-{i}");
-        let fabric_ip = provision_vm(
+        let (instance_id, fabric_ip) = provision_vm(
             &cloudapi,
             &provision_account,
             &name,
@@ -1377,6 +1380,7 @@ async fn run_bootstrap(
         .with_context(|| format!("provision control-plane node {name}"))?;
         tracing::info!(cluster = %cluster_id, node = %name, ip = %fabric_ip, "control-plane VM ready");
         provisioned.push(ProvisionedNode {
+            instance_id,
             fabric_ip,
             role: NodeRole::Control,
         });
@@ -1384,7 +1388,7 @@ async fn run_bootstrap(
 
     for i in 0..req.worker_count {
         let name = format!("{id_prefix}-w-{i}");
-        let fabric_ip = provision_vm(
+        let (instance_id, fabric_ip) = provision_vm(
             &cloudapi,
             &provision_account,
             &name,
@@ -1396,6 +1400,7 @@ async fn run_bootstrap(
         .with_context(|| format!("provision worker node {name}"))?;
         tracing::info!(cluster = %cluster_id, node = %name, ip = %fabric_ip, "worker VM ready");
         provisioned.push(ProvisionedNode {
+            instance_id,
             fabric_ip,
             role: NodeRole::Worker,
         });
@@ -1468,11 +1473,10 @@ async fn run_bootstrap(
 
     // Record node inventory and persist (including generated PKI) before sleeping.
     for node in &provisioned {
-        let node_id = Uuid::new_v4();
         record.nodes.insert(
-            node_id.to_string(),
+            node.instance_id.to_string(),
             NodeInfo {
-                instance_id: node_id,
+                instance_id: node.instance_id,
                 primary_ip: node.fabric_ip.clone(),
                 fabric_ip: node.fabric_ip.clone(),
                 role: node.role,
@@ -1785,7 +1789,7 @@ async fn run_add_workers(
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
     for i in 0..req.count as usize {
         let name = format!("{id_prefix}-w-{}", existing_worker_count + i);
-        let fabric_ip = provision_vm(
+        let (instance_id, fabric_ip) = provision_vm(
             &cloudapi,
             &provision_account,
             &name,
@@ -1821,11 +1825,10 @@ async fn run_add_workers(
             .with_context(|| format!("apply worker config to {target}"))?;
         tracing::info!(cluster = %cluster_id, target = %target, "applied worker machine config");
 
-        let node_id = Uuid::new_v4();
         record.nodes.insert(
-            node_id.to_string(),
+            instance_id.to_string(),
             NodeInfo {
-                instance_id: node_id,
+                instance_id,
                 primary_ip: fabric_ip.clone(),
                 fabric_ip,
                 role: NodeRole::Worker,
