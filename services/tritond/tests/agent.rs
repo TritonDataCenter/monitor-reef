@@ -499,18 +499,18 @@ async fn instance_create_routes_jobs_to_least_assigned_tenant_cn() {
     let root = root_client(&test).await;
 
     let first = root
-        .create_project_instance()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+        .create_instance_v1()
+        .tenant(tenant_id)
+        .project(project_id)
         .body(client_instance_req("web-a", image_id, subnet_id))
         .send()
         .await
         .unwrap()
         .into_inner();
     let second = root
-        .create_project_instance()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
+        .create_instance_v1()
+        .tenant(tenant_id)
+        .project(project_id)
         .body(client_instance_req("web-b", image_id, subnet_id))
         .send()
         .await
@@ -1750,9 +1750,7 @@ async fn instance_delete_enqueues_delete_job_for_agent() {
         .into_inner();
     let session = test.bearer_client(&token.access_token);
     session
-        .delete_project_instance()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
+        .delete_instance_v1()
         .instance_id(instance_id)
         .send()
         .await

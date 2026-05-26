@@ -716,9 +716,9 @@ async fn instance_create_with_visible_image_succeeds() {
         .into_inner();
 
     let inst = root
-        .create_project_instance()
-        .tenant_id(tenant)
-        .project_id(project)
+        .create_instance_v1()
+        .tenant(tenant)
+        .project(project)
         .body(tritond_client::types::NewInstance {
             name: "web".to_string(),
             description: None,
@@ -819,9 +819,9 @@ async fn instance_create_with_invisible_image_returns_404() {
     let alice = test.bearer_client(&alice_token);
 
     let err = alice
-        .create_project_instance()
-        .tenant_id(tenant_a)
-        .project_id(project_a)
+        .create_instance_v1()
+        .tenant(tenant_a)
+        .project(project_a)
         .body(tritond_client::types::NewInstance {
             name: "leak".to_string(),
             description: None,

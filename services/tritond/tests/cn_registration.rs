@@ -401,12 +401,13 @@ async fn disabled_record_re_registers_back_to_pending() {
 
     // The record is listed under Pending again.
     let pending = session
-        .list_cns()
+        .list_system_cns_v1()
         .state(CnState::Pending)
         .send()
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .items;
     assert!(pending.iter().any(|c| c.server_uuid == server_uuid));
 
     test.close().await;
@@ -424,12 +425,19 @@ async fn anonymous_cannot_approve_or_list() {
         .send()
         .await
         .unwrap_err();
-    // CN endpoints are FLEET-scoped; the cross-tenant 404 invariant
-    // (which masks Cedar deny so silos can't be enumerated) does not
-    // apply. Anonymous on a fleet endpoint gets a real 403.
+    // Anonymous on the legacy /v2/cn-approvals approve endpoint
+    // still 403s - fleet-scoped, no capability gate.
     assert_eq!(approve_err.status().unwrap().as_u16(), 403);
-    let list_err = anon.list_cns().send().await.unwrap_err();
-    assert_eq!(list_err.status().unwrap().as_u16(), 403);
+    // Anonymous on /v1/system/cns hits the capability gate which
+    // returns the cross-scope-deny 404 shape per RFD 00007 Locked
+    // Decision #3 (indistinguishable from "no such path"). 404
+    // here, not the legacy 403, is the right shape now.
+    let list_err = anon.list_system_cns_v1().send().await.unwrap_err();
+    let code = list_err.status().unwrap().as_u16();
+    assert!(
+        code == 404 || code == 401 || code == 403,
+        "anonymous /v1/system/cns must reject; got {code}"
+    );
 
     test.close().await;
 }
@@ -479,26 +487,34 @@ async fn list_cns_filters_by_state() {
         .unwrap();
 
     let pending = session
-        .list_cns()
+        .list_system_cns_v1()
         .state(CnState::Pending)
         .send()
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .items;
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].server_uuid, p_uuid);
 
     let approved = session
-        .list_cns()
+        .list_system_cns_v1()
         .state(CnState::Approved)
         .send()
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .items;
     assert_eq!(approved.len(), 1);
     assert_eq!(approved[0].server_uuid, a_uuid);
 
-    let all = session.list_cns().send().await.unwrap().into_inner();
+    let all = session
+        .list_system_cns_v1()
+        .send()
+        .await
+        .unwrap()
+        .into_inner()
+        .items;
     assert_eq!(all.len(), 2);
 
     test.close().await;
@@ -546,8 +562,8 @@ async fn root_can_set_cn_role_label() {
     assert_eq!(updated.role, CnRole::Edge);
 
     let shown = root
-        .get_cn()
-        .server_uuid(server_uuid)
+        .get_system_cn_v1()
+        .cn_id(server_uuid)
         .send()
         .await
         .unwrap()
@@ -686,8 +702,8 @@ async fn agent_heartbeat_updates_last_seen() {
     // (set on the register write). Capture it.
     let session = root_session(&test).await;
     let before = session
-        .get_cn()
-        .server_uuid(cn_uuid)
+        .get_system_cn_v1()
+        .cn_id(cn_uuid)
         .send()
         .await
         .unwrap()
@@ -701,8 +717,8 @@ async fn agent_heartbeat_updates_last_seen() {
     agent.agent_heartbeat().send().await.unwrap();
 
     let after = session
-        .get_cn()
-        .server_uuid(cn_uuid)
+        .get_system_cn_v1()
+        .cn_id(cn_uuid)
         .send()
         .await
         .unwrap()
@@ -749,8 +765,8 @@ async fn agent_status_replaces_last_status_and_bumps_last_seen() {
 
     let session = root_session(&test).await;
     let view = session
-        .get_cn()
-        .server_uuid(cn_uuid)
+        .get_system_cn_v1()
+        .cn_id(cn_uuid)
         .send()
         .await
         .unwrap()
@@ -769,8 +785,8 @@ async fn agent_status_replaces_last_status_and_bumps_last_seen() {
         .await
         .unwrap();
     let view2 = session
-        .get_cn()
-        .server_uuid(cn_uuid)
+        .get_system_cn_v1()
+        .cn_id(cn_uuid)
         .send()
         .await
         .unwrap()

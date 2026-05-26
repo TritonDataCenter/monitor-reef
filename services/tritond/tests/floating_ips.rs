@@ -142,9 +142,7 @@ async fn wait_for_lifecycle(
     let start = Instant::now();
     loop {
         let inst = client
-            .get_project_instance()
-            .tenant_id(silo_id)
-            .project_id(project_id)
+            .get_instance_v1()
             .instance_id(instance_id)
             .send()
             .await
@@ -340,42 +338,40 @@ async fn attach_replaces_existing_attachment_atomically() {
 
     // Two instances, two NICs, one FloatingIp.
     let inst_a = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let inst_b = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "b"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let nic_a = root
-        .list_instance_nics()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst_a.id)
+        .list_nics_v1()
+        .instance(inst_a.id)
         .send()
         .await
         .unwrap()
-        .into_inner()[0]
+        .into_inner()
+        .items[0]
         .clone();
     let nic_b = root
-        .list_instance_nics()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst_b.id)
+        .list_nics_v1()
+        .instance(inst_b.id)
         .send()
         .await
         .unwrap()
-        .into_inner()[0]
+        .into_inner()
+        .items[0]
         .clone();
     let fip = root
         .create_project_floating_ip()
@@ -434,23 +430,22 @@ async fn delete_while_attached_returns_409() {
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     let inst = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let nic = root
-        .list_instance_nics()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst.id)
+        .list_nics_v1()
+        .instance(inst.id)
         .send()
         .await
         .unwrap()
-        .into_inner()[0]
+        .into_inner()
+        .items[0]
         .clone();
     let fip = root
         .create_project_floating_ip()
@@ -509,23 +504,22 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     let inst = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let nic = root
-        .list_instance_nics()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst.id)
+        .list_nics_v1()
+        .instance(inst.id)
         .send()
         .await
         .unwrap()
-        .into_inner()[0]
+        .into_inner()
+        .items[0]
         .clone();
     let fip = root
         .create_project_floating_ip()
@@ -560,9 +554,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         SETTLE,
     )
     .await;
-    root.stop_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+    root.stop_instance_v1()
         .instance_id(inst.id)
         .send()
         .await
@@ -576,9 +568,7 @@ async fn instance_delete_auto_detaches_but_does_not_release() {
         SETTLE,
     )
     .await;
-    root.delete_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+    root.delete_instance_v1()
         .instance_id(inst.id)
         .send()
         .await
@@ -612,23 +602,22 @@ async fn cross_project_attach_target_returns_404() {
     let fx_b = build_fixture(&root).await;
     // Instance + NIC under project B.
     let inst_b = root
-        .create_project_instance()
-        .tenant_id(fx_b.tenant_id)
-        .project_id(fx_b.project_id)
+        .create_instance_v1()
+        .tenant(fx_b.tenant_id)
+        .project(fx_b.project_id)
         .body(instance_req(&fx_b, "b"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let nic_b = root
-        .list_instance_nics()
-        .tenant_id(fx_b.tenant_id)
-        .project_id(fx_b.project_id)
-        .instance_id(inst_b.id)
+        .list_nics_v1()
+        .instance(inst_b.id)
         .send()
         .await
         .unwrap()
-        .into_inner()[0]
+        .into_inner()
+        .items[0]
         .clone();
     // FloatingIp under project A.
     let fip_a = root

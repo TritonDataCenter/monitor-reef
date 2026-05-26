@@ -287,9 +287,18 @@ async fn next_msg(
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
 ) -> Option<Message> {
-    match tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await {
-        Ok(Some(Ok(m))) => Some(m),
-        _ => None,
+    // Filter out Ping frames: dropshot's WebSocket sometimes
+    // interleaves a Ping ahead of the proxied Binary payload, and
+    // the tests want the next *content* message. Pongs are handled
+    // automatically by tokio-tungstenite.
+    loop {
+        match tokio::time::timeout(std::time::Duration::from_secs(5), ws.next()).await {
+            Ok(Some(Ok(m))) => match m {
+                Message::Ping(_) | Message::Pong(_) => continue,
+                other => return Some(other),
+            },
+            _ => return None,
+        }
     }
 }
 

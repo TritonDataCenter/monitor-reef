@@ -629,11 +629,7 @@ async fn v1_nic_indexes_by_ip_and_subnet() {
         .await
         .expect("GET /v1/system/networking/nics?ip= must succeed")
         .into_inner();
-    assert_eq!(
-        by_ip.items.len(),
-        1,
-        "ip index resolves to exactly one NIC"
-    );
+    assert_eq!(by_ip.items.len(), 1, "ip index resolves to exactly one NIC");
     assert_eq!(by_ip.items[0].id, primary_nic.id);
     assert_eq!(by_ip.items[0].instance_id, created.id);
 
@@ -725,9 +721,7 @@ async fn v1_dhcp_lease_by_mac() {
     assert_eq!(lease.mac, mac);
     // The lease IP must equal the NIC's primary IPv4 - they're
     // allocated atomically inside create_instance.
-    let nic_ip = nics.items[0]
-        .primary_ipv4
-        .expect("fixture subnet is IPv4");
+    let nic_ip = nics.items[0].primary_ipv4.expect("fixture subnet is IPv4");
     assert_eq!(lease.ipv4, nic_ip);
 
     // Unknown MAC returns 404 (lease-by-mac is unique-or-missing).

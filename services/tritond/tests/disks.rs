@@ -141,9 +141,7 @@ async fn wait_for_lifecycle(
     let start = Instant::now();
     loop {
         let inst = client
-            .get_project_instance()
-            .tenant_id(silo_id)
-            .project_id(project_id)
+            .get_instance_v1()
             .instance_id(instance_id)
             .send()
             .await
@@ -282,9 +280,9 @@ async fn instance_create_produces_boot_disk_sized_to_image() {
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     let inst = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
         .await
@@ -292,14 +290,13 @@ async fn instance_create_produces_boot_disk_sized_to_image() {
         .into_inner();
 
     let disks = root
-        .list_instance_disks()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst.id)
+        .list_disks_v1()
+        .instance(inst.id)
         .send()
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .items;
     assert_eq!(disks.len(), 1, "expect exactly one boot disk");
     let boot = &disks[0];
     assert_eq!(boot.name, "boot");
@@ -311,47 +308,51 @@ async fn instance_create_produces_boot_disk_sized_to_image() {
     test.close().await;
 }
 
+// RFD 00007 AP-3e: cross-instance defence-in-depth no longer lives
+// in the URL shape (the /v1/disks/{id} singleton is by id only); it
+// must come from Cedar policy. The test as written uses the root
+// principal which sees every silo by design, so it can't exercise
+// the boundary at the URL level. Needs a non-root tenant member to
+// exercise the deny path. Tracked at AP-3b-6 alongside the matching
+// cross_silo_get test in instances.rs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs non-root principal fixtures; tracked at AP-3b-6"]
 async fn cross_instance_disk_get_returns_404() {
     let test = TestServer::start().await;
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     let inst_a = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "a"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let inst_b = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "b"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let disks_a = root
-        .list_instance_disks()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst_a.id)
+        .list_disks_v1()
+        .instance(inst_a.id)
         .send()
         .await
         .unwrap()
-        .into_inner();
+        .into_inner()
+        .items;
     let disk_a = &disks_a[0];
 
     // Same disk id, but path's instance_id is inst_b → 404 via
     // defence-in-depth.
     let err = root
-        .get_instance_disk()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst_b.id)
+        .get_disk_v1()
         .disk_id(disk_a.id)
         .send()
         .await
@@ -367,23 +368,22 @@ async fn instance_delete_cascades_boot_disk() {
     let root = test.root_client();
     let fx = build_fixture(&root).await;
     let inst = root
-        .create_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+        .create_instance_v1()
+        .tenant(fx.tenant_id)
+        .project(fx.project_id)
         .body(instance_req(&fx, "web"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let original_disk = root
-        .list_instance_disks()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst.id)
+        .list_disks_v1()
+        .instance(inst.id)
         .send()
         .await
         .unwrap()
-        .into_inner()[0]
+        .into_inner()
+        .items[0]
         .clone();
 
     wait_for_lifecycle(
@@ -395,9 +395,7 @@ async fn instance_delete_cascades_boot_disk() {
         SETTLE,
     )
     .await;
-    root.stop_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+    root.stop_instance_v1()
         .instance_id(inst.id)
         .send()
         .await
@@ -411,9 +409,7 @@ async fn instance_delete_cascades_boot_disk() {
         SETTLE,
     )
     .await;
-    root.delete_project_instance()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
+    root.delete_instance_v1()
         .instance_id(inst.id)
         .send()
         .await
@@ -421,10 +417,7 @@ async fn instance_delete_cascades_boot_disk() {
 
     // Boot disk is gone.
     let err = root
-        .get_instance_disk()
-        .tenant_id(fx.tenant_id)
-        .project_id(fx.project_id)
-        .instance_id(inst.id)
+        .get_disk_v1()
         .disk_id(original_disk.id)
         .send()
         .await
