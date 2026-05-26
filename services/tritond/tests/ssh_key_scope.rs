@@ -656,10 +656,8 @@ async fn instance_create_with_visible_ssh_key_succeeds() {
         .unwrap()
         .into_inner();
     let subnet = root
-        .create_vpc_subnet()
-        .tenant_id(tenant)
-        .project_id(project)
-        .vpc_id(vpc.id)
+        .create_subnet_v1()
+        .vpc(vpc.id)
         .body(NewSubnet {
             name: "s".to_string(),
             description: None,
@@ -746,10 +744,8 @@ async fn instance_create_with_invisible_ssh_key_returns_404() {
         .unwrap()
         .into_inner();
     let subnet = root
-        .create_vpc_subnet()
-        .tenant_id(tenant_a)
-        .project_id(project_a)
-        .vpc_id(vpc.id)
+        .create_subnet_v1()
+        .vpc(vpc.id)
         .body(NewSubnet {
             name: "s".to_string(),
             description: None,

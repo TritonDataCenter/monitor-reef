@@ -158,57 +158,32 @@ pub(crate) async fn get_subnet_v1(
     Ok(HttpResponseOk(subnet))
 }
 
-pub(crate) async fn list_vpc_subnets(
+/// RFD 00007 AP-3a-11: `POST /v1/subnets?vpc=<uuid>`. Resolves
+/// tenant+project from the parent VPC row; the caller doesn't have
+/// to thread silo/tenant/project through the URL.
+pub(crate) async fn create_subnet_v1(
     rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
-    authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::SubnetList,
-        tenant_id,
-    )
-    .await?;
+    query: Query<tritond_api::v1::SubnetQuery>,
+    body: TypedBody<NewSubnet>,
+) -> Result<HttpResponseCreated<Subnet>, HttpError> {
+    let q = query.into_inner();
+    let vpc_id = q.vpc.ok_or_else(|| {
+        HttpError::for_client_error(
+            Some("MissingScope".to_string()),
+            dropshot::ClientErrorStatusCode::BAD_REQUEST,
+            "POST /v1/subnets requires `?vpc=<uuid>`".to_string(),
+        )
+    })?;
 
-    // Verify the parent VPC actually lives under the path's
-    // silo+project. Cross-silo or cross-project list paths must
-    // 404 — the cross-tenant enumeration invariant extends to
-    // VPCs the way it does for projects in `list_project_vpcs`.
+    let ctx = rqctx.context();
     let vpc = ctx
         .store
         .get_vpc(vpc_id)
         .await
         .map_err(store_error_to_http)?;
-    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
-        return Err(not_found());
-    }
-    let subnets = ctx
-        .store
-        .list_subnets_in_vpc(vpc_id)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseOk(subnets))
-}
+    let tenant_id = vpc.tenant_id;
+    let project_id = vpc.project_id;
 
-pub(crate) async fn create_vpc_subnet(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcPath>,
-    body: TypedBody<NewSubnet>,
-) -> Result<HttpResponseCreated<Subnet>, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-    } = path.into_inner();
     let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
@@ -222,8 +197,7 @@ pub(crate) async fn create_vpc_subnet(
     let req = body.into_inner();
 
     // At least one IP family is required, mirroring the VPC
-    // create-time invariant. Same OPTE rationale: an `IpCfg`
-    // must be Ipv4, Ipv6, or DualStack.
+    // create-time invariant.
     if req.ipv4_block.is_none() && req.ipv6_block.is_none() {
         let outcome = AuditOutcome::ClientError {
             code: 400,
@@ -290,6 +264,107 @@ pub(crate) async fn create_vpc_subnet(
     }
 }
 
+/// RFD 00007 AP-3a-11: `DELETE /v1/subnets/{subnet_id}`. Resolves
+/// the owning tenant from the row; the store enforces the
+/// dependency gate (no NICs allocated from this subnet).
+pub(crate) async fn delete_subnet_v1(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<tritond_api::v1::SubnetPath>,
+) -> Result<HttpResponseDeleted, HttpError> {
+    let ctx = rqctx.context();
+    let tritond_api::v1::SubnetPath { subnet_id } = path.into_inner();
+    let subnet = ctx
+        .store
+        .get_subnet(subnet_id)
+        .await
+        .map_err(store_error_to_http)?;
+    let tenant_id = subnet.tenant_id;
+    let project_id = subnet.project_id;
+    let vpc_id = subnet.vpc_id;
+
+    let principal = authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::SubnetDelete,
+        tenant_id,
+    )
+    .await?;
+    let request_id = parse_request_id(&rqctx);
+
+    ctx.store
+        .delete_subnet(subnet_id)
+        .await
+        .map_err(store_error_to_http)?;
+    ctx.audit
+        .record_mutation(
+            &principal,
+            Action::SubnetDelete,
+            request_id,
+            Some(format!("Subnet::\"{subnet_id}\"")),
+            AuditOutcome::Success {
+                resource: Some(format!("Subnet::\"{subnet_id}\"")),
+            },
+            serde_json::json!({
+                "tenant_id": tenant_id,
+                "project_id": project_id,
+                "vpc_id": vpc_id,
+            }),
+        )
+        .await;
+    Ok(HttpResponseDeleted())
+}
+
+pub(crate) async fn list_vpc_subnets(
+    rqctx: RequestContext<ApiContext>,
+    path: Path<TenantProjectVpcPath>,
+) -> Result<HttpResponseOk<Vec<Subnet>>, HttpError> {
+    let ctx = rqctx.context();
+    let TenantProjectVpcPath {
+        tenant_id,
+        project_id,
+        vpc_id,
+    } = path.into_inner();
+    authenticate_and_authorize_in_tenant(
+        &rqctx,
+        &ctx.auth,
+        &ctx.audit,
+        &ctx.store,
+        Action::SubnetList,
+        tenant_id,
+    )
+    .await?;
+
+    // Verify the parent VPC actually lives under the path's
+    // silo+project. Cross-silo or cross-project list paths must
+    // 404 — the cross-tenant enumeration invariant extends to
+    // VPCs the way it does for projects in `list_project_vpcs`.
+    let vpc = ctx
+        .store
+        .get_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    if vpc.tenant_id != tenant_id || vpc.project_id != project_id {
+        return Err(not_found());
+    }
+    let subnets = ctx
+        .store
+        .list_subnets_in_vpc(vpc_id)
+        .await
+        .map_err(store_error_to_http)?;
+    Ok(HttpResponseOk(subnets))
+}
+
+/// RFD 00007 AP-3e: moved to `POST /v1/subnets?vpc=<uuid>`.
+pub(crate) async fn create_vpc_subnet(
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcPath>,
+    _body: TypedBody<NewSubnet>,
+) -> Result<HttpResponseCreated<Subnet>, HttpError> {
+    Err(crate::error::gone("POST /v1/subnets?vpc=<uuid>"))
+}
+
 pub(crate) async fn get_vpc_subnet(
     rqctx: RequestContext<ApiContext>,
     path: Path<TenantProjectVpcSubnetPath>,
@@ -322,55 +397,10 @@ pub(crate) async fn get_vpc_subnet(
     Ok(HttpResponseOk(subnet))
 }
 
+/// RFD 00007 AP-3e: moved to `DELETE /v1/subnets/{subnet_id}`.
 pub(crate) async fn delete_vpc_subnet(
-    rqctx: RequestContext<ApiContext>,
-    path: Path<TenantProjectVpcSubnetPath>,
+    _rqctx: RequestContext<ApiContext>,
+    _path: Path<TenantProjectVpcSubnetPath>,
 ) -> Result<HttpResponseDeleted, HttpError> {
-    let ctx = rqctx.context();
-    let TenantProjectVpcSubnetPath {
-        tenant_id,
-        project_id,
-        vpc_id,
-        subnet_id,
-    } = path.into_inner();
-    let principal = authenticate_and_authorize_in_tenant(
-        &rqctx,
-        &ctx.auth,
-        &ctx.audit,
-        &ctx.store,
-        Action::SubnetDelete,
-        tenant_id,
-    )
-    .await?;
-    let request_id = parse_request_id(&rqctx);
-
-    let subnet = ctx
-        .store
-        .get_subnet(subnet_id)
-        .await
-        .map_err(store_error_to_http)?;
-    if subnet.tenant_id != tenant_id || subnet.project_id != project_id || subnet.vpc_id != vpc_id {
-        return Err(not_found());
-    }
-    ctx.store
-        .delete_subnet(subnet_id)
-        .await
-        .map_err(store_error_to_http)?;
-    ctx.audit
-        .record_mutation(
-            &principal,
-            Action::SubnetDelete,
-            request_id,
-            Some(format!("Subnet::\"{subnet_id}\"")),
-            AuditOutcome::Success {
-                resource: Some(format!("Subnet::\"{subnet_id}\"")),
-            },
-            serde_json::json!({
-                "tenant_id": tenant_id,
-                "project_id": project_id,
-                "vpc_id": vpc_id,
-            }),
-        )
-        .await;
-    Ok(HttpResponseDeleted())
+    Err(crate::error::gone("DELETE /v1/subnets/{subnet_id}"))
 }

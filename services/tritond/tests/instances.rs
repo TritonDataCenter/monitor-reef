@@ -164,10 +164,8 @@ async fn build_fixture(root: &tritond_client::Client) -> Fixture {
         .unwrap()
         .into_inner();
     let subnet = root
-        .create_vpc_subnet()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
-        .vpc_id(vpc.id)
+        .create_subnet_v1()
+        .vpc(vpc.id)
         .body(NewSubnet {
             name: "primary".to_string(),
             description: None,

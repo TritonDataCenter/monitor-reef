@@ -5332,6 +5332,62 @@ pub async fn subnet_show_v1(
     Ok(())
 }
 
+/// `tcadm subnet create --vpc=&--name=&--ipv4-block=...`.
+/// AP-3c-12: flat-verb subnet create.
+#[allow(clippy::too_many_arguments)]
+pub async fn subnet_create_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    vpc: Uuid,
+    name: String,
+    description: String,
+    ipv4_block: Option<String>,
+    ipv6_block: Option<String>,
+    json_output: bool,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    let s = client
+        .create_subnet_v1()
+        .vpc(vpc)
+        .body(tritond_client::types::NewSubnet {
+            name,
+            description: Some(description),
+            ipv4_block,
+            ipv6_block,
+        })
+        .send()
+        .await
+        .context("/v1/subnets create")?
+        .into_inner();
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&s)?);
+        return Ok(());
+    }
+    println!("Subnet {}", s.id);
+    println!("  name: {}", s.name);
+    println!("  vpc:  {}", s.vpc_id);
+    Ok(())
+}
+
+/// `tcadm subnet delete <subnet_id>`.
+pub async fn subnet_delete_v1(
+    endpoint_override: Option<String>,
+    api_key_override: Option<String>,
+    subnet_id: Uuid,
+) -> Result<()> {
+    let session = Session::resolve(endpoint_override, api_key_override).await?;
+    let client = session.client()?;
+    client
+        .delete_subnet_v1()
+        .subnet_id(subnet_id)
+        .send()
+        .await
+        .context("/v1/subnets/{id} delete")?;
+    println!("Subnet {subnet_id} deleted.");
+    Ok(())
+}
+
 pub async fn floating_ip_list_v1(
     endpoint_override: Option<String>,
     api_key_override: Option<String>,

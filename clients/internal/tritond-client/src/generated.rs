@@ -30441,9 +30441,19 @@ impl Client {
         builder::ListSubnetsV1::new(self)
     }
 
+    #[doc = "RFD 00007 `POST /v1/subnets?vpc=<uuid>`. Create a subnet\n\ninside the named VPC. The VPC's owning tenant+project is resolved from the row; `?vpc=<uuid>` is the only required selector.\n\nSends a `POST` request to `/v1/subnets`\n\nArguments:\n- `project`: Restrict to a single project.\n- `silo`: Restrict to a single silo (fleet-admin only).\n- `tenant`: Restrict to a single tenant.\n- `vpc`: Restrict to subnets in a given VPC. Required at AP-2g.\n- `body`\n```ignore\nlet response = client.create_subnet_v1()\n    .project(project)\n    .silo(silo)\n    .tenant(tenant)\n    .vpc(vpc)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_subnet_v1(&self) -> builder::CreateSubnetV1<'_> {
+        builder::CreateSubnetV1::new(self)
+    }
+
     #[doc = "RFD 00007 `GET /v1/subnets/{subnet_id}`. Flat single-subnet read\n\nSends a `GET` request to `/v1/subnets/{subnet_id}`\n\n```ignore\nlet response = client.get_subnet_v1()\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
     pub fn get_subnet_v1(&self) -> builder::GetSubnetV1<'_> {
         builder::GetSubnetV1::new(self)
+    }
+
+    #[doc = "RFD 00007 `DELETE /v1/subnets/{subnet_id}`. Store enforces\n\nthe dependency gate (NICs allocated from this subnet must be released first); 409 Conflict otherwise.\n\nSends a `DELETE` request to `/v1/subnets/{subnet_id}`\n\n```ignore\nlet response = client.delete_subnet_v1()\n    .subnet_id(subnet_id)\n    .send()\n    .await;\n```"]
+    pub fn delete_subnet_v1(&self) -> builder::DeleteSubnetV1<'_> {
+        builder::DeleteSubnetV1::new(self)
     }
 
     #[doc = "RFD 00007 `GET /v1/system/cns?state=`. Fleet CN inventory\n\nCapability: `SystemRead`.\n\nSends a `GET` request to `/v1/system/cns`\n\n```ignore\nlet response = client.list_system_cns_v1()\n    .state(state)\n    .send()\n    .await;\n```"]
@@ -34162,6 +34172,151 @@ pub mod builder {
         }
     }
 
+    #[doc = "Builder for [`Client::create_subnet_v1`]\n\n[`Client::create_subnet_v1`]: super::Client::create_subnet_v1"]
+    #[derive(Debug, Clone)]
+    pub struct CreateSubnetV1<'a> {
+        client: &'a super::Client,
+        project: Result<Option<::uuid::Uuid>, String>,
+        silo: Result<Option<::uuid::Uuid>, String>,
+        tenant: Result<Option<::uuid::Uuid>, String>,
+        vpc: Result<Option<::uuid::Uuid>, String>,
+        body: Result<types::builder::NewSubnet, String>,
+    }
+
+    impl<'a> CreateSubnetV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                project: Ok(None),
+                silo: Ok(None),
+                tenant: Ok(None),
+                vpc: Ok(None),
+                body: Ok(::std::default::Default::default()),
+            }
+        }
+
+        pub fn project<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.project = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for project failed".to_string());
+            self
+        }
+
+        pub fn silo<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.silo = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for silo failed".to_string());
+            self
+        }
+
+        pub fn tenant<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.tenant = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for tenant failed".to_string());
+            self
+        }
+
+        pub fn vpc<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.vpc = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for vpc failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<types::NewSubnet>,
+            <V as std::convert::TryInto<types::NewSubnet>>::Error: std::fmt::Display,
+        {
+            self.body = value
+                .try_into()
+                .map(From::from)
+                .map_err(|s| format!("conversion to `NewSubnet` for body failed: {}", s));
+            self
+        }
+
+        pub fn body_map<F>(mut self, f: F) -> Self
+        where
+            F: std::ops::FnOnce(types::builder::NewSubnet) -> types::builder::NewSubnet,
+        {
+            self.body = self.body.map(f);
+            self
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/subnets`"]
+        pub async fn send(self) -> Result<ResponseValue<types::Subnet>, Error<types::Error>> {
+            let Self {
+                client,
+                project,
+                silo,
+                tenant,
+                vpc,
+                body,
+            } = self;
+            let project = project.map_err(Error::InvalidRequest)?;
+            let silo = silo.map_err(Error::InvalidRequest)?;
+            let tenant = tenant.map_err(Error::InvalidRequest)?;
+            let vpc = vpc.map_err(Error::InvalidRequest)?;
+            let body = body
+                .and_then(|v| types::NewSubnet::try_from(v).map_err(|e| e.to_string()))
+                .map_err(Error::InvalidRequest)?;
+            let url = format!("{}/v1/subnets", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .json(&body)
+                .query(&progenitor_client::QueryParam::new("project", &project))
+                .query(&progenitor_client::QueryParam::new("silo", &silo))
+                .query(&progenitor_client::QueryParam::new("tenant", &tenant))
+                .query(&progenitor_client::QueryParam::new("vpc", &vpc))
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "create_subnet_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                201u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
     #[doc = "Builder for [`Client::get_subnet_v1`]\n\n[`Client::get_subnet_v1`]: super::Client::get_subnet_v1"]
     #[derive(Debug, Clone)]
     pub struct GetSubnetV1<'a> {
@@ -34220,6 +34375,75 @@ pub mod builder {
             let response = result?;
             match response.status().as_u16() {
                 200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::delete_subnet_v1`]\n\n[`Client::delete_subnet_v1`]: super::Client::delete_subnet_v1"]
+    #[derive(Debug, Clone)]
+    pub struct DeleteSubnetV1<'a> {
+        client: &'a super::Client,
+        subnet_id: Result<::uuid::Uuid, String>,
+    }
+
+    impl<'a> DeleteSubnetV1<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self {
+                client: client,
+                subnet_id: Err("subnet_id was not initialized".to_string()),
+            }
+        }
+
+        pub fn subnet_id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.subnet_id = value
+                .try_into()
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for subnet_id failed".to_string());
+            self
+        }
+
+        #[doc = "Sends a `DELETE` request to `/v1/subnets/{subnet_id}`"]
+        pub async fn send(self) -> Result<ResponseValue<()>, Error<types::Error>> {
+            let Self { client, subnet_id } = self;
+            let subnet_id = subnet_id.map_err(Error::InvalidRequest)?;
+            let url = format!(
+                "{}/v1/subnets/{}",
+                client.baseurl,
+                encode_path(&subnet_id.to_string()),
+            );
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .delete(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "delete_subnet_v1",
+            };
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                204u16 => Ok(ResponseValue::empty(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

@@ -3158,6 +3158,34 @@ pub trait TritondApi {
         path: Path<crate::v1::SubnetPath>,
     ) -> Result<HttpResponseOk<Subnet>, HttpError>;
 
+    /// RFD 00007 `POST /v1/subnets?vpc=<uuid>`. Create a subnet
+    /// inside the named VPC. The VPC's owning tenant+project is
+    /// resolved from the row; `?vpc=<uuid>` is the only required
+    /// selector.
+    #[endpoint {
+        method = POST,
+        path = "/v1/subnets",
+        tags = ["subnets"],
+    }]
+    async fn create_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<crate::v1::SubnetQuery>,
+        body: TypedBody<NewSubnet>,
+    ) -> Result<HttpResponseCreated<Subnet>, HttpError>;
+
+    /// RFD 00007 `DELETE /v1/subnets/{subnet_id}`. Store enforces
+    /// the dependency gate (NICs allocated from this subnet must
+    /// be released first); 409 Conflict otherwise.
+    #[endpoint {
+        method = DELETE,
+        path = "/v1/subnets/{subnet_id}",
+        tags = ["subnets"],
+    }]
+    async fn delete_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<crate::v1::SubnetPath>,
+    ) -> Result<HttpResponseDeleted, HttpError>;
+
     /// List route tables inside a VPC.
     #[endpoint {
         method = GET,

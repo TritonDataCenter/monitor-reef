@@ -1798,11 +1798,32 @@ enum SubnetCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Read a single subnet by UUID.
     Show {
         subnet_id: Uuid,
         #[arg(long)]
         json: bool,
     },
+    /// Create a subnet inside a VPC. POSTs to
+    /// `/v1/subnets?vpc=<uuid>` (AP-3a-11).
+    Create {
+        #[arg(long)]
+        vpc: Uuid,
+        #[arg(long)]
+        name: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        /// IPv4 CIDR block (one of ipv4-block / ipv6-block required).
+        #[arg(long = "ipv4-block")]
+        ipv4_block: Option<String>,
+        #[arg(long = "ipv6-block")]
+        ipv6_block: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete a subnet. The server enforces the dependency gate
+    /// (no NICs allocated from this subnet); 409 Conflict otherwise.
+    Delete { subnet_id: Uuid },
 }
 
 #[derive(Subcommand)]
@@ -2453,6 +2474,29 @@ async fn main() -> Result<()> {
             }
             SubnetCommand::Show { subnet_id, json } => {
                 commands::subnet_show_v1(cli.endpoint, cli.api_key, subnet_id, json).await
+            }
+            SubnetCommand::Create {
+                vpc,
+                name,
+                description,
+                ipv4_block,
+                ipv6_block,
+                json,
+            } => {
+                commands::subnet_create_v1(
+                    cli.endpoint,
+                    cli.api_key,
+                    vpc,
+                    name,
+                    description,
+                    ipv4_block,
+                    ipv6_block,
+                    json,
+                )
+                .await
+            }
+            SubnetCommand::Delete { subnet_id } => {
+                commands::subnet_delete_v1(cli.endpoint, cli.api_key, subnet_id).await
             }
         },
         Commands::ImageV1 { command } => match command {

@@ -565,6 +565,21 @@ impl TritondApi for TritondServiceImpl {
         crate::handlers::network::subnet::get_subnet_v1(rqctx, path).await
     }
 
+    async fn create_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        query: Query<tritond_api::v1::SubnetQuery>,
+        body: TypedBody<NewSubnet>,
+    ) -> Result<HttpResponseCreated<Subnet>, HttpError> {
+        crate::handlers::network::subnet::create_subnet_v1(rqctx, query, body).await
+    }
+
+    async fn delete_subnet_v1(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<tritond_api::v1::SubnetPath>,
+    ) -> Result<HttpResponseDeleted, HttpError> {
+        crate::handlers::network::subnet::delete_subnet_v1(rqctx, path).await
+    }
+
     async fn list_vpc_route_tables(
         rqctx: RequestContext<Self::Context>,
         path: Path<TenantProjectVpcPath>,
