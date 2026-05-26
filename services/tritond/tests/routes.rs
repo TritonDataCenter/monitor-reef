@@ -174,10 +174,8 @@ async fn root_can_create_list_get_delete_nat_route() {
     let (tenant_id, project_id, vpc_id, route_table_id) =
         make_project_vpc(&root, "alpha", "v", "10.0.0.0/16").await;
     let nat = root
-        .create_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .create_nat_gateway_v1()
+        .vpc(vpc_id)
         .body(new_nat_gateway("egress"))
         .send()
         .await
@@ -185,11 +183,8 @@ async fn root_can_create_list_get_delete_nat_route() {
         .into_inner();
 
     let route = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .create_route_v1()
+        .route_table(route_table_id)
         .body(new_route(
             "default-egress",
             "0.0.0.0/0",
@@ -233,11 +228,7 @@ async fn root_can_create_list_get_delete_nat_route() {
         .into_inner();
     assert_eq!(fetched.id, route.id);
 
-    root.delete_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+    root.delete_route_v1()
         .route_id(route.id)
         .send()
         .await
@@ -264,11 +255,8 @@ async fn duplicate_destination_in_table_returns_409() {
     let (tenant_id, project_id, vpc_id, route_table_id) =
         make_project_vpc(&root, "dupe", "v", "10.0.0.0/16").await;
 
-    root.create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+    root.create_route_v1()
+        .route_table(route_table_id)
         .body(new_route(
             "blackhole-a",
             "10.9.0.0/24",
@@ -278,11 +266,8 @@ async fn duplicate_destination_in_table_returns_409() {
         .await
         .unwrap();
     let err = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .create_route_v1()
+        .route_table(route_table_id)
         .body(new_route("blackhole-b", "10.9.0.0/24", RouteTarget::Reject))
         .send()
         .await
@@ -313,10 +298,8 @@ async fn nat_target_in_different_vpc_returns_400() {
         .unwrap()
         .into_inner();
     let nat_b = root
-        .create_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_b.id)
+        .create_nat_gateway_v1()
+        .vpc(vpc_b.id)
         .body(new_nat_gateway("egress-b"))
         .send()
         .await
@@ -324,11 +307,8 @@ async fn nat_target_in_different_vpc_returns_400() {
         .into_inner();
 
     let err = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_a)
-        .route_table_id(route_table_a)
+        .create_route_v1()
+        .route_table(route_table_a)
         .body(new_route(
             "bad-egress",
             "0.0.0.0/0",
@@ -351,21 +331,16 @@ async fn nat_gateway_delete_with_referencing_route_returns_409() {
     let (tenant_id, project_id, vpc_id, route_table_id) =
         make_project_vpc(&root, "nat-delete", "v", "10.0.0.0/16").await;
     let nat = root
-        .create_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .create_nat_gateway_v1()
+        .vpc(vpc_id)
         .body(new_nat_gateway("egress"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let route = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .create_route_v1()
+        .route_table(route_table_id)
         .body(new_route(
             "default-egress",
             "0.0.0.0/0",
@@ -379,29 +354,19 @@ async fn nat_gateway_delete_with_referencing_route_returns_409() {
         .into_inner();
 
     let err = root
-        .delete_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .delete_nat_gateway_v1()
         .nat_gateway_id(nat.id)
         .send()
         .await
         .expect_err("referenced NAT gateway delete must 409");
     assert_status(err, 409);
 
-    root.delete_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+    root.delete_route_v1()
         .route_id(route.id)
         .send()
         .await
         .unwrap();
-    root.delete_vpc_nat_gateway()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+    root.delete_nat_gateway_v1()
         .nat_gateway_id(nat.id)
         .send()
         .await
@@ -417,10 +382,8 @@ async fn route_table_delete_with_routes_returns_409() {
     let (tenant_id, project_id, vpc_id, _) =
         make_project_vpc(&root, "rt-delete", "v", "10.0.0.0/16").await;
     let route_table = root
-        .create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .create_route_table_v1()
+        .vpc(vpc_id)
         .body(NewRouteTable {
             name: "egress".to_string(),
             description: None,
@@ -430,11 +393,8 @@ async fn route_table_delete_with_routes_returns_409() {
         .unwrap()
         .into_inner();
     let route = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table.id)
+        .create_route_v1()
+        .route_table(route_table.id)
         .body(new_route(
             "blackhole",
             "10.99.0.0/24",
@@ -446,29 +406,19 @@ async fn route_table_delete_with_routes_returns_409() {
         .into_inner();
 
     let err = root
-        .delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .delete_route_table_v1()
         .route_table_id(route_table.id)
         .send()
         .await
         .expect_err("route table with routes must 409");
     assert_status(err, 409);
 
-    root.delete_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table.id)
+    root.delete_route_v1()
         .route_id(route.id)
         .send()
         .await
         .unwrap();
-    root.delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+    root.delete_route_table_v1()
         .route_table_id(route_table.id)
         .send()
         .await
@@ -485,11 +435,8 @@ async fn floating_ip_route_target_is_rejected_at_api_edge() {
         make_project_vpc(&root, "fip-target", "v", "10.0.0.0/16").await;
 
     let err = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .create_route_v1()
+        .route_table(route_table_id)
         .body(new_route(
             "system-only",
             "10.88.0.0/24",
@@ -512,11 +459,8 @@ async fn anonymous_cannot_reach_route_endpoints() {
     let (tenant_id, project_id, vpc_id, route_table_id) =
         make_project_vpc(&root, "anon", "v", "10.0.0.0/16").await;
     let route = root
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .create_route_v1()
+        .route_table(route_table_id)
         .body(new_route(
             "blackhole",
             "10.77.0.0/24",
@@ -540,11 +484,8 @@ async fn anonymous_cannot_reach_route_endpoints() {
     assert_status(err, 404);
 
     let err = anon
-        .create_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .create_route_v1()
+        .route_table(route_table_id)
         .body(new_route(
             "forbidden",
             "10.78.0.0/24",
@@ -568,11 +509,7 @@ async fn anonymous_cannot_reach_route_endpoints() {
     assert_status(err, 404);
 
     let err = anon
-        .delete_vpc_route_table_route()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
-        .route_table_id(route_table_id)
+        .delete_route_v1()
         .route_id(route.id)
         .send()
         .await

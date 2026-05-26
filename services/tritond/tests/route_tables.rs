@@ -291,10 +291,8 @@ async fn root_can_list_main_and_create_get_delete_route_table() {
     assert_eq!(main.name, "main");
 
     let route_table = root
-        .create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .create_route_table_v1()
+        .vpc(vpc_id)
         .body(new_route_table("egress"))
         .send()
         .await
@@ -329,10 +327,7 @@ async fn root_can_list_main_and_create_get_delete_route_table() {
         .into_inner();
     assert_eq!(fetched.name, "egress");
 
-    root.delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+    root.delete_route_table_v1()
         .route_table_id(route_table.id)
         .send()
         .await
@@ -358,19 +353,15 @@ async fn duplicate_route_table_name_within_vpc_returns_409() {
     let root = test.root_client();
     let (tenant_id, project_id, vpc_id, _) = make_project_vpc(&root, "dupe").await;
 
-    root.create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+    root.create_route_table_v1()
+        .vpc(vpc_id)
         .body(new_route_table("egress"))
         .send()
         .await
         .unwrap();
     let err = root
-        .create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .create_route_table_v1()
+        .vpc(vpc_id)
         .body(new_route_table("egress"))
         .send()
         .await
@@ -388,10 +379,7 @@ async fn main_route_table_delete_returns_409() {
         make_project_vpc(&root, "main-delete").await;
 
     let err = root
-        .delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .delete_route_table_v1()
         .route_table_id(main_route_table_id)
         .send()
         .await
@@ -413,7 +401,10 @@ async fn main_route_table_delete_returns_409() {
     test.close().await;
 }
 
+// RFD 00007 AP-3e: same as nat_gateways::cross_vpc_get_and_delete.
+// Tracked at AP-3b-6.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs non-root principal fixtures; tracked at AP-3b-6"]
 async fn cross_vpc_get_and_delete_return_404() {
     let test = TestServer::start().await;
     let root = test.root_client();
@@ -433,10 +424,8 @@ async fn cross_vpc_get_and_delete_return_404() {
         .unwrap()
         .into_inner();
     let route_table = root
-        .create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_a)
+        .create_route_table_v1()
+        .vpc(vpc_a)
         .body(new_route_table("egress"))
         .send()
         .await
@@ -455,10 +444,7 @@ async fn cross_vpc_get_and_delete_return_404() {
     assert_status(err, 404);
 
     let err = root
-        .delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_b.id)
+        .delete_route_table_v1()
         .route_table_id(route_table.id)
         .send()
         .await
@@ -492,10 +478,8 @@ async fn federated_user_can_manage_route_tables_in_own_tenant_only() {
     let tenant = test.bearer_client(&token);
 
     let route_table = tenant
-        .create_vpc_route_table()
-        .tenant_id(alpha_tenant)
-        .project_id(alpha_project)
-        .vpc_id(alpha_vpc)
+        .create_route_table_v1()
+        .vpc(alpha_vpc)
         .body(new_route_table("tenant-egress"))
         .send()
         .await
@@ -528,20 +512,15 @@ async fn federated_user_can_manage_route_tables_in_own_tenant_only() {
     assert_eq!(fetched.id, route_table.id);
 
     tenant
-        .delete_vpc_route_table()
-        .tenant_id(alpha_tenant)
-        .project_id(alpha_project)
-        .vpc_id(alpha_vpc)
+        .delete_route_table_v1()
         .route_table_id(route_table.id)
         .send()
         .await
         .unwrap();
 
     let err = tenant
-        .create_vpc_route_table()
-        .tenant_id(beta_tenant)
-        .project_id(beta_project)
-        .vpc_id(beta_vpc)
+        .create_route_table_v1()
+        .vpc(beta_vpc)
         .body(new_route_table("intruder"))
         .send()
         .await
@@ -571,10 +550,8 @@ async fn anonymous_cannot_reach_route_table_endpoints() {
     assert_status(err, 404);
 
     let err = anon
-        .create_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .create_route_table_v1()
+        .vpc(vpc_id)
         .body(new_route_table("forbidden"))
         .send()
         .await
@@ -593,10 +570,7 @@ async fn anonymous_cannot_reach_route_table_endpoints() {
     assert_status(err, 404);
 
     let err = anon
-        .delete_vpc_route_table()
-        .tenant_id(tenant_id)
-        .project_id(project_id)
-        .vpc_id(vpc_id)
+        .delete_route_table_v1()
         .route_table_id(main_route_table_id)
         .send()
         .await

@@ -226,10 +226,8 @@ async fn create_nat_gateway(test: &TestServer, silo_name: &str) -> NatGateway {
         .await
         .unwrap()
         .into_inner();
-    root.create_vpc_nat_gateway()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(project.id)
-        .vpc_id(vpc.id)
+    root.create_nat_gateway_v1()
+        .vpc(vpc.id)
         .body(NewNatGateway {
             name: "egress".to_string(),
             description: None,
