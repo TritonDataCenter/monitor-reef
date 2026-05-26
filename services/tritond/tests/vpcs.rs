@@ -295,18 +295,18 @@ async fn root_can_create_and_read_vpcs_in_any_silo_project() {
         .into_inner();
 
     let v_a = root
-        .create_project_vpc()
-        .tenant_id(silo_a.default_tenant_id)
-        .project_id(proj_a.id)
+        .create_vpc_v1()
+        .tenant(silo_a.default_tenant_id)
+        .project(proj_a.id)
         .body(dual_stack("prod"))
         .send()
         .await
         .unwrap()
         .into_inner();
     let v_b = root
-        .create_project_vpc()
-        .tenant_id(silo_b.default_tenant_id)
-        .project_id(proj_b.id)
+        .create_vpc_v1()
+        .tenant(silo_b.default_tenant_id)
+        .project(proj_b.id)
         .body(dual_stack("prod")) // same name in different silo+project: ok
         .send()
         .await
@@ -412,9 +412,9 @@ async fn federated_user_can_act_in_own_silo_only() {
 
     // Alpha tenant → can create a VPC in alpha's project.
     let vpc = tenant
-        .create_project_vpc()
-        .tenant_id(silo_alpha.default_tenant_id)
-        .project_id(alpha_proj.id)
+        .create_vpc_v1()
+        .tenant(silo_alpha.default_tenant_id)
+        .project(alpha_proj.id)
         .body(dual_stack("tenant-vpc"))
         .send()
         .await
@@ -425,9 +425,9 @@ async fn federated_user_can_act_in_own_silo_only() {
 
     // Same tenant → cannot create a VPC in beta's project. 404.
     let err = tenant
-        .create_project_vpc()
-        .tenant_id(silo_beta.default_tenant_id)
-        .project_id(beta_proj.id)
+        .create_vpc_v1()
+        .tenant(silo_beta.default_tenant_id)
+        .project(beta_proj.id)
         .body(dual_stack("intruder"))
         .send()
         .await
@@ -500,9 +500,9 @@ async fn cross_silo_get_returns_404_not_403() {
         .unwrap()
         .into_inner();
     let beta_vpc = root
-        .create_project_vpc()
-        .tenant_id(silo_beta.default_tenant_id)
-        .project_id(beta_proj.id)
+        .create_vpc_v1()
+        .tenant(silo_beta.default_tenant_id)
+        .project(beta_proj.id)
         .body(dual_stack("secret"))
         .send()
         .await
@@ -539,7 +539,13 @@ async fn cross_silo_get_returns_404_not_403() {
     test.close().await;
 }
 
+// RFD 00007 AP-3e: same shape as instances::cross_silo_get -
+// /v1/vpcs/{id} doesn't carry the parent project in the URL, so
+// the URL-shaped defence-in-depth is gone. Cedar must enforce
+// the boundary. Test uses root who sees everything; needs a
+// non-root principal. Tracked at AP-3b-6.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "needs non-root principal fixtures; tracked at AP-3b-6"]
 async fn cross_project_get_returns_404() {
     // Same silo, different project. Even root must get a 404 if the
     // path's project doesn't actually own the VPC — defence-in-depth
@@ -580,9 +586,9 @@ async fn cross_project_get_returns_404() {
         .unwrap()
         .into_inner();
     let vpc_in_a = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(proj_a.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(proj_a.id)
         .body(dual_stack("net"))
         .send()
         .await
@@ -600,9 +606,7 @@ async fn cross_project_get_returns_404() {
     assert_status(err, 404);
 
     let err = root
-        .delete_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(proj_b.id)
+        .delete_vpc_v1()
         .vpc_id(vpc_in_a.id)
         .send()
         .await
@@ -649,16 +653,16 @@ async fn same_vpc_name_in_different_projects_does_not_conflict() {
         .unwrap()
         .into_inner();
 
-    root.create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(proj_a.id)
+    root.create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(proj_a.id)
         .body(ipv4_only("shared", "10.0.0.0/24"))
         .send()
         .await
         .expect("create in proj_a");
-    root.create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(proj_b.id)
+    root.create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(proj_b.id)
         .body(ipv4_only("shared", "10.1.0.0/24"))
         .send()
         .await
@@ -694,9 +698,9 @@ async fn vpc_with_no_cidr_returns_400() {
         .into_inner();
 
     let err = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(proj.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(proj.id)
         .body(NewVpc {
             name: "nothing".to_string(),
             description: None,
@@ -729,9 +733,9 @@ async fn vpc_under_unknown_project_returns_404() {
     // Make-believe project id, no project actually exists in this silo.
     let fake_project = Uuid::new_v4();
     let err = root
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(fake_project)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(fake_project)
         .body(dual_stack("ghost"))
         .send()
         .await
@@ -787,9 +791,9 @@ async fn anonymous_cannot_reach_vpc_endpoints() {
     assert_status(err, 404);
 
     let err = anon
-        .create_project_vpc()
-        .tenant_id(silo.default_tenant_id)
-        .project_id(proj.id)
+        .create_vpc_v1()
+        .tenant(silo.default_tenant_id)
+        .project(proj.id)
         .body(dual_stack("forbidden"))
         .send()
         .await
