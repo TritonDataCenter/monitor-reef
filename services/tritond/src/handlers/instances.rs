@@ -843,36 +843,168 @@ pub(crate) async fn delete_instance_v1(
 ) -> Result<HttpResponseDeleted, HttpError> {
     let ctx = rqctx.context();
     let tritond_api::v1::InstancePath { instance_id } = path.into_inner();
+    let _force = query.into_inner().force;
+
     // Read the instance first so we can authorise against its tenant
-    // before letting the delete saga run.
+    // and recover the (tenant_id, project_id, target_cn_uuid) the
+    // saga's params and audit records need. /v1/ paths don't carry
+    // tenant/project in the URL the way the legacy /v2/ shape did.
     let instance = ctx
         .store
         .get_instance(instance_id)
         .await
         .map_err(store_error_to_http)?;
-    // Synthesise the legacy path shape and delegate. The wrapped
-    // Path<T> can't be constructed outside Dropshot's extractor, so
-    // we call the inner store / saga path directly via the
-    // pre-existing v2 handler logic. The simplest path: re-route
-    // through the v2 handler by passing the legacy path via an
-    // internal helper. Today the v2 handler is large; rather than
-    // duplicating its body, replicate the auth check + saga call
-    // inline.
-    authenticate_and_authorize_in_tenant(
+    let tenant_id = instance.tenant_id;
+    let project_id = instance.project_id;
+    let target_cn_uuid = instance.host_cn_uuid;
+
+    let principal = authenticate_and_authorize_in_tenant(
         &rqctx,
         &ctx.auth,
         &ctx.audit,
         &ctx.store,
         Action::InstanceDelete,
-        instance.tenant_id,
+        tenant_id,
     )
     .await?;
-    let force = query.into_inner().force;
-    ctx.store
-        .delete_instance(instance_id, force)
-        .await
-        .map_err(store_error_to_http)?;
-    Ok(HttpResponseDeleted())
+    let request_id = parse_request_id(&rqctx);
+
+    // v2p invalidation push (PROTEUS_PLAN §11.7.1 item 8). Lives
+    // here (not in the saga action body) because the global
+    // `peer_invalidations` ring isn't reachable from a SagaContext
+    // yet. Done before the saga so the release_record action can
+    // drop the NIC rows safely.
+    if let Ok(nics) = ctx.store.list_nics_for_instance(instance_id).await {
+        for nic in nics {
+            let Ok(vpc) = ctx.store.get_vpc(nic.vpc_id).await else {
+                continue;
+            };
+            if let Some(v4) = nic.primary_ipv4 {
+                ctx.peer_invalidations.push(vpc.vni, v4.to_string());
+            }
+            if let Some(v6) = nic.primary_ipv6 {
+                ctx.peer_invalidations.push(vpc.vni, v6.to_string());
+            }
+        }
+    }
+
+    // RFD 00004 SG-3: instance-delete saga. Detaches FIPs, enqueues
+    // a Delete job for the agent, awaits the agent's terminal
+    // status, then releases the record. Unwinds via the detach
+    // undo if anything fails before the record is released; lands
+    // Stuck if release_record fails after the agent acked Delete.
+    let saga_params = crate::sagas::instance_delete::InstanceDeleteParams {
+        tenant_id,
+        project_id,
+        instance_id,
+        target_cn_uuid,
+        await_delete_terminal: ctx.saga_wait_for_agent,
+    };
+    let saga_dag = match crate::sagas::instance_delete::build_dag(&saga_params) {
+        Ok(d) => d,
+        Err(e) => {
+            return Err(HttpError::for_internal_error(format!(
+                "instance-delete saga dag build: {e}"
+            )));
+        }
+    };
+    let saga_refs = crate::sagas::instance_delete::build_references(&saga_params, target_cn_uuid);
+    let saga_id = tritond_saga::SagaId(uuid::Uuid::new_v4());
+    let saga_result = ctx
+        .saga
+        .saga_execute(
+            saga_id,
+            crate::sagas::instance_delete::SAGA_NAME,
+            crate::sagas::instance_delete::SAGA_VERSION,
+            saga_dag,
+            &saga_refs,
+        )
+        .await;
+    let steno_result = match saga_result {
+        Ok(r) => r,
+        Err(e) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceDelete,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("saga executor error: {e}"),
+                    },
+                    serde_json::Value::Null,
+                )
+                .await;
+            return Err(HttpError::for_internal_error(format!(
+                "instance-delete saga executor error: {e}"
+            )));
+        }
+    };
+    match steno_result.kind {
+        Ok(_) => {
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceDelete,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    AuditOutcome::Success {
+                        resource: Some(format!("Instance::\"{instance_id}\"")),
+                    },
+                    serde_json::json!({
+                        "tenant_id": tenant_id,
+                        "project_id": project_id,
+                        "operation_id": saga_id.0.to_string(),
+                    }),
+                )
+                .await;
+            Ok(HttpResponseDeleted())
+        }
+        Err(err) => {
+            let kind_msg: Option<(&'static str, String)> = match &err.error_source {
+                tritond_saga::ActionError::ActionFailed { source_error } => {
+                    let kind = crate::sagas::instance_delete::decode_store_error_kind(source_error);
+                    let msg = source_error
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    kind.map(|k| (k, msg))
+                }
+                _ => None,
+            };
+            let http_err = match kind_msg.as_ref().map(|(k, _)| *k) {
+                Some("not_found") => not_found(),
+                Some("conflict") => HttpError::for_client_error(
+                    Some("Conflict".to_string()),
+                    ClientErrorStatusCode::CONFLICT,
+                    kind_msg
+                        .as_ref()
+                        .map(|(_, m)| m.clone())
+                        .unwrap_or_default(),
+                ),
+                _ => HttpError::for_internal_error(format!(
+                    "instance-delete saga failed at {:?}: {:?}",
+                    err.error_node_name, err.error_source
+                )),
+            };
+            ctx.audit
+                .record_mutation(
+                    &principal,
+                    Action::InstanceDelete,
+                    request_id,
+                    Some(format!("Instance::\"{instance_id}\"")),
+                    tritond_audit::Outcome::ServerError {
+                        message: format!("{:?}", err.error_source),
+                    },
+                    serde_json::json!({
+                        "operation_id": saga_id.0.to_string(),
+                    }),
+                )
+                .await;
+            Err(http_err)
+        }
+    }
 }
 
 pub(crate) async fn start_instance_v1(
