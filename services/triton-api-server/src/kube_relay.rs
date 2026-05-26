@@ -65,19 +65,14 @@ pub async fn kube_client_for_cluster(
 
     let relay_clone = Arc::clone(relay);
     tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((tcp, _)) => {
-                    let r = Arc::clone(&relay_clone);
-                    let t = target.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = proxy_connection(r, tcp, &t).await {
-                            tracing::warn!(error = %e, "kube-relay proxy connection error");
-                        }
-                    });
+        while let Ok((tcp, _)) = listener.accept().await {
+            let r = Arc::clone(&relay_clone);
+            let t = target.clone();
+            tokio::spawn(async move {
+                if let Err(e) = proxy_connection(r, tcp, &t).await {
+                    tracing::warn!(error = %e, "kube-relay proxy connection error");
                 }
-                Err(_) => break,
-            }
+            });
         }
     });
 

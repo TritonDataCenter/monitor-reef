@@ -260,8 +260,7 @@ async fn apply_dynamic_object(client: &kube::Client, value: &serde_json::Value) 
 }
 
 fn api_resource_for(api_version: &str, kind: &str) -> Result<kube::api::ApiResource> {
-    let (group, version) = if api_version.contains('/') {
-        let (g, v) = api_version.split_once('/').unwrap();
+    let (group, version) = if let Some((g, v)) = api_version.split_once('/') {
         (g, v)
     } else {
         ("", api_version)

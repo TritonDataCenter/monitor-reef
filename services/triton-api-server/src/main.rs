@@ -2629,10 +2629,8 @@ async fn main() -> Result<()> {
     }
 
     let operator_creds = build_operator_creds(config.cloudapi.as_ref()).await?;
-    if operator_creds.is_none() {
-        if config.cloudapi.is_some() {
-            warn!("cloudapi.key_fingerprint not set; lb install endpoint will return 503");
-        }
+    if operator_creds.is_none() && config.cloudapi.is_some() {
+        warn!("cloudapi.key_fingerprint not set; lb install endpoint will return 503");
     }
 
     if config.dev_account_uuid.is_some() {
