@@ -39,6 +39,7 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
+use crate::validate;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
     CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool,
@@ -246,6 +247,7 @@ fn prefix_range(prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
 #[async_trait]
 impl Store for FdbStore {
     async fn create_silo(&self, req: NewSilo) -> Result<Silo, StoreError> {
+        validate::name("silo", &req.name)?;
         // Atomic two-record write: create the silo and its default
         // tenant in a single FDB transaction so a federated login
         // can never race with silo creation and observe a
@@ -325,6 +327,7 @@ impl Store for FdbStore {
     }
 
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
+        validate::name("username", &user.username)?;
         let value = serde_json::to_vec(&user)
             .map_err(ser_err("user"))?;
         let by_id_key = keys::user_by_id_key(user.id);
@@ -785,7 +788,6 @@ impl Store for FdbStore {
     // `meta/gen/<scope>/<uuid>` -> big-endian u64 generation (absent ==
     // 0), bumped in the same transaction as every write/delete so the
     // realized-view cache can key off the four-scope gen tuple.
-    // Validation is the caller's job (see `validate_meta_entry`).
 
     async fn set_meta(
         &self,
@@ -794,6 +796,8 @@ impl Store for FdbStore {
         key: &str,
         value: MetaValue,
     ) -> Result<u64, StoreError> {
+        crate::types::validate_meta_key(scope, key)
+            .map_err(|e| StoreError::Conflict(e.to_string()))?;
         let entry_key = keys::meta_entry_key(scope, scope_id, key);
         let gen_key = keys::meta_gen_key(scope, scope_id);
         let encoded = serde_json::to_vec(&value)
@@ -1098,6 +1102,7 @@ impl Store for FdbStore {
         tenant_id: Uuid,
         req: NewProject,
     ) -> Result<Project, StoreError> {
+        validate::name("project", &req.name)?;
         let project = Project {
             id: Uuid::new_v4(),
             tenant_id,
@@ -1252,6 +1257,7 @@ impl Store for FdbStore {
     }
 
     async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError> {
+        validate::name("tenant", &req.name)?;
         let tenant = Tenant {
             id: Uuid::new_v4(),
             silo_id,
@@ -1416,6 +1422,7 @@ impl Store for FdbStore {
         project_id: Uuid,
         req: NewVpc,
     ) -> Result<Vpc, StoreError> {
+        validate::name("vpc", &req.name)?;
         // Outcome distinguishes our four invariant failures from FDB
         // transport errors. VniTaken triggers a retry at this layer
         // (a fresh draw + new transaction); the others surface to the
@@ -1704,6 +1711,7 @@ impl Store for FdbStore {
         vpc_id: Uuid,
         req: NewSubnet,
     ) -> Result<Subnet, StoreError> {
+        validate::name("subnet", &req.name)?;
         let vpc_check_key = keys::vpc_by_id_key(vpc_id);
         let subnet_prefix = keys::subnet_in_vpc_prefix(vpc_id);
         let (peer_begin, peer_end) = prefix_range(&subnet_prefix);
@@ -1943,6 +1951,7 @@ impl Store for FdbStore {
         vpc_id: Uuid,
         req: NewRouteTable,
     ) -> Result<RouteTable, StoreError> {
+        validate::name("route_table", &req.name)?;
         let vpc_check_key = keys::vpc_by_id_key(vpc_id);
         let by_name_key = keys::route_table_by_vpc_name_key(vpc_id, &req.name);
         let route_table_id = Uuid::new_v4();
@@ -2183,6 +2192,7 @@ impl Store for FdbStore {
         route_table_id: Uuid,
         req: NewRoute,
     ) -> Result<Route, StoreError> {
+        validate::name("route", &req.name)?;
         let destination = crate::types::canonical_ip_network(req.destination);
         let route_table_key = keys::route_table_by_id_key(route_table_id);
         let vpc_key = keys::vpc_by_id_key(vpc_id);
@@ -2384,6 +2394,7 @@ impl Store for FdbStore {
         vpc_id: Uuid,
         req: NewNatGateway,
     ) -> Result<NatGateway, StoreError> {
+        validate::name("nat_gateway", &req.name)?;
         let vpc_check_key = keys::vpc_by_id_key(vpc_id);
         let by_name_key = keys::nat_gateway_by_vpc_name_key(vpc_id, &req.name);
         let alloc_v4_prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
@@ -2674,6 +2685,7 @@ impl Store for FdbStore {
     }
 
     async fn create_edge_cluster(&self, req: NewEdgeCluster) -> Result<EdgeCluster, StoreError> {
+        validate::name("edge_cluster", &req.name)?;
         validate_edge_cluster_bound_resource_shape(req.kind, &req.bound_resources)?;
 
         let edge_cluster_id = Uuid::new_v4();
@@ -2932,6 +2944,7 @@ impl Store for FdbStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let scope = SshKeyScope::Public;
         let by_name_key = keys::ssh_key_by_public_name_key(&req.name);
         let by_fp_key = keys::ssh_key_by_public_fp_key(&fingerprint);
@@ -2955,6 +2968,7 @@ impl Store for FdbStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let scope = SshKeyScope::Silo { silo_id };
         let by_name_key = keys::ssh_key_by_silo_name_key(silo_id, &req.name);
         let by_fp_key = keys::ssh_key_by_silo_fp_key(silo_id, &fingerprint);
@@ -2979,6 +2993,7 @@ impl Store for FdbStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let scope = SshKeyScope::Tenant { tenant_id };
         let by_name_key = keys::ssh_key_by_tenant_name_key(tenant_id, &req.name);
         let by_fp_key = keys::ssh_key_by_tenant_fp_key(tenant_id, &fingerprint);
@@ -3003,6 +3018,7 @@ impl Store for FdbStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let scope = SshKeyScope::Project { project_id };
         let by_name_key = keys::ssh_key_by_project_name_key(project_id, &req.name);
         let by_fp_key = keys::ssh_key_by_project_fp_key(project_id, &fingerprint);
@@ -3027,6 +3043,7 @@ impl Store for FdbStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let scope = SshKeyScope::User { user_id };
         let by_name_key = keys::ssh_key_by_user_name_key(user_id, &req.name);
         let by_fp_key = keys::ssh_key_by_user_fp_key(user_id, &fingerprint);
@@ -3184,6 +3201,7 @@ impl Store for FdbStore {
     }
 
     async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let scope = ImageScope::Public;
         let by_name_key = keys::image_by_public_name_key(&req.name);
         let in_scope_key_for = |id: Uuid| keys::image_in_public_key(id);
@@ -3199,6 +3217,7 @@ impl Store for FdbStore {
     }
 
     async fn create_image_silo(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let scope = ImageScope::Silo { silo_id };
         let by_name_key = keys::image_by_silo_name_key(silo_id, &req.name);
         let parent_check_key = keys::silo_by_id_key(silo_id);
@@ -3219,6 +3238,7 @@ impl Store for FdbStore {
         tenant_id: Uuid,
         req: NewImage,
     ) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let scope = ImageScope::Tenant { tenant_id };
         let by_name_key = keys::image_by_tenant_name_key(tenant_id, &req.name);
         let parent_check_key = keys::tenant_by_id_key(tenant_id);
@@ -3239,6 +3259,7 @@ impl Store for FdbStore {
         project_id: Uuid,
         req: NewImage,
     ) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let scope = ImageScope::Project { project_id };
         let by_name_key = keys::image_by_project_name_key(project_id, &req.name);
         let parent_check_key = keys::project_by_id_key(project_id);
@@ -3255,6 +3276,7 @@ impl Store for FdbStore {
     }
 
     async fn create_image_user(&self, user_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let scope = ImageScope::User { user_id };
         let by_name_key = keys::image_by_user_name_key(user_id, &req.name);
         let parent_check_key = keys::user_by_id_key(user_id);
@@ -3562,6 +3584,7 @@ impl Store for FdbStore {
         project_id: Uuid,
         req: NewInstance,
     ) -> Result<InstanceCreateResult, StoreError> {
+        validate::name("instance", &req.name)?;
         // All cross-resource reads + the IP allocation set scan +
         // the instance write + the NIC write + the IP-alloc index
         // writes happen in a single transaction. A concurrent
@@ -4754,6 +4777,7 @@ impl Store for FdbStore {
         project_id: Uuid,
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
+        validate::name("floating_ip", &req.name)?;
         let project_check_key = keys::project_by_id_key(project_id);
         let by_name_key = keys::floating_ip_by_project_name_key(project_id, &req.name);
         let alloc_v4_prefix = keys::floating_ip_alloc_v4_prefix().to_vec();
@@ -7166,6 +7190,7 @@ impl Store for FdbStore {
         _vpc_id: Uuid,
         _req: NewFirewallRule,
     ) -> Result<FirewallRule, StoreError> {
+        validate::name("firewall_rule", &req.name)?;
         Err(firewall_rules_not_in_fdb_yet())
     }
 
@@ -7549,6 +7574,7 @@ impl Store for FdbStore {
         &self,
         req: NewStorageCluster,
     ) -> Result<StorageCluster, StoreError> {
+        validate::name("storage_cluster", &req.name)?;
         let id = Uuid::new_v4();
         let by_id_key = keys::storage_cluster_by_id_key(id);
         let by_name_key = keys::storage_cluster_by_name_key(&req.name);

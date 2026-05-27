@@ -20,6 +20,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::types::{EdgeClusterRecord, NatGatewayRecord};
+use crate::validate;
 use crate::{
     AddressFamily, ApiKey, AutoApproveWindow, CLAIM_CODE_TTL, Cn, CnCapacity, CnLoadSummary,
     CnPickSnapshot, CnPlacement, CnReservation, CnRole, CnState, DhcpLease, DhcpPool,
@@ -413,6 +414,7 @@ fn validate_edge_cluster_bound_resources(
 #[async_trait]
 impl Store for MemStore {
     async fn create_silo(&self, req: NewSilo) -> Result<Silo, StoreError> {
+        validate::name("silo", &req.name)?;
         let mut guard = self.inner.write().await;
 
         if guard.silo_id_by_name.contains_key(&req.name) {
@@ -461,6 +463,7 @@ impl Store for MemStore {
     }
 
     async fn create_user(&self, user: User) -> Result<User, StoreError> {
+        validate::name("username", &user.username)?;
         let mut guard = self.inner.write().await;
         if guard.user_id_by_username.contains_key(&user.username) {
             return Err(StoreError::Conflict(format!(
@@ -769,6 +772,7 @@ impl Store for MemStore {
         tenant_id: Uuid,
         req: NewProject,
     ) -> Result<Project, StoreError> {
+        validate::name("project", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.tenants_by_id.contains_key(&tenant_id) {
             return Err(StoreError::NotFound);
@@ -824,6 +828,7 @@ impl Store for MemStore {
     }
 
     async fn create_tenant(&self, silo_id: Uuid, req: NewTenant) -> Result<Tenant, StoreError> {
+        validate::name("tenant", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.silos_by_id.contains_key(&silo_id) {
             return Err(StoreError::NotFound);
@@ -888,6 +893,7 @@ impl Store for MemStore {
         project_id: Uuid,
         req: NewVpc,
     ) -> Result<Vpc, StoreError> {
+        validate::name("vpc", &req.name)?;
         let mut guard = self.inner.write().await;
 
         // Project must exist and live in the right tenant. A tenant
@@ -1021,6 +1027,7 @@ impl Store for MemStore {
         vpc_id: Uuid,
         req: NewSubnet,
     ) -> Result<Subnet, StoreError> {
+        validate::name("subnet", &req.name)?;
         let mut guard = self.inner.write().await;
 
         // VPC must exist and live under the right tenant+project. Any
@@ -1107,6 +1114,7 @@ impl Store for MemStore {
         vpc_id: Uuid,
         req: NewRouteTable,
     ) -> Result<RouteTable, StoreError> {
+        validate::name("route_table", &req.name)?;
         let mut guard = self.inner.write().await;
 
         let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
@@ -1209,6 +1217,7 @@ impl Store for MemStore {
         route_table_id: Uuid,
         req: NewRoute,
     ) -> Result<Route, StoreError> {
+        validate::name("route", &req.name)?;
         let mut guard = self.inner.write().await;
 
         let route_table = guard
@@ -1308,6 +1317,7 @@ impl Store for MemStore {
         vpc_id: Uuid,
         req: NewNatGateway,
     ) -> Result<NatGateway, StoreError> {
+        validate::name("nat_gateway", &req.name)?;
         let mut guard = self.inner.write().await;
 
         let vpc = guard.vpcs_by_id.get(&vpc_id).ok_or(StoreError::NotFound)?;
@@ -1429,6 +1439,7 @@ impl Store for MemStore {
     }
 
     async fn create_edge_cluster(&self, req: NewEdgeCluster) -> Result<EdgeCluster, StoreError> {
+        validate::name("edge_cluster", &req.name)?;
         let mut guard = self.inner.write().await;
 
         if guard.edge_cluster_id_by_name.contains_key(&req.name) {
@@ -1544,6 +1555,7 @@ impl Store for MemStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let mut guard = self.inner.write().await;
         if guard.ssh_key_id_by_public_name.contains_key(&req.name) {
             return Err(StoreError::Conflict(format!(
@@ -1583,6 +1595,7 @@ impl Store for MemStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.silos_by_id.contains_key(&silo_id) {
             return Err(StoreError::NotFound);
@@ -1620,6 +1633,7 @@ impl Store for MemStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.tenants_by_id.contains_key(&tenant_id) {
             return Err(StoreError::NotFound);
@@ -1659,6 +1673,7 @@ impl Store for MemStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.projects_by_id.contains_key(&project_id) {
             return Err(StoreError::NotFound);
@@ -1701,6 +1716,7 @@ impl Store for MemStore {
         req: NewSshKey,
         fingerprint: String,
     ) -> Result<SshKey, StoreError> {
+        validate::name("ssh_key", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.users_by_id.contains_key(&user_id) {
             return Err(StoreError::NotFound);
@@ -1898,6 +1914,7 @@ impl Store for MemStore {
     }
 
     async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let mut guard = self.inner.write().await;
         if guard.image_id_by_public_name.contains_key(&req.name) {
             return Err(StoreError::Conflict(format!(
@@ -1923,6 +1940,7 @@ impl Store for MemStore {
     }
 
     async fn create_image_silo(&self, silo_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.silos_by_id.contains_key(&silo_id) {
             return Err(StoreError::NotFound);
@@ -1954,6 +1972,7 @@ impl Store for MemStore {
         tenant_id: Uuid,
         req: NewImage,
     ) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.tenants_by_id.contains_key(&tenant_id) {
             return Err(StoreError::NotFound);
@@ -1985,6 +2004,7 @@ impl Store for MemStore {
         project_id: Uuid,
         req: NewImage,
     ) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.projects_by_id.contains_key(&project_id) {
             return Err(StoreError::NotFound);
@@ -2012,6 +2032,7 @@ impl Store for MemStore {
     }
 
     async fn create_image_user(&self, user_id: Uuid, req: NewImage) -> Result<Image, StoreError> {
+        validate::name("image", &req.name)?;
         let mut guard = self.inner.write().await;
         if !guard.users_by_id.contains_key(&user_id) {
             return Err(StoreError::NotFound);
@@ -2235,6 +2256,7 @@ impl Store for MemStore {
         project_id: Uuid,
         req: NewInstance,
     ) -> Result<InstanceCreateResult, StoreError> {
+        validate::name("instance", &req.name)?;
         let mut guard = self.inner.write().await;
 
         // Project must exist and be in the named tenant.
@@ -2897,6 +2919,7 @@ impl Store for MemStore {
         project_id: Uuid,
         req: NewFloatingIp,
     ) -> Result<FloatingIp, StoreError> {
+        validate::name("floating_ip", &req.name)?;
         let mut guard = self.inner.write().await;
         let project = guard
             .projects_by_id
@@ -4045,6 +4068,7 @@ impl Store for MemStore {
         vpc_id: Uuid,
         req: NewFirewallRule,
     ) -> Result<FirewallRule, StoreError> {
+        validate::name("firewall_rule", &req.name)?;
         validate_new_firewall_rule(&req)?;
 
         let mut guard = self.inner.write().await;
@@ -4360,6 +4384,7 @@ impl Store for MemStore {
         &self,
         req: NewStorageCluster,
     ) -> Result<StorageCluster, StoreError> {
+        validate::name("storage_cluster", &req.name)?;
         let mut guard = self.inner.write().await;
         if guard.storage_cluster_id_by_name.contains_key(&req.name) {
             return Err(StoreError::Conflict(format!(
@@ -4482,6 +4507,8 @@ impl Store for MemStore {
         key: &str,
         value: MetaValue,
     ) -> Result<u64, StoreError> {
+        crate::types::validate_meta_key(scope, key)
+            .map_err(|e| StoreError::Conflict(e.to_string()))?;
         let mut guard = self.inner.write().await;
         guard
             .meta

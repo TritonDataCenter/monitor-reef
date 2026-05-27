@@ -26,6 +26,7 @@
 pub mod fdb;
 pub mod mem;
 mod types;
+pub mod validate;
 
 #[cfg(feature = "foundationdb")]
 pub use fdb::FdbStore;
