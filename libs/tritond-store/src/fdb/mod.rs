@@ -5214,7 +5214,15 @@ impl Store for FdbStore {
                         limit: Some(SCAN_LIMIT),
                         ..RangeOption::default()
                     };
-                    let kvs = tr.get_range(&opt, 1, false).await?;
+                    // Snapshot scan: the candidate range does not enter
+                    // the read-conflict-range, so a concurrent claimer
+                    // (or enqueuer) elsewhere in the pending prefix
+                    // can't force this txn to retry. The follow-up
+                    // `tr.get` and `tr.clear` on the chosen pending
+                    // key still narrow the conflict window to that
+                    // single job, so two claimers competing for the
+                    // same job behave as before.
+                    let kvs = tr.get_range(&opt, 1, true).await?;
                     let entries: Vec<(Vec<u8>, Vec<u8>)> = kvs
                         .iter()
                         .map(|kv| (kv.key().to_vec(), kv.value().to_vec()))
@@ -5225,6 +5233,13 @@ impl Store for FdbStore {
                         let id_str = std::str::from_utf8(&job_id_bytes).map_err(txn_err("pending index value not utf8"))?;
                         let job_id = Uuid::parse_str(id_str).map_err(txn_err("pending index value not uuid"))?;
                         let by_id_key = keys::job_by_id_key(job_id);
+                        // Serializable read on the chosen pending
+                        // entry: brings the pending_key into the
+                        // read-conflict-range so a concurrent claimer
+                        // who cleared it from under us forces a retry.
+                        if tr.get(&pending_key, false).await?.is_none() {
+                            continue;
+                        }
                         let bytes = match tr.get(&by_id_key, false).await? {
                             Some(b) => b,
                             None => {
