@@ -120,6 +120,69 @@ fn txn_err<E: std::fmt::Display>(ctx: &'static str) -> impl FnOnce(E) -> FdbBind
     move |e| FdbBindingError::CustomError(format!("{ctx}: {e}").into())
 }
 
+/// Serialize `value` to JSON and write it at `key` inside a txn closure.
+/// Collapses the common 2-step pattern:
+///   `let bytes = serde_json::to_vec(value).map_err(...)?; tr.set(key, &bytes);`
+fn txn_set_serialized<T: serde::Serialize>(
+    tr: &foundationdb::Transaction,
+    key: &[u8],
+    value: &T,
+    kind: &'static str,
+) -> Result<(), FdbBindingError> {
+    let bytes = serde_json::to_vec(value).map_err(txn_ser_err(kind))?;
+    tr.set(key, &bytes);
+    Ok(())
+}
+
+/// Outcome of a simple-shape create that may fail name-uniqueness or
+/// parent-existence checks. Variants beyond these (e.g. VniTaken,
+/// HasSubnets) keep their own local enums.
+enum SimpleCreate {
+    Created,
+    NameTaken,
+    ParentMissing,
+}
+
+/// Map a `SimpleCreate` outcome to a `StoreError`-friendly result. `value`
+/// is the row to return on success; it's only consumed in the Created arm.
+/// `parent` is the operator-visible label of the enclosing scope ("silo
+/// <uuid>", "tenant <uuid>", "project <uuid>", ...) — appended to the
+/// conflict message to keep error context the unscoped-create lost.
+fn finish_simple_create<T>(
+    outcome: Result<SimpleCreate, FdbBindingError>,
+    value: T,
+    kind: &str,
+    name: &str,
+    parent: Option<&str>,
+) -> Result<T, StoreError> {
+    match outcome {
+        Ok(SimpleCreate::Created) => Ok(value),
+        Ok(SimpleCreate::NameTaken) => Err(StoreError::Conflict(match parent {
+            Some(p) => format!("{kind} with name {name:?} already exists in {p}"),
+            None => format!("{kind} with name {name:?} already exists"),
+        })),
+        Ok(SimpleCreate::ParentMissing) => Err(StoreError::NotFound),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Outcome of a delete: row present + cleared, or already gone.
+enum SimpleDelete {
+    Deleted,
+    Vanished,
+}
+
+/// Map a `SimpleDelete` outcome back to `StoreError`.
+fn finish_simple_delete(
+    outcome: Result<SimpleDelete, FdbBindingError>,
+) -> Result<(), StoreError> {
+    match outcome {
+        Ok(SimpleDelete::Deleted) => Ok(()),
+        Ok(SimpleDelete::Vanished) => Err(StoreError::NotFound),
+        Err(e) => Err(e.into()),
+    }
+}
+
 /// Run an FDB transaction. Clones each named capture once per retry
 /// iteration (the FDB binding's `db.run` calls the closure `FnMut`, so
 /// captures must be owned). Body sees `tr: &Transaction` and returns
@@ -308,40 +371,29 @@ impl Store for FdbStore {
         let silo_id_str = silo.id.to_string();
         let tenant_id_str = tenant.id.to_string();
 
-        let outcome: Result<CreateOutcome, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let silo_by_id_key = silo_by_id_key.clone();
-                let silo_by_name_key = silo_by_name_key.clone();
-                let tenant_by_id_key = tenant_by_id_key.clone();
-                let tenant_by_name_key = tenant_by_name_key.clone();
-                let tenant_in_silo_key = tenant_in_silo_key.clone();
-                let silo_value = silo_value.clone();
-                let tenant_value = tenant_value.clone();
-                let silo_id_bytes = silo_id_str.as_bytes().to_vec();
-                let tenant_id_bytes = tenant_id_str.as_bytes().to_vec();
-                async move {
-                    if tr.get(&silo_by_name_key, false).await?.is_some() {
-                        return Ok(CreateOutcome::NameTaken);
-                    }
-                    tr.set(&silo_by_id_key, &silo_value);
-                    tr.set(&silo_by_name_key, &silo_id_bytes);
-                    tr.set(&tenant_by_id_key, &tenant_value);
-                    tr.set(&tenant_by_name_key, &tenant_id_bytes);
-                    tr.set(&tenant_in_silo_key, b"");
-                    Ok(CreateOutcome::Created)
+        let silo_id_bytes = silo_id_str.into_bytes();
+        let tenant_id_bytes = tenant_id_str.into_bytes();
+        let outcome = fdb_txn!(
+            self.db,
+            [
+                silo_by_id_key, silo_by_name_key, tenant_by_id_key,
+                tenant_by_name_key, tenant_in_silo_key, silo_value,
+                tenant_value, silo_id_bytes, tenant_id_bytes,
+            ],
+            |tr| {
+                if tr.get(&silo_by_name_key, false).await?.is_some() {
+                    return Ok(SimpleCreate::NameTaken);
                 }
-            })
-            .await;
-
-        match outcome {
-            Ok(CreateOutcome::Created) => Ok(silo),
-            Ok(CreateOutcome::NameTaken) => Err(StoreError::Conflict(format!(
-                "silo with name {:?} already exists",
-                silo.name
-            ))),
-            Err(e) => Err(e.into()),
-        }
+                tr.set(&silo_by_id_key, &silo_value);
+                tr.set(&silo_by_name_key, &silo_id_bytes);
+                tr.set(&tenant_by_id_key, &tenant_value);
+                tr.set(&tenant_by_name_key, &tenant_id_bytes);
+                tr.set(&tenant_in_silo_key, b"");
+                Ok(SimpleCreate::Created)
+            }
+        );
+        let name = silo.name.clone();
+        finish_simple_create(outcome, silo, "silo", &name, None)
     }
 
     async fn get_silo(&self, id: Uuid) -> Result<Silo, StoreError> {
@@ -1138,47 +1190,25 @@ impl Store for FdbStore {
         let id_str = project.id.to_string();
         let name_str = project.name.clone();
 
-        // Outcome distinguishes tenant-missing from name-conflict so the
-        // single transaction can convey both into our caller's error
-        // shape.
-        enum Outcome {
-            Created,
-            TenantMissing,
-            NameTaken,
-        }
-
-        let outcome: Result<Outcome, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_tenant_key = in_tenant_key.clone();
-                let tenant_check_key = tenant_check_key.clone();
-                let value = value.clone();
-                let id_bytes = id_str.as_bytes().to_vec();
-                async move {
-                    if tr.get(&tenant_check_key, false).await?.is_none() {
-                        return Ok(Outcome::TenantMissing);
-                    }
-                    if tr.get(&by_name_key, false).await?.is_some() {
-                        return Ok(Outcome::NameTaken);
-                    }
-                    tr.set(&by_id_key, &value);
-                    tr.set(&by_name_key, &id_bytes);
-                    tr.set(&in_tenant_key, b"");
-                    Ok(Outcome::Created)
+        let id_bytes = id_str.into_bytes();
+        let outcome = fdb_txn!(
+            self.db,
+            [by_id_key, by_name_key, in_tenant_key, tenant_check_key, value, id_bytes],
+            |tr| {
+                if tr.get(&tenant_check_key, false).await?.is_none() {
+                    return Ok(SimpleCreate::ParentMissing);
                 }
-            })
-            .await;
-
-        match outcome {
-            Ok(Outcome::Created) => Ok(project),
-            Ok(Outcome::TenantMissing) => Err(StoreError::NotFound),
-            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
-                "project with name {name_str:?} already exists in tenant {tenant_id}"
-            ))),
-            Err(e) => Err(e.into()),
-        }
+                if tr.get(&by_name_key, false).await?.is_some() {
+                    return Ok(SimpleCreate::NameTaken);
+                }
+                tr.set(&by_id_key, &value);
+                tr.set(&by_name_key, &id_bytes);
+                tr.set(&in_tenant_key, b"");
+                Ok(SimpleCreate::Created)
+            }
+        );
+        let parent = format!("tenant {tenant_id}");
+        finish_simple_create(outcome, project, "project", &name_str, Some(&parent))
     }
 
     async fn get_project(&self, project_id: Uuid) -> Result<Project, StoreError> {
@@ -1281,47 +1311,25 @@ impl Store for FdbStore {
         let id_str = tenant.id.to_string();
         let name_str = tenant.name.clone();
 
-        // Outcome distinguishes silo-missing from name-conflict so the
-        // single transaction can convey both into our caller's error
-        // shape.
-        enum Outcome {
-            Created,
-            SiloMissing,
-            NameTaken,
-        }
-
-        let outcome: Result<Outcome, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                let by_name_key = by_name_key.clone();
-                let in_silo_key = in_silo_key.clone();
-                let silo_check_key = silo_check_key.clone();
-                let value = value.clone();
-                let id_bytes = id_str.as_bytes().to_vec();
-                async move {
-                    if tr.get(&silo_check_key, false).await?.is_none() {
-                        return Ok(Outcome::SiloMissing);
-                    }
-                    if tr.get(&by_name_key, false).await?.is_some() {
-                        return Ok(Outcome::NameTaken);
-                    }
-                    tr.set(&by_id_key, &value);
-                    tr.set(&by_name_key, &id_bytes);
-                    tr.set(&in_silo_key, b"");
-                    Ok(Outcome::Created)
+        let id_bytes = id_str.into_bytes();
+        let outcome = fdb_txn!(
+            self.db,
+            [by_id_key, by_name_key, in_silo_key, silo_check_key, value, id_bytes],
+            |tr| {
+                if tr.get(&silo_check_key, false).await?.is_none() {
+                    return Ok(SimpleCreate::ParentMissing);
                 }
-            })
-            .await;
-
-        match outcome {
-            Ok(Outcome::Created) => Ok(tenant),
-            Ok(Outcome::SiloMissing) => Err(StoreError::NotFound),
-            Ok(Outcome::NameTaken) => Err(StoreError::Conflict(format!(
-                "tenant with name {name_str:?} already exists in silo {silo_id}"
-            ))),
-            Err(e) => Err(e.into()),
-        }
+                if tr.get(&by_name_key, false).await?.is_some() {
+                    return Ok(SimpleCreate::NameTaken);
+                }
+                tr.set(&by_id_key, &value);
+                tr.set(&by_name_key, &id_bytes);
+                tr.set(&in_silo_key, b"");
+                Ok(SimpleCreate::Created)
+            }
+        );
+        let parent = format!("silo {silo_id}");
+        finish_simple_create(outcome, tenant, "tenant", &name_str, Some(&parent))
     }
 
     async fn get_tenant(&self, tenant_id: Uuid) -> Result<Tenant, StoreError> {
@@ -1883,36 +1891,19 @@ impl Store for FdbStore {
     async fn delete_subnet(&self, subnet_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::subnet_by_id_key(subnet_id);
 
-        enum DelOut {
-            Deleted,
-            Vanished,
-        }
-        let outcome: Result<DelOut, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                async move {
-                    let bytes = match tr.get(&by_id_key, false).await? {
-                        Some(b) => b,
-                        None => return Ok(DelOut::Vanished),
-                    };
-                    let subnet: Subnet =
-                        serde_json::from_slice(&bytes).map_err(txn_de_err("subnet"))?;
-                    let by_name_key = keys::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name);
-                    let in_vpc_key = keys::subnet_in_vpc_key(subnet.vpc_id, subnet.id);
-                    tr.clear(&by_id_key);
-                    tr.clear(&by_name_key);
-                    tr.clear(&in_vpc_key);
-                    Ok(DelOut::Deleted)
-                }
-            })
-            .await;
-
-        match outcome {
-            Ok(DelOut::Deleted) => Ok(()),
-            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(e.into()),
-        }
+        let outcome = fdb_txn!(self.db, [by_id_key], |tr| {
+            let bytes = match tr.get(&by_id_key, false).await? {
+                Some(b) => b,
+                None => return Ok(SimpleDelete::Vanished),
+            };
+            let subnet: Subnet =
+                serde_json::from_slice(&bytes).map_err(txn_de_err("subnet"))?;
+            tr.clear(&by_id_key);
+            tr.clear(&keys::subnet_by_vpc_name_key(subnet.vpc_id, &subnet.name));
+            tr.clear(&keys::subnet_in_vpc_key(subnet.vpc_id, subnet.id));
+            Ok(SimpleDelete::Deleted)
+        });
+        finish_simple_delete(outcome)
     }
 
     async fn create_route_table(
@@ -2308,42 +2299,21 @@ impl Store for FdbStore {
 
     async fn delete_route(&self, route_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::route_by_id_key(route_id);
-
-        enum Out {
-            Deleted,
-            Vanished,
-            Corrupt(String),
-        }
-        let outcome: Result<Out, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                async move {
-                    let bytes = match tr.get(&by_id_key, false).await? {
-                        Some(b) => b,
-                        None => return Ok(Out::Vanished),
-                    };
-                    let route: Route = match serde_json::from_slice(&bytes) {
-                        Ok(r) => r,
-                        Err(e) => return Ok(Out::Corrupt(e.to_string())),
-                    };
-                    tr.clear(&by_id_key);
-                    tr.clear(&keys::route_by_table_destination_key(
-                        route.route_table_id,
-                        route.destination,
-                    ));
-                    tr.clear(&keys::route_in_table_key(route.route_table_id, route.id));
-                    Ok(Out::Deleted)
-                }
-            })
-            .await;
-
-        match outcome {
-            Ok(Out::Deleted) => Ok(()),
-            Ok(Out::Vanished) => Err(StoreError::NotFound),
-            Ok(Out::Corrupt(e)) => Err(StoreError::Backend(format!("deserialize route: {e}"))),
-            Err(e) => Err(e.into()),
-        }
+        let outcome = fdb_txn!(self.db, [by_id_key], |tr| {
+            let bytes = match tr.get(&by_id_key, false).await? {
+                Some(b) => b,
+                None => return Ok(SimpleDelete::Vanished),
+            };
+            let route: Route = serde_json::from_slice(&bytes).map_err(txn_de_err("route"))?;
+            tr.clear(&by_id_key);
+            tr.clear(&keys::route_by_table_destination_key(
+                route.route_table_id,
+                route.destination,
+            ));
+            tr.clear(&keys::route_in_table_key(route.route_table_id, route.id));
+            Ok(SimpleDelete::Deleted)
+        });
+        finish_simple_delete(outcome)
     }
 
     async fn create_nat_gateway(
@@ -3076,63 +3046,47 @@ impl Store for FdbStore {
 
     async fn delete_ssh_key(&self, key_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::ssh_key_by_id_key(key_id);
-
-        enum DelOut {
-            Deleted,
-            Vanished,
-        }
-        let outcome: Result<DelOut, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                async move {
-                    let bytes = match tr.get(&by_id_key, false).await? {
-                        Some(b) => b,
-                        None => return Ok(DelOut::Vanished),
-                    };
-                    let key: SshKey =
-                        serde_json::from_slice(&bytes).map_err(txn_de_err("ssh key"))?;
-                    let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
-                        SshKeyScope::Public => (
-                            keys::ssh_key_by_public_name_key(&key.name),
-                            keys::ssh_key_by_public_fp_key(&key.fingerprint),
-                            keys::ssh_key_in_public_key(key.id),
-                        ),
-                        SshKeyScope::Silo { silo_id } => (
-                            keys::ssh_key_by_silo_name_key(*silo_id, &key.name),
-                            keys::ssh_key_by_silo_fp_key(*silo_id, &key.fingerprint),
-                            keys::ssh_key_in_silo_key(*silo_id, key.id),
-                        ),
-                        SshKeyScope::Tenant { tenant_id } => (
-                            keys::ssh_key_by_tenant_name_key(*tenant_id, &key.name),
-                            keys::ssh_key_by_tenant_fp_key(*tenant_id, &key.fingerprint),
-                            keys::ssh_key_in_tenant_key(*tenant_id, key.id),
-                        ),
-                        SshKeyScope::Project { project_id } => (
-                            keys::ssh_key_by_project_name_key(*project_id, &key.name),
-                            keys::ssh_key_by_project_fp_key(*project_id, &key.fingerprint),
-                            keys::ssh_key_in_project_key(*project_id, key.id),
-                        ),
-                        SshKeyScope::User { user_id } => (
-                            keys::ssh_key_by_user_name_key(*user_id, &key.name),
-                            keys::ssh_key_by_user_fp_key(*user_id, &key.fingerprint),
-                            keys::ssh_key_by_user_idx_key(*user_id, key.id),
-                        ),
-                    };
-                    tr.clear(&by_id_key);
-                    tr.clear(&by_name_key);
-                    tr.clear(&by_fp_key);
-                    tr.clear(&in_scope_key);
-                    Ok(DelOut::Deleted)
-                }
-            })
-            .await;
-
-        match outcome {
-            Ok(DelOut::Deleted) => Ok(()),
-            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(e.into()),
-        }
+        let outcome = fdb_txn!(self.db, [by_id_key], |tr| {
+            let bytes = match tr.get(&by_id_key, false).await? {
+                Some(b) => b,
+                None => return Ok(SimpleDelete::Vanished),
+            };
+            let key: SshKey =
+                serde_json::from_slice(&bytes).map_err(txn_de_err("ssh key"))?;
+            let (by_name_key, by_fp_key, in_scope_key) = match &key.scope {
+                SshKeyScope::Public => (
+                    keys::ssh_key_by_public_name_key(&key.name),
+                    keys::ssh_key_by_public_fp_key(&key.fingerprint),
+                    keys::ssh_key_in_public_key(key.id),
+                ),
+                SshKeyScope::Silo { silo_id } => (
+                    keys::ssh_key_by_silo_name_key(*silo_id, &key.name),
+                    keys::ssh_key_by_silo_fp_key(*silo_id, &key.fingerprint),
+                    keys::ssh_key_in_silo_key(*silo_id, key.id),
+                ),
+                SshKeyScope::Tenant { tenant_id } => (
+                    keys::ssh_key_by_tenant_name_key(*tenant_id, &key.name),
+                    keys::ssh_key_by_tenant_fp_key(*tenant_id, &key.fingerprint),
+                    keys::ssh_key_in_tenant_key(*tenant_id, key.id),
+                ),
+                SshKeyScope::Project { project_id } => (
+                    keys::ssh_key_by_project_name_key(*project_id, &key.name),
+                    keys::ssh_key_by_project_fp_key(*project_id, &key.fingerprint),
+                    keys::ssh_key_in_project_key(*project_id, key.id),
+                ),
+                SshKeyScope::User { user_id } => (
+                    keys::ssh_key_by_user_name_key(*user_id, &key.name),
+                    keys::ssh_key_by_user_fp_key(*user_id, &key.fingerprint),
+                    keys::ssh_key_by_user_idx_key(*user_id, key.id),
+                ),
+            };
+            tr.clear(&by_id_key);
+            tr.clear(&by_name_key);
+            tr.clear(&by_fp_key);
+            tr.clear(&in_scope_key);
+            Ok(SimpleDelete::Deleted)
+        });
+        finish_simple_delete(outcome)
     }
 
     async fn create_image_public(&self, req: NewImage) -> Result<Image, StoreError> {
@@ -3303,57 +3257,41 @@ impl Store for FdbStore {
 
     async fn delete_image(&self, image_id: Uuid) -> Result<(), StoreError> {
         let by_id_key = keys::image_by_id_key(image_id);
-
-        enum DelOut {
-            Deleted,
-            Vanished,
-        }
-        let outcome: Result<DelOut, FdbBindingError> = self
-            .db
-            .run(|tr, _| {
-                let by_id_key = by_id_key.clone();
-                async move {
-                    let bytes = match tr.get(&by_id_key, false).await? {
-                        Some(b) => b,
-                        None => return Ok(DelOut::Vanished),
-                    };
-                    let image: Image =
-                        serde_json::from_slice(&bytes).map_err(txn_de_err("image"))?;
-                    let (by_name_key, in_scope_key) = match &image.scope {
-                        ImageScope::Public => (
-                            keys::image_by_public_name_key(&image.name),
-                            keys::image_in_public_key(image.id),
-                        ),
-                        ImageScope::Silo { silo_id } => (
-                            keys::image_by_silo_name_key(*silo_id, &image.name),
-                            keys::image_in_silo_key(*silo_id, image.id),
-                        ),
-                        ImageScope::Tenant { tenant_id } => (
-                            keys::image_by_tenant_name_key(*tenant_id, &image.name),
-                            keys::image_in_tenant_key(*tenant_id, image.id),
-                        ),
-                        ImageScope::Project { project_id } => (
-                            keys::image_by_project_name_key(*project_id, &image.name),
-                            keys::image_in_project_key(*project_id, image.id),
-                        ),
-                        ImageScope::User { user_id } => (
-                            keys::image_by_user_name_key(*user_id, &image.name),
-                            keys::image_by_user_idx_key(*user_id, image.id),
-                        ),
-                    };
-                    tr.clear(&by_id_key);
-                    tr.clear(&by_name_key);
-                    tr.clear(&in_scope_key);
-                    Ok(DelOut::Deleted)
-                }
-            })
-            .await;
-
-        match outcome {
-            Ok(DelOut::Deleted) => Ok(()),
-            Ok(DelOut::Vanished) => Err(StoreError::NotFound),
-            Err(e) => Err(e.into()),
-        }
+        let outcome = fdb_txn!(self.db, [by_id_key], |tr| {
+            let bytes = match tr.get(&by_id_key, false).await? {
+                Some(b) => b,
+                None => return Ok(SimpleDelete::Vanished),
+            };
+            let image: Image =
+                serde_json::from_slice(&bytes).map_err(txn_de_err("image"))?;
+            let (by_name_key, in_scope_key) = match &image.scope {
+                ImageScope::Public => (
+                    keys::image_by_public_name_key(&image.name),
+                    keys::image_in_public_key(image.id),
+                ),
+                ImageScope::Silo { silo_id } => (
+                    keys::image_by_silo_name_key(*silo_id, &image.name),
+                    keys::image_in_silo_key(*silo_id, image.id),
+                ),
+                ImageScope::Tenant { tenant_id } => (
+                    keys::image_by_tenant_name_key(*tenant_id, &image.name),
+                    keys::image_in_tenant_key(*tenant_id, image.id),
+                ),
+                ImageScope::Project { project_id } => (
+                    keys::image_by_project_name_key(*project_id, &image.name),
+                    keys::image_in_project_key(*project_id, image.id),
+                ),
+                ImageScope::User { user_id } => (
+                    keys::image_by_user_name_key(*user_id, &image.name),
+                    keys::image_by_user_idx_key(*user_id, image.id),
+                ),
+            };
+            tr.clear(&by_id_key);
+            tr.clear(&by_name_key);
+            tr.clear(&in_scope_key);
+            Ok(SimpleDelete::Deleted)
+        });
+        finish_simple_delete(outcome)
     }
 
     async fn put_quota(
